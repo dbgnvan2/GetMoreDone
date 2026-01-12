@@ -41,9 +41,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Create form
         self.create_form()
 
-        # Load item data if editing
+        # Load item data if editing, or apply defaults if new
         if self.item:
             self.load_item_data()
+        else:
+            # Apply defaults for new items
+            self.apply_defaults_to_form()
 
         # Make dialog modal
         self.transient(parent)
@@ -85,20 +88,21 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if not who_values:
             who_values = ["Self"]
         self.who_var = ctk.StringVar(value=who_values[0] if who_values else "Self")
-        self.who_combo = ctk.CTkComboBox(left_col, values=who_values, variable=self.who_var)
-        self.who_combo.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.who_combo = ctk.CTkComboBox(left_col, values=who_values, variable=self.who_var, width=320,
+                                         command=lambda _: self.on_who_changed())
+        self.who_combo.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Title
         ctk.CTkLabel(left_col, text="* Title:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.title_entry = ctk.CTkEntry(left_col)
-        self.title_entry.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.title_entry = ctk.CTkEntry(left_col, width=320)
+        self.title_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Description
         ctk.CTkLabel(left_col, text="Description:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
-        self.description_text = ctk.CTkTextbox(left_col, height=100)
-        self.description_text.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.description_text = ctk.CTkTextbox(left_col, height=100, width=320)
+        self.description_text.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Dates Section
@@ -111,14 +115,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Start Date
         ctk.CTkLabel(left_col, text="Start Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.start_date_entry = ctk.CTkEntry(left_col, placeholder_text="YYYY-MM-DD")
-        self.start_date_entry.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.start_date_entry = ctk.CTkEntry(left_col, placeholder_text="YYYY-MM-DD", width=320)
+        self.start_date_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Due Date
         ctk.CTkLabel(left_col, text="Due Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.due_date_entry = ctk.CTkEntry(left_col, placeholder_text="YYYY-MM-DD")
-        self.due_date_entry.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.due_date_entry = ctk.CTkEntry(left_col, placeholder_text="YYYY-MM-DD", width=320)
+        self.due_date_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Organization Section
@@ -133,22 +137,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(left_col, text="Group:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
         groups = self.db_manager.get_distinct_groups()
         self.group_var = ctk.StringVar(value="")
-        self.group_combo = ctk.CTkComboBox(left_col, values=groups if groups else [""], variable=self.group_var)
-        self.group_combo.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.group_combo = ctk.CTkComboBox(left_col, values=groups if groups else [""], variable=self.group_var, width=320)
+        self.group_combo.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Category
         ctk.CTkLabel(left_col, text="Category:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
         categories = self.db_manager.get_distinct_categories()
         self.category_var = ctk.StringVar(value="")
-        self.category_combo = ctk.CTkComboBox(left_col, values=categories if categories else [""], variable=self.category_var)
-        self.category_combo.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.category_combo = ctk.CTkComboBox(left_col, values=categories if categories else [""], variable=self.category_var, width=320)
+        self.category_combo.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Planned Minutes
         ctk.CTkLabel(left_col, text="Planned Minutes:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0")
-        self.planned_minutes_entry.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0", width=320)
+        self.planned_minutes_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # === RIGHT COLUMN ===
@@ -167,10 +171,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         importance_values = [f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
         self.importance_var = ctk.StringVar(value="")
         self.importance_combo = ctk.CTkComboBox(
-            right_col, values=importance_values, variable=self.importance_var,
+            right_col, values=importance_values, variable=self.importance_var, width=320,
             command=lambda _: self.update_priority_display()
         )
-        self.importance_combo.grid(row=row_r, column=1, sticky="ew", padx=10, pady=5)
+        self.importance_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
         row_r += 1
 
         # Urgency
@@ -178,10 +182,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         urgency_values = [f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
         self.urgency_var = ctk.StringVar(value="")
         self.urgency_combo = ctk.CTkComboBox(
-            right_col, values=urgency_values, variable=self.urgency_var,
+            right_col, values=urgency_values, variable=self.urgency_var, width=320,
             command=lambda _: self.update_priority_display()
         )
-        self.urgency_combo.grid(row=row_r, column=1, sticky="ew", padx=10, pady=5)
+        self.urgency_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
         row_r += 1
 
         # Size
@@ -189,10 +193,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
         self.size_var = ctk.StringVar(value="")
         self.size_combo = ctk.CTkComboBox(
-            right_col, values=size_values, variable=self.size_var,
+            right_col, values=size_values, variable=self.size_var, width=320,
             command=lambda _: self.update_priority_display()
         )
-        self.size_combo.grid(row=row_r, column=1, sticky="ew", padx=10, pady=5)
+        self.size_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
         row_r += 1
 
         # Value
@@ -200,10 +204,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         value_values = [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
         self.value_var = ctk.StringVar(value="")
         self.value_combo = ctk.CTkComboBox(
-            right_col, values=value_values, variable=self.value_var,
+            right_col, values=value_values, variable=self.value_var, width=320,
             command=lambda _: self.update_priority_display()
         )
-        self.value_combo.grid(row=row_r, column=1, sticky="ew", padx=10, pady=5)
+        self.value_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
         row_r += 1
 
         # Priority Score Display
@@ -305,6 +309,154 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         if self.item.planned_minutes is not None:
             self.planned_minutes_entry.insert(0, str(self.item.planned_minutes))
+
+        self.update_priority_display()
+
+    def apply_defaults_to_form(self):
+        """Apply system and who-specific defaults to form fields for new items."""
+        who = self.who_var.get()
+
+        # Get defaults
+        system_defaults = self.db_manager.get_defaults("system")
+        who_defaults = self.db_manager.get_defaults("who", who)
+
+        # Helper to get default value with precedence
+        def get_default(field_name):
+            if who_defaults:
+                val = getattr(who_defaults, field_name, None)
+                if val is not None:
+                    return val
+            if system_defaults:
+                val = getattr(system_defaults, field_name, None)
+                if val is not None:
+                    return val
+            return None
+
+        # Apply priority factor defaults
+        importance = get_default("importance")
+        if importance is not None:
+            for k, v in PriorityFactors.IMPORTANCE.items():
+                if v == importance:
+                    self.importance_var.set(f"{k} ({v})")
+                    break
+
+        urgency = get_default("urgency")
+        if urgency is not None:
+            for k, v in PriorityFactors.URGENCY.items():
+                if v == urgency:
+                    self.urgency_var.set(f"{k} ({v})")
+                    break
+
+        size = get_default("size")
+        if size is not None:
+            for k, v in PriorityFactors.SIZE.items():
+                if v == size:
+                    self.size_var.set(f"{k} ({v})")
+                    break
+
+        value = get_default("value")
+        if value is not None:
+            for k, v in PriorityFactors.VALUE.items():
+                if v == value:
+                    self.value_var.set(f"{k} ({v})")
+                    break
+
+        # Apply organization defaults
+        group = get_default("group")
+        if group:
+            self.group_var.set(group)
+
+        category = get_default("category")
+        if category:
+            self.category_var.set(category)
+
+        planned_minutes = get_default("planned_minutes")
+        if planned_minutes is not None:
+            self.planned_minutes_entry.delete(0, "end")
+            self.planned_minutes_entry.insert(0, str(planned_minutes))
+
+        self.update_priority_display()
+
+    def on_who_changed(self):
+        """Handle when Who field changes - re-apply defaults for fields that are empty."""
+        if self.item_id:
+            # Don't re-apply defaults when editing existing items
+            return
+
+        # Only re-apply to empty fields
+        current_importance = self.importance_var.get()
+        current_urgency = self.urgency_var.get()
+        current_size = self.size_var.get()
+        current_value = self.value_var.get()
+        current_group = self.group_var.get()
+        current_category = self.category_var.get()
+        current_planned = self.planned_minutes_entry.get()
+
+        # Get new who-specific defaults
+        who = self.who_var.get()
+        who_defaults = self.db_manager.get_defaults("who", who)
+        system_defaults = self.db_manager.get_defaults("system")
+
+        # Helper to get default value with precedence
+        def get_default(field_name):
+            if who_defaults:
+                val = getattr(who_defaults, field_name, None)
+                if val is not None:
+                    return val
+            if system_defaults:
+                val = getattr(system_defaults, field_name, None)
+                if val is not None:
+                    return val
+            return None
+
+        # Re-apply defaults only to empty fields
+        if not current_importance:
+            importance = get_default("importance")
+            if importance is not None:
+                for k, v in PriorityFactors.IMPORTANCE.items():
+                    if v == importance:
+                        self.importance_var.set(f"{k} ({v})")
+                        break
+
+        if not current_urgency:
+            urgency = get_default("urgency")
+            if urgency is not None:
+                for k, v in PriorityFactors.URGENCY.items():
+                    if v == urgency:
+                        self.urgency_var.set(f"{k} ({v})")
+                        break
+
+        if not current_size:
+            size = get_default("size")
+            if size is not None:
+                for k, v in PriorityFactors.SIZE.items():
+                    if v == size:
+                        self.size_var.set(f"{k} ({v})")
+                        break
+
+        if not current_value:
+            value = get_default("value")
+            if value is not None:
+                for k, v in PriorityFactors.VALUE.items():
+                    if v == value:
+                        self.value_var.set(f"{k} ({v})")
+                        break
+
+        if not current_group:
+            group = get_default("group")
+            if group:
+                self.group_var.set(group)
+
+        if not current_category:
+            category = get_default("category")
+            if category:
+                self.category_var.set(category)
+
+        if not current_planned:
+            planned_minutes = get_default("planned_minutes")
+            if planned_minutes is not None:
+                self.planned_minutes_entry.delete(0, "end")
+                self.planned_minutes_entry.insert(0, str(planned_minutes))
 
         self.update_priority_display()
 
