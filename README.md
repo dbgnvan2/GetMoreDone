@@ -5,13 +5,16 @@ A comprehensive Python task management application with GUI interface and SQLite
 ## Features
 
 ✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Size × Value
-📅 **Upcoming View** - See what's due in the next N days, grouped by date
-⚙️ **Intelligent Defaults** - System-wide and per-client default settings
+📅 **Upcoming View** - See what's due in the next N days, grouped by date with total time
+⚙️ **Intelligent Defaults** - System-wide and per-client default settings with date offsets
 📊 **Time Tracking** - Track planned vs actual time to improve estimates
 🗓️ **Time Blocks** - Plan your day with visual time block scheduling
 📈 **Statistics** - Analyze planned vs actual time with insights by size and category
 🔄 **Reschedule History** - Never lose track of why dates changed
 ✨ **7 Comprehensive Screens** - Upcoming, All Items, Plan, Completed, Defaults, Stats, Settings
+⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
+🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
+🖥️ **Responsive UI** - Two-column layout that adapts to window size
 
 ## Quick Start
 
