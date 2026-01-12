@@ -57,8 +57,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Main container frame
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        main_frame.grid_columnconfigure(0, weight=1)
-        main_frame.grid_columnconfigure(1, weight=1)
+        main_frame.grid_columnconfigure(0, weight=2)  # Left column wider (320px fields)
+        main_frame.grid_columnconfigure(1, weight=1)  # Right column narrower (180px fields)
         main_frame.grid_rowconfigure(0, weight=1)
 
         # Left column
@@ -126,9 +126,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
                                         command=lambda: self.set_date(self.start_date_entry, 0))
         btn_start_today.pack(side="left", padx=2)
 
-        btn_start_tomorrow = ctk.CTkButton(start_date_frame, text="+1", width=40,
-                                          command=lambda: self.set_date(self.start_date_entry, 1))
-        btn_start_tomorrow.pack(side="left", padx=2)
+        btn_start_minus = ctk.CTkButton(start_date_frame, text="-1", width=40,
+                                        command=lambda: self.adjust_date(self.start_date_entry, -1))
+        btn_start_minus.pack(side="left", padx=2)
+
+        btn_start_plus = ctk.CTkButton(start_date_frame, text="+1", width=40,
+                                       command=lambda: self.adjust_date(self.start_date_entry, 1))
+        btn_start_plus.pack(side="left", padx=2)
 
         btn_start_clear = ctk.CTkButton(start_date_frame, text="Clear", width=50,
                                        command=lambda: self.start_date_entry.delete(0, "end"))
@@ -148,9 +152,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
                                       command=lambda: self.set_date(self.due_date_entry, 0))
         btn_due_today.pack(side="left", padx=2)
 
-        btn_due_tomorrow = ctk.CTkButton(due_date_frame, text="+1", width=40,
-                                        command=lambda: self.set_date(self.due_date_entry, 1))
-        btn_due_tomorrow.pack(side="left", padx=2)
+        btn_due_minus = ctk.CTkButton(due_date_frame, text="-1", width=40,
+                                      command=lambda: self.adjust_date(self.due_date_entry, -1))
+        btn_due_minus.pack(side="left", padx=2)
+
+        btn_due_plus = ctk.CTkButton(due_date_frame, text="+1", width=40,
+                                     command=lambda: self.adjust_date(self.due_date_entry, 1))
+        btn_due_plus.pack(side="left", padx=2)
 
         btn_due_clear = ctk.CTkButton(due_date_frame, text="Clear", width=50,
                                       command=lambda: self.due_date_entry.delete(0, "end"))
@@ -349,6 +357,26 @@ class ItemEditorDialog(ctk.CTkToplevel):
         target_date = date.today() + timedelta(days=offset_days)
         entry_widget.delete(0, "end")
         entry_widget.insert(0, target_date.strftime("%Y-%m-%d"))
+
+    def adjust_date(self, entry_widget, days_delta: int):
+        """Add or subtract days from the current date in the field."""
+        from datetime import datetime, timedelta
+
+        current_text = entry_widget.get().strip()
+        if not current_text:
+            # If field is empty, use today as base
+            base_date = datetime.now().date()
+        else:
+            # Parse the current date
+            try:
+                base_date = datetime.strptime(current_text, "%Y-%m-%d").date()
+            except ValueError:
+                # If invalid format, use today
+                base_date = datetime.now().date()
+
+        new_date = base_date + timedelta(days=days_delta)
+        entry_widget.delete(0, "end")
+        entry_widget.insert(0, new_date.strftime("%Y-%m-%d"))
 
     def apply_defaults_to_form(self):
         """Apply system and who-specific defaults to form fields for new items."""
