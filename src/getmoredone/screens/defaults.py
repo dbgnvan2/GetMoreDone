@@ -1,0 +1,274 @@
+"""
+Defaults screen - manage system and who-specific defaults.
+"""
+
+import customtkinter as ctk
+from typing import Optional, TYPE_CHECKING
+
+from ..models import Defaults, PriorityFactors
+
+if TYPE_CHECKING:
+    from ..db_manager import DatabaseManager
+    from ..app import GetMoreDoneApp
+
+
+class DefaultsScreen(ctk.CTkFrame):
+    """Screen for managing default values."""
+
+    def __init__(self, parent, db_manager: 'DatabaseManager', app: 'GetMoreDoneApp'):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.app = app
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Create header
+        self.create_header()
+
+        # Create form area
+        self.create_form()
+
+        # Load system defaults
+        self.load_system_defaults()
+
+    def create_header(self):
+        """Create header."""
+        header = ctk.CTkFrame(self)
+        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+
+        title = ctk.CTkLabel(
+            header,
+            text="Defaults Configuration",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title.pack(side="left", padx=10, pady=10)
+
+    def create_form(self):
+        """Create form area."""
+        scroll = ctk.CTkScrollableFrame(self)
+        scroll.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        scroll.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
+        # Scope selector
+        ctk.CTkLabel(
+            scroll,
+            text="Defaults For:",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=row, column=0, sticky="w", padx=10, pady=(0, 5))
+        row += 1
+
+        scope_frame = ctk.CTkFrame(scroll)
+        scope_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        self.scope_var = ctk.StringVar(value="system")
+        ctk.CTkRadioButton(
+            scope_frame,
+            text="System Defaults",
+            variable=self.scope_var,
+            value="system",
+            command=self.on_scope_change
+        ).pack(side="left", padx=10)
+
+        ctk.CTkRadioButton(
+            scope_frame,
+            text="Who-specific:",
+            variable=self.scope_var,
+            value="who",
+            command=self.on_scope_change
+        ).pack(side="left", padx=10)
+
+        who_values = self.db_manager.get_distinct_who_values()
+        if not who_values:
+            who_values = ["Self"]
+
+        self.who_var = ctk.StringVar(value=who_values[0] if who_values else "Self")
+        self.who_combo = ctk.CTkComboBox(
+            scope_frame,
+            values=who_values,
+            variable=self.who_var,
+            width=150,
+            command=lambda _: self.load_defaults()
+        )
+        self.who_combo.pack(side="left", padx=5)
+
+        # Priority factors section
+        ctk.CTkLabel(
+            scroll,
+            text="Priority Factors",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        row += 1
+
+        # Importance
+        ctk.CTkLabel(scroll, text="Importance:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        importance_values = [""] + [f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
+        self.importance_var = ctk.StringVar(value="")
+        self.importance_combo = ctk.CTkComboBox(scroll, values=importance_values, variable=self.importance_var, width=200)
+        self.importance_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Urgency
+        ctk.CTkLabel(scroll, text="Urgency:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        urgency_values = [""] + [f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
+        self.urgency_var = ctk.StringVar(value="")
+        self.urgency_combo = ctk.CTkComboBox(scroll, values=urgency_values, variable=self.urgency_var, width=200)
+        self.urgency_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Size
+        ctk.CTkLabel(scroll, text="Size:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        size_values = [""] + [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
+        self.size_var = ctk.StringVar(value="")
+        self.size_combo = ctk.CTkComboBox(scroll, values=size_values, variable=self.size_var, width=200)
+        self.size_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Value
+        ctk.CTkLabel(scroll, text="Value:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        value_values = [""] + [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
+        self.value_var = ctk.StringVar(value="")
+        self.value_combo = ctk.CTkComboBox(scroll, values=value_values, variable=self.value_var, width=200)
+        self.value_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Organization section
+        ctk.CTkLabel(
+            scroll,
+            text="Organization",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        row += 1
+
+        # Group
+        ctk.CTkLabel(scroll, text="Group:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        self.group_entry = ctk.CTkEntry(scroll, width=200)
+        self.group_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Category
+        ctk.CTkLabel(scroll, text="Category:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        self.category_entry = ctk.CTkEntry(scroll, width=200)
+        self.category_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Planned minutes
+        ctk.CTkLabel(scroll, text="Planned Minutes:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        self.planned_minutes_entry = ctk.CTkEntry(scroll, width=100)
+        self.planned_minutes_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(scroll)
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+        row += 1
+
+        btn_save = ctk.CTkButton(btn_frame, text="Save Defaults", command=self.save_defaults)
+        btn_save.pack(side="left", padx=5)
+
+        btn_clear = ctk.CTkButton(btn_frame, text="Clear Form", command=self.clear_form)
+        btn_clear.pack(side="left", padx=5)
+
+        # Status label
+        self.status_label = ctk.CTkLabel(scroll, text="", text_color="green")
+        self.status_label.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+    def on_scope_change(self):
+        """Handle scope change."""
+        self.load_defaults()
+
+    def load_defaults(self):
+        """Load defaults based on current scope."""
+        self.clear_form()
+
+        scope_type = self.scope_var.get()
+        scope_key = self.who_var.get() if scope_type == "who" else None
+
+        defaults = self.db_manager.get_defaults(scope_type, scope_key)
+        if not defaults:
+            return
+
+        # Load values
+        if defaults.importance is not None:
+            for k, v in PriorityFactors.IMPORTANCE.items():
+                if v == defaults.importance:
+                    self.importance_var.set(f"{k} ({v})")
+                    break
+
+        if defaults.urgency is not None:
+            for k, v in PriorityFactors.URGENCY.items():
+                if v == defaults.urgency:
+                    self.urgency_var.set(f"{k} ({v})")
+                    break
+
+        if defaults.size is not None:
+            for k, v in PriorityFactors.SIZE.items():
+                if v == defaults.size:
+                    self.size_var.set(f"{k} ({v})")
+                    break
+
+        if defaults.value is not None:
+            for k, v in PriorityFactors.VALUE.items():
+                if v == defaults.value:
+                    self.value_var.set(f"{k} ({v})")
+                    break
+
+        if defaults.group:
+            self.group_entry.insert(0, defaults.group)
+
+        if defaults.category:
+            self.category_entry.insert(0, defaults.category)
+
+        if defaults.planned_minutes is not None:
+            self.planned_minutes_entry.insert(0, str(defaults.planned_minutes))
+
+    def load_system_defaults(self):
+        """Load system defaults initially."""
+        self.load_defaults()
+
+    def clear_form(self):
+        """Clear all form fields."""
+        self.importance_var.set("")
+        self.urgency_var.set("")
+        self.size_var.set("")
+        self.value_var.set("")
+        self.group_entry.delete(0, "end")
+        self.category_entry.delete(0, "end")
+        self.planned_minutes_entry.delete(0, "end")
+        self.status_label.configure(text="")
+
+    def extract_factor_value(self, text: str) -> Optional[int]:
+        """Extract numeric value from factor string."""
+        if not text:
+            return None
+        try:
+            return int(text.split("(")[1].split(")")[0])
+        except Exception:
+            return None
+
+    def save_defaults(self):
+        """Save defaults."""
+        try:
+            scope_type = self.scope_var.get()
+            scope_key = self.who_var.get() if scope_type == "who" else None
+
+            defaults = Defaults(
+                scope_type=scope_type,
+                scope_key=scope_key,
+                importance=self.extract_factor_value(self.importance_var.get()),
+                urgency=self.extract_factor_value(self.urgency_var.get()),
+                size=self.extract_factor_value(self.size_var.get()),
+                value=self.extract_factor_value(self.value_var.get()),
+                group=self.group_entry.get().strip() or None,
+                category=self.category_entry.get().strip() or None,
+                planned_minutes=int(self.planned_minutes_entry.get()) if self.planned_minutes_entry.get().strip() else None
+            )
+
+            self.db_manager.save_defaults(defaults)
+            self.status_label.configure(text="Defaults saved successfully!")
+
+        except Exception as e:
+            self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
