@@ -115,14 +115,46 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Start Date
         ctk.CTkLabel(left_col, text="Start Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.start_date_entry = ctk.CTkEntry(left_col, placeholder_text="YYYY-MM-DD", width=320)
-        self.start_date_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+
+        start_date_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        start_date_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+
+        self.start_date_entry = ctk.CTkEntry(start_date_frame, placeholder_text="YYYY-MM-DD", width=150)
+        self.start_date_entry.pack(side="left", padx=(0, 5))
+
+        btn_start_today = ctk.CTkButton(start_date_frame, text="Today", width=50,
+                                        command=lambda: self.set_date(self.start_date_entry, 0))
+        btn_start_today.pack(side="left", padx=2)
+
+        btn_start_tomorrow = ctk.CTkButton(start_date_frame, text="+1", width=40,
+                                          command=lambda: self.set_date(self.start_date_entry, 1))
+        btn_start_tomorrow.pack(side="left", padx=2)
+
+        btn_start_clear = ctk.CTkButton(start_date_frame, text="Clear", width=50,
+                                       command=lambda: self.start_date_entry.delete(0, "end"))
+        btn_start_clear.pack(side="left", padx=2)
         row_l += 1
 
         # Due Date
         ctk.CTkLabel(left_col, text="Due Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.due_date_entry = ctk.CTkEntry(left_col, placeholder_text="YYYY-MM-DD", width=320)
-        self.due_date_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+
+        due_date_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        due_date_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+
+        self.due_date_entry = ctk.CTkEntry(due_date_frame, placeholder_text="YYYY-MM-DD", width=150)
+        self.due_date_entry.pack(side="left", padx=(0, 5))
+
+        btn_due_today = ctk.CTkButton(due_date_frame, text="Today", width=50,
+                                      command=lambda: self.set_date(self.due_date_entry, 0))
+        btn_due_today.pack(side="left", padx=2)
+
+        btn_due_tomorrow = ctk.CTkButton(due_date_frame, text="+1", width=40,
+                                        command=lambda: self.set_date(self.due_date_entry, 1))
+        btn_due_tomorrow.pack(side="left", padx=2)
+
+        btn_due_clear = ctk.CTkButton(due_date_frame, text="Clear", width=50,
+                                      command=lambda: self.due_date_entry.delete(0, "end"))
+        btn_due_clear.pack(side="left", padx=2)
         row_l += 1
 
         # Organization Section
@@ -171,7 +203,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         importance_values = [f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
         self.importance_var = ctk.StringVar(value="")
         self.importance_combo = ctk.CTkComboBox(
-            right_col, values=importance_values, variable=self.importance_var, width=320,
+            right_col, values=importance_values, variable=self.importance_var, width=180,
             command=lambda _: self.update_priority_display()
         )
         self.importance_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
@@ -182,7 +214,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         urgency_values = [f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
         self.urgency_var = ctk.StringVar(value="")
         self.urgency_combo = ctk.CTkComboBox(
-            right_col, values=urgency_values, variable=self.urgency_var, width=320,
+            right_col, values=urgency_values, variable=self.urgency_var, width=180,
             command=lambda _: self.update_priority_display()
         )
         self.urgency_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
@@ -193,7 +225,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
         self.size_var = ctk.StringVar(value="")
         self.size_combo = ctk.CTkComboBox(
-            right_col, values=size_values, variable=self.size_var, width=320,
+            right_col, values=size_values, variable=self.size_var, width=180,
             command=lambda _: self.update_priority_display()
         )
         self.size_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
@@ -204,29 +236,28 @@ class ItemEditorDialog(ctk.CTkToplevel):
         value_values = [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
         self.value_var = ctk.StringVar(value="")
         self.value_combo = ctk.CTkComboBox(
-            right_col, values=value_values, variable=self.value_var, width=320,
+            right_col, values=value_values, variable=self.value_var, width=180,
             command=lambda _: self.update_priority_display()
         )
         self.value_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
         row_r += 1
 
-        # Priority Score Display
+        # Priority Score Display (more compact)
+        score_frame = ctk.CTkFrame(right_col, fg_color="gray25", corner_radius=8)
+        score_frame.grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+
         ctk.CTkLabel(
-            right_col,
-            text="Priority Score",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 10))
-        row_r += 1
+            score_frame,
+            text="Priority Score:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(side="left", padx=10, pady=8)
 
         self.priority_label = ctk.CTkLabel(
-            right_col,
-            text="Score: 0\n(0 × 0 × 0 × 0)",
-            font=ctk.CTkFont(size=14),
-            fg_color="gray25",
-            corner_radius=8,
-            height=60
+            score_frame,
+            text="0 (0×0×0×0)",
+            font=ctk.CTkFont(size=12)
         )
-        self.priority_label.grid(row=row_r, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.priority_label.pack(side="left", padx=10, pady=8)
         row_r += 1
 
         # === BOTTOM: Validation Errors ===
@@ -312,6 +343,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.update_priority_display()
 
+    def set_date(self, entry_widget, offset_days: int):
+        """Set date field to today + offset_days."""
+        from datetime import date, timedelta
+        target_date = date.today() + timedelta(days=offset_days)
+        entry_widget.delete(0, "end")
+        entry_widget.insert(0, target_date.strftime("%Y-%m-%d"))
+
     def apply_defaults_to_form(self):
         """Apply system and who-specific defaults to form fields for new items."""
         who = self.who_var.get()
@@ -374,6 +412,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if planned_minutes is not None:
             self.planned_minutes_entry.delete(0, "end")
             self.planned_minutes_entry.insert(0, str(planned_minutes))
+
+        # Apply date offsets if set
+        start_offset = get_default("start_offset_days")
+        if start_offset is not None:
+            self.set_date(self.start_date_entry, start_offset)
+
+        due_offset = get_default("due_offset_days")
+        if due_offset is not None:
+            self.set_date(self.due_date_entry, due_offset)
 
         self.update_priority_display()
 
@@ -457,6 +504,17 @@ class ItemEditorDialog(ctk.CTkToplevel):
             if planned_minutes is not None:
                 self.planned_minutes_entry.delete(0, "end")
                 self.planned_minutes_entry.insert(0, str(planned_minutes))
+
+        # Apply date offsets if dates are empty
+        if not self.start_date_entry.get():
+            start_offset = get_default("start_offset_days")
+            if start_offset is not None:
+                self.set_date(self.start_date_entry, start_offset)
+
+        if not self.due_date_entry.get():
+            due_offset = get_default("due_offset_days")
+            if due_offset is not None:
+                self.set_date(self.due_date_entry, due_offset)
 
         self.update_priority_display()
 
@@ -549,7 +607,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             score = importance * urgency * size * value
 
         self.priority_label.configure(
-            text=f"Score: {score}\n({importance} × {urgency} × {size} × {value})"
+            text=f"{score} ({importance}×{urgency}×{size}×{value})"
         )
 
     def on_resize(self, event):

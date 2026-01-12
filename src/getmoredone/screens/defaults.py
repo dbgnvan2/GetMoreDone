@@ -161,6 +161,32 @@ class DefaultsScreen(ctk.CTkFrame):
         self.planned_minutes_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
+        # Date Offsets Section
+        ctk.CTkLabel(
+            scroll,
+            text="Date Offsets (Days from Today)",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        row += 1
+
+        # Start Date Offset
+        ctk.CTkLabel(scroll, text="Start Date Offset:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        offset_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        offset_frame.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.start_offset_entry = ctk.CTkEntry(offset_frame, width=60, placeholder_text="0")
+        self.start_offset_entry.pack(side="left")
+        ctk.CTkLabel(offset_frame, text="(0=today, 1=tomorrow, etc.)", font=ctk.CTkFont(size=10)).pack(side="left", padx=5)
+        row += 1
+
+        # Due Date Offset
+        ctk.CTkLabel(scroll, text="Due Date Offset:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        due_offset_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        due_offset_frame.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        self.due_offset_entry = ctk.CTkEntry(due_offset_frame, width=60, placeholder_text="0")
+        self.due_offset_entry.pack(side="left")
+        ctk.CTkLabel(due_offset_frame, text="(0=today, 1=tomorrow, etc.)", font=ctk.CTkFont(size=10)).pack(side="left", padx=5)
+        row += 1
+
         # Buttons
         btn_frame = ctk.CTkFrame(scroll)
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
@@ -225,6 +251,12 @@ class DefaultsScreen(ctk.CTkFrame):
         if defaults.planned_minutes is not None:
             self.planned_minutes_entry.insert(0, str(defaults.planned_minutes))
 
+        if defaults.start_offset_days is not None:
+            self.start_offset_entry.insert(0, str(defaults.start_offset_days))
+
+        if defaults.due_offset_days is not None:
+            self.due_offset_entry.insert(0, str(defaults.due_offset_days))
+
     def load_system_defaults(self):
         """Load system defaults initially."""
         self.load_defaults()
@@ -238,6 +270,8 @@ class DefaultsScreen(ctk.CTkFrame):
         self.group_entry.delete(0, "end")
         self.category_entry.delete(0, "end")
         self.planned_minutes_entry.delete(0, "end")
+        self.start_offset_entry.delete(0, "end")
+        self.due_offset_entry.delete(0, "end")
         self.status_label.configure(text="")
 
     def extract_factor_value(self, text: str) -> Optional[int]:
@@ -255,6 +289,13 @@ class DefaultsScreen(ctk.CTkFrame):
             scope_type = self.scope_var.get()
             scope_key = self.who_var.get() if scope_type == "who" else None
 
+            # Parse date offsets
+            start_offset_text = self.start_offset_entry.get().strip()
+            start_offset = int(start_offset_text) if start_offset_text else None
+
+            due_offset_text = self.due_offset_entry.get().strip()
+            due_offset = int(due_offset_text) if due_offset_text else None
+
             defaults = Defaults(
                 scope_type=scope_type,
                 scope_key=scope_key,
@@ -264,7 +305,9 @@ class DefaultsScreen(ctk.CTkFrame):
                 value=self.extract_factor_value(self.value_var.get()),
                 group=self.group_entry.get().strip() or None,
                 category=self.category_entry.get().strip() or None,
-                planned_minutes=int(self.planned_minutes_entry.get()) if self.planned_minutes_entry.get().strip() else None
+                planned_minutes=int(self.planned_minutes_entry.get()) if self.planned_minutes_entry.get().strip() else None,
+                start_offset_days=start_offset,
+                due_offset_days=due_offset
             )
 
             self.db_manager.save_defaults(defaults)
