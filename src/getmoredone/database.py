@@ -47,11 +47,27 @@ class Database:
         """Create all tables and indexes if they don't exist."""
         conn = self.connect()
 
+        # Contacts table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS contacts (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                name            TEXT NOT NULL UNIQUE,
+                contact_type    TEXT CHECK(contact_type IN ('Client', 'Contact', 'Personal')) DEFAULT 'Contact',
+                email           TEXT,
+                phone           TEXT,
+                notes           TEXT,
+                is_active       INTEGER DEFAULT 1,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            )
+        """)
+
         # Action items table
         conn.execute("""
             CREATE TABLE IF NOT EXISTS action_items (
                 id               TEXT PRIMARY KEY,
-                who              TEXT NOT NULL,
+                who              TEXT,
+                contact_id       INTEGER REFERENCES contacts(id),
                 title            TEXT NOT NULL,
                 description      TEXT,
 
@@ -92,6 +108,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS defaults (
                 scope_type        TEXT NOT NULL,
                 scope_key         TEXT,
+                contact_id        INTEGER REFERENCES contacts(id),
 
                 importance        INTEGER,
                 urgency           INTEGER,
@@ -153,6 +170,16 @@ class Database:
 
         # Create indexes
         conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_contacts_name
+            ON contacts(name)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_contacts_active
+            ON contacts(is_active)
+        """)
+
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_items_status_due
             ON action_items(status, due_date)
         """)
@@ -160,6 +187,11 @@ class Database:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_items_who
             ON action_items(who)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_items_contact
+            ON action_items(contact_id)
         """)
 
         conn.execute("""
@@ -172,7 +204,36 @@ class Database:
             ON work_logs(item_id)
         """)
 
+        # Run migrations for existing databases
+        self._run_migrations(conn)
+
         conn.commit()
+
+    def _run_migrations(self, conn: sqlite3.Connection):
+        """Run migrations for existing databases."""
+        # Check if contact_id column exists in action_items
+        cursor = conn.execute("PRAGMA table_info(action_items)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'contact_id' not in columns:
+            # Add contact_id column to action_items
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN contact_id INTEGER REFERENCES contacts(id)
+            """)
+            # Make who nullable for existing items
+            # (SQLite doesn't support ALTER COLUMN, handled by new schema)
+
+        # Check if contact_id column exists in defaults
+        cursor = conn.execute("PRAGMA table_info(defaults)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'contact_id' not in columns:
+            # Add contact_id column to defaults
+            conn.execute("""
+                ALTER TABLE defaults
+                ADD COLUMN contact_id INTEGER REFERENCES contacts(id)
+            """)
 
     def __enter__(self):
         """Context manager entry."""

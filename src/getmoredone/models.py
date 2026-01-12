@@ -9,6 +9,21 @@ from uuid import uuid4
 
 
 @dataclass
+class Contact:
+    """Represents a contact/client."""
+
+    name: str
+    contact_type: str = "Contact"  # Client, Contact, or Personal
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: bool = True
+    id: Optional[int] = None  # None for new contacts, set by DB
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+@dataclass
 class ActionItem:
     """Represents a trackable action item."""
 
