@@ -330,6 +330,45 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.priority_label.pack(side="left", padx=10, pady=8)
         row_r += 1
 
+        # Obsidian Notes Section (only for existing items)
+        if self.item_id:
+            ctk.CTkLabel(
+                right_col,
+                text="Obsidian Notes",
+                font=ctk.CTkFont(size=14, weight="bold")
+            ).grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+            row_r += 1
+
+            # Notes list frame
+            self.notes_frame = ctk.CTkScrollableFrame(right_col, height=150)
+            self.notes_frame.grid(row=row_r, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+            self.notes_frame.grid_columnconfigure(0, weight=1)
+            row_r += 1
+
+            # Notes buttons
+            notes_btn_frame = ctk.CTkFrame(right_col, fg_color="transparent")
+            notes_btn_frame.grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+            btn_create_note = ctk.CTkButton(
+                notes_btn_frame,
+                text="+ Create Note",
+                width=110,
+                command=self.create_note
+            )
+            btn_create_note.pack(side="left", padx=2)
+
+            btn_link_note = ctk.CTkButton(
+                notes_btn_frame,
+                text="+ Link Note",
+                width=100,
+                command=self.link_existing_note
+            )
+            btn_link_note.pack(side="left", padx=2)
+            row_r += 1
+
+            # Load notes
+            self.load_notes()
+
         # === BUTTONS ===
         btn_frame = ctk.CTkFrame(self)
         btn_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
@@ -991,6 +1030,97 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Open set parent dialog
         SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
 
+    def load_notes(self):
+        """Load and display Obsidian notes for this item."""
+        if not self.item_id:
+            return
+
+        # Clear current notes
+        for widget in self.notes_frame.winfo_children():
+            widget.destroy()
+
+        # Get notes (obsidian_note type links)
+        links = self.db_manager.get_item_links(self.item_id)
+        notes = [link for link in links if link.link_type == "obsidian_note"]
+
+        if not notes:
+            ctk.CTkLabel(
+                self.notes_frame,
+                text="No notes yet",
+                text_color="gray"
+            ).pack(pady=10)
+            return
+
+        # Display each note
+        for note in notes:
+            self.create_note_row(note)
+
+    def create_note_row(self, note: ItemLink):
+        """Create a row for a note link."""
+        frame = ctk.CTkFrame(self.notes_frame)
+        frame.pack(fill="x", pady=2, padx=5)
+
+        # Note icon and label
+        label_text = note.label or "Untitled Note"
+        ctk.CTkLabel(frame, text=f"📝 {label_text}", anchor="w").pack(side="left", fill="x", expand=True, padx=5)
+
+        # Open button
+        btn_open = ctk.CTkButton(
+            frame,
+            text="Open",
+            width=60,
+            command=lambda: self.open_note(note)
+        )
+        btn_open.pack(side="left", padx=2)
+
+        # Delete button
+        btn_delete = ctk.CTkButton(
+            frame,
+            text="×",
+            width=30,
+            fg_color="darkred",
+            hover_color="red",
+            command=lambda: self.delete_note(note.id)
+        )
+        btn_delete.pack(side="left", padx=2)
+
+    def create_note(self):
+        """Open dialog to create a new Obsidian note."""
+        if not self.item_id:
+            return
+
+        CreateNoteDialog(self, self.db_manager, "action_item", self.item_id, self.item.title if self.item else "Item")
+
+    def link_existing_note(self):
+        """Open dialog to link an existing note file."""
+        if not self.item_id:
+            return
+
+        LinkNoteDialog(self, self.db_manager, "action_item", self.item_id)
+
+    def open_note(self, note: ItemLink):
+        """Open note in Obsidian."""
+        from ..app_settings import AppSettings
+        from ..obsidian_utils import open_in_obsidian
+
+        settings = AppSettings.load()
+
+        if not settings.obsidian_vault_path:
+            self.error_label.configure(text="Error: Obsidian vault not configured in Settings")
+            return
+
+        try:
+            open_in_obsidian(note.url, settings.obsidian_vault_path)
+        except Exception as e:
+            self.error_label.configure(text=f"Error opening note: {str(e)}")
+
+    def delete_note(self, note_id: str):
+        """Delete a note link."""
+        # Ask for confirmation
+        # For simplicity, just delete without confirmation for now
+        self.db_manager.delete_item_link(note_id)
+        self.load_notes()
+
 
 class ShowChildrenDialog(ctk.CTkToplevel):
     """Dialog for showing list of child items."""
@@ -1400,3 +1530,281 @@ class SetParentDialog(ctk.CTkToplevel):
         y = max(0, y)
 
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+
+class CreateNoteDialog(ctk.CTkToplevel):
+    """Dialog for creating a new Obsidian note."""
+
+    def __init__(self, parent, db_manager, entity_type: str, entity_id: str, entity_title: str):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.entity_title = entity_title
+        self.parent_window = parent
+
+        self.title(f"Create Note for: {entity_title}")
+        self.geometry("500x300")
+
+        self.create_form()
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+    def create_form(self):
+        """Create the form."""
+        main_frame = ctk.CTkFrame(self)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Note title
+        ctk.CTkLabel(main_frame, text="Note Title:").pack(pady=(0, 5))
+        self.title_var = ctk.StringVar(value=f"{self.entity_title} Notes")
+        self.title_entry = ctk.CTkEntry(main_frame, textvariable=self.title_var, width=400)
+        self.title_entry.pack(pady=(0, 15))
+
+        # Initial content (optional)
+        ctk.CTkLabel(main_frame, text="Initial Content (optional):").pack(pady=(0, 5))
+        self.content_text = ctk.CTkTextbox(main_frame, width=400, height=100)
+        self.content_text.pack(pady=(0, 15))
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        btn_frame.pack(pady=(10, 0))
+
+        btn_create = ctk.CTkButton(
+            btn_frame,
+            text="Create & Open",
+            command=self.create_note,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=120
+        )
+        btn_create.pack(side="left", padx=5)
+
+        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_cancel.pack(side="left", padx=5)
+
+        # Error label
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=400)
+        self.error_label.pack(pady=(10, 0))
+
+    def create_note(self):
+        """Create the note file and link it."""
+        from ..app_settings import AppSettings
+        from ..obsidian_utils import create_obsidian_note, open_in_obsidian
+        from ..models import ItemLink, ContactLink
+
+        title = self.title_var.get().strip()
+        if not title:
+            self.error_label.configure(text="Error: Note title is required")
+            return
+
+        content = self.content_text.get("1.0", "end-1c").strip()
+
+        # Load settings
+        settings = AppSettings.load()
+
+        if not settings.obsidian_vault_path:
+            self.error_label.configure(text="Error: Obsidian vault not configured in Settings")
+            return
+
+        try:
+            # Get additional metadata based on entity type
+            who = None
+            due_date = None
+            priority_score = None
+
+            if self.entity_type == "action_item":
+                item = self.db_manager.get_action_item(self.entity_id)
+                if item:
+                    who = item.who
+                    due_date = item.due_date
+                    priority_score = item.priority_score
+
+            # Create note file
+            file_path = create_obsidian_note(
+                vault_path=settings.obsidian_vault_path,
+                subfolder=settings.obsidian_notes_subfolder,
+                entity_type=self.entity_type,
+                entity_id=self.entity_id,
+                title=title,
+                initial_content=content,
+                who=who,
+                due_date=due_date,
+                priority_score=priority_score
+            )
+
+            # Create link in database
+            if self.entity_type == "action_item":
+                link = ItemLink(
+                    item_id=self.entity_id,
+                    url=file_path,
+                    label=title,
+                    link_type="obsidian_note"
+                )
+                self.db_manager.add_item_link(link)
+            elif self.entity_type == "contact":
+                link = ContactLink(
+                    contact_id=int(self.entity_id),
+                    url=file_path,
+                    label=title,
+                    link_type="obsidian_note"
+                )
+                self.db_manager.add_contact_link(link)
+
+            # Open in Obsidian
+            open_in_obsidian(file_path, settings.obsidian_vault_path)
+
+            # Close dialog and refresh parent
+            self.destroy()
+            if hasattr(self.parent_window, 'load_notes'):
+                self.parent_window.load_notes()
+
+        except Exception as e:
+            self.error_label.configure(text=f"Error: {str(e)}")
+
+
+class LinkNoteDialog(ctk.CTkToplevel):
+    """Dialog for linking an existing note file."""
+
+    def __init__(self, parent, db_manager, entity_type: str, entity_id: str):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.entity_type = entity_type
+        self.entity_id = entity_id
+        self.parent_window = parent
+
+        self.title("Link Existing Note")
+        self.geometry("500x250")
+
+        self.create_form()
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+    def create_form(self):
+        """Create the form."""
+        from tkinter import filedialog
+
+        main_frame = ctk.CTkFrame(self)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # File path
+        ctk.CTkLabel(main_frame, text="Note File Path:").pack(pady=(0, 5))
+
+        path_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        path_frame.pack(fill="x", pady=(0, 15))
+
+        self.path_var = ctk.StringVar()
+        self.path_entry = ctk.CTkEntry(path_frame, textvariable=self.path_var, width=350)
+        self.path_entry.pack(side="left", padx=(0, 5))
+
+        btn_browse = ctk.CTkButton(
+            path_frame,
+            text="Browse",
+            width=80,
+            command=self.browse_file
+        )
+        btn_browse.pack(side="left")
+
+        # Label
+        ctk.CTkLabel(main_frame, text="Display Label:").pack(pady=(0, 5))
+        self.label_var = ctk.StringVar()
+        self.label_entry = ctk.CTkEntry(main_frame, textvariable=self.label_var, width=400)
+        self.label_entry.pack(pady=(0, 15))
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        btn_frame.pack(pady=(10, 0))
+
+        btn_link = ctk.CTkButton(
+            btn_frame,
+            text="Link Note",
+            command=self.link_note,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=100
+        )
+        btn_link.pack(side="left", padx=5)
+
+        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_cancel.pack(side="left", padx=5)
+
+        # Error label
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=400)
+        self.error_label.pack(pady=(10, 0))
+
+    def browse_file(self):
+        """Browse for a markdown file."""
+        from ..app_settings import AppSettings
+        from pathlib import Path
+
+        settings = AppSettings.load()
+
+        # Start in vault folder if configured
+        initial_dir = None
+        if settings.obsidian_vault_path:
+            notes_folder = settings.get_notes_folder()
+            if notes_folder and notes_folder.exists():
+                initial_dir = str(notes_folder)
+            else:
+                initial_dir = settings.obsidian_vault_path
+
+        file_path = filedialog.askopenfilename(
+            title="Select Markdown Note",
+            initialdir=initial_dir,
+            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")]
+        )
+
+        if file_path:
+            self.path_var.set(file_path)
+
+            # Auto-fill label from filename if empty
+            if not self.label_var.get():
+                filename = Path(file_path).stem
+                self.label_var.set(filename)
+
+    def link_note(self):
+        """Link the note file."""
+        from ..models import ItemLink, ContactLink
+        from pathlib import Path
+
+        file_path = self.path_var.get().strip()
+        if not file_path:
+            self.error_label.configure(text="Error: File path is required")
+            return
+
+        # Validate file exists
+        if not Path(file_path).exists():
+            self.error_label.configure(text="Error: File does not exist")
+            return
+
+        label = self.label_var.get().strip() or Path(file_path).stem
+
+        try:
+            # Create link in database
+            if self.entity_type == "action_item":
+                link = ItemLink(
+                    item_id=self.entity_id,
+                    url=file_path,
+                    label=label,
+                    link_type="obsidian_note"
+                )
+                self.db_manager.add_item_link(link)
+            elif self.entity_type == "contact":
+                link = ContactLink(
+                    contact_id=int(self.entity_id),
+                    url=file_path,
+                    label=label,
+                    link_type="obsidian_note"
+                )
+                self.db_manager.add_contact_link(link)
+
+            # Close dialog and refresh parent
+            self.destroy()
+            if hasattr(self.parent_window, 'load_notes'):
+                self.parent_window.load_notes()
+
+        except Exception as e:
+            self.error_label.configure(text=f"Error: {str(e)}")
