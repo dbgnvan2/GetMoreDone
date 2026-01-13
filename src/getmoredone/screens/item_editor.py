@@ -1089,7 +1089,18 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if not self.item_id:
             return
 
-        CreateNoteDialog(self, self.db_manager, "action_item", self.item_id, self.item.title if self.item else "Item")
+        # Check if Obsidian is configured
+        from ..app_settings import AppSettings
+        settings = AppSettings.load()
+
+        if not settings.obsidian_vault_path:
+            self.error_label.configure(text="Error: Please configure Obsidian vault in Settings first")
+            return
+
+        try:
+            CreateNoteDialog(self, self.db_manager, "action_item", self.item_id, self.item.title if self.item else "Item")
+        except Exception as e:
+            self.error_label.configure(text=f"Error opening note dialog: {str(e)}")
 
     def link_existing_note(self):
         """Open dialog to link an existing note file."""
@@ -1551,6 +1562,13 @@ class CreateNoteDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
 
+        # Ensure dialog is visible and on top
+        self.lift()
+        self.focus_force()
+
+        # Center on parent
+        self.center_on_parent()
+
     def create_form(self):
         """Create the form."""
         main_frame = ctk.CTkFrame(self)
@@ -1662,6 +1680,30 @@ class CreateNoteDialog(ctk.CTkToplevel):
 
         except Exception as e:
             self.error_label.configure(text=f"Error: {str(e)}")
+
+    def center_on_parent(self):
+        """Center the dialog on the parent window."""
+        self.update_idletasks()
+
+        # Get dialog dimensions
+        dialog_width = 500
+        dialog_height = 300
+
+        # Get parent window position
+        parent_x = self.master.winfo_rootx()
+        parent_y = self.master.winfo_rooty()
+        parent_width = self.master.winfo_width()
+        parent_height = self.master.winfo_height()
+
+        # Calculate center position
+        x = parent_x + (parent_width - dialog_width) // 2
+        y = parent_y + (parent_height - dialog_height) // 2
+
+        # Ensure not off-screen
+        x = max(0, x)
+        y = max(0, y)
+
+        self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
 
 class LinkNoteDialog(ctk.CTkToplevel):
