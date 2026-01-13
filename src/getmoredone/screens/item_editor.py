@@ -354,6 +354,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_show_children = ctk.CTkButton(btn_frame, text="Show Children", command=self.show_children, width=110)
             btn_show_children.pack(side="left", padx=5)
 
+            btn_set_parent = ctk.CTkButton(btn_frame, text="Set Parent", command=self.set_parent, width=100)
+            btn_set_parent.pack(side="left", padx=5)
+
         # Error label in the center between buttons
         self.error_label = ctk.CTkLabel(btn_frame, text="", text_color="red", wraplength=600)
         self.error_label.pack(side="left", expand=True, padx=10)
@@ -980,6 +983,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Open children list dialog
         ShowChildrenDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
 
+    def set_parent(self):
+        """Open dialog to set/change the parent item."""
+        if not self.item_id:
+            return
+
+        # Open set parent dialog
+        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
+
 
 class ShowChildrenDialog(ctk.CTkToplevel):
     """Dialog for showing list of child items."""
@@ -1129,6 +1140,242 @@ class ShowChildrenDialog(ctk.CTkToplevel):
         self.destroy()
         # Open editor for the child
         ItemEditorDialog(self.master, self.db_manager, child_id)
+
+    def center_on_parent(self):
+        """Center the dialog on the parent window."""
+        self.update_idletasks()
+
+        # Get dialog dimensions
+        dialog_width = 900
+        dialog_height = 600
+
+        # Get parent window position
+        parent_x = self.master.winfo_rootx()
+        parent_y = self.master.winfo_rooty()
+        parent_width = self.master.winfo_width()
+        parent_height = self.master.winfo_height()
+
+        # Calculate center position
+        x = parent_x + (parent_width - dialog_width) // 2
+        y = parent_y + (parent_height - dialog_height) // 2
+
+        # Ensure not off-screen
+        x = max(0, x)
+        y = max(0, y)
+
+        self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+
+
+class SetParentDialog(ctk.CTkToplevel):
+    """Dialog for selecting a parent item."""
+
+    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_item_title: str):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.current_item_id = current_item_id
+        self.current_item_title = current_item_title
+        self.parent_dialog = parent
+
+        self.title(f"Set Parent for: {current_item_title}")
+        self.geometry("900x600")
+
+        # Create UI
+        self.create_ui()
+
+        # Load available parents
+        self.refresh()
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+        # Center on parent
+        self.center_on_parent()
+
+    def create_ui(self):
+        """Create the UI components."""
+        # Header
+        header_frame = ctk.CTkFrame(self)
+        header_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(
+            header_frame,
+            text=f"Select Parent for: {self.current_item_title}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(side="left", padx=10, pady=10)
+
+        # Scrollable frame for item list
+        self.scroll_frame = ctk.CTkScrollableFrame(self)
+        self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.scroll_frame.grid_columnconfigure(0, weight=1)
+
+        # Button frame
+        btn_frame = ctk.CTkFrame(self)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+
+        btn_close = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_close.pack(side="right", padx=5)
+
+    def refresh(self):
+        """Refresh the list of available parent items."""
+        # Clear current list
+        for widget in self.scroll_frame.winfo_children():
+            widget.destroy()
+
+        # Get all items
+        all_items = self.db_manager.get_all_items(sort_by="priority_score", sort_desc=True)
+
+        # Get descendants of current item (to prevent circular references)
+        descendants = self.db_manager.get_subtree(self.current_item_id)
+        descendant_ids = {item.id for item in descendants}
+
+        # Filter out current item and its descendants
+        available_items = [
+            item for item in all_items
+            if item.id != self.current_item_id and item.id not in descendant_ids
+        ]
+
+        # Create header row
+        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(header_frame, text="Title (Who)", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=0, sticky="w", padx=10, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Priority", width=70, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=1, padx=5, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Due Date", width=110, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=2, padx=5, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Status", width=80, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=3, padx=5, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Actions", width=100, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=4, padx=5, pady=5
+        )
+
+        # Add "No Parent" option as first row
+        row = 1
+        no_parent_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
+        no_parent_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+        no_parent_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            no_parent_frame,
+            text="[No Parent - Make this a root item]",
+            anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="lightblue"
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=5, columnspan=4)
+
+        btn_clear = ctk.CTkButton(
+            no_parent_frame,
+            text="Clear Parent",
+            width=100,
+            command=self.clear_parent,
+            fg_color="darkred",
+            hover_color="red"
+        )
+        btn_clear.grid(row=0, column=4, padx=5, pady=5)
+        row += 1
+
+        # Display each available item
+        if not available_items:
+            ctk.CTkLabel(
+                self.scroll_frame,
+                text="No available parent items found",
+                font=ctk.CTkFont(size=14)
+            ).grid(row=row, column=0, pady=20)
+            return
+
+        for item in available_items:
+            self.create_item_row(item, row)
+            row += 1
+
+    def create_item_row(self, item: ActionItem, row: int):
+        """Create a row for a potential parent item."""
+        frame = ctk.CTkFrame(self.scroll_frame)
+        frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+        frame.grid_columnconfigure(0, weight=1)
+
+        # Title and who
+        info_text = f"{item.title}"
+        if item.who:
+            info_text += f" ({item.who})"
+
+        title_label = ctk.CTkLabel(
+            frame,
+            text=info_text,
+            anchor="w",
+            font=ctk.CTkFont(size=12)
+        )
+        title_label.grid(row=0, column=0, sticky="w", padx=10, pady=5)
+
+        # Priority
+        priority_label = ctk.CTkLabel(
+            frame,
+            text=f"P:{item.priority_score}",
+            width=70,
+            fg_color="gray30"
+        )
+        priority_label.grid(row=0, column=1, padx=5, pady=5)
+
+        # Due date
+        due_text = item.due_date if item.due_date else "-"
+        due_label = ctk.CTkLabel(frame, text=due_text, width=110)
+        due_label.grid(row=0, column=2, padx=5, pady=5)
+
+        # Status
+        status_label = ctk.CTkLabel(
+            frame,
+            text=item.status.capitalize(),
+            width=80,
+            text_color="green" if item.status == "completed" else "white"
+        )
+        status_label.grid(row=0, column=3, padx=5, pady=5)
+
+        # Select button
+        btn_select = ctk.CTkButton(
+            frame,
+            text="Select",
+            width=100,
+            command=lambda: self.select_parent(item.id),
+            fg_color="darkgreen",
+            hover_color="green"
+        )
+        btn_select.grid(row=0, column=4, padx=5, pady=5)
+
+    def select_parent(self, parent_id: str):
+        """Set the selected item as parent."""
+        # Get the current item and update its parent_id
+        current_item = self.db_manager.get_action_item(self.current_item_id)
+        if current_item:
+            current_item.parent_id = parent_id
+            self.db_manager.update_action_item(current_item)
+
+        # Close this dialog
+        self.destroy()
+
+        # Close and reopen the parent editor to show updated parent info
+        self.parent_dialog.destroy()
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id)
+
+    def clear_parent(self):
+        """Clear the parent (make this a root item)."""
+        # Get the current item and clear its parent_id
+        current_item = self.db_manager.get_action_item(self.current_item_id)
+        if current_item:
+            current_item.parent_id = None
+            self.db_manager.update_action_item(current_item)
+
+        # Close this dialog
+        self.destroy()
+
+        # Close and reopen the parent editor to show updated parent info
+        self.parent_dialog.destroy()
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
