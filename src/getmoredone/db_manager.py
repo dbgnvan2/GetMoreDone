@@ -10,7 +10,7 @@ import sqlite3
 from .database import Database
 from .models import (
     ActionItem, ItemLink, Defaults, RescheduleHistory,
-    TimeBlock, WorkLog, Status
+    TimeBlock, WorkLog, Status, Contact
 )
 
 
@@ -55,13 +55,13 @@ class DatabaseManager:
 
         self.db.conn.execute("""
             INSERT INTO action_items (
-                id, who, title, description, start_date, due_date,
+                id, who, contact_id, title, description, start_date, due_date,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            item.id, item.who, item.title, item.description,
+            item.id, item.who, item.contact_id, item.title, item.description,
             item.start_date, item.due_date,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
@@ -90,7 +90,7 @@ class DatabaseManager:
 
         self.db.conn.execute("""
             UPDATE action_items SET
-                who = ?, title = ?, description = ?,
+                who = ?, contact_id = ?, title = ?, description = ?,
                 start_date = ?, due_date = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
@@ -98,7 +98,7 @@ class DatabaseManager:
                 updated_at = ?
             WHERE id = ?
         """, (
-            item.who, item.title, item.description,
+            item.who, item.contact_id, item.title, item.description,
             item.start_date, item.due_date,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
@@ -143,6 +143,7 @@ class DatabaseManager:
         # Create new item with same fields
         new_item = ActionItem(
             who=original.who,
+            contact_id=original.contact_id,
             title=original.title,
             description=original.description,
             start_date=original.start_date,
@@ -310,11 +311,11 @@ class DatabaseManager:
         """Save or update defaults."""
         self.db.conn.execute("""
             INSERT OR REPLACE INTO defaults (
-                scope_type, scope_key, importance, urgency, size, value,
+                scope_type, scope_key, contact_id, importance, urgency, size, value,
                 "group", category, planned_minutes, start_offset_days, due_offset_days
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            defaults.scope_type, defaults.scope_key,
+            defaults.scope_type, defaults.scope_key, defaults.contact_id,
             defaults.importance, defaults.urgency, defaults.size, defaults.value,
             defaults.group, defaults.category, defaults.planned_minutes,
             defaults.start_offset_days, defaults.due_offset_days
@@ -567,6 +568,122 @@ class DatabaseManager:
         ).fetchall()
         return [row["category"] for row in rows]
 
+    # ==================== CONTACTS ====================
+
+    def create_contact(self, contact: Contact) -> int:
+        """
+        Create a new contact.
+
+        Returns:
+            ID of created contact
+        """
+        contact.updated_at = datetime.utcnow().isoformat()
+
+        cursor = self.db.conn.execute("""
+            INSERT INTO contacts (
+                name, contact_type, email, phone, notes, is_active,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            contact.name, contact.contact_type, contact.email,
+            contact.phone, contact.notes, 1 if contact.is_active else 0,
+            contact.created_at, contact.updated_at
+        ))
+
+        self.db.conn.commit()
+        return cursor.lastrowid
+
+    def get_contact(self, contact_id: int) -> Optional[Contact]:
+        """Get contact by ID."""
+        row = self.db.conn.execute(
+            "SELECT * FROM contacts WHERE id = ?",
+            (contact_id,)
+        ).fetchone()
+
+        if row:
+            return self._row_to_contact(row)
+        return None
+
+    def get_contact_by_name(self, name: str) -> Optional[Contact]:
+        """Get contact by name (case-sensitive exact match)."""
+        row = self.db.conn.execute(
+            "SELECT * FROM contacts WHERE name = ?",
+            (name,)
+        ).fetchone()
+
+        if row:
+            return self._row_to_contact(row)
+        return None
+
+    def get_all_contacts(self, active_only: bool = True) -> List[Contact]:
+        """
+        Get all contacts.
+
+        Args:
+            active_only: If True, only return active contacts
+
+        Returns:
+            List of contacts sorted by name
+        """
+        query = "SELECT * FROM contacts"
+        if active_only:
+            query += " WHERE is_active = 1"
+        query += " ORDER BY name"
+
+        rows = self.db.conn.execute(query).fetchall()
+        return [self._row_to_contact(row) for row in rows]
+
+    def update_contact(self, contact: Contact):
+        """Update an existing contact."""
+        contact.updated_at = datetime.utcnow().isoformat()
+
+        self.db.conn.execute("""
+            UPDATE contacts SET
+                name = ?, contact_type = ?, email = ?, phone = ?,
+                notes = ?, is_active = ?, updated_at = ?
+            WHERE id = ?
+        """, (
+            contact.name, contact.contact_type, contact.email, contact.phone,
+            contact.notes, 1 if contact.is_active else 0,
+            contact.updated_at, contact.id
+        ))
+
+        self.db.conn.commit()
+
+    def delete_contact(self, contact_id: int):
+        """
+        Delete a contact.
+
+        Note: This will fail if there are action items referencing this contact
+        due to foreign key constraints. Consider marking as inactive instead.
+        """
+        self.db.conn.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+        self.db.conn.commit()
+
+    def deactivate_contact(self, contact_id: int):
+        """Mark a contact as inactive (soft delete)."""
+        self.db.conn.execute(
+            "UPDATE contacts SET is_active = 0, updated_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), contact_id)
+        )
+        self.db.conn.commit()
+
+    def search_contacts(self, search_text: str, active_only: bool = True) -> List[Contact]:
+        """Search contacts by name, email, or notes."""
+        query = """
+            SELECT * FROM contacts
+            WHERE (name LIKE ? OR email LIKE ? OR notes LIKE ?)
+        """
+        params = [f"%{search_text}%", f"%{search_text}%", f"%{search_text}%"]
+
+        if active_only:
+            query += " AND is_active = 1"
+
+        query += " ORDER BY name"
+
+        rows = self.db.conn.execute(query, params).fetchall()
+        return [self._row_to_contact(row) for row in rows]
+
     # ==================== ROW CONVERTERS ====================
 
     def _row_to_action_item(self, row: sqlite3.Row) -> ActionItem:
@@ -574,6 +691,7 @@ class DatabaseManager:
         return ActionItem(
             id=row["id"],
             who=row["who"],
+            contact_id=row["contact_id"],
             title=row["title"],
             description=row["description"],
             start_date=row["start_date"],
@@ -597,6 +715,7 @@ class DatabaseManager:
         return Defaults(
             scope_type=row["scope_type"],
             scope_key=row["scope_key"],
+            contact_id=row["contact_id"],
             importance=row["importance"],
             urgency=row["urgency"],
             size=row["size"],
@@ -642,4 +761,18 @@ class DatabaseManager:
             minutes=row["minutes"],
             note=row["note"],
             created_at=row["created_at"]
+        )
+
+    def _row_to_contact(self, row: sqlite3.Row) -> Contact:
+        """Convert database row to Contact."""
+        return Contact(
+            id=row["id"],
+            name=row["name"],
+            contact_type=row["contact_type"],
+            email=row["email"],
+            phone=row["phone"],
+            notes=row["notes"],
+            is_active=bool(row["is_active"]),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"]
         )

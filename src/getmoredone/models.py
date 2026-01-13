@@ -30,6 +30,7 @@ class ActionItem:
     who: str
     title: str
     description: Optional[str] = None
+    contact_id: Optional[int] = None  # References contacts.id
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     importance: Optional[int] = None
@@ -86,8 +87,9 @@ class ItemLink:
 class Defaults:
     """Represents default values for action item fields."""
 
-    scope_type: str  # "system" or "who"
+    scope_type: str  # "system", "who", or "contact"
     scope_key: Optional[str] = None  # None for system, who value for who-scope
+    contact_id: Optional[int] = None  # References contacts.id for contact-scope defaults
     importance: Optional[int] = None
     urgency: Optional[int] = None
     size: Optional[int] = None

@@ -190,11 +190,6 @@ class Database:
         """)
 
         conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_items_contact
-            ON action_items(contact_id)
-        """)
-
-        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_blocks_date
             ON time_blocks(block_date)
         """)
@@ -206,6 +201,12 @@ class Database:
 
         # Run migrations for existing databases
         self._run_migrations(conn)
+
+        # Create indexes for migrated columns (must happen after migrations)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_items_contact
+            ON action_items(contact_id)
+        """)
 
         conn.commit()
 
