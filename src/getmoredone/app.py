@@ -48,7 +48,7 @@ class GetMoreDoneApp(ctk.CTk):
         """Create navigation sidebar."""
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(9, weight=1)
+        self.sidebar.grid_rowconfigure(10, weight=1)
 
         # Logo/title
         self.logo_label = ctk.CTkLabel(
@@ -73,47 +73,54 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_all_items.grid(row=2, column=0, padx=20, pady=10)
 
+        self.btn_hierarchical = ctk.CTkButton(
+            self.sidebar,
+            text="Hierarchical",
+            command=self.show_hierarchical
+        )
+        self.btn_hierarchical.grid(row=3, column=0, padx=20, pady=10)
+
         self.btn_plan = ctk.CTkButton(
             self.sidebar,
             text="Plan",
             command=self.show_plan
         )
-        self.btn_plan.grid(row=3, column=0, padx=20, pady=10)
+        self.btn_plan.grid(row=4, column=0, padx=20, pady=10)
 
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
             command=self.show_completed
         )
-        self.btn_completed.grid(row=4, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=5, column=0, padx=20, pady=10)
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
             text="Contacts",
             command=self.show_contacts
         )
-        self.btn_contacts.grid(row=5, column=0, padx=20, pady=10)
+        self.btn_contacts.grid(row=6, column=0, padx=20, pady=10)
 
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
             command=self.show_defaults
         )
-        self.btn_defaults.grid(row=6, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=7, column=0, padx=20, pady=10)
 
         self.btn_stats = ctk.CTkButton(
             self.sidebar,
             text="Stats",
             command=self.show_stats
         )
-        self.btn_stats.grid(row=7, column=0, padx=20, pady=10)
+        self.btn_stats.grid(row=8, column=0, padx=20, pady=10)
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
             text="Settings",
             command=self.show_settings
         )
-        self.btn_settings.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=9, column=0, padx=20, pady=10)
 
     def clear_content(self):
         """Clear current screen from content area."""
@@ -133,6 +140,13 @@ class GetMoreDoneApp(ctk.CTk):
         from .screens.all_items import AllItemsScreen
         self.clear_content()
         self.current_screen = AllItemsScreen(self.content_frame, self.db_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_hierarchical(self):
+        """Show Hierarchical screen."""
+        from .screens.hierarchical import HierarchicalScreen
+        self.clear_content()
+        self.current_screen = HierarchicalScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_plan(self):

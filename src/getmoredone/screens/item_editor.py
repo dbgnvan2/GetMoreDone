@@ -77,6 +77,31 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # === LEFT COLUMN ===
         row_l = 0
 
+        # Parent Item Info (if this is a sub-item)
+        if self.item and self.item.parent_id:
+            parent_item = self.db_manager.get_action_item(self.item.parent_id)
+            if parent_item:
+                parent_frame = ctk.CTkFrame(left_col, fg_color="gray25", corner_radius=8)
+                parent_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=(5, 10))
+
+                ctk.CTkLabel(
+                    parent_frame,
+                    text=f"Sub-item of: {parent_item.title}",
+                    font=ctk.CTkFont(size=12),
+                    text_color="lightblue"
+                ).pack(side="left", padx=10, pady=5)
+
+                btn_view_parent = ctk.CTkButton(
+                    parent_frame,
+                    text="View Parent",
+                    width=80,
+                    height=24,
+                    command=lambda: self.view_parent_item(parent_item.id)
+                )
+                btn_view_parent.pack(side="right", padx=10, pady=5)
+
+                row_l += 1
+
         # Basic Info Section
         ctk.CTkLabel(
             left_col,
@@ -322,6 +347,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
             btn_complete = ctk.CTkButton(btn_frame, text="Complete", command=self.complete_item, width=100)
             btn_complete.pack(side="left", padx=5)
+
+            btn_create_sub = ctk.CTkButton(btn_frame, text="+ Create Sub-Item", command=self.create_sub_item, width=120)
+            btn_create_sub.pack(side="left", padx=5)
 
         # Error label in the center between buttons
         self.error_label = ctk.CTkLabel(btn_frame, text="", text_color="red", wraplength=600)
@@ -900,3 +928,32 @@ class ItemEditorDialog(ctk.CTkToplevel):
         y = max(0, y)
 
         self.geometry(f"+{x}+{y}")
+
+    def view_parent_item(self, parent_id: str):
+        """Open the parent item in a new editor dialog."""
+        self.destroy()
+        ItemEditorDialog(self.master, self.db_manager, parent_id)
+
+    def create_sub_item(self):
+        """Create a new sub-item linked to this item."""
+        if not self.item_id:
+            return
+
+        # Close this dialog and open a new one for the sub-item
+        # Create a new action item with parent_id set
+        from ..models import ActionItem
+
+        sub_item = ActionItem(
+            who=self.who_var.get(),
+            title="",
+            parent_id=self.item_id
+        )
+
+        # Save the sub-item
+        sub_item_id = self.db_manager.create_action_item(sub_item, apply_defaults=True)
+
+        # Close this dialog
+        self.destroy()
+
+        # Open editor for the new sub-item
+        ItemEditorDialog(self.master, self.db_manager, sub_item_id)

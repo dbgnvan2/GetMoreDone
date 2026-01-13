@@ -31,6 +31,7 @@ class ActionItem:
     title: str
     description: Optional[str] = None
     contact_id: Optional[int] = None  # References contacts.id
+    parent_id: Optional[str] = None  # References action_items.id for hierarchical relationships
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     importance: Optional[int] = None

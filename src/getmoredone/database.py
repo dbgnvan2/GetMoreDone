@@ -68,6 +68,7 @@ class Database:
                 id               TEXT PRIMARY KEY,
                 who              TEXT,
                 contact_id       INTEGER REFERENCES contacts(id),
+                parent_id        TEXT REFERENCES action_items(id) ON DELETE SET NULL,
                 title            TEXT NOT NULL,
                 description      TEXT,
 
@@ -208,6 +209,11 @@ class Database:
             ON action_items(contact_id)
         """)
 
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_items_parent
+            ON action_items(parent_id)
+        """)
+
         conn.commit()
 
     def _run_migrations(self, conn: sqlite3.Connection):
@@ -224,6 +230,13 @@ class Database:
             """)
             # Make who nullable for existing items
             # (SQLite doesn't support ALTER COLUMN, handled by new schema)
+
+        if 'parent_id' not in columns:
+            # Add parent_id column to action_items for hierarchical relationships
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN parent_id TEXT REFERENCES action_items(id) ON DELETE SET NULL
+            """)
 
         # Check if contact_id column exists in defaults
         cursor = conn.execute("PRAGMA table_info(defaults)")

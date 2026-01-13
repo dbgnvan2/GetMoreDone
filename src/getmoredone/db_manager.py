@@ -55,13 +55,13 @@ class DatabaseManager:
 
         self.db.conn.execute("""
             INSERT INTO action_items (
-                id, who, contact_id, title, description, start_date, due_date,
+                id, who, contact_id, parent_id, title, description, start_date, due_date,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            item.id, item.who, item.contact_id, item.title, item.description,
+            item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.start_date, item.due_date,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
@@ -90,7 +90,7 @@ class DatabaseManager:
 
         self.db.conn.execute("""
             UPDATE action_items SET
-                who = ?, contact_id = ?, title = ?, description = ?,
+                who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?,
                 start_date = ?, due_date = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
@@ -98,7 +98,7 @@ class DatabaseManager:
                 updated_at = ?
             WHERE id = ?
         """, (
-            item.who, item.contact_id, item.title, item.description,
+            item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.start_date, item.due_date,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
@@ -170,6 +170,72 @@ class DatabaseManager:
             return None
 
         return self.duplicate_action_item(item_id)
+
+    # ==================== HIERARCHICAL OPERATIONS ====================
+
+    def get_children(self, parent_id: str) -> List[ActionItem]:
+        """
+        Get direct children of a parent item.
+
+        Args:
+            parent_id: ID of the parent item
+
+        Returns:
+            List of child items sorted by priority_score descending
+        """
+        rows = self.db.conn.execute("""
+            SELECT * FROM action_items
+            WHERE parent_id = ?
+            ORDER BY priority_score DESC, created_at ASC
+        """, (parent_id,)).fetchall()
+
+        return [self._row_to_action_item(row) for row in rows]
+
+    def get_subtree(self, item_id: str) -> List[ActionItem]:
+        """
+        Get full subtree (all descendants) of an item.
+
+        Args:
+            item_id: ID of the root item
+
+        Returns:
+            List of all descendant items in breadth-first order
+        """
+        result = []
+        queue = [item_id]
+
+        while queue:
+            current_id = queue.pop(0)
+            children = self.get_children(current_id)
+            result.extend(children)
+            queue.extend([child.id for child in children])
+
+        return result
+
+    def get_root_items(self, status_filter: Optional[str] = None) -> List[ActionItem]:
+        """
+        Get all items that have no parent (root items).
+
+        Args:
+            status_filter: Optional status filter ('open', 'completed')
+
+        Returns:
+            List of root items sorted by priority_score descending
+        """
+        query = """
+            SELECT * FROM action_items
+            WHERE parent_id IS NULL
+        """
+        params = []
+
+        if status_filter:
+            query += " AND status = ?"
+            params.append(status_filter)
+
+        query += " ORDER BY priority_score DESC, created_at ASC"
+
+        rows = self.db.conn.execute(query, params).fetchall()
+        return [self._row_to_action_item(row) for row in rows]
 
     # ==================== QUERYING ====================
 
@@ -700,6 +766,7 @@ class DatabaseManager:
             id=row["id"],
             who=row["who"],
             contact_id=row["contact_id"],
+            parent_id=row["parent_id"],
             title=row["title"],
             description=row["description"],
             start_date=row["start_date"],
