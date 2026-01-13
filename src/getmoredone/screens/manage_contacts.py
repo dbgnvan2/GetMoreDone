@@ -91,26 +91,47 @@ class ManageContactsScreen(ctk.CTkFrame):
             )
             no_data.grid(row=0, column=0, pady=50)
         else:
-            # Create header row
+            # Create header row with fixed column widths
             header_frame = ctk.CTkFrame(self.scroll_frame)
             header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
-            header_frame.grid_columnconfigure(0, weight=2)
-            header_frame.grid_columnconfigure(1, weight=1)
-            header_frame.grid_columnconfigure(2, weight=2)
-            header_frame.grid_columnconfigure(3, weight=2)
 
-            ctk.CTkLabel(header_frame, text="Name", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=0, padx=10, pady=5, sticky="w"
-            )
-            ctk.CTkLabel(header_frame, text="Type", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=1, padx=10, pady=5, sticky="w"
-            )
-            ctk.CTkLabel(header_frame, text="Email", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=2, padx=10, pady=5, sticky="w"
-            )
-            ctk.CTkLabel(header_frame, text="Phone", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=3, padx=10, pady=5, sticky="w"
-            )
+            # Define column widths for alignment
+            col_widths = [300, 100, 200, 150]  # Name, Type, Email, Phone
+
+            ctk.CTkLabel(
+                header_frame,
+                text="Name",
+                font=ctk.CTkFont(weight="bold"),
+                width=col_widths[0],
+                anchor="w"
+            ).grid(row=0, column=0, padx=10, pady=5, sticky="w")
+
+            ctk.CTkLabel(
+                header_frame,
+                text="Type",
+                font=ctk.CTkFont(weight="bold"),
+                width=col_widths[1],
+                anchor="w"
+            ).grid(row=0, column=1, padx=10, pady=5, sticky="w")
+
+            ctk.CTkLabel(
+                header_frame,
+                text="Email",
+                font=ctk.CTkFont(weight="bold"),
+                width=col_widths[2],
+                anchor="w"
+            ).grid(row=0, column=2, padx=10, pady=5, sticky="w")
+
+            ctk.CTkLabel(
+                header_frame,
+                text="Phone",
+                font=ctk.CTkFont(weight="bold"),
+                width=col_widths[3],
+                anchor="w"
+            ).grid(row=0, column=3, padx=10, pady=5, sticky="w")
+
+            # Store column widths for data rows
+            self.col_widths = col_widths
 
             # Display each contact
             for idx, contact in enumerate(contacts, start=1):
@@ -120,10 +141,9 @@ class ManageContactsScreen(ctk.CTkFrame):
         """Create a row for a contact."""
         row = ctk.CTkFrame(self.scroll_frame)
         row.grid(row=row_idx, column=0, sticky="ew", pady=2)
-        row.grid_columnconfigure(0, weight=2)
-        row.grid_columnconfigure(1, weight=1)
-        row.grid_columnconfigure(2, weight=2)
-        row.grid_columnconfigure(3, weight=2)
+
+        # Use fixed column widths for alignment
+        col_widths = getattr(self, 'col_widths', [300, 100, 200, 150])
 
         # Make row clickable
         def on_click(event=None):
@@ -134,21 +154,37 @@ class ManageContactsScreen(ctk.CTkFrame):
             row,
             text=contact.name,
             cursor="hand2",
-            anchor="w"
+            anchor="w",
+            width=col_widths[0]
         )
         name_label.grid(row=0, column=0, padx=10, pady=8, sticky="w")
         name_label.bind("<Button-1>", on_click)
 
         # Type
-        type_label = ctk.CTkLabel(row, text=contact.contact_type or "", anchor="w")
+        type_label = ctk.CTkLabel(
+            row,
+            text=contact.contact_type or "",
+            anchor="w",
+            width=col_widths[1]
+        )
         type_label.grid(row=0, column=1, padx=10, pady=8, sticky="w")
 
         # Email
-        email_label = ctk.CTkLabel(row, text=contact.email or "", anchor="w")
+        email_label = ctk.CTkLabel(
+            row,
+            text=contact.email or "",
+            anchor="w",
+            width=col_widths[2]
+        )
         email_label.grid(row=0, column=2, padx=10, pady=8, sticky="w")
 
         # Phone
-        phone_label = ctk.CTkLabel(row, text=contact.phone or "", anchor="w")
+        phone_label = ctk.CTkLabel(
+            row,
+            text=contact.phone or "",
+            anchor="w",
+            width=col_widths[3]
+        )
         phone_label.grid(row=0, column=3, padx=10, pady=8, sticky="w")
 
         # Bind click event to entire row
