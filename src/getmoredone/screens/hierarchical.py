@@ -123,52 +123,30 @@ class HierarchicalScreen(ctk.CTkFrame):
     def create_item_row(self, item: ActionItem, indent_level: int) -> ctk.CTkFrame:
         """Create a row for an action item."""
         frame = ctk.CTkFrame(self.scroll_frame)
-        frame.grid_columnconfigure(1, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
 
-        # Indentation indicator
-        if indent_level > 0:
-            indicator_text = "└─ " if indent_level == 1 else "  " * (indent_level - 1) + "└─ "
-            ctk.CTkLabel(
-                frame,
-                text=indicator_text,
-                width=40,
-                font=ctk.CTkFont(family="Courier")
-            ).grid(row=0, column=0, padx=(5, 0), pady=5, sticky="w")
+        # Calculate left padding for indentation
+        indent_padding = (indent_level * 30, 5)
 
-        # Complete checkbox (only for open items)
-        if item.status == "open":
-            var = ctk.BooleanVar(value=False)
-            checkbox = ctk.CTkCheckBox(
-                frame,
-                text="",
-                variable=var,
-                width=30,
-                command=lambda: self.complete_item(item.id)
-            )
-            checkbox.grid(row=0, column=1, padx=5, pady=5)
-        else:
-            # Completed marker
-            ctk.CTkLabel(
-                frame,
-                text="✓",
-                width=30,
-                text_color="green"
-            ).grid(row=0, column=1, padx=5, pady=5)
-
-        # Title and info
+        # Title with indentation (left-aligned for main items, indented for children)
         info_text = f"{item.title}"
         if item.who:
             info_text += f" ({item.who})"
         if item.group:
             info_text += f" [{item.group}]"
 
+        # Add indentation indicator for child items
+        if indent_level > 0:
+            indicator = "└─ "
+            info_text = indicator + info_text
+
         title_label = ctk.CTkLabel(
             frame,
             text=info_text,
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=12, family="Courier" if indent_level > 0 else None),
             anchor="w"
         )
-        title_label.grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        title_label.grid(row=0, column=0, sticky="w", padx=indent_padding, pady=5)
 
         # Priority score
         score_label = ctk.CTkLabel(
@@ -177,16 +155,19 @@ class HierarchicalScreen(ctk.CTkFrame):
             width=60,
             fg_color="gray30"
         )
-        score_label.grid(row=0, column=3, padx=5, pady=5)
+        score_label.grid(row=0, column=1, padx=5, pady=5)
 
         # Due date
         if item.due_date:
             due_label = ctk.CTkLabel(
                 frame,
                 text=f"Due: {item.due_date}",
-                width=100
+                width=110
             )
-            due_label.grid(row=0, column=4, padx=5, pady=5)
+            due_label.grid(row=0, column=2, padx=5, pady=5)
+        else:
+            # Empty space to maintain alignment
+            ctk.CTkLabel(frame, text="", width=110).grid(row=0, column=2, padx=5, pady=5)
 
         # Child count
         children = self.db_manager.get_children(item.id)
@@ -194,19 +175,22 @@ class HierarchicalScreen(ctk.CTkFrame):
             child_count_label = ctk.CTkLabel(
                 frame,
                 text=f"({len(children)} sub)",
-                width=60,
+                width=70,
                 text_color="lightblue"
             )
-            child_count_label.grid(row=0, column=5, padx=5, pady=5)
+            child_count_label.grid(row=0, column=3, padx=5, pady=5)
+        else:
+            # Empty space to maintain alignment
+            ctk.CTkLabel(frame, text="", width=70).grid(row=0, column=3, padx=5, pady=5)
 
-        # Action buttons
+        # Edit button
         btn_edit = ctk.CTkButton(
             frame,
             text="Edit",
             width=60,
             command=lambda: self.edit_item(item.id)
         )
-        btn_edit.grid(row=0, column=6, padx=2, pady=5)
+        btn_edit.grid(row=0, column=4, padx=5, pady=5)
 
         return frame
 
