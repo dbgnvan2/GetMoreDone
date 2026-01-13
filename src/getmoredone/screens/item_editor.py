@@ -907,19 +907,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
-        # Wait for window to be mapped
-        self.update_idletasks()
+        # Schedule centering after dialog is fully rendered
+        self.after(10, self._do_center)
 
+    def _do_center(self):
+        """Actually perform the centering after dialog is rendered."""
         # Use fixed dimensions from geometry call
         dialog_width = 600
         dialog_height = 1000
 
-        # Ensure parent window has been rendered
-        self.master.update_idletasks()
+        # Force complete update of both windows
+        self.master.update()
+        self.update()
 
-        # Get parent window position and size
-        parent_x = self.master.winfo_x()
-        parent_y = self.master.winfo_y()
+        # Get parent window position and size using rootx/rooty for absolute screen coordinates
+        parent_x = self.master.winfo_rootx()
+        parent_y = self.master.winfo_rooty()
         parent_width = self.master.winfo_width()
         parent_height = self.master.winfo_height()
 
@@ -934,7 +937,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Set geometry with position
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
-        # Force update to apply the new position
+        # Final update to apply positioning
         self.update_idletasks()
 
     def view_parent_item(self, parent_id: str):
