@@ -669,17 +669,25 @@ class DatabaseManager:
         self.db.conn.commit()
 
     def search_contacts(self, search_text: str, active_only: bool = True) -> List[Contact]:
-        """Search contacts by name, email, or notes."""
+        """Search contacts by name, email, or notes (case-insensitive)."""
+        # Return empty list for empty search
+        if not search_text or not search_text.strip():
+            return []
+
         query = """
             SELECT * FROM contacts
-            WHERE (name LIKE ? OR email LIKE ? OR notes LIKE ?)
+            WHERE (name LIKE ? COLLATE NOCASE
+                   OR email LIKE ? COLLATE NOCASE
+                   OR notes LIKE ? COLLATE NOCASE
+                   OR phone LIKE ? COLLATE NOCASE)
         """
-        params = [f"%{search_text}%", f"%{search_text}%", f"%{search_text}%"]
+        search_pattern = f"%{search_text}%"
+        params = [search_pattern, search_pattern, search_pattern, search_pattern]
 
         if active_only:
             query += " AND is_active = 1"
 
-        query += " ORDER BY name"
+        query += " ORDER BY name COLLATE NOCASE"
 
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._row_to_contact(row) for row in rows]

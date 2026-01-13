@@ -106,12 +106,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.who_entry = ctk.CTkEntry(who_frame, textvariable=self.who_var, width=320)
         self.who_entry.pack()
         self.who_entry.bind('<KeyRelease>', self.on_who_search)
-        self.who_entry.bind('<FocusIn>', lambda e: self.show_contact_suggestions())
-        self.who_entry.bind('<FocusOut>', lambda e: self.after(200, self.hide_contact_suggestions))
+        self.who_entry.bind('<FocusIn>', lambda e: self.show_contact_suggestions_delayed())
 
         # Dropdown for contact suggestions
         self.contact_suggestions_frame = None
         self.selected_contact_id = None
+        self.suggestions_hide_job = None  # Track scheduled hide job
 
         # Try to auto-select contact if who name matches a contact
         if not self.item_id:
@@ -583,6 +583,11 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Handle typing in Who field - show matching contacts."""
         search_term = self.who_var.get().strip()
 
+        # Cancel any pending hide job
+        if self.suggestions_hide_job:
+            self.after_cancel(self.suggestions_hide_job)
+            self.suggestions_hide_job = None
+
         # Hide suggestions if field is empty
         if not search_term:
             self.hide_contact_suggestions()
@@ -592,13 +597,21 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Search contacts
         contacts = self.db_manager.search_contacts(search_term, active_only=True)
 
-        # Also check if exact match exists in distinct who values (for non-contact entries)
-        all_who = self.db_manager.get_distinct_who_values()
-
+        # Show suggestions
         self.show_contact_suggestions(contacts)
+
+    def show_contact_suggestions_delayed(self):
+        """Show all contacts after a small delay (for FocusIn event)."""
+        # Wait for widget to be rendered
+        self.after(50, lambda: self.show_contact_suggestions(None))
 
     def show_contact_suggestions(self, contacts=None):
         """Show dropdown with contact suggestions."""
+        # Cancel any pending hide job
+        if self.suggestions_hide_job:
+            self.after_cancel(self.suggestions_hide_job)
+            self.suggestions_hide_job = None
+
         # Hide existing suggestions
         self.hide_contact_suggestions()
 
@@ -609,13 +622,29 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if not contacts:
             return
 
-        # Create suggestions frame
-        self.contact_suggestions_frame = ctk.CTkFrame(self.who_entry.master, fg_color="gray20")
-        self.contact_suggestions_frame.place(
-            x=0,
-            y=self.who_entry.winfo_height(),
-            width=320
+        # Update widget to get accurate positioning
+        self.who_entry.update_idletasks()
+
+        # Get absolute position of who_entry
+        entry_x = self.who_entry.winfo_rootx() - self.winfo_rootx()
+        entry_y = self.who_entry.winfo_rooty() - self.winfo_rooty()
+        entry_height = self.who_entry.winfo_height()
+
+        # Create suggestions frame positioned below the entry
+        self.contact_suggestions_frame = ctk.CTkScrollableFrame(
+            self,
+            fg_color="gray20",
+            width=318,
+            height=min(len(contacts) * 35 + 10, 300)  # Max height of 300
         )
+        self.contact_suggestions_frame.place(
+            x=entry_x,
+            y=entry_y + entry_height + 2
+        )
+
+        # Bind events to prevent hiding when interacting with suggestions
+        self.contact_suggestions_frame.bind('<Enter>', lambda e: self.cancel_hide_suggestions())
+        self.contact_suggestions_frame.bind('<Leave>', lambda e: self.schedule_hide_suggestions())
 
         # Limit to 10 suggestions
         for idx, contact in enumerate(contacts[:10]):
@@ -625,15 +654,34 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 anchor="w",
                 fg_color="transparent",
                 hover_color="gray30",
+                height=30,
                 command=lambda c=contact: self.select_contact(c)
             )
             btn.pack(fill="x", padx=2, pady=1)
+
+        # Raise to top
+        self.contact_suggestions_frame.lift()
+
+    def cancel_hide_suggestions(self):
+        """Cancel scheduled hide of suggestions."""
+        if self.suggestions_hide_job:
+            self.after_cancel(self.suggestions_hide_job)
+            self.suggestions_hide_job = None
+
+    def schedule_hide_suggestions(self):
+        """Schedule hiding suggestions after a delay."""
+        if self.suggestions_hide_job:
+            self.after_cancel(self.suggestions_hide_job)
+        self.suggestions_hide_job = self.after(300, self.hide_contact_suggestions)
 
     def hide_contact_suggestions(self):
         """Hide contact suggestions dropdown."""
         if self.contact_suggestions_frame:
             self.contact_suggestions_frame.destroy()
             self.contact_suggestions_frame = None
+        if self.suggestions_hide_job:
+            self.after_cancel(self.suggestions_hide_job)
+            self.suggestions_hide_job = None
 
     def select_contact(self, contact):
         """Select a contact from the suggestions."""
