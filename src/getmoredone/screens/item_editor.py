@@ -30,13 +30,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Action Item")
 
-        self.geometry("1200x1100")
+        self.geometry("600x1200")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         # Bind resize event
         self.bind("<Configure>", self.on_resize)
-        self.last_width = 1100  # Track width for responsive layout
+        self.last_width = 600  # Track width for responsive layout
 
         # Create form
         self.create_form()
@@ -659,9 +659,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             y=entry_y + entry_height + 2
         )
 
-        # Bind events to prevent hiding when interacting with suggestions
-        self.contact_suggestions_frame.bind('<Enter>', lambda e: self.cancel_hide_suggestions())
-        self.contact_suggestions_frame.bind('<Leave>', lambda e: self.schedule_hide_suggestions())
+        # Bind click outside to hide dropdown
+        self.bind('<Button-1>', self.on_click_outside_dropdown, add='+')
 
         # Limit to 10 suggestions
         for idx, contact in enumerate(contacts[:10]):
@@ -699,6 +698,28 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if self.suggestions_hide_job:
             self.after_cancel(self.suggestions_hide_job)
             self.suggestions_hide_job = None
+
+    def on_click_outside_dropdown(self, event):
+        """Hide dropdown when clicking outside of it."""
+        if not self.contact_suggestions_frame:
+            return
+
+        # Get the widget that was clicked
+        clicked_widget = event.widget
+
+        # Check if click is inside the dropdown or the who_entry
+        if clicked_widget == self.who_entry or clicked_widget == self.contact_suggestions_frame:
+            return
+
+        # Check if clicked widget is a child of the dropdown
+        parent = clicked_widget
+        while parent:
+            if parent == self.contact_suggestions_frame:
+                return
+            parent = parent.master if hasattr(parent, 'master') else None
+
+        # Click was outside - hide the dropdown
+        self.hide_contact_suggestions()
 
     def select_contact(self, contact):
         """Select a contact from the suggestions."""
