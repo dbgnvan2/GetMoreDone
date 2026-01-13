@@ -30,7 +30,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Action Item")
 
-        self.geometry("1100x900")
+        self.geometry("1200x1100")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
