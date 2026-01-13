@@ -30,13 +30,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Action Item")
 
-        self.geometry("1100x700")
+        self.geometry("1100x900")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         # Bind resize event
         self.bind("<Configure>", self.on_resize)
-        self.last_width = 1100
+        self.last_width = 1100  # Track width for responsive layout
 
         # Create form
         self.create_form()
@@ -646,11 +646,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         entry_height = self.who_entry.winfo_height()
 
         # Create suggestions frame positioned below the entry
-        self.contact_suggestions_frame = ctk.CTkScrollableFrame(
+        # Use regular frame (not scrollable) since we limit to 10 items
+        # This prevents scrollbar interference with Title field navigation
+        self.contact_suggestions_frame = ctk.CTkFrame(
             self,
             fg_color="gray20",
             width=318,
-            height=min(len(contacts) * 35 + 10, 300)  # Max height of 300
+            height=min(len(contacts[:10]) * 35 + 10, 360)  # Height for up to 10 items
         )
         self.contact_suggestions_frame.place(
             x=entry_x,
