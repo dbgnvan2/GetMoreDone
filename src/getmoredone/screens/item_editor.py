@@ -106,7 +106,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.who_entry = ctk.CTkEntry(who_frame, textvariable=self.who_var, width=320)
         self.who_entry.pack()
         self.who_entry.bind('<KeyRelease>', self.on_who_search)
-        self.who_entry.bind('<FocusIn>', lambda e: self.show_contact_suggestions_delayed())
+        self.who_entry.bind('<Button-1>', self.on_who_click)  # Show on click
+        self.who_entry.bind('<Tab>', lambda e: self.hide_contact_suggestions())
+        self.who_entry.bind('<Escape>', lambda e: self.hide_contact_suggestions())
 
         # Dropdown for contact suggestions
         self.contact_suggestions_frame = None
@@ -579,6 +581,24 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.update_priority_display()
 
+    def on_who_click(self, event=None):
+        """Handle click in Who field - show all contacts if field is empty or has selection."""
+        # Wait a moment for click to complete
+        self.after(50, self._show_contacts_on_click)
+
+    def _show_contacts_on_click(self):
+        """Show contacts after click delay."""
+        current_text = self.who_var.get().strip()
+
+        # If field is empty or user clicked, show all contacts
+        if not current_text:
+            self.show_contact_suggestions(None)
+        else:
+            # Show filtered contacts if there's text
+            contacts = self.db_manager.search_contacts(current_text, active_only=True)
+            if contacts:
+                self.show_contact_suggestions(contacts)
+
     def on_who_search(self, event=None):
         """Handle typing in Who field - show matching contacts."""
         search_term = self.who_var.get().strip()
@@ -599,11 +619,6 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Show suggestions
         self.show_contact_suggestions(contacts)
-
-    def show_contact_suggestions_delayed(self):
-        """Show all contacts after a small delay (for FocusIn event)."""
-        # Wait for widget to be rendered
-        self.after(50, lambda: self.show_contact_suggestions(None))
 
     def show_contact_suggestions(self, contacts=None):
         """Show dropdown with contact suggestions."""
@@ -687,7 +702,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Select a contact from the suggestions."""
         self.who_var.set(contact.name)
         self.selected_contact_id = contact.id
+
+        # Hide suggestions immediately
         self.hide_contact_suggestions()
+
+        # Move focus to title field
+        self.after(50, lambda: self.title_entry.focus_set())
 
         # Re-apply defaults for this contact
         self.on_who_changed()
