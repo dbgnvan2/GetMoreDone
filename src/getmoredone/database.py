@@ -100,6 +100,19 @@ class Database:
                 item_id      TEXT NOT NULL REFERENCES action_items(id) ON DELETE CASCADE,
                 label        TEXT,
                 url          TEXT NOT NULL,
+                link_type    TEXT DEFAULT 'url',
+                created_at   TEXT NOT NULL
+            )
+        """)
+
+        # Contact links table (for Obsidian notes, etc.)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS contact_links (
+                id           TEXT PRIMARY KEY,
+                contact_id   INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+                label        TEXT,
+                url          TEXT NOT NULL,
+                link_type    TEXT DEFAULT 'url',
                 created_at   TEXT NOT NULL
             )
         """)
@@ -214,6 +227,11 @@ class Database:
             ON action_items(parent_id)
         """)
 
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_contact_links_contact
+            ON contact_links(contact_id)
+        """)
+
         conn.commit()
 
     def _run_migrations(self, conn: sqlite3.Connection):
@@ -247,6 +265,17 @@ class Database:
             conn.execute("""
                 ALTER TABLE defaults
                 ADD COLUMN contact_id INTEGER REFERENCES contacts(id)
+            """)
+
+        # Check if link_type column exists in item_links
+        cursor = conn.execute("PRAGMA table_info(item_links)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'link_type' not in columns:
+            # Add link_type column to item_links
+            conn.execute("""
+                ALTER TABLE item_links
+                ADD COLUMN link_type TEXT DEFAULT 'url'
             """)
 
     def __enter__(self):

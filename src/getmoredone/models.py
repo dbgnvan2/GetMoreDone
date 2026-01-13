@@ -80,6 +80,19 @@ class ItemLink:
     item_id: str
     url: str
     label: Optional[str] = None
+    link_type: str = "url"  # "url", "file", "obsidian_note"
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
+
+@dataclass
+class ContactLink:
+    """Represents a link/attachment on a contact."""
+
+    contact_id: int
+    url: str
+    label: Optional[str] = None
+    link_type: str = "url"  # "url", "file", "obsidian_note"
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 

@@ -9,7 +9,7 @@ import sqlite3
 
 from .database import Database
 from .models import (
-    ActionItem, ItemLink, Defaults, RescheduleHistory,
+    ActionItem, ItemLink, ContactLink, Defaults, RescheduleHistory,
     TimeBlock, WorkLog, Status, Contact
 )
 
@@ -491,9 +491,9 @@ class DatabaseManager:
     def add_item_link(self, link: ItemLink):
         """Add a link to an action item."""
         self.db.conn.execute("""
-            INSERT INTO item_links (id, item_id, label, url, created_at)
-            VALUES (?, ?, ?, ?, ?)
-        """, (link.id, link.item_id, link.label, link.url, link.created_at))
+            INSERT INTO item_links (id, item_id, label, url, link_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (link.id, link.item_id, link.label, link.url, link.link_type, link.created_at))
         self.db.conn.commit()
 
     def get_item_links(self, item_id: str) -> List[ItemLink]:
@@ -758,6 +758,29 @@ class DatabaseManager:
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._row_to_contact(row) for row in rows]
 
+    # ==================== CONTACT LINKS ====================
+
+    def add_contact_link(self, link: ContactLink):
+        """Add a link to a contact."""
+        self.db.conn.execute("""
+            INSERT INTO contact_links (id, contact_id, label, url, link_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (link.id, link.contact_id, link.label, link.url, link.link_type, link.created_at))
+        self.db.conn.commit()
+
+    def get_contact_links(self, contact_id: int) -> List[ContactLink]:
+        """Get all links for a contact."""
+        rows = self.db.conn.execute(
+            "SELECT * FROM contact_links WHERE contact_id = ? ORDER BY created_at",
+            (contact_id,)
+        ).fetchall()
+        return [self._row_to_contact_link(row) for row in rows]
+
+    def delete_contact_link(self, link_id: str):
+        """Delete a contact link."""
+        self.db.conn.execute("DELETE FROM contact_links WHERE id = ?", (link_id,))
+        self.db.conn.commit()
+
     # ==================== ROW CONVERTERS ====================
 
     def _row_to_action_item(self, row: sqlite3.Row) -> ActionItem:
@@ -809,6 +832,18 @@ class DatabaseManager:
             item_id=row["item_id"],
             label=row["label"],
             url=row["url"],
+            link_type=row.get("link_type", "url"),  # Default for existing rows
+            created_at=row["created_at"]
+        )
+
+    def _row_to_contact_link(self, row: sqlite3.Row) -> ContactLink:
+        """Convert database row to ContactLink."""
+        return ContactLink(
+            id=row["id"],
+            contact_id=row["contact_id"],
+            label=row["label"],
+            url=row["url"],
+            link_type=row.get("link_type", "url"),
             created_at=row["created_at"]
         )
 
