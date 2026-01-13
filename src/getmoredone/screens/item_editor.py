@@ -302,10 +302,6 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.priority_label.pack(side="left", padx=10, pady=8)
         row_r += 1
 
-        # === BOTTOM: Validation Errors ===
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=1000)
-        self.error_label.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 0))
-
         # === BUTTONS ===
         btn_frame = ctk.CTkFrame(self)
         btn_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
@@ -323,6 +319,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
             btn_complete = ctk.CTkButton(btn_frame, text="Complete", command=self.complete_item, width=100)
             btn_complete.pack(side="left", padx=5)
+
+        # Error label in the center between buttons
+        self.error_label = ctk.CTkLabel(btn_frame, text="", text_color="red", wraplength=600)
+        self.error_label.pack(side="left", expand=True, padx=10)
 
         btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="right", padx=5)
@@ -715,6 +715,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
     def add_new_contact(self):
         """Open dialog to add a new contact and select it."""
         from .edit_contact import EditContactDialog
+
+        # Hide dropdown before opening dialog
+        self.hide_contact_suggestions()
 
         # Get current text as suggested name
         suggested_name = self.who_var.get().strip()
