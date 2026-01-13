@@ -52,6 +52,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
 
+        # Center on parent window
+        self.center_on_parent()
+
     def create_form(self):
         """Create the form layout with responsive two-column design."""
         # Main container frame
@@ -873,3 +876,27 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Two column layout
             self.left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=0)
             self.right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
+
+    def center_on_parent(self):
+        """Center the dialog on the parent window."""
+        self.update_idletasks()
+
+        # Get dialog dimensions
+        dialog_width = self.winfo_width()
+        dialog_height = self.winfo_height()
+
+        # Get parent window position and size
+        parent_x = self.master.winfo_x()
+        parent_y = self.master.winfo_y()
+        parent_width = self.master.winfo_width()
+        parent_height = self.master.winfo_height()
+
+        # Calculate center position
+        x = parent_x + (parent_width - dialog_width) // 2
+        y = parent_y + (parent_height - dialog_height) // 2
+
+        # Ensure dialog is not positioned off-screen
+        x = max(0, x)
+        y = max(0, y)
+
+        self.geometry(f"+{x}+{y}")

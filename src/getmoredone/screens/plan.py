@@ -246,6 +246,10 @@ class AddTimeBlockDialog(ctk.CTkToplevel):
         btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy)
         btn_cancel.pack(side="left", padx=5)
 
+        # Error label
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red")
+        self.error_label.pack(pady=(10, 0))
+
     def save(self):
         """Save time block."""
         try:
@@ -253,10 +257,27 @@ class AddTimeBlockDialog(ctk.CTkToplevel):
             end_time = self.end_entry.get().strip()
             label = self.label_entry.get().strip() or None
 
+            # Validate inputs
+            if not start_time:
+                self.error_label.configure(text="Error: Start time is required")
+                return
+            if not end_time:
+                self.error_label.configure(text="Error: End time is required")
+                return
+
+            # Validate time format
+            if ":" not in start_time or ":" not in end_time:
+                self.error_label.configure(text="Error: Time must be in HH:MM format")
+                return
+
             # Calculate minutes
             start_hour, start_min = map(int, start_time.split(":"))
             end_hour, end_min = map(int, end_time.split(":"))
             minutes = (end_hour * 60 + end_min) - (start_hour * 60 + start_min)
+
+            if minutes <= 0:
+                self.error_label.configure(text="Error: End time must be after start time")
+                return
 
             block = TimeBlock(
                 block_date=self.block_date,
@@ -269,5 +290,7 @@ class AddTimeBlockDialog(ctk.CTkToplevel):
             self.db_manager.create_time_block(block)
             self.destroy()
 
+        except ValueError as e:
+            self.error_label.configure(text=f"Error: Invalid time format - use HH:MM")
         except Exception as e:
-            print(f"Error: {e}")
+            self.error_label.configure(text=f"Error: {str(e)}")

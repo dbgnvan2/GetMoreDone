@@ -172,6 +172,24 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
+        # Group
+        group_label = ctk.CTkLabel(
+            frame,
+            text=item.group or "",
+            width=80,
+            anchor="w"
+        )
+        group_label.grid(row=0, column=2, padx=5, pady=5)
+
+        # Category
+        category_label = ctk.CTkLabel(
+            frame,
+            text=item.category or "",
+            width=80,
+            anchor="w"
+        )
+        category_label.grid(row=0, column=3, padx=5, pady=5)
+
         # Priority score
         score_label = ctk.CTkLabel(
             frame,
@@ -179,11 +197,11 @@ class UpcomingScreen(ctk.CTkFrame):
             width=60,
             fg_color="gray30"
         )
-        score_label.grid(row=0, column=2, padx=5, pady=5)
+        score_label.grid(row=0, column=4, padx=5, pady=5)
 
         # Factor chips
         factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        factors_frame.grid(row=0, column=3, padx=5, pady=5)
+        factors_frame.grid(row=0, column=5, padx=5, pady=5)
 
         col = 0
         if item.importance:
@@ -206,7 +224,7 @@ class UpcomingScreen(ctk.CTkFrame):
                 text=f"{item.planned_minutes}m",
                 width=50
             )
-            minutes_label.grid(row=0, column=4, padx=5, pady=5)
+            minutes_label.grid(row=0, column=6, padx=5, pady=5)
 
         # Action buttons
         btn_edit = ctk.CTkButton(
@@ -215,7 +233,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=60,
             command=lambda: self.edit_item(item.id)
         )
-        btn_edit.grid(row=0, column=5, padx=2, pady=5)
+        btn_edit.grid(row=0, column=7, padx=2, pady=5)
 
         btn_reschedule = ctk.CTkButton(
             frame,
@@ -223,7 +241,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=80,
             command=lambda: self.reschedule_item(item.id)
         )
-        btn_reschedule.grid(row=0, column=6, padx=2, pady=5)
+        btn_reschedule.grid(row=0, column=8, padx=2, pady=5)
 
         return frame
 
