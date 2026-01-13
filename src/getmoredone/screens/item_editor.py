@@ -1673,11 +1673,13 @@ class LinkNoteDialog(ctk.CTkToplevel):
         self.entity_type = entity_type
         self.entity_id = entity_id
         self.parent_window = parent
+        self.available_notes = []
 
         self.title("Link Existing Note")
-        self.geometry("500x250")
+        self.geometry("600x500")
 
         self.create_form()
+        self.load_available_notes()
 
         # Make dialog modal
         self.transient(parent)
@@ -1685,102 +1687,155 @@ class LinkNoteDialog(ctk.CTkToplevel):
 
     def create_form(self):
         """Create the form."""
-        from tkinter import filedialog
-
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # File path
-        ctk.CTkLabel(main_frame, text="Note File Path:").pack(pady=(0, 5))
+        # Search/filter by note title
+        ctk.CTkLabel(main_frame, text="Search Note Title:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(0, 5))
 
-        path_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        path_frame.pack(fill="x", pady=(0, 15))
+        self.search_var = ctk.StringVar()
+        self.search_var.trace_add('write', lambda *args: self.filter_notes())
+        self.search_entry = ctk.CTkEntry(main_frame, textvariable=self.search_var, width=500, placeholder_text="Type to search...")
+        self.search_entry.pack(pady=(0, 10))
 
-        self.path_var = ctk.StringVar()
-        self.path_entry = ctk.CTkEntry(path_frame, textvariable=self.path_var, width=350)
-        self.path_entry.pack(side="left", padx=(0, 5))
-
-        btn_browse = ctk.CTkButton(
-            path_frame,
-            text="Browse",
-            width=80,
-            command=self.browse_file
-        )
-        btn_browse.pack(side="left")
-
-        # Label
-        ctk.CTkLabel(main_frame, text="Display Label:").pack(pady=(0, 5))
+        # Display label
+        ctk.CTkLabel(main_frame, text="Display Label (optional):").pack(pady=(0, 5))
         self.label_var = ctk.StringVar()
-        self.label_entry = ctk.CTkEntry(main_frame, textvariable=self.label_var, width=400)
+        self.label_entry = ctk.CTkEntry(main_frame, textvariable=self.label_var, width=500)
         self.label_entry.pack(pady=(0, 15))
+
+        # Available notes list
+        ctk.CTkLabel(main_frame, text="Available Notes:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(0, 5))
+
+        self.notes_frame = ctk.CTkScrollableFrame(main_frame, height=200)
+        self.notes_frame.pack(fill="both", expand=True, pady=(0, 15))
+        self.notes_frame.grid_columnconfigure(0, weight=1)
 
         # Buttons
         btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
         btn_frame.pack(pady=(10, 0))
 
-        btn_link = ctk.CTkButton(
+        btn_browse = ctk.CTkButton(
             btn_frame,
-            text="Link Note",
-            command=self.link_note,
-            fg_color="darkgreen",
-            hover_color="green",
-            width=100
+            text="Browse Files...",
+            command=self.browse_file,
+            width=120
         )
-        btn_link.pack(side="left", padx=5)
+        btn_browse.pack(side="left", padx=5)
 
         btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="left", padx=5)
 
         # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=400)
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=500)
         self.error_label.pack(pady=(10, 0))
 
-    def browse_file(self):
-        """Browse for a markdown file."""
+    def load_available_notes(self):
+        """Load all markdown files from vault."""
         from ..app_settings import AppSettings
         from pathlib import Path
 
         settings = AppSettings.load()
 
-        # Start in vault folder if configured
-        initial_dir = None
-        if settings.obsidian_vault_path:
-            notes_folder = settings.get_notes_folder()
-            if notes_folder and notes_folder.exists():
-                initial_dir = str(notes_folder)
-            else:
-                initial_dir = settings.obsidian_vault_path
+        if not settings.obsidian_vault_path:
+            self.error_label.configure(text="Error: Obsidian vault not configured in Settings")
+            return
 
-        file_path = filedialog.askopenfilename(
-            title="Select Markdown Note",
-            initialdir=initial_dir,
-            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")]
+        vault_path = Path(settings.obsidian_vault_path)
+        if not vault_path.exists():
+            self.error_label.configure(text="Error: Vault path does not exist")
+            return
+
+        notes_folder = settings.get_notes_folder()
+        if notes_folder and notes_folder.exists():
+            search_path = notes_folder
+        else:
+            search_path = vault_path
+
+        # Find all .md files
+        try:
+            self.available_notes = []
+            for md_file in search_path.rglob("*.md"):
+                self.available_notes.append({
+                    'path': str(md_file),
+                    'title': md_file.stem,
+                    'relative': str(md_file.relative_to(vault_path))
+                })
+
+            # Sort by title
+            self.available_notes.sort(key=lambda x: x['title'].lower())
+
+            # Display notes
+            self.filter_notes()
+
+        except Exception as e:
+            self.error_label.configure(text=f"Error loading notes: {str(e)}")
+
+    def filter_notes(self):
+        """Filter notes based on search text."""
+        # Clear current list
+        for widget in self.notes_frame.winfo_children():
+            widget.destroy()
+
+        search_text = self.search_var.get().lower()
+
+        # Filter notes
+        filtered = [n for n in self.available_notes if search_text in n['title'].lower()]
+
+        if not filtered:
+            ctk.CTkLabel(
+                self.notes_frame,
+                text="No notes found" if search_text else "No notes in vault",
+                text_color="gray"
+            ).pack(pady=20)
+            return
+
+        # Display filtered notes
+        for note in filtered[:50]:  # Limit to 50 results
+            self.create_note_row(note)
+
+    def create_note_row(self, note: dict):
+        """Create a row for a note."""
+        frame = ctk.CTkFrame(self.notes_frame)
+        frame.pack(fill="x", pady=2, padx=5)
+
+        # Note info
+        info_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        info_frame.pack(side="left", fill="x", expand=True)
+
+        ctk.CTkLabel(
+            info_frame,
+            text=note['title'],
+            anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", padx=5)
+
+        ctk.CTkLabel(
+            info_frame,
+            text=note['relative'],
+            anchor="w",
+            font=ctk.CTkFont(size=10),
+            text_color="gray"
+        ).pack(anchor="w", padx=5)
+
+        # Select button
+        btn_select = ctk.CTkButton(
+            frame,
+            text="Link This",
+            width=80,
+            command=lambda: self.link_note_file(note['path'], note['title']),
+            fg_color="darkgreen",
+            hover_color="green"
         )
+        btn_select.pack(side="right", padx=5)
 
-        if file_path:
-            self.path_var.set(file_path)
-
-            # Auto-fill label from filename if empty
-            if not self.label_var.get():
-                filename = Path(file_path).stem
-                self.label_var.set(filename)
-
-    def link_note(self):
-        """Link the note file."""
+    def link_note_file(self, file_path: str, default_label: str):
+        """Link the selected note file."""
         from ..models import ItemLink, ContactLink
         from pathlib import Path
 
-        file_path = self.path_var.get().strip()
-        if not file_path:
-            self.error_label.configure(text="Error: File path is required")
-            return
-
-        # Validate file exists
-        if not Path(file_path).exists():
-            self.error_label.configure(text="Error: File does not exist")
-            return
-
-        label = self.label_var.get().strip() or Path(file_path).stem
+        # Get label (use custom if provided, otherwise use note title)
+        label = self.label_var.get().strip() or default_label
 
         try:
             # Create link in database
@@ -1808,3 +1863,33 @@ class LinkNoteDialog(ctk.CTkToplevel):
 
         except Exception as e:
             self.error_label.configure(text=f"Error: {str(e)}")
+
+    def browse_file(self):
+        """Browse for a markdown file (fallback option)."""
+        from tkinter import filedialog
+        from ..app_settings import AppSettings
+        from pathlib import Path
+
+        settings = AppSettings.load()
+
+        # Start in vault folder if configured
+        initial_dir = None
+        if settings.obsidian_vault_path:
+            notes_folder = settings.get_notes_folder()
+            if notes_folder and notes_folder.exists():
+                initial_dir = str(notes_folder)
+            else:
+                initial_dir = settings.obsidian_vault_path
+
+        file_path = filedialog.askopenfilename(
+            title="Select Markdown Note",
+            initialdir=initial_dir,
+            filetypes=[("Markdown files", "*.md"), ("All files", "*.*")]
+        )
+
+        if file_path:
+            # Get title from filename
+            title = Path(file_path).stem
+
+            # Link the file
+            self.link_note_file(file_path, title)
