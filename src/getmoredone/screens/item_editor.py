@@ -30,7 +30,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Action Item")
 
-        self.geometry("600x1200")
+        self.geometry("600x800")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -907,11 +907,20 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
-        self.update_idletasks()
+        # Force update to get accurate dimensions
+        self.update()
 
-        # Get dialog dimensions
-        dialog_width = self.winfo_width()
-        dialog_height = self.winfo_height()
+        # Parse the geometry string to get width and height
+        # Geometry is in format "WIDTHxHEIGHT+X+Y" or "WIDTHxHEIGHT"
+        geom = self.geometry()
+        if 'x' in geom:
+            size_part = geom.split('+')[0] if '+' in geom else geom
+            width_str, height_str = size_part.split('x')
+            dialog_width = int(width_str)
+            dialog_height = int(height_str)
+        else:
+            dialog_width = self.winfo_width()
+            dialog_height = self.winfo_height()
 
         # Get parent window position and size
         parent_x = self.master.winfo_x()
@@ -927,7 +936,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         x = max(0, x)
         y = max(0, y)
 
-        self.geometry(f"+{x}+{y}")
+        self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
 
     def view_parent_item(self, parent_id: str):
         """Open the parent item in a new editor dialog."""
