@@ -351,6 +351,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_create_sub = ctk.CTkButton(btn_frame, text="+ Create Sub-Item", command=self.create_sub_item, width=120)
             btn_create_sub.pack(side="left", padx=5)
 
+            btn_show_children = ctk.CTkButton(btn_frame, text="Show Children", command=self.show_children, width=110)
+            btn_show_children.pack(side="left", padx=5)
+
         # Error label in the center between buttons
         self.error_label = ctk.CTkLabel(btn_frame, text="", text_color="red", wraplength=600)
         self.error_label.pack(side="left", expand=True, padx=10)
@@ -968,3 +971,185 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Open editor for the new sub-item
         ItemEditorDialog(self.master, self.db_manager, sub_item_id)
+
+    def show_children(self):
+        """Show list of child items in a new dialog."""
+        if not self.item_id:
+            return
+
+        # Open children list dialog
+        ShowChildrenDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
+
+
+class ShowChildrenDialog(ctk.CTkToplevel):
+    """Dialog for showing list of child items."""
+
+    def __init__(self, parent, db_manager: 'DatabaseManager', parent_item_id: str, parent_title: str):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.parent_item_id = parent_item_id
+        self.parent_title = parent_title
+
+        self.title(f"Children of: {parent_title}")
+        self.geometry("900x600")
+
+        # Create UI
+        self.create_ui()
+
+        # Load children
+        self.refresh()
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+        # Center on parent
+        self.center_on_parent()
+
+    def create_ui(self):
+        """Create the UI components."""
+        # Header
+        header_frame = ctk.CTkFrame(self)
+        header_frame.pack(fill="x", padx=10, pady=10)
+
+        ctk.CTkLabel(
+            header_frame,
+            text=f"Child Items of: {self.parent_title}",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(side="left", padx=10, pady=10)
+
+        # Scrollable frame for children list
+        self.scroll_frame = ctk.CTkScrollableFrame(self)
+        self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self.scroll_frame.grid_columnconfigure(0, weight=1)
+
+        # Button frame
+        btn_frame = ctk.CTkFrame(self)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+
+        btn_close = ctk.CTkButton(btn_frame, text="Close", command=self.destroy, width=100)
+        btn_close.pack(side="right", padx=5)
+
+    def refresh(self):
+        """Refresh the list of children."""
+        # Clear current list
+        for widget in self.scroll_frame.winfo_children():
+            widget.destroy()
+
+        # Get children
+        children = self.db_manager.get_children(self.parent_item_id)
+
+        if not children:
+            ctk.CTkLabel(
+                self.scroll_frame,
+                text="No child items found",
+                font=ctk.CTkFont(size=14)
+            ).grid(row=0, column=0, pady=20)
+            return
+
+        # Create header row
+        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(header_frame, text="Title (Who)", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=0, sticky="w", padx=10, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Priority", width=70, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=1, padx=5, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Due Date", width=110, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=2, padx=5, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Status", width=80, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=3, padx=5, pady=5
+        )
+        ctk.CTkLabel(header_frame, text="Actions", width=80, font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=4, padx=5, pady=5
+        )
+
+        # Display each child
+        for idx, child in enumerate(children):
+            self.create_child_row(child, idx + 1)
+
+    def create_child_row(self, item: ActionItem, row: int):
+        """Create a row for a child item."""
+        frame = ctk.CTkFrame(self.scroll_frame)
+        frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+        frame.grid_columnconfigure(0, weight=1)
+
+        # Title and who
+        info_text = f"{item.title}"
+        if item.who:
+            info_text += f" ({item.who})"
+
+        title_label = ctk.CTkLabel(
+            frame,
+            text=info_text,
+            anchor="w",
+            font=ctk.CTkFont(size=12)
+        )
+        title_label.grid(row=0, column=0, sticky="w", padx=10, pady=5)
+
+        # Priority
+        priority_label = ctk.CTkLabel(
+            frame,
+            text=f"P:{item.priority_score}",
+            width=70,
+            fg_color="gray30"
+        )
+        priority_label.grid(row=0, column=1, padx=5, pady=5)
+
+        # Due date
+        due_text = item.due_date if item.due_date else "-"
+        due_label = ctk.CTkLabel(frame, text=due_text, width=110)
+        due_label.grid(row=0, column=2, padx=5, pady=5)
+
+        # Status
+        status_label = ctk.CTkLabel(
+            frame,
+            text=item.status.capitalize(),
+            width=80,
+            text_color="green" if item.status == "completed" else "white"
+        )
+        status_label.grid(row=0, column=3, padx=5, pady=5)
+
+        # Edit button
+        btn_edit = ctk.CTkButton(
+            frame,
+            text="Edit",
+            width=80,
+            command=lambda: self.edit_child(item.id)
+        )
+        btn_edit.grid(row=0, column=4, padx=5, pady=5)
+
+    def edit_child(self, child_id: str):
+        """Open editor for a child item."""
+        # Close this dialog
+        self.destroy()
+        # Open editor for the child
+        ItemEditorDialog(self.master, self.db_manager, child_id)
+
+    def center_on_parent(self):
+        """Center the dialog on the parent window."""
+        self.update_idletasks()
+
+        # Get dialog dimensions
+        dialog_width = 900
+        dialog_height = 600
+
+        # Get parent window position
+        parent_x = self.master.winfo_rootx()
+        parent_y = self.master.winfo_rooty()
+        parent_width = self.master.winfo_width()
+        parent_height = self.master.winfo_height()
+
+        # Calculate center position
+        x = parent_x + (parent_width - dialog_width) // 2
+        y = parent_y + (parent_height - dialog_height) // 2
+
+        # Ensure not off-screen
+        x = max(0, x)
+        y = max(0, y)
+
+        self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
