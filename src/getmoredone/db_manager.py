@@ -827,23 +827,35 @@ class DatabaseManager:
 
     def _row_to_item_link(self, row: sqlite3.Row) -> ItemLink:
         """Convert database row to ItemLink."""
+        # Handle link_type column which may not exist in older database rows
+        try:
+            link_type = row["link_type"]
+        except (KeyError, IndexError):
+            link_type = "url"  # Default for existing rows
+
         return ItemLink(
             id=row["id"],
             item_id=row["item_id"],
             label=row["label"],
             url=row["url"],
-            link_type=row.get("link_type", "url"),  # Default for existing rows
+            link_type=link_type,
             created_at=row["created_at"]
         )
 
     def _row_to_contact_link(self, row: sqlite3.Row) -> ContactLink:
         """Convert database row to ContactLink."""
+        # Handle link_type column which may not exist in older database rows
+        try:
+            link_type = row["link_type"]
+        except (KeyError, IndexError):
+            link_type = "url"  # Default for existing rows
+
         return ContactLink(
             id=row["id"],
             contact_id=row["contact_id"],
             label=row["label"],
             url=row["url"],
-            link_type=row.get("link_type", "url"),
+            link_type=link_type,
             created_at=row["created_at"]
         )
 
