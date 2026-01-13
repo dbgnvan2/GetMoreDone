@@ -57,8 +57,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Main container frame
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        main_frame.grid_columnconfigure(0, weight=2)  # Left column wider (320px fields)
-        main_frame.grid_columnconfigure(1, weight=1)  # Right column narrower (180px fields)
+        main_frame.grid_columnconfigure(0, weight=1)  # Left column
+        main_frame.grid_columnconfigure(1, weight=0)  # Right column - fixed width
         main_frame.grid_rowconfigure(0, weight=1)
 
         # Left column
@@ -82,15 +82,47 @@ class ItemEditorDialog(ctk.CTkToplevel):
         ).grid(row=row_l, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 10))
         row_l += 1
 
-        # Who
-        ctk.CTkLabel(left_col, text="* Who:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        who_values = self.db_manager.get_distinct_who_values()
-        if not who_values:
-            who_values = ["Self"]
-        self.who_var = ctk.StringVar(value=who_values[0] if who_values else "Self")
-        self.who_combo = ctk.CTkComboBox(left_col, values=who_values, variable=self.who_var, width=320,
-                                         command=lambda _: self.on_who_changed())
-        self.who_combo.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        # Who (with contact lookup)
+        who_label_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        who_label_frame.grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(who_label_frame, text="* Who:").pack(side="left")
+
+        # Add contact button
+        btn_add_contact = ctk.CTkButton(
+            who_label_frame,
+            text="+",
+            width=30,
+            height=24,
+            command=self.add_new_contact
+        )
+        btn_add_contact.pack(side="left", padx=(5, 0))
+
+        # Who entry with autocomplete
+        who_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        who_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+
+        self.who_var = ctk.StringVar()
+        self.who_entry = ctk.CTkEntry(who_frame, textvariable=self.who_var, width=320)
+        self.who_entry.pack()
+        self.who_entry.bind('<KeyRelease>', self.on_who_search)
+        self.who_entry.bind('<FocusIn>', lambda e: self.show_contact_suggestions())
+        self.who_entry.bind('<FocusOut>', lambda e: self.after(200, self.hide_contact_suggestions))
+
+        # Dropdown for contact suggestions
+        self.contact_suggestions_frame = None
+        self.selected_contact_id = None
+
+        # Try to auto-select contact if who name matches a contact
+        if not self.item_id:
+            # Set default who value
+            contacts = self.db_manager.get_all_contacts(active_only=True)
+            if contacts:
+                self.who_var.set(contacts[0].name)
+                self.selected_contact_id = contacts[0].id
+            else:
+                self.who_var.set("Self")
+
         row_l += 1
 
         # Title
@@ -304,6 +336,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         self.who_var.set(self.item.who)
+        self.selected_contact_id = self.item.contact_id
         self.title_entry.insert(0, self.item.title)
 
         if self.item.description:
@@ -546,6 +579,92 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.update_priority_display()
 
+    def on_who_search(self, event=None):
+        """Handle typing in Who field - show matching contacts."""
+        search_term = self.who_var.get().strip()
+
+        # Hide suggestions if field is empty
+        if not search_term:
+            self.hide_contact_suggestions()
+            self.selected_contact_id = None
+            return
+
+        # Search contacts
+        contacts = self.db_manager.search_contacts(search_term, active_only=True)
+
+        # Also check if exact match exists in distinct who values (for non-contact entries)
+        all_who = self.db_manager.get_distinct_who_values()
+
+        self.show_contact_suggestions(contacts)
+
+    def show_contact_suggestions(self, contacts=None):
+        """Show dropdown with contact suggestions."""
+        # Hide existing suggestions
+        self.hide_contact_suggestions()
+
+        # Get all contacts if none provided
+        if contacts is None:
+            contacts = self.db_manager.get_all_contacts(active_only=True)
+
+        if not contacts:
+            return
+
+        # Create suggestions frame
+        self.contact_suggestions_frame = ctk.CTkFrame(self.who_entry.master, fg_color="gray20")
+        self.contact_suggestions_frame.place(
+            x=0,
+            y=self.who_entry.winfo_height(),
+            width=320
+        )
+
+        # Limit to 10 suggestions
+        for idx, contact in enumerate(contacts[:10]):
+            btn = ctk.CTkButton(
+                self.contact_suggestions_frame,
+                text=f"{contact.name}" + (f" ({contact.contact_type})" if contact.contact_type else ""),
+                anchor="w",
+                fg_color="transparent",
+                hover_color="gray30",
+                command=lambda c=contact: self.select_contact(c)
+            )
+            btn.pack(fill="x", padx=2, pady=1)
+
+    def hide_contact_suggestions(self):
+        """Hide contact suggestions dropdown."""
+        if self.contact_suggestions_frame:
+            self.contact_suggestions_frame.destroy()
+            self.contact_suggestions_frame = None
+
+    def select_contact(self, contact):
+        """Select a contact from the suggestions."""
+        self.who_var.set(contact.name)
+        self.selected_contact_id = contact.id
+        self.hide_contact_suggestions()
+
+        # Re-apply defaults for this contact
+        self.on_who_changed()
+
+    def add_new_contact(self):
+        """Open dialog to add a new contact and select it."""
+        from .edit_contact import EditContactDialog
+
+        # Get current text as suggested name
+        suggested_name = self.who_var.get().strip()
+
+        dialog = EditContactDialog(self, self.db_manager, contact_id=None)
+
+        # Pre-fill name if provided
+        if suggested_name:
+            dialog.name_var.set(suggested_name)
+
+        dialog.wait_window()
+
+        # If a contact was created, search for it and select it
+        if suggested_name:
+            contact = self.db_manager.get_contact_by_name(suggested_name)
+            if contact:
+                self.select_contact(contact)
+
     def extract_factor_value(self, text: str) -> Optional[int]:
         """Extract numeric value from factor string like 'High (10)'."""
         if not text:
@@ -566,6 +685,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
             # Set fields
             item.who = self.who_var.get().strip()
+            item.contact_id = self.selected_contact_id
             item.title = self.title_entry.get().strip()
             item.description = self.description_text.get("1.0", "end").strip() or None
             item.start_date = self.start_date_entry.get().strip() or None
