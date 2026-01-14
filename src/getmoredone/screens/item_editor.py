@@ -244,116 +244,81 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.is_meeting_checkbox.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
-        # Original Due Date (read-only display)
-        ctk.CTkLabel(left_col, text="Original Due Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.original_due_date_label = ctk.CTkLabel(
-            left_col,
-            text="-",
-            anchor="w",
-            text_color="gray"
-        )
-        self.original_due_date_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        # Completed Date (read-only display)
-        ctk.CTkLabel(left_col, text="Completed Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.completed_at_label = ctk.CTkLabel(
-            left_col,
-            text="-",
-            anchor="w",
-            text_color="lightgreen"
-        )
-        self.completed_at_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        # Organization Section
-        ctk.CTkLabel(
-            left_col,
-            text="Organization",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=row_l, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 10))
-        row_l += 1
-
-        # Group
-        ctk.CTkLabel(left_col, text="Group:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        groups = self.db_manager.get_distinct_groups()
-        self.group_var = ctk.StringVar(value="")
-        self.group_combo = ctk.CTkComboBox(left_col, values=groups if groups else [""], variable=self.group_var, width=320)
-        self.group_combo.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        # Category
-        ctk.CTkLabel(left_col, text="Category:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        categories = self.db_manager.get_distinct_categories()
-        self.category_var = ctk.StringVar(value="")
-        self.category_combo = ctk.CTkComboBox(left_col, values=categories if categories else [""], variable=self.category_var, width=320)
-        self.category_combo.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        # Planned Minutes
+        # Planned Minutes (keep in left column for now)
         ctk.CTkLabel(left_col, text="Planned Minutes:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
         self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0", width=320)
         self.planned_minutes_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
-        # === RIGHT COLUMN ===
+        # === RIGHT COLUMN with TABS ===
         row_r = 0
 
-        # Priority Factors Section
-        ctk.CTkLabel(
-            right_col,
-            text="Priority Factors",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 10))
+        # Create tabview for right column
+        self.tabview = ctk.CTkTabview(right_col, width=280)
+        self.tabview.grid(row=row_r, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
+        right_col.grid_rowconfigure(row_r, weight=1)
         row_r += 1
 
+        # Create tabs
+        self.tab_priority = self.tabview.add("Priority")
+        self.tab_organization = self.tabview.add("Organization")
+        self.tab_notes = self.tabview.add("Notes")
+
+        # Configure tab grids
+        self.tab_priority.grid_columnconfigure(1, weight=1)
+        self.tab_organization.grid_columnconfigure(1, weight=1)
+        self.tab_notes.grid_columnconfigure(0, weight=1)
+
+        # === TAB 1: PRIORITY FACTORS ===
+        tab1_row = 0
+
         # Importance
-        ctk.CTkLabel(right_col, text="Importance:").grid(row=row_r, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_priority, text="Importance:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
         importance_values = [f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
         self.importance_var = ctk.StringVar(value="")
         self.importance_combo = ctk.CTkComboBox(
-            right_col, values=importance_values, variable=self.importance_var, width=180,
+            self.tab_priority, values=importance_values, variable=self.importance_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.importance_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
-        row_r += 1
+        self.importance_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        tab1_row += 1
 
         # Urgency
-        ctk.CTkLabel(right_col, text="Urgency:").grid(row=row_r, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_priority, text="Urgency:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
         urgency_values = [f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
         self.urgency_var = ctk.StringVar(value="")
         self.urgency_combo = ctk.CTkComboBox(
-            right_col, values=urgency_values, variable=self.urgency_var, width=180,
+            self.tab_priority, values=urgency_values, variable=self.urgency_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.urgency_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
-        row_r += 1
+        self.urgency_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        tab1_row += 1
 
         # Size
-        ctk.CTkLabel(right_col, text="Size:").grid(row=row_r, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_priority, text="Size:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
         size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
         self.size_var = ctk.StringVar(value="")
         self.size_combo = ctk.CTkComboBox(
-            right_col, values=size_values, variable=self.size_var, width=180,
+            self.tab_priority, values=size_values, variable=self.size_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.size_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
-        row_r += 1
+        self.size_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        tab1_row += 1
 
         # Value
-        ctk.CTkLabel(right_col, text="Value:").grid(row=row_r, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_priority, text="Value:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
         value_values = [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
         self.value_var = ctk.StringVar(value="")
         self.value_combo = ctk.CTkComboBox(
-            right_col, values=value_values, variable=self.value_var, width=180,
+            self.tab_priority, values=value_values, variable=self.value_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.value_combo.grid(row=row_r, column=1, sticky="w", padx=10, pady=5)
-        row_r += 1
+        self.value_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        tab1_row += 1
 
         # Priority Score Display (more compact)
-        score_frame = ctk.CTkFrame(right_col, fg_color="gray25", corner_radius=8)
-        score_frame.grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        score_frame = ctk.CTkFrame(self.tab_priority, fg_color="gray25", corner_radius=8)
+        score_frame.grid(row=tab1_row, column=0, columnspan=2, sticky="ew", padx=10, pady=(15, 5))
 
         ctk.CTkLabel(
             score_frame,
@@ -367,25 +332,62 @@ class ItemEditorDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=12)
         )
         self.priority_label.pack(side="left", padx=10, pady=8)
-        row_r += 1
+        tab1_row += 1
 
-        # Obsidian Notes Section
-        ctk.CTkLabel(
-            right_col,
-            text="Obsidian Notes",
-            font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
-        row_r += 1
+        # === TAB 2: ORGANIZATION ===
+        tab2_row = 0
+
+        # Group
+        ctk.CTkLabel(self.tab_organization, text="Group:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        groups = self.db_manager.get_distinct_groups()
+        self.group_var = ctk.StringVar(value="")
+        self.group_combo = ctk.CTkComboBox(self.tab_organization, values=groups if groups else [""], variable=self.group_var, width=180)
+        self.group_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        tab2_row += 1
+
+        # Category
+        ctk.CTkLabel(self.tab_organization, text="Category:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        categories = self.db_manager.get_distinct_categories()
+        self.category_var = ctk.StringVar(value="")
+        self.category_combo = ctk.CTkComboBox(self.tab_organization, values=categories if categories else [""], variable=self.category_var, width=180)
+        self.category_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        tab2_row += 1
+
+        # Original Due Date (read-only display)
+        ctk.CTkLabel(self.tab_organization, text="Original Due Date:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        self.original_due_date_label = ctk.CTkLabel(
+            self.tab_organization,
+            text="-",
+            anchor="w",
+            text_color="gray"
+        )
+        self.original_due_date_label.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        tab2_row += 1
+
+        # Completed Date (read-only display)
+        ctk.CTkLabel(self.tab_organization, text="Completed Date:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        self.completed_at_label = ctk.CTkLabel(
+            self.tab_organization,
+            text="-",
+            anchor="w",
+            text_color="lightgreen"
+        )
+        self.completed_at_label.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        tab2_row += 1
+
+        # === TAB 3: OBSIDIAN NOTES ===
+        tab3_row = 0
 
         # Notes list frame
-        self.notes_frame = ctk.CTkScrollableFrame(right_col, height=150)
-        self.notes_frame.grid(row=row_r, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=300)
+        self.notes_frame.grid(row=tab3_row, column=0, sticky="nsew", padx=10, pady=5)
         self.notes_frame.grid_columnconfigure(0, weight=1)
-        row_r += 1
+        self.tab_notes.grid_rowconfigure(tab3_row, weight=1)
+        tab3_row += 1
 
         # Notes buttons
-        notes_btn_frame = ctk.CTkFrame(right_col, fg_color="transparent")
-        notes_btn_frame.grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        notes_btn_frame = ctk.CTkFrame(self.tab_notes, fg_color="transparent")
+        notes_btn_frame.grid(row=tab3_row, column=0, sticky="w", padx=10, pady=5)
 
         btn_create_note = ctk.CTkButton(
             notes_btn_frame,
@@ -402,7 +404,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             command=self.link_existing_note
         )
         btn_link_note.pack(side="left", padx=2)
-        row_r += 1
+        tab3_row += 1
 
         # Load notes (if item exists)
         if self.item_id:
