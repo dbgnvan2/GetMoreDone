@@ -173,11 +173,16 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 **Continue Workflow** (for ongoing multi-day tasks):
 1. Click **Continue** button
 2. Enter optional completion note for today's work
-3. Enter optional next steps note for tomorrow
+3. Enter optional next steps note and **select dates** for the continued action:
+   - Next Steps Note: Text describing what to do next
+   - Start Date: When to start the next action (default: tomorrow)
+   - Due Date: When it's due (default: tomorrow)
+   - Quick buttons: "Today" and "+1" to adjust dates
+   - Validation: Due date must be >= Start date
 4. Current action is marked as completed with work log
-5. New duplicate action is created for tomorrow with:
+5. New duplicate action is created with your selected dates:
    - Same title, priority, who, category, group
-   - Start and due dates set to tomorrow
+   - Start and due dates as you specified
    - Description updated with next steps note
 6. New action opens in editor for review
 
@@ -193,10 +198,21 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - You can click Finished/Continue during break (no need to wait)
 - Break time is not optional (but you can ignore it and finish early)
 
+**Audio Alerts:**
+- **Break Start Sound**: Plays when work time ends and break begins
+- **Break End Sound**: Plays when break time expires
+- Sounds are **optional** - can be enabled/disabled in Settings
+- Custom WAV files can be specified in Settings
+- Falls back to system beep if no custom sound specified
+- Cross-platform support (Windows, macOS, Linux)
+
 **Settings:**
 - **Default Time Block**: 30 minutes (editable in Settings)
 - **Default Break Time**: 5 minutes (editable in Settings)
 - **Warning Time**: Green warning appears at < 10 minutes (editable in Settings)
+- **Enable Break Sounds**: Toggle audio alerts on/off
+- **Break Start Sound**: Path to custom WAV file (optional)
+- **Break End Sound**: Path to custom WAV file (optional)
 
 **Single Timer Policy:**
 - Only one timer can run at a time (prevents confusion)
@@ -270,15 +286,19 @@ pytest tests/test_database.py -v
 - Floating, resizable countdown timer window with always-on-top behavior
 - Pause/Resume functionality tracking work time vs elapsed time
 - Automatic break time calculation (Time Block - Break = Work Time)
-- Visual indicators: Green warning (< 10 min), Blue break time, time in title bar
+- Visual indicators: White time display, green warning (< 10 min), blue break time
+- **Audio alerts**: Plays sound at break start and break end (optional, customizable)
 - Finished workflow: Complete action with work log and completion note
-- Continue workflow: Complete current, duplicate for tomorrow, capture next steps
+- **Continue workflow**: Complete current, select dates for next action, capture next steps
+  - Custom date selection with quick buttons (Today, +1)
+  - Validation ensures due date >= start date
 - Next Steps display to help you get started on tasks
 - Window close equals Stop (saves position/size between sessions)
 - Timer buttons on TODAY, Upcoming, and All Items screens
+- **NEW: "+ New Item" button on TODAY screen** for quick action creation
 - Work logs saved with started_at, ended_at, minutes, and notes
 - Single timer policy (one at a time)
-- Settings for default time block (30 min) and break time (5 min)
+- Settings for time block (30 min), break (5 min), audio alerts, custom sounds
 
 ### Contact Management
 - Full contact/client database with CRUD operations

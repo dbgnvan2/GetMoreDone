@@ -294,10 +294,12 @@ Timer Running → Stop → Finished Button →
 ```
 Timer Running → Stop → Continue Button →
   Completion Note Dialog →
-  Next Steps Note Dialog →
+  Next Steps Note Dialog (with Date Selection) →
+    User selects Start and Due dates →
+    Validation: Due >= Start →
     Save WorkLog →
     Complete Current Action →
-    Create New Action (duplicate for tomorrow) →
+    Create New Action (duplicate with user-selected dates) →
     Add Next Steps to New Action →
     Show New Action in Editor
 ```
@@ -339,12 +341,18 @@ class AppSettings:
     # ... existing settings ...
 
     # Timer settings
+    default_time_block_minutes: int = 30
     default_break_minutes: int = 5
-    timer_window_width: int = 400
-    timer_window_height: int = 500
+    timer_window_width: int = 450
+    timer_window_height: int = 550
     timer_window_x: Optional[int] = None
     timer_window_y: Optional[int] = None
     timer_warning_minutes: int = 10  # When to show green warning
+
+    # Audio settings (NEW)
+    enable_break_sounds: bool = True
+    break_start_sound: Optional[str] = None  # Path to WAV file
+    break_end_sound: Optional[str] = None    # Path to WAV file
 ```
 
 ---
@@ -398,6 +406,91 @@ class WorkLog:
    - Title bar color changes
    - Always-on-top behavior
    - Cross-platform testing (if applicable)
+
+---
+
+## Implemented Enhancements (January 2026)
+
+### FR-ENH-01: TODAY Screen New Item Button
+**Status**: ✅ Implemented
+
+**Description**: Added "+ New Item" button to TODAY screen for quick action creation.
+
+**Implementation**:
+- Green button positioned in header between title and Refresh
+- Opens item editor dialog
+- Location: `src/getmoredone/screens/today.py`
+
+---
+
+### FR-ENH-02: Continue Workflow Date Selection
+**Status**: ✅ Implemented
+
+**Description**: Enhanced Continue workflow with custom date selection for the next action.
+
+**Implementation**:
+- Created `NextStepsDialog` class with date pickers
+- Users can set Start and Due dates for continued action
+- Quick buttons: "Today" and "+1 day"
+- Default: Tomorrow for both dates
+- Validation: Due date must be >= Start date
+- Dialog shows:
+  - Next Steps Note textbox
+  - Start Date entry with quick buttons
+  - Due Date entry with quick buttons
+  - Error label for validation messages
+- Location: `src/getmoredone/screens/timer_window.py`
+
+**Changes to Continue Flow**:
+```python
+# Old: Fixed tomorrow
+new_item.start_date = tomorrow
+new_item.due_date = tomorrow
+
+# New: User-selected dates
+new_item.start_date = next_steps_result['start_date']
+new_item.due_date = next_steps_result['due_date']
+```
+
+---
+
+### FR-ENH-03: Audio Alerts for Break Times
+**Status**: ✅ Implemented
+
+**Description**: Plays sounds when break starts and ends.
+
+**Implementation**:
+- Added audio settings to AppSettings:
+  - `enable_break_sounds` (bool, default True)
+  - `break_start_sound` (optional WAV path)
+  - `break_end_sound` (optional WAV path)
+- `play_sound(is_break_start)` method
+- Cross-platform sound playback:
+  - Windows: `winsound` module
+  - macOS: `afplay` command
+  - Linux: `aplay` command
+- Fallback to system beep if custom sound fails
+- Triggers:
+  - Break start: When `work_seconds_remaining` reaches 0
+  - Break end: When `break_seconds_remaining` reaches 0
+- Location: `src/getmoredone/screens/timer_window.py`
+
+---
+
+### FR-ENH-04: Time Display Color
+**Status**: ✅ Already Correct
+
+**Description**: Time displays white normally, green when < 10 minutes.
+
+**Current Behavior**:
+```python
+if self.work_seconds_remaining < self.settings.timer_warning_minutes * 60:
+    color = "green"  # Warning color
+else:
+    color = "white"  # Normal color
+```
+
+No changes needed - already implemented as requested.
 
 ---
 

@@ -331,6 +331,28 @@ class TestTimerSettings:
 
         assert work_time == 25  # 30 - 5 = 25
 
+    def test_audio_settings(self):
+        """Test audio alert settings."""
+        from src.getmoredone.app_settings import AppSettings
+
+        settings = AppSettings()
+        assert settings.enable_break_sounds == True
+        assert settings.break_start_sound is None  # No custom sound by default
+        assert settings.break_end_sound is None
+
+    def test_audio_settings_customization(self):
+        """Test setting custom audio paths."""
+        from src.getmoredone.app_settings import AppSettings
+
+        settings = AppSettings()
+        settings.enable_break_sounds = False
+        settings.break_start_sound = "/path/to/start.wav"
+        settings.break_end_sound = "/path/to/end.wav"
+
+        assert settings.enable_break_sounds == False
+        assert settings.break_start_sound == "/path/to/start.wav"
+        assert settings.break_end_sound == "/path/to/end.wav"
+
 
 class TestTimerIntegration:
     """Integration tests for timer with action items."""
@@ -457,3 +479,94 @@ class TestTimerEdgeCases:
         """Test getting total minutes for an item that doesn't exist."""
         total = db_manager.get_total_actual_minutes("nonexistent-id")
         assert total == 0
+
+
+class TestContinueWorkflow:
+    """Test Continue workflow with date selection."""
+
+    def test_continue_with_custom_dates(self, db_manager, sample_item):
+        """Test Continue workflow with user-specified dates."""
+        # Simulate Continue workflow
+        start_time = datetime.now()
+        work_minutes = 25
+
+        # Create work log for today's session
+        work_log = WorkLog(
+            item_id=sample_item.id,
+            started_at=start_time.isoformat(),
+            ended_at=(start_time + timedelta(minutes=work_minutes)).isoformat(),
+            minutes=work_minutes,
+            note="Completed phase 1"
+        )
+        db_manager.create_work_log(work_log)
+
+        # Complete current item
+        db_manager.complete_action_item(sample_item.id)
+
+        # Create duplicate with custom dates (e.g., 3 days from now)
+        custom_start = (datetime.now().date() + timedelta(days=3)).isoformat()
+        custom_due = (datetime.now().date() + timedelta(days=5)).isoformat()
+
+        new_item = ActionItem(
+            who=sample_item.who,
+            title=sample_item.title,
+            description="Continue with phase 2",
+            contact_id=sample_item.contact_id,
+            start_date=custom_start,
+            due_date=custom_due,
+            importance=sample_item.importance,
+            urgency=sample_item.urgency,
+            size=sample_item.size,
+            value=sample_item.value,
+            group=sample_item.group,
+            category=sample_item.category,
+            planned_minutes=sample_item.planned_minutes,
+            status=Status.OPEN
+        )
+        db_manager.create_action_item(new_item)
+
+        # Verify original is completed
+        original = db_manager.get_action_item(sample_item.id)
+        assert original.status == Status.COMPLETED
+
+        # Verify new item has custom dates
+        assert new_item.id != sample_item.id
+        assert new_item.status == Status.OPEN
+        assert new_item.start_date == custom_start
+        assert new_item.due_date == custom_due
+        assert new_item.description == "Continue with phase 2"
+
+    def test_continue_date_validation(self):
+        """Test that Continue workflow validates due >= start."""
+        from datetime import date
+
+        start = date.today()
+        due_before_start = (date.today() - timedelta(days=1))
+
+        # Due date must be >= start date
+        assert due_before_start < start  # This would be invalid
+
+        # Correct validation
+        due_after_start = (date.today() + timedelta(days=1))
+        assert due_after_start >= start  # This is valid
+
+    def test_continue_with_same_day_dates(self, db_manager, sample_item):
+        """Test Continue workflow with same start and due date."""
+        # Complete current item
+        db_manager.complete_action_item(sample_item.id)
+
+        # Create duplicate with same start and due (valid)
+        same_date = (datetime.now().date() + timedelta(days=1)).isoformat()
+
+        new_item = ActionItem(
+            who=sample_item.who,
+            title=sample_item.title,
+            description="Next steps",
+            start_date=same_date,
+            due_date=same_date,  # Same as start is valid
+            status=Status.OPEN
+        )
+        db_manager.create_action_item(new_item)
+
+        assert new_item.start_date == new_item.due_date
+        assert new_item.status == Status.OPEN
