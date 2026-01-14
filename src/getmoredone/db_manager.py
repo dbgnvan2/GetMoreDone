@@ -19,7 +19,7 @@ class DatabaseManager:
 
     # Allowed sort columns (security: prevent SQL injection)
     ALLOWED_SORT_COLUMNS = {
-        "due_date", "priority_score", "importance", "urgency",
+        "start_date", "due_date", "priority_score", "importance", "urgency",
         "size", "value", "planned_minutes", "created_at", "updated_at"
     }
 
@@ -245,13 +245,15 @@ class DatabaseManager:
         who_filter: Optional[str] = None
     ) -> List[ActionItem]:
         """
-        Get open items due within N days from now (includes ALL overdue items).
+        Get open items by START date within N days from now (includes ALL overdue starts).
 
         Shows items that are:
-        - Overdue by ANY amount (prevents items from being left behind)
-        - Due within the next N days (default 7)
+        - Past start date by ANY amount (all overdue starts)
+        - Start date within the next N days (default 7)
 
-        Formula: due_date <= today + N days
+        Uses start_date if available, falls back to due_date if not.
+
+        Formula: COALESCE(start_date, due_date) <= today + N days
 
         This ensures NO overdue items are hidden, no matter how old.
 
@@ -260,13 +262,13 @@ class DatabaseManager:
             who_filter: Optional who filter
 
         Returns:
-            List of items sorted by due_date, then priority_score
+            List of items sorted by start_date (or due_date if no start), then priority_score
         """
         query = """
             SELECT * FROM action_items
             WHERE status = 'open'
-              AND due_date IS NOT NULL
-              AND due_date <= date('now', '+' || ? || ' days')
+              AND (start_date IS NOT NULL OR due_date IS NOT NULL)
+              AND COALESCE(start_date, due_date) <= date('now', '+' || ? || ' days')
         """
         params = [n_days]
 
@@ -274,7 +276,7 @@ class DatabaseManager:
             query += " AND who = ?"
             params.append(who_filter)
 
-        query += " ORDER BY due_date ASC, priority_score DESC, created_at ASC"
+        query += " ORDER BY COALESCE(start_date, due_date) ASC, priority_score DESC, created_at ASC"
 
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._row_to_action_item(row) for row in rows]
@@ -285,7 +287,7 @@ class DatabaseManager:
         who_filter: Optional[str] = None,
         group_filter: Optional[str] = None,
         category_filter: Optional[str] = None,
-        sort_by: str = "due_date",
+        sort_by: str = "start_date",
         sort_desc: bool = False
     ) -> List[ActionItem]:
         """
@@ -296,7 +298,7 @@ class DatabaseManager:
             who_filter: Filter by who
             group_filter: Filter by group
             category_filter: Filter by category
-            sort_by: Column to sort by (must be in ALLOWED_SORT_COLUMNS)
+            sort_by: Column to sort by (must be in ALLOWED_SORT_COLUMNS), default is start_date
             sort_desc: Sort descending if True
 
         Returns:
@@ -304,7 +306,7 @@ class DatabaseManager:
         """
         # Validate sort column
         if sort_by not in self.ALLOWED_SORT_COLUMNS:
-            sort_by = "due_date"
+            sort_by = "start_date"
 
         query = "SELECT * FROM action_items WHERE 1=1"
         params = []

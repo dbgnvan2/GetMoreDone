@@ -108,22 +108,22 @@ class UpcomingScreen(ctk.CTkFrame):
             label.grid(row=0, column=0, pady=20)
             return
 
-        # Group by due date
+        # Group by start date (or due date if no start date)
         grouped = {}
         for item in items:
-            date_key = item.due_date or "No due date"
+            date_key = item.start_date or item.due_date or "No start date"
             if date_key not in grouped:
                 grouped[date_key] = []
             grouped[date_key].append(item)
 
         # Display grouped items
         row = 0
-        for due_date in sorted(grouped.keys()):
-            items_for_date = grouped[due_date]
+        for start_date in sorted(grouped.keys()):
+            items_for_date = grouped[start_date]
 
             # Date header
             total_planned = sum(item.planned_minutes or 0 for item in items_for_date)
-            date_label = self.format_date_header(due_date, len(items_for_date), total_planned)
+            date_label = self.format_date_header(start_date, len(items_for_date), total_planned)
 
             header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
             header_frame.grid(row=row, column=0, sticky="ew", pady=(10, 0), padx=5)
@@ -172,6 +172,40 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
+        # Start Date
+        start_date_text = item.start_date if item.start_date else "-"
+        if item.start_date:
+            try:
+                dt = datetime.fromisoformat(item.start_date)
+                start_date_text = dt.strftime("%m/%d")
+            except:
+                pass
+        start_label = ctk.CTkLabel(
+            frame,
+            text=f"S:{start_date_text}",
+            width=60,
+            anchor="w",
+            text_color="lightblue"
+        )
+        start_label.grid(row=0, column=2, padx=5, pady=5)
+
+        # Due Date
+        due_date_text = item.due_date if item.due_date else "-"
+        if item.due_date:
+            try:
+                dt = datetime.fromisoformat(item.due_date)
+                due_date_text = dt.strftime("%m/%d")
+            except:
+                pass
+        due_label = ctk.CTkLabel(
+            frame,
+            text=f"D:{due_date_text}",
+            width=60,
+            anchor="w",
+            text_color="orange"
+        )
+        due_label.grid(row=0, column=3, padx=5, pady=5)
+
         # Group
         group_label = ctk.CTkLabel(
             frame,
@@ -179,7 +213,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=80,
             anchor="w"
         )
-        group_label.grid(row=0, column=2, padx=5, pady=5)
+        group_label.grid(row=0, column=4, padx=5, pady=5)
 
         # Category
         category_label = ctk.CTkLabel(
@@ -188,7 +222,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=80,
             anchor="w"
         )
-        category_label.grid(row=0, column=3, padx=5, pady=5)
+        category_label.grid(row=0, column=5, padx=5, pady=5)
 
         # Priority score
         score_label = ctk.CTkLabel(
@@ -197,11 +231,11 @@ class UpcomingScreen(ctk.CTkFrame):
             width=60,
             fg_color="gray30"
         )
-        score_label.grid(row=0, column=4, padx=5, pady=5)
+        score_label.grid(row=0, column=6, padx=5, pady=5)
 
         # Factor chips
         factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        factors_frame.grid(row=0, column=5, padx=5, pady=5)
+        factors_frame.grid(row=0, column=7, padx=5, pady=5)
 
         col = 0
         if item.importance:
@@ -224,7 +258,7 @@ class UpcomingScreen(ctk.CTkFrame):
                 text=f"{item.planned_minutes}m",
                 width=50
             )
-            minutes_label.grid(row=0, column=6, padx=5, pady=5)
+            minutes_label.grid(row=0, column=8, padx=5, pady=5)
 
         # Action buttons
         btn_edit = ctk.CTkButton(
@@ -233,7 +267,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=60,
             command=lambda: self.edit_item(item.id)
         )
-        btn_edit.grid(row=0, column=7, padx=2, pady=5)
+        btn_edit.grid(row=0, column=9, padx=2, pady=5)
 
         btn_reschedule = ctk.CTkButton(
             frame,
@@ -241,17 +275,17 @@ class UpcomingScreen(ctk.CTkFrame):
             width=80,
             command=lambda: self.reschedule_item(item.id)
         )
-        btn_reschedule.grid(row=0, column=8, padx=2, pady=5)
+        btn_reschedule.grid(row=0, column=10, padx=2, pady=5)
 
         return frame
 
-    def format_date_header(self, due_date: str, count: int, total_minutes: int) -> str:
+    def format_date_header(self, start_date: str, count: int, total_minutes: int) -> str:
         """Format date header text."""
-        if due_date == "No due date":
-            return f"{due_date} ({count} items)"
+        if start_date == "No start date":
+            return f"{start_date} ({count} items)"
 
         try:
-            dt = datetime.fromisoformat(due_date)
+            dt = datetime.fromisoformat(start_date)
             day_name = dt.strftime("%A, %B %d, %Y")
 
             # Check if today, tomorrow, etc.

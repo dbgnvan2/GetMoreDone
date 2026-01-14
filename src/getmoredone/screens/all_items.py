@@ -91,11 +91,11 @@ class AllItemsScreen(ctk.CTkFrame):
         status_filter = None if self.status_var.get() == "all" else self.status_var.get()
         who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
-        # Get items
+        # Get items (sorted by start_date)
         items = self.db_manager.get_all_items(
             status_filter=status_filter,
             who_filter=who_filter,
-            sort_by="due_date",
+            sort_by="start_date",
             sort_desc=False
         )
 
@@ -113,8 +113,8 @@ class AllItemsScreen(ctk.CTkFrame):
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
         header_frame.grid_columnconfigure(1, weight=1)
 
-        headers = ["✓", "Title", "Who", "Due", "Priority", "Status", "Actions"]
-        col_weights = [0, 1, 0, 0, 0, 0, 0]
+        headers = ["✓", "Title", "Who", "Start", "Due", "Priority", "Status", "Actions"]
+        col_weights = [0, 1, 0, 0, 0, 0, 0, 0]
 
         for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
             header_frame.grid_columnconfigure(col, weight=weight)
@@ -154,22 +154,47 @@ class AllItemsScreen(ctk.CTkFrame):
             # Who
             ctk.CTkLabel(item_frame, text=item.who, width=100).grid(row=0, column=2, padx=5, pady=5)
 
-            # Due date
+            # Start date
+            start_text = item.start_date or "-"
+            if item.start_date:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(item.start_date)
+                    start_text = dt.strftime("%m/%d")
+                except:
+                    pass
             ctk.CTkLabel(
                 item_frame,
-                text=item.due_date or "-",
-                width=100
+                text=start_text,
+                width=60,
+                text_color="lightblue"
             ).grid(row=0, column=3, padx=5, pady=5)
+
+            # Due date
+            due_text = item.due_date or "-"
+            if item.due_date:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(item.due_date)
+                    due_text = dt.strftime("%m/%d")
+                except:
+                    pass
+            ctk.CTkLabel(
+                item_frame,
+                text=due_text,
+                width=60,
+                text_color="orange"
+            ).grid(row=0, column=4, padx=5, pady=5)
 
             # Priority
             ctk.CTkLabel(
                 item_frame,
                 text=str(item.priority_score),
                 width=80
-            ).grid(row=0, column=4, padx=5, pady=5)
+            ).grid(row=0, column=5, padx=5, pady=5)
 
             # Status
-            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=5, padx=5, pady=5)
+            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=6, padx=5, pady=5)
 
             # Edit button
             btn_edit = ctk.CTkButton(
@@ -178,7 +203,7 @@ class AllItemsScreen(ctk.CTkFrame):
                 width=60,
                 command=lambda i=item.id: self.edit_item(i)
             )
-            btn_edit.grid(row=0, column=6, padx=2, pady=5)
+            btn_edit.grid(row=0, column=7, padx=2, pady=5)
 
     def complete_item(self, item_id: str):
         """Mark item as complete."""
