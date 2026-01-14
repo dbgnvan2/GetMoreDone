@@ -54,7 +54,7 @@ class DatabaseManager:
 
         # Update priority score
         item.update_priority_score()
-        item.updated_at = datetime.utcnow().isoformat()
+        item.updated_at = datetime.now().isoformat()
 
         self.db.conn.execute("""
             INSERT INTO action_items (
@@ -103,7 +103,7 @@ class DatabaseManager:
             item.validate_and_adjust_dates()
 
         item.update_priority_score()
-        item.updated_at = datetime.utcnow().isoformat()
+        item.updated_at = datetime.now().isoformat()
 
         self.db.conn.execute("""
             UPDATE action_items SET
@@ -142,7 +142,7 @@ class DatabaseManager:
             return False
 
         item.status = Status.COMPLETED
-        item.completed_at = datetime.utcnow().isoformat()
+        item.completed_at = datetime.now().isoformat()
         self.update_action_item(item)
         return True
 
@@ -685,7 +685,7 @@ class DatabaseManager:
         Returns:
             ID of created contact
         """
-        contact.updated_at = datetime.utcnow().isoformat()
+        contact.updated_at = datetime.now().isoformat()
 
         cursor = self.db.conn.execute("""
             INSERT INTO contacts (
@@ -743,7 +743,7 @@ class DatabaseManager:
 
     def update_contact(self, contact: Contact):
         """Update an existing contact."""
-        contact.updated_at = datetime.utcnow().isoformat()
+        contact.updated_at = datetime.now().isoformat()
 
         self.db.conn.execute("""
             UPDATE contacts SET
@@ -772,7 +772,7 @@ class DatabaseManager:
         """Mark a contact as inactive (soft delete)."""
         self.db.conn.execute(
             "UPDATE contacts SET is_active = 0, updated_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), contact_id)
+            (datetime.now().isoformat(), contact_id)
         )
         self.db.conn.commit()
 

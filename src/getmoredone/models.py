@@ -19,8 +19,8 @@ class Contact:
     notes: Optional[str] = None
     is_active: bool = True
     id: Optional[int] = None  # None for new contacts, set by DB
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -47,8 +47,8 @@ class ActionItem:
     status: str = "open"
     completed_at: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def calculate_priority_score(self) -> int:
         """
@@ -105,7 +105,7 @@ class ItemLink:
     label: Optional[str] = None
     link_type: str = "url"  # "url", "file", "obsidian_note"
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -117,7 +117,7 @@ class ContactLink:
     label: Optional[str] = None
     link_type: str = "url"  # "url", "file", "obsidian_note"
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -149,7 +149,7 @@ class RescheduleHistory:
     to_due: Optional[str] = None
     reason: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -163,8 +163,8 @@ class TimeBlock:
     item_id: Optional[str] = None
     label: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 @dataclass
@@ -177,7 +177,7 @@ class WorkLog:
     ended_at: Optional[str] = None  # ISO datetime
     note: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid4()))
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
 
 # Priority factor constants
