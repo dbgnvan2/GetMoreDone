@@ -168,5 +168,119 @@ def test_duplicate_action_item(temp_db):
     assert duplicate.who == original.who
 
 
+def test_delete_action_item_simple(temp_db):
+    """Test deleting an action item without children."""
+    item = ActionItem(who="User", title="Delete me")
+    item_id = temp_db.create_action_item(item, apply_defaults=False)
+
+    # Verify it exists
+    retrieved = temp_db.get_action_item(item_id)
+    assert retrieved is not None
+    assert retrieved.title == "Delete me"
+
+    # Delete it
+    temp_db.delete_action_item(item_id)
+
+    # Verify it's gone
+    deleted = temp_db.get_action_item(item_id)
+    assert deleted is None
+
+
+def test_delete_action_item_with_children(temp_db):
+    """Test deleting parent item preserves children (parent_id set to NULL)."""
+    # Create parent item
+    parent = ActionItem(who="User", title="Parent Item")
+    parent_id = temp_db.create_action_item(parent, apply_defaults=False)
+
+    # Create child items
+    child1 = ActionItem(who="User", title="Child 1", parent_id=parent_id)
+    child1_id = temp_db.create_action_item(child1, apply_defaults=False)
+
+    child2 = ActionItem(who="User", title="Child 2", parent_id=parent_id)
+    child2_id = temp_db.create_action_item(child2, apply_defaults=False)
+
+    # Verify children have parent_id set
+    child1_before = temp_db.get_action_item(child1_id)
+    child2_before = temp_db.get_action_item(child2_id)
+    assert child1_before.parent_id == parent_id
+    assert child2_before.parent_id == parent_id
+
+    # Verify parent has children
+    children_before = temp_db.get_children(parent_id)
+    assert len(children_before) == 2
+
+    # Delete parent
+    temp_db.delete_action_item(parent_id)
+
+    # Verify parent is deleted
+    parent_after = temp_db.get_action_item(parent_id)
+    assert parent_after is None
+
+    # Verify children still exist but parent_id is NULL
+    child1_after = temp_db.get_action_item(child1_id)
+    child2_after = temp_db.get_action_item(child2_id)
+    assert child1_after is not None
+    assert child2_after is not None
+    assert child1_after.parent_id is None
+    assert child2_after.parent_id is None
+    assert child1_after.title == "Child 1"
+    assert child2_after.title == "Child 2"
+
+
+def test_delete_action_item_cascades_links(temp_db):
+    """Test that deleting item cascades to links and work logs."""
+    from src.getmoredone.models import ItemLink, WorkLog
+
+    # Create item
+    item = ActionItem(who="User", title="Item with links")
+    item_id = temp_db.create_action_item(item, apply_defaults=False)
+
+    # Add link
+    link = ItemLink(item_id=item_id, url="https://example.com", label="Test Link")
+    temp_db.add_item_link(link)
+
+    # Add work log
+    log = WorkLog(
+        item_id=item_id,
+        started_at=datetime.now().isoformat(),
+        minutes=30,
+        note="Work done"
+    )
+    temp_db.create_work_log(log)
+
+    # Verify links and logs exist
+    links_before = temp_db.get_item_links(item_id)
+    logs_before = temp_db.get_work_logs(item_id)
+    assert len(links_before) == 1
+    assert len(logs_before) == 1
+
+    # Delete item
+    temp_db.delete_action_item(item_id)
+
+    # Verify links and logs are gone (cascaded)
+    links_after = temp_db.get_item_links(item_id)
+    logs_after = temp_db.get_work_logs(item_id)
+    assert len(links_after) == 0
+    assert len(logs_after) == 0
+
+
+def test_get_children_returns_empty_for_deleted_parent(temp_db):
+    """Test that get_children returns empty list for deleted parent."""
+    # Create parent
+    parent = ActionItem(who="User", title="Parent")
+    parent_id = temp_db.create_action_item(parent, apply_defaults=False)
+
+    # Create children
+    child = ActionItem(who="User", title="Child", parent_id=parent_id)
+    temp_db.create_action_item(child, apply_defaults=False)
+
+    # Delete parent
+    temp_db.delete_action_item(parent_id)
+
+    # Try to get children of deleted parent
+    children = temp_db.get_children(parent_id)
+    assert len(children) == 0  # Children are orphaned, so won't show up here
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

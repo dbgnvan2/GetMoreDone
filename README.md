@@ -109,6 +109,21 @@ GetMoreDone/
 5. Priority score auto-calculates: I × U × S × V
 6. To create a **sub-item**: Edit an existing item and click **"+ Create Sub-Item"**
 
+### Deleting Items
+
+1. **From Item Editor**: Open an item and click the red **Delete** button (bottom right)
+2. **Confirmation**: Dialog asks you to confirm deletion
+3. **Child Items**: If the item has children:
+   - A warning dialog appears showing the number of child items
+   - Children are **NOT deleted** - they become root items (parent_id set to NULL)
+   - You can still proceed with deletion or cancel
+4. **Cascading**: Related data is handled automatically:
+   - Work logs: Deleted with the item
+   - Links (notes, URLs): Deleted with the item
+   - Reschedule history: Deleted with the item
+   - Child items: **Preserved** and become root items
+5. **No Undo**: Deletion is permanent and cannot be undone
+
 ### Priority Factors
 
 - **Importance**: Critical (20), High (10), Medium (5), Low (1), None (0)
@@ -299,6 +314,18 @@ pytest tests/test_database.py -v
 - Work logs saved with started_at, ended_at, minutes, and notes
 - Single timer policy (one at a time)
 - Settings for time block (30 min), break (5 min), audio alerts, custom sounds
+
+### Item Deletion (NEW - January 2026)
+- Delete button in Item Editor (red button, bottom right)
+- Two-stage confirmation dialog with clear warnings
+- Smart child handling: Children are preserved and become root items (not deleted)
+- Warning dialog when deleting items with children shows count
+- Automatic cascade deletion of related data:
+  - Work logs deleted with item
+  - Links (notes, URLs) deleted with item
+  - Reschedule history deleted with item
+  - Child items preserved (parent_id set to NULL)
+- Comprehensive test coverage (4 new tests in test_database.py)
 
 ### Contact Management
 - Full contact/client database with CRUD operations

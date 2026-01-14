@@ -455,6 +455,18 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="right", padx=5)
 
+        # Delete button (only for existing items)
+        if self.item_id:
+            btn_delete = ctk.CTkButton(
+                btn_frame,
+                text="Delete",
+                command=self.delete_item,
+                width=100,
+                fg_color="darkred",
+                hover_color="red"
+            )
+            btn_delete.pack(side="right", padx=5)
+
         # Store references for responsive layout
         self.left_col = left_col
         self.right_col = right_col
@@ -1126,6 +1138,35 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Mark item as complete."""
         if self.item_id:
             self.db_manager.complete_action_item(self.item_id)
+            self.destroy()
+
+    def delete_item(self):
+        """Delete the item with confirmation."""
+        if not self.item_id:
+            return
+
+        # Get item for title
+        item = self.db_manager.get_action_item(self.item_id)
+        if not item:
+            return
+
+        # Create confirmation dialog
+        dialog = DeleteConfirmDialog(self, item.title)
+        dialog.wait_window()
+
+        if dialog.confirmed:
+            # Check if item has children
+            children = self.db_manager.get_children(self.item_id)
+            if children:
+                # Show warning about children
+                warning = DeleteChildrenWarningDialog(self, len(children))
+                warning.wait_window()
+
+                if not warning.confirmed:
+                    return  # User cancelled
+
+            # Delete the item
+            self.db_manager.delete_action_item(self.item_id)
             self.destroy()
 
     def update_priority_display(self):
@@ -2279,3 +2320,118 @@ class LinkNoteDialog(ctk.CTkToplevel):
 
             # Link the file
             self.link_note_file(file_path, title)
+
+
+class DeleteConfirmDialog(ctk.CTkToplevel):
+    """Confirmation dialog for deleting an item."""
+
+    def __init__(self, parent, item_title: str):
+        super().__init__(parent)
+
+        self.confirmed = False
+
+        self.title("Confirm Delete")
+        self.geometry("400x150")
+
+        # Center on parent
+        self.transient(parent)
+        self.grab_set()
+
+        # Message
+        message = f"Are you sure you want to delete:\n\n{item_title}\n\nThis action cannot be undone."
+        ctk.CTkLabel(
+            self,
+            text=message,
+            font=ctk.CTkFont(size=12),
+            wraplength=350
+        ).pack(pady=20, padx=20)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            width=100,
+            command=self.cancel
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Delete",
+            width=100,
+            fg_color="darkred",
+            hover_color="red",
+            command=self.confirm
+        ).pack(side="left", padx=5)
+
+    def confirm(self):
+        """Confirm deletion."""
+        self.confirmed = True
+        self.destroy()
+
+    def cancel(self):
+        """Cancel deletion."""
+        self.confirmed = False
+        self.destroy()
+
+
+class DeleteChildrenWarningDialog(ctk.CTkToplevel):
+    """Warning dialog when deleting item with children."""
+
+    def __init__(self, parent, num_children: int):
+        super().__init__(parent)
+
+        self.confirmed = False
+
+        self.title("Warning: Item Has Children")
+        self.geometry("450x180")
+
+        # Center on parent
+        self.transient(parent)
+        self.grab_set()
+
+        # Message
+        message = (
+            f"This item has {num_children} child item(s).\n\n"
+            "Deleting this item will NOT delete the children.\n"
+            "Child items will become root items (no parent).\n\n"
+            "Do you want to continue?"
+        )
+        ctk.CTkLabel(
+            self,
+            text=message,
+            font=ctk.CTkFont(size=12),
+            wraplength=400
+        ).pack(pady=20, padx=20)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            width=100,
+            command=self.cancel
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Delete Anyway",
+            width=120,
+            fg_color="darkred",
+            hover_color="red",
+            command=self.confirm
+        ).pack(side="left", padx=5)
+
+    def confirm(self):
+        """Confirm deletion."""
+        self.confirmed = True
+        self.destroy()
+
+    def cancel(self):
+        """Cancel deletion."""
+        self.confirmed = False
+        self.destroy()

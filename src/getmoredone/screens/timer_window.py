@@ -571,6 +571,7 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         self.title(title)
         self.geometry("400x250")
         self.transient(parent)
+        self.attributes('-topmost', True)  # Appear above always-on-top timer window
         self.grab_set()
 
         # Center on parent
@@ -628,6 +629,7 @@ class NextStepsDialog(ctk.CTkToplevel):
         self.title("Next Steps Note")
         self.geometry("450x400")
         self.transient(parent)
+        self.attributes('-topmost', True)  # Appear above always-on-top timer window
         self.grab_set()
 
         # Center on parent
