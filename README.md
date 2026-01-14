@@ -5,19 +5,20 @@ A comprehensive Python task management application with GUI interface and SQLite
 ## Features
 
 ✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Size × Value
+⏱️ **Action Timer** - Floating countdown timer with pause/resume, break time, and completion workflows
 📅 **Upcoming View** - See what's due in the next N days, grouped by date with total time, includes Group/Category columns
 👥 **Contact Management** - Full contact/client database with autocomplete search in WHO field
 🔗 **Hierarchical Tasks** - Create parent-child relationships with unlimited nesting (grandparent→parent→child→grandchild)
 🌳 **Hierarchical View** - Visual tree structure showing all parent-child relationships with indentation
 ⚙️ **Intelligent Defaults** - System-wide and per-client default settings with date offsets
-📊 **Time Tracking** - Track planned vs actual time to improve estimates
+📊 **Time Tracking** - Track planned vs actual time with work logs and productivity insights
 🗓️ **Time Blocks** - Plan your day with visual time block scheduling
 📈 **Statistics** - Analyze planned vs actual time with insights by size and category
 🔄 **Reschedule History** - Never lose track of why dates changed
-✨ **9 Comprehensive Screens** - Upcoming, All Items, Hierarchical, Plan, Completed, Contacts, Defaults, Stats, Settings
+✨ **10 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, Plan, Completed, Contacts, Defaults, Stats, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
-🖥️ **Responsive UI** - Two-column layout that adapts to window size (600×800 dialogs)
+🖥️ **Responsive UI** - Two-column layout that adapts to window size, floating timer window
 
 ## Quick Start
 
@@ -58,14 +59,17 @@ GetMoreDone/
 │       ├── app.py              # Main application window
 │       ├── database.py         # Database connection & schema
 │       ├── db_manager.py       # Business logic & queries
-│       ├── models.py           # Data models (ActionItem, Contact, etc.)
+│       ├── models.py           # Data models (ActionItem, Contact, WorkLog, etc.)
 │       ├── validation.py       # Validation logic
+│       ├── app_settings.py     # Application settings persistence
 │       └── screens/            # GUI screens
+│           ├── today.py        # Today's items (start <= today)
 │           ├── upcoming.py     # Next N days view
 │           ├── all_items.py    # Complete item list
 │           ├── hierarchical.py # Parent-child tree view
 │           ├── plan.py         # Time block planner
 │           ├── completed.py    # Completed items
+│           ├── timer_window.py # Action timer (floating window)
 │           ├── manage_contacts.py  # Contact list screen
 │           ├── edit_contact.py     # Contact create/edit dialog
 │           ├── defaults.py     # Default settings
@@ -73,9 +77,12 @@ GetMoreDone/
 │           ├── settings.py     # App settings
 │           ├── item_editor.py  # Create/edit dialog (with sub-items)
 │           └── reschedule_dialog.py
+├── docs/                       # Documentation
+│   └── action-timer-requirements.md  # Timer feature spec
 ├── tests/                      # Test suite
 │   ├── test_contact_integration.py  # Contact tests
 │   ├── test_database.py
+│   ├── test_timer.py           # Timer functionality tests
 │   └── ...
 ├── data/                       # Database files (gitignored)
 ├── run.py                      # Run script
@@ -127,6 +134,74 @@ GetMoreDone/
 3. Set priority factors, group, category, planned minutes
 4. Precedence: Manual entry > Who defaults > System defaults
 
+### Using the Action Timer
+
+The Action Timer helps you stay focused on tasks with countdown timing, break management, and productivity tracking.
+
+**Starting a Timer:**
+1. Click the **"⏱ Timer"** button on any open action item (found in TODAY, Upcoming, or All Items screens)
+2. The timer window opens showing:
+   - **Time Block**: Total allocated time (e.g., 30 minutes)
+   - **Time To Finish**: Countdown for work time (e.g., 25 minutes)
+   - **Wrap/Break**: Break duration (e.g., 5 minutes)
+   - **Next Steps**: Shows the action item's description to help you get started
+3. Optionally edit the Time Block value before starting
+4. Click **Start** to begin the countdown
+
+**Timer Controls:**
+- **Start**: Begin countdown (required click, doesn't auto-start)
+- **Pause/Resume**: Pause work time (elapsed time continues, work time pauses)
+- **Stop**: End the timer session (shows Finished/Continue buttons)
+- **Close Window**: Same as clicking Stop
+
+**Visual Indicators:**
+- Title bar shows time remaining (e.g., "Task Name - 12:34")
+- When < 10 minutes remaining: Time turns **green** as a warning
+- During break time: Title shows "BREAK" in **blue** with break countdown
+- Window is always-on-top and resizable
+- Position and size are saved between sessions
+
+**Completion Options (after Stop):**
+
+**Finished Workflow:**
+1. Click **Finished** button
+2. Enter optional completion note describing what you accomplished
+3. Timer saves a work log entry with actual work time (excluding pauses)
+4. Action item is marked as completed
+5. Timer window closes
+
+**Continue Workflow** (for ongoing multi-day tasks):
+1. Click **Continue** button
+2. Enter optional completion note for today's work
+3. Enter optional next steps note for tomorrow
+4. Current action is marked as completed with work log
+5. New duplicate action is created for tomorrow with:
+   - Same title, priority, who, category, group
+   - Start and due dates set to tomorrow
+   - Description updated with next steps note
+6. New action opens in editor for review
+
+**Time Tracking:**
+- **Work Time**: Actual productive time (excludes pauses), saved to work log
+- **Elapsed Time**: Total wall clock time from start to stop
+- Work logs are viewable in the action item's history
+
+**Break Time:**
+- Automatically calculated: Work Time = Time Block - Break Time
+- Default: 30 min block = 25 min work + 5 min break
+- Break countdown starts automatically when work time reaches 00:00
+- You can click Finished/Continue during break (no need to wait)
+- Break time is not optional (but you can ignore it and finish early)
+
+**Settings:**
+- **Default Time Block**: 30 minutes (editable in Settings)
+- **Default Break Time**: 5 minutes (editable in Settings)
+- **Warning Time**: Green warning appears at < 10 minutes (editable in Settings)
+
+**Single Timer Policy:**
+- Only one timer can run at a time (prevents confusion)
+- Timer must be stopped/completed before starting another
+
 ### Time Planning
 
 1. Go to **Plan** screen
@@ -136,10 +211,11 @@ GetMoreDone/
 
 ### Tracking Progress
 
+- **TODAY**: See all items with start date <= today, separated into To Do and Completed sections with stats
 - **Upcoming**: See what's due soon with Group/Category columns, complete items with checkbox
 - **All Items**: Filter, sort, and bulk manage items
 - **Hierarchical**: View parent-child relationships in tree structure with indentation
-- **Completed**: Review completed items by date range
+- **Completed**: Review completed items by date range with count and total time stats
 - **Contacts**: Manage clients and contacts with searchable list
 - **Stats**: Analyze planned vs actual time, accuracy by size
 
@@ -189,6 +265,20 @@ pytest tests/test_database.py -v
 - **Validation**: Field-level validation with error reporting
 
 ## Recent Improvements
+
+### Action Timer Module (NEW)
+- Floating, resizable countdown timer window with always-on-top behavior
+- Pause/Resume functionality tracking work time vs elapsed time
+- Automatic break time calculation (Time Block - Break = Work Time)
+- Visual indicators: Green warning (< 10 min), Blue break time, time in title bar
+- Finished workflow: Complete action with work log and completion note
+- Continue workflow: Complete current, duplicate for tomorrow, capture next steps
+- Next Steps display to help you get started on tasks
+- Window close equals Stop (saves position/size between sessions)
+- Timer buttons on TODAY, Upcoming, and All Items screens
+- Work logs saved with started_at, ended_at, minutes, and notes
+- Single timer policy (one at a time)
+- Settings for default time block (30 min) and break time (5 min)
 
 ### Contact Management
 - Full contact/client database with CRUD operations
