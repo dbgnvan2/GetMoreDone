@@ -97,11 +97,25 @@ class TodayScreen(ctk.CTkFrame):
 
         # Completed items section
         if completed_items:
+            # Calculate total time for completed items
+            total_minutes = sum(item.planned_minutes for item in completed_items if item.planned_minutes)
+
+            # Format time
+            if total_minutes >= 60:
+                hours = total_minutes // 60
+                minutes = total_minutes % 60
+                if minutes > 0:
+                    time_str = f"{hours}h {minutes}m"
+                else:
+                    time_str = f"{hours}h"
+            else:
+                time_str = f"{total_minutes}m" if total_minutes > 0 else "0m"
+
             completed_header = ctk.CTkFrame(self.scroll_frame, fg_color="darkgreen")
             completed_header.grid(row=row, column=0, sticky="ew", pady=(20, 0), padx=5)
             ctk.CTkLabel(
                 completed_header,
-                text=f"Completed ({len(completed_items)} items)",
+                text=f"Completed ({len(completed_items)} items | Time: {time_str})",
                 font=ctk.CTkFont(size=14, weight="bold"),
                 text_color="lightgreen"
             ).pack(padx=10, pady=5, anchor="w")
