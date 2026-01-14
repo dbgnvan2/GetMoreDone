@@ -272,13 +272,15 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         btn_edit.grid(row=0, column=9, padx=2, pady=5)
 
-        btn_reschedule = ctk.CTkButton(
+        btn_push = ctk.CTkButton(
             frame,
-            text="Reschedule",
-            width=80,
-            command=lambda: self.reschedule_item(item.id)
+            text="Push",
+            width=60,
+            fg_color="darkgreen",
+            hover_color="green",
+            command=lambda: self.push_item(item.id)
         )
-        btn_reschedule.grid(row=0, column=10, padx=2, pady=5)
+        btn_push.grid(row=0, column=10, padx=2, pady=5)
 
         return frame
 
@@ -329,8 +331,8 @@ class UpcomingScreen(ctk.CTkFrame):
         dialog.wait_window()
         self.refresh()
 
-    def reschedule_item(self, item_id: str):
-        """Open reschedule dialog."""
+    def push_item(self, item_id: str):
+        """Open push dialog to move item to next day."""
         from .reschedule_dialog import RescheduleDialog
         dialog = RescheduleDialog(self, self.db_manager, item_id)
         dialog.wait_window()
