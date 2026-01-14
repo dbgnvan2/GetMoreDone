@@ -245,10 +245,18 @@ class DatabaseManager:
         who_filter: Optional[str] = None
     ) -> List[ActionItem]:
         """
-        Get open items due in the next N days.
+        Get open items due within N days from now (includes ALL overdue items).
+
+        Shows items that are:
+        - Overdue by ANY amount (prevents items from being left behind)
+        - Due within the next N days (default 7)
+
+        Formula: due_date <= today + N days
+
+        This ensures NO overdue items are hidden, no matter how old.
 
         Args:
-            n_days: Number of days to look ahead
+            n_days: Number of days ahead to look (default 7)
             who_filter: Optional who filter
 
         Returns:
@@ -258,8 +266,7 @@ class DatabaseManager:
             SELECT * FROM action_items
             WHERE status = 'open'
               AND due_date IS NOT NULL
-              AND due_date >= date('now')
-              AND due_date < date('now', '+' || ? || ' days')
+              AND due_date <= date('now', '+' || ? || ' days')
         """
         params = [n_days]
 
