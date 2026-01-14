@@ -30,13 +30,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Action Item")
 
-        self.geometry("600x1000")
+        self.geometry("920x550")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         # Bind resize event
         self.bind("<Configure>", self.on_resize)
-        self.last_width = 600  # Track width for responsive layout
+        self.last_width = 920  # Track width for responsive layout
 
         # Create form
         self.create_form()
@@ -253,10 +253,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # === RIGHT COLUMN with TABS ===
         row_r = 0
 
-        # Create tabview for right column
-        self.tabview = ctk.CTkTabview(right_col, width=280)
-        self.tabview.grid(row=row_r, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
-        right_col.grid_rowconfigure(row_r, weight=1)
+        # Create tabview for right column with fixed height
+        self.tabview = ctk.CTkTabview(right_col, width=380, height=400)
+        self.tabview.grid(row=row_r, column=0, columnspan=2, sticky="new", padx=10, pady=10)
         row_r += 1
 
         # Create tabs
@@ -264,10 +263,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.tab_organization = self.tabview.add("Organization")
         self.tab_notes = self.tabview.add("Notes")
 
-        # Configure tab grids
+        # Configure tab grids - items stick to top, don't expand vertically
         self.tab_priority.grid_columnconfigure(1, weight=1)
         self.tab_organization.grid_columnconfigure(1, weight=1)
         self.tab_notes.grid_columnconfigure(0, weight=1)
+
+        # Don't let rows expand - this keeps items at the top
+        self.tab_priority.grid_rowconfigure(99, weight=1)  # Empty row at bottom absorbs space
+        self.tab_organization.grid_rowconfigure(99, weight=1)
+        self.tab_notes.grid_rowconfigure(99, weight=1)
 
         # === TAB 1: PRIORITY FACTORS ===
         tab1_row = 0
@@ -379,10 +383,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
         tab3_row = 0
 
         # Notes list frame
-        self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=300)
-        self.notes_frame.grid(row=tab3_row, column=0, sticky="nsew", padx=10, pady=5)
+        self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=280)
+        self.notes_frame.grid(row=tab3_row, column=0, sticky="new", padx=10, pady=5)
         self.notes_frame.grid_columnconfigure(0, weight=1)
-        self.tab_notes.grid_rowconfigure(tab3_row, weight=1)
         tab3_row += 1
 
         # Notes buttons
