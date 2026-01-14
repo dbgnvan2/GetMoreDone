@@ -211,6 +211,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.due_date_entry = ctk.CTkEntry(due_date_frame, placeholder_text="YYYY-MM-DD", width=150)
         self.due_date_entry.pack(side="left", padx=(0, 5))
+        # Bind to validate due date when manually edited
+        self.due_date_entry.bind("<FocusOut>", lambda e: self.validate_due_date_on_edit())
 
         btn_due_today = ctk.CTkButton(due_date_frame, text="Today", width=50,
                                       command=lambda: self.set_date(self.due_date_entry, 0))
@@ -516,6 +518,34 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.update_priority_display()
 
+    def validate_due_date_on_edit(self):
+        """
+        Validate due date when manually edited.
+        Shows error if due < start but doesn't auto-correct.
+        """
+        from datetime import datetime
+
+        # Clear any previous error messages
+        self.error_label.configure(text="")
+
+        start_text = self.start_date_entry.get().strip()
+        due_text = self.due_date_entry.get().strip()
+
+        # Only validate if both dates have values
+        if not start_text or not due_text:
+            return
+
+        try:
+            start_date = datetime.strptime(start_text, "%Y-%m-%d").date()
+            due_date = datetime.strptime(due_text, "%Y-%m-%d").date()
+
+            if due_date < start_date:
+                # Show error - user must fix it manually
+                self.error_label.configure(text="Due must be >= Start")
+        except ValueError:
+            # Invalid date format - ignore for now
+            pass
+
     def validate_and_adjust_due_date(self):
         """
         Validate and adjust due date based on start date.
@@ -559,8 +589,27 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
     def set_date(self, entry_widget, offset_days: int):
         """Set date field to today + offset_days."""
-        from datetime import date, timedelta
+        from datetime import date, timedelta, datetime
+
+        # Clear any previous error messages
+        self.error_label.configure(text="")
+
         target_date = date.today() + timedelta(days=offset_days)
+
+        # If setting due date, validate it won't be before start date
+        if entry_widget == self.due_date_entry:
+            start_text = self.start_date_entry.get().strip()
+            if start_text:
+                try:
+                    start_date = datetime.strptime(start_text, "%Y-%m-%d").date()
+                    if target_date < start_date:
+                        # Show error and don't change the date
+                        self.error_label.configure(text="Due must be >= Start")
+                        return
+                except ValueError:
+                    # Invalid start date format, allow the change
+                    pass
+
         entry_widget.delete(0, "end")
         entry_widget.insert(0, target_date.strftime("%Y-%m-%d"))
 
@@ -571,6 +620,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
     def adjust_date(self, entry_widget, days_delta: int):
         """Add or subtract days from the current date in the field."""
         from datetime import datetime, timedelta
+
+        # Clear any previous error messages
+        self.error_label.configure(text="")
 
         current_text = entry_widget.get().strip()
         if not current_text:
@@ -585,6 +637,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 base_date = datetime.now().date()
 
         new_date = base_date + timedelta(days=days_delta)
+
+        # If adjusting due date, validate it won't go below start date
+        if entry_widget == self.due_date_entry:
+            start_text = self.start_date_entry.get().strip()
+            if start_text:
+                try:
+                    start_date = datetime.strptime(start_text, "%Y-%m-%d").date()
+                    if new_date < start_date:
+                        # Show error and don't change the date
+                        self.error_label.configure(text="Due must be >= Start")
+                        return
+                except ValueError:
+                    # Invalid start date format, allow the change
+                    pass
+
+        # Apply the date change
         entry_widget.delete(0, "end")
         entry_widget.insert(0, new_date.strftime("%Y-%m-%d"))
 
