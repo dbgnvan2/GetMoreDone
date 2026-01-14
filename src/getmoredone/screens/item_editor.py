@@ -183,6 +183,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.start_date_entry = ctk.CTkEntry(start_date_frame, placeholder_text="YYYY-MM-DD", width=150)
         self.start_date_entry.pack(side="left", padx=(0, 5))
+        # Bind to validate due date when start date is manually edited
+        self.start_date_entry.bind("<FocusOut>", lambda e: self.validate_and_adjust_due_date())
 
         btn_start_today = ctk.CTkButton(start_date_frame, text="Today", width=50,
                                         command=lambda: self.set_date(self.start_date_entry, 0))
@@ -514,12 +516,57 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.update_priority_display()
 
+    def validate_and_adjust_due_date(self):
+        """
+        Validate and adjust due date based on start date.
+        Rules:
+        - If due date is blank → set to start date
+        - If due date < start date → set to start date
+        - If due date >= start date → no change
+        """
+        from datetime import datetime
+
+        start_text = self.start_date_entry.get().strip()
+        due_text = self.due_date_entry.get().strip()
+
+        # Only validate if start date has a value
+        if not start_text:
+            return
+
+        try:
+            start_date = datetime.strptime(start_text, "%Y-%m-%d").date()
+        except ValueError:
+            # Invalid start date format, skip validation
+            return
+
+        # If due date is blank, set it to start date
+        if not due_text:
+            self.due_date_entry.delete(0, "end")
+            self.due_date_entry.insert(0, start_text)
+            return
+
+        # If due date is present, check if it's less than start
+        try:
+            due_date = datetime.strptime(due_text, "%Y-%m-%d").date()
+            if due_date < start_date:
+                # Due date is less than start, set it to start
+                self.due_date_entry.delete(0, "end")
+                self.due_date_entry.insert(0, start_text)
+        except ValueError:
+            # Invalid due date format, set it to start date
+            self.due_date_entry.delete(0, "end")
+            self.due_date_entry.insert(0, start_text)
+
     def set_date(self, entry_widget, offset_days: int):
         """Set date field to today + offset_days."""
         from datetime import date, timedelta
         target_date = date.today() + timedelta(days=offset_days)
         entry_widget.delete(0, "end")
         entry_widget.insert(0, target_date.strftime("%Y-%m-%d"))
+
+        # If we just set the start date, validate and adjust due date
+        if entry_widget == self.start_date_entry:
+            self.validate_and_adjust_due_date()
 
     def adjust_date(self, entry_widget, days_delta: int):
         """Add or subtract days from the current date in the field."""
@@ -541,18 +588,28 @@ class ItemEditorDialog(ctk.CTkToplevel):
         entry_widget.delete(0, "end")
         entry_widget.insert(0, new_date.strftime("%Y-%m-%d"))
 
-        # If adjusting start date, also adjust due date by the same amount
+        # If adjusting start date, handle due date based on current state
         if entry_widget == self.start_date_entry:
             due_text = self.due_date_entry.get().strip()
+
+            # If due date exists and is valid, check if we should maintain the gap
             if due_text:
                 try:
                     due_base = datetime.strptime(due_text, "%Y-%m-%d").date()
-                    new_due = due_base + timedelta(days=days_delta)
-                    self.due_date_entry.delete(0, "end")
-                    self.due_date_entry.insert(0, new_due.strftime("%Y-%m-%d"))
+                    # If due was >= old start, maintain the gap by incrementing
+                    if due_base >= base_date:
+                        new_due = due_base + timedelta(days=days_delta)
+                        self.due_date_entry.delete(0, "end")
+                        self.due_date_entry.insert(0, new_due.strftime("%Y-%m-%d"))
+                    else:
+                        # Due was < start, so adjust it using validation
+                        self.validate_and_adjust_due_date()
                 except ValueError:
-                    # If due date is invalid, don't adjust it
-                    pass
+                    # Invalid due date format, adjust using validation
+                    self.validate_and_adjust_due_date()
+            else:
+                # Due date is blank, adjust using validation
+                self.validate_and_adjust_due_date()
 
     def apply_defaults_to_form(self):
         """Apply system and who-specific defaults to form fields for new items."""
