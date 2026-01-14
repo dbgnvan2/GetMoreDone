@@ -1733,11 +1733,12 @@ class LinkNoteDialog(ctk.CTkToplevel):
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         # Search/filter by note title
-        ctk.CTkLabel(main_frame, text="Search Note Title:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(0, 5))
+        ctk.CTkLabel(main_frame, text="Search Notes:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(0, 5))
 
         self.search_var = ctk.StringVar()
         self.search_var.trace_add('write', lambda *args: self.filter_notes())
-        self.search_entry = ctk.CTkEntry(main_frame, textvariable=self.search_var, width=500, placeholder_text="Type to search...")
+        self.search_entry = ctk.CTkEntry(main_frame, textvariable=self.search_var, width=500,
+                                        placeholder_text="Search by title, or use file:name or tag:tagname")
         self.search_entry.pack(pady=(0, 10))
 
         # Display label
@@ -1773,9 +1774,10 @@ class LinkNoteDialog(ctk.CTkToplevel):
         self.error_label.pack(pady=(10, 0))
 
     def load_available_notes(self):
-        """Load all markdown files from vault."""
+        """Load all markdown files from vault (searches entire vault)."""
         from ..app_settings import AppSettings
         from pathlib import Path
+        import re
 
         settings = AppSettings.load()
 
@@ -1788,20 +1790,43 @@ class LinkNoteDialog(ctk.CTkToplevel):
             self.error_label.configure(text="Error: Vault path does not exist")
             return
 
-        notes_folder = settings.get_notes_folder()
-        if notes_folder and notes_folder.exists():
-            search_path = notes_folder
-        else:
-            search_path = vault_path
+        # Search entire vault, not just GetMoreDone subfolder
+        search_path = vault_path
 
         # Find all .md files
         try:
             self.available_notes = []
             for md_file in search_path.rglob("*.md"):
+                # Extract tags from frontmatter
+                tags = []
+                try:
+                    content = md_file.read_text(encoding='utf-8')
+                    # Look for YAML frontmatter
+                    frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+                    if frontmatter_match:
+                        frontmatter = frontmatter_match.group(1)
+                        # Extract tags (supports: tags: [tag1, tag2] or tags:\n- tag1\n- tag2)
+                        tags_match = re.search(r'tags:\s*\[(.*?)\]', frontmatter)
+                        if tags_match:
+                            tags = [t.strip().strip('"\'') for t in tags_match.group(1).split(',')]
+                        else:
+                            # Look for YAML list format
+                            tags_lines = re.findall(r'^\s*-\s*(.+)$', frontmatter, re.MULTILINE)
+                            if 'tags:' in frontmatter:
+                                tags = [t.strip() for t in tags_lines if t.strip()]
+
+                    # Also look for inline tags (#tag format)
+                    inline_tags = re.findall(r'#(\w+)', content)
+                    tags.extend(inline_tags)
+                    tags = list(set(tags))  # Remove duplicates
+                except Exception:
+                    pass  # If we can't read tags, continue anyway
+
                 self.available_notes.append({
                     'path': str(md_file),
                     'title': md_file.stem,
-                    'relative': str(md_file.relative_to(vault_path))
+                    'relative': str(md_file.relative_to(vault_path)),
+                    'tags': tags
                 })
 
             # Sort by title
@@ -1814,15 +1839,33 @@ class LinkNoteDialog(ctk.CTkToplevel):
             self.error_label.configure(text=f"Error loading notes: {str(e)}")
 
     def filter_notes(self):
-        """Filter notes based on search text."""
+        """Filter notes based on search text with support for file: and tag: prefixes."""
         # Clear current list
         for widget in self.notes_frame.winfo_children():
             widget.destroy()
 
-        search_text = self.search_var.get().lower()
+        search_text = self.search_var.get().strip()
 
-        # Filter notes
-        filtered = [n for n in self.available_notes if search_text in n['title'].lower()]
+        if not search_text:
+            # No search text - show all notes (up to 50)
+            filtered = self.available_notes[:50]
+        else:
+            # Parse search prefixes (Obsidian-style)
+            search_lower = search_text.lower()
+
+            if search_lower.startswith("file:"):
+                # Search by filename only
+                query = search_text[5:].strip().lower()
+                filtered = [n for n in self.available_notes if query in n['title'].lower()]
+            elif search_lower.startswith("tag:"):
+                # Search by tags
+                query = search_text[4:].strip().lower()
+                filtered = [n for n in self.available_notes
+                           if any(query in tag.lower() for tag in n.get('tags', []))]
+            else:
+                # Default: search in title (case-insensitive contains)
+                query = search_text.lower()
+                filtered = [n for n in self.available_notes if query in n['title'].lower()]
 
         if not filtered:
             ctk.CTkLabel(
@@ -1859,6 +1902,17 @@ class LinkNoteDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(size=10),
             text_color="gray"
         ).pack(anchor="w", padx=5)
+
+        # Display tags if present
+        if note.get('tags'):
+            tags_text = " ".join([f"#{tag}" for tag in note['tags'][:5]])  # Show first 5 tags
+            ctk.CTkLabel(
+                info_frame,
+                text=tags_text,
+                anchor="w",
+                font=ctk.CTkFont(size=9),
+                text_color="#6B7280"
+            ).pack(anchor="w", padx=5)
 
         # Select button
         btn_select = ctk.CTkButton(
