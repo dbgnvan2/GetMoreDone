@@ -522,6 +522,19 @@ class ItemEditorDialog(ctk.CTkToplevel):
         entry_widget.delete(0, "end")
         entry_widget.insert(0, new_date.strftime("%Y-%m-%d"))
 
+        # If adjusting start date, also adjust due date by the same amount
+        if entry_widget == self.start_date_entry:
+            due_text = self.due_date_entry.get().strip()
+            if due_text:
+                try:
+                    due_base = datetime.strptime(due_text, "%Y-%m-%d").date()
+                    new_due = due_base + timedelta(days=days_delta)
+                    self.due_date_entry.delete(0, "end")
+                    self.due_date_entry.insert(0, new_due.strftime("%Y-%m-%d"))
+                except ValueError:
+                    # If due date is invalid, don't adjust it
+                    pass
+
     def apply_defaults_to_form(self):
         """Apply system and who-specific defaults to form fields for new items."""
         who = self.who_var.get()
@@ -908,6 +921,18 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Planned minutes
             planned_text = self.planned_minutes_entry.get().strip()
             item.planned_minutes = int(planned_text) if planned_text else None
+
+            # Validate dates: due date must be >= start date
+            if item.start_date and item.due_date:
+                try:
+                    start = datetime.strptime(item.start_date, "%Y-%m-%d").date()
+                    due = datetime.strptime(item.due_date, "%Y-%m-%d").date()
+                    if due < start:
+                        self.error_label.configure(text="Error: Due date cannot be before Start date")
+                        return
+                except ValueError:
+                    # Let the validator handle invalid date formats
+                    pass
 
             # Validate
             errors = Validator.validate_action_item(item)

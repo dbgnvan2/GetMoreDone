@@ -163,9 +163,9 @@ class TodayScreen(ctk.CTkFrame):
         title_label = ctk.CTkLabel(
             frame,
             text=info_text,
-            font=ctk.CTkFont(size=12, strikethrough=is_completed),
+            font=ctk.CTkFont(size=12),
             anchor="w",
-            text_color="gray" if is_completed else None
+            text_color="gray60" if is_completed else None
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
