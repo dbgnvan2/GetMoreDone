@@ -26,6 +26,11 @@ class AppSettings:
     timer_window_y: Optional[int] = None
     timer_warning_minutes: int = 10  # When to show green warning
 
+    # Audio settings
+    enable_break_sounds: bool = True
+    break_start_sound: Optional[str] = None  # Path to WAV file for break start
+    break_end_sound: Optional[str] = None    # Path to WAV file for break end
+
     @classmethod
     def get_settings_path(cls) -> Path:
         """Get the path to the settings file."""

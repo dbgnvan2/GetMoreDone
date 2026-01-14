@@ -33,6 +33,17 @@ class TodayScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=24, weight="bold")
         ).grid(row=0, column=0, sticky="w")
 
+        # New Item button
+        btn_new = ctk.CTkButton(
+            header_frame,
+            text="+ New Item",
+            width=100,
+            fg_color="green",
+            hover_color="darkgreen",
+            command=self.create_new_item
+        )
+        btn_new.grid(row=0, column=1, padx=5)
+
         # Refresh button
         btn_refresh = ctk.CTkButton(
             header_frame,
@@ -277,5 +288,12 @@ class TodayScreen(ctk.CTkFrame):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
         dialog = ItemEditorDialog(self, self.db_manager, item_id)
+        dialog.wait_window()
+        self.refresh()
+
+    def create_new_item(self):
+        """Open item editor for new item."""
+        from .item_editor import ItemEditorDialog
+        dialog = ItemEditorDialog(self, self.db_manager)
         dialog.wait_window()
         self.refresh()

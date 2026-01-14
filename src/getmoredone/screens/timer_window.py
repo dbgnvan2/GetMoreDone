@@ -331,6 +331,8 @@ class TimerWindow(ctk.CTkToplevel):
                 self.state = "in_break"
                 self.status_label.configure(text="Break time!", text_color="blue")
                 self.update_title_bar()
+                # Play break start sound
+                self.play_sound(is_break_start=True)
 
         elif self.state == "in_break":
             self.break_seconds_remaining -= 1
@@ -338,6 +340,8 @@ class TimerWindow(ctk.CTkToplevel):
             if self.break_seconds_remaining <= 0:
                 # Break finished, auto-stop
                 self.break_seconds_remaining = 0
+                # Play break end sound
+                self.play_sound(is_break_start=False)
                 self.stop_timer()
                 return
 
@@ -404,10 +408,18 @@ class TimerWindow(ctk.CTkToplevel):
         self.wait_window(completion_dialog)
         completion_note = completion_dialog.result
 
-        # Prompt for next steps note
-        next_steps_dialog = CompletionNoteDialog(self, "Next Steps Note")
+        # Prompt for next steps note with date selection
+        next_steps_dialog = NextStepsDialog(self)
         self.wait_window(next_steps_dialog)
-        next_steps_note = next_steps_dialog.result
+        next_steps_result = next_steps_dialog.result
+
+        if not next_steps_result:
+            # User cancelled, abort continue workflow
+            return
+
+        next_steps_note = next_steps_result['note']
+        start_date = next_steps_result['start_date']
+        due_date = next_steps_result['due_date']
 
         # Save work log for current action
         self.save_work_log(completion_note)
@@ -415,17 +427,14 @@ class TimerWindow(ctk.CTkToplevel):
         # Complete current action
         self.db_manager.complete_action_item(self.item.id)
 
-        # Create duplicate for next day
-        from datetime import date, timedelta
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
-
+        # Create duplicate with user-selected dates
         new_item = ActionItem(
             who=self.item.who,
             title=self.item.title,
             description=next_steps_note or self.item.description,
             contact_id=self.item.contact_id,
-            start_date=tomorrow,
-            due_date=tomorrow,
+            start_date=start_date,
+            due_date=due_date,
             importance=self.item.importance,
             urgency=self.item.urgency,
             size=self.item.size,
@@ -483,6 +492,73 @@ class TimerWindow(ctk.CTkToplevel):
         self.settings.timer_window_y = self.winfo_y()
         self.settings.save()
 
+    def play_sound(self, is_break_start: bool):
+        """Play sound for break start or break end."""
+        if not self.settings.enable_break_sounds:
+            return
+
+        # Get sound file path from settings
+        sound_file = self.settings.break_start_sound if is_break_start else self.settings.break_end_sound
+
+        # Try to play custom sound file if specified
+        if sound_file:
+            try:
+                import os
+                if os.path.exists(sound_file):
+                    self._play_wav_file(sound_file)
+                    return
+            except Exception:
+                pass  # Fall through to system beep
+
+        # Fall back to system beep
+        self._play_system_beep()
+
+    def _play_wav_file(self, file_path: str):
+        """Play a WAV file using platform-appropriate method."""
+        import sys
+        import os
+
+        try:
+            if sys.platform == "win32":
+                # Windows
+                import winsound
+                winsound.PlaySound(file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            elif sys.platform == "darwin":
+                # macOS
+                os.system(f'afplay "{file_path}" &')
+            else:
+                # Linux
+                os.system(f'aplay "{file_path}" &')
+        except Exception as e:
+            print(f"Error playing sound file: {e}")
+            # Fall back to system beep on error
+            self._play_system_beep()
+
+    def _play_system_beep(self):
+        """Play system beep/alert sound."""
+        import sys
+
+        try:
+            if sys.platform == "win32":
+                # Windows system beep
+                import winsound
+                winsound.MessageBeep(winsound.MB_OK)
+            elif sys.platform == "darwin":
+                # macOS system beep
+                import os
+                os.system('afplay /System/Library/Sounds/Glass.aiff &')
+            else:
+                # Linux system beep
+                import os
+                os.system('paplay /usr/share/sounds/freedesktop/stereo/complete.oga &')
+        except Exception as e:
+            print(f"Error playing system beep: {e}")
+            # Try terminal bell as last resort
+            try:
+                print('\a')  # Terminal bell
+            except:
+                pass  # Give up silently
+
 
 class CompletionNoteDialog(ctk.CTkToplevel):
     """Simple dialog for entering completion notes."""
@@ -538,4 +614,159 @@ class CompletionNoteDialog(ctk.CTkToplevel):
     def skip(self):
         """Skip note and close."""
         self.result = None
+        self.destroy()
+
+
+class NextStepsDialog(ctk.CTkToplevel):
+    """Dialog for entering next steps note with date selection."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.result = None  # Will be dict with 'note', 'start_date', 'due_date'
+
+        self.title("Next Steps Note")
+        self.geometry("450x400")
+        self.transient(parent)
+        self.grab_set()
+
+        # Center on parent
+        self.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - 450) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - 400) // 2
+        self.geometry(f"+{x}+{y}")
+
+        # Main container
+        main_frame = ctk.CTkFrame(self)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Title label
+        label = ctk.CTkLabel(main_frame, text="Next Steps Note", font=ctk.CTkFont(size=14, weight="bold"))
+        label.pack(pady=(5, 10), padx=10)
+
+        # Note textbox
+        self.textbox = ctk.CTkTextbox(main_frame, height=120)
+        self.textbox.pack(pady=5, padx=10, fill="both", expand=True)
+        self.textbox.focus()
+
+        # Date selection frame
+        date_frame = ctk.CTkFrame(main_frame)
+        date_frame.pack(pady=10, padx=10, fill="x")
+        date_frame.grid_columnconfigure(1, weight=1)
+
+        # Default to tomorrow
+        from datetime import date, timedelta
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+        # Start Date
+        ctk.CTkLabel(date_frame, text="Start Date:", width=80).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.start_date_entry = ctk.CTkEntry(date_frame, width=120)
+        self.start_date_entry.insert(0, tomorrow)
+        self.start_date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        # Start date quick buttons
+        btn_frame_start = ctk.CTkFrame(date_frame)
+        btn_frame_start.grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkButton(btn_frame_start, text="Today", width=60, command=lambda: self.set_date(self.start_date_entry, 0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_start, text="+1", width=50, command=lambda: self.adjust_date(self.start_date_entry, 1)).pack(side="left", padx=2)
+
+        # Due Date
+        ctk.CTkLabel(date_frame, text="Due Date:", width=80).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.due_date_entry = ctk.CTkEntry(date_frame, width=120)
+        self.due_date_entry.insert(0, tomorrow)
+        self.due_date_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        # Due date quick buttons
+        btn_frame_due = ctk.CTkFrame(date_frame)
+        btn_frame_due.grid(row=1, column=2, padx=5, pady=5)
+        ctk.CTkButton(btn_frame_due, text="Today", width=60, command=lambda: self.set_date(self.due_date_entry, 0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_due, text="+1", width=50, command=lambda: self.adjust_date(self.due_date_entry, 1)).pack(side="left", padx=2)
+
+        # Error label
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red")
+        self.error_label.pack(pady=5)
+
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=10, padx=10, fill="x")
+
+        ctk.CTkButton(
+            button_frame,
+            text="Save",
+            command=self.save,
+            fg_color="green",
+            hover_color="darkgreen"
+        ).pack(side="left", expand=True, padx=5)
+
+        ctk.CTkButton(
+            button_frame,
+            text="Skip",
+            command=self.skip
+        ).pack(side="left", expand=True, padx=5)
+
+    def set_date(self, entry: ctk.CTkEntry, days_offset: int):
+        """Set date to today + offset."""
+        from datetime import date, timedelta
+        new_date = (date.today() + timedelta(days=days_offset)).isoformat()
+        entry.delete(0, "end")
+        entry.insert(0, new_date)
+
+    def adjust_date(self, entry: ctk.CTkEntry, days: int):
+        """Adjust current date by days."""
+        from datetime import datetime, timedelta
+        current = entry.get().strip()
+        if not current:
+            self.set_date(entry, days)
+            return
+
+        try:
+            current_date = datetime.strptime(current, "%Y-%m-%d").date()
+            new_date = (current_date + timedelta(days=days)).isoformat()
+            entry.delete(0, "end")
+            entry.insert(0, new_date)
+        except ValueError:
+            # Invalid date, reset to today + days
+            self.set_date(entry, days)
+
+    def save(self):
+        """Save the note and dates, with validation."""
+        note = self.textbox.get("1.0", "end-1c").strip()
+        start_date = self.start_date_entry.get().strip()
+        due_date = self.due_date_entry.get().strip()
+
+        # Validate dates
+        if not start_date or not due_date:
+            self.error_label.configure(text="Both dates are required")
+            return
+
+        from datetime import datetime
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            due = datetime.strptime(due_date, "%Y-%m-%d").date()
+
+            if due < start:
+                self.error_label.configure(text="Due date must be >= Start date")
+                return
+
+        except ValueError:
+            self.error_label.configure(text="Invalid date format (use YYYY-MM-DD)")
+            return
+
+        self.result = {
+            'note': note if note else None,
+            'start_date': start_date,
+            'due_date': due_date
+        }
+        self.destroy()
+
+    def skip(self):
+        """Skip and use defaults."""
+        from datetime import date, timedelta
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+        self.result = {
+            'note': None,
+            'start_date': tomorrow,
+            'due_date': tomorrow
+        }
         self.destroy()
