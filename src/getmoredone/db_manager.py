@@ -49,6 +49,9 @@ class DatabaseManager:
         if apply_defaults:
             self._apply_defaults(item)
 
+        # Validate and adjust dates
+        item.validate_and_adjust_dates()
+
         # Update priority score
         item.update_priority_score()
         item.updated_at = datetime.utcnow().isoformat()
@@ -56,13 +59,14 @@ class DatabaseManager:
         self.db.conn.execute("""
             INSERT INTO action_items (
                 id, who, contact_id, parent_id, title, description, start_date, due_date,
+                original_due_date, is_meeting,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
-            item.start_date, item.due_date,
+            item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
@@ -85,13 +89,26 @@ class DatabaseManager:
 
     def update_action_item(self, item: ActionItem):
         """Update an existing action item."""
+        # Get existing item to preserve original_due_date if it exists
+        existing = self.get_action_item(item.id)
+        if existing and existing.original_due_date:
+            # Preserve original_due_date - it's read-only once set
+            item.original_due_date = existing.original_due_date
+        else:
+            # This is the first time due_date is being set
+            item.validate_and_adjust_dates()
+
+        # If due_date already existed, validate it
+        if existing and existing.due_date:
+            item.validate_and_adjust_dates()
+
         item.update_priority_score()
         item.updated_at = datetime.utcnow().isoformat()
 
         self.db.conn.execute("""
             UPDATE action_items SET
                 who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?,
-                start_date = ?, due_date = ?,
+                start_date = ?, due_date = ?, original_due_date = ?, is_meeting = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
                 planned_minutes = ?, status = ?, completed_at = ?,
@@ -99,7 +116,7 @@ class DatabaseManager:
             WHERE id = ?
         """, (
             item.who, item.contact_id, item.parent_id, item.title, item.description,
-            item.start_date, item.due_date,
+            item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
@@ -794,6 +811,17 @@ class DatabaseManager:
 
     def _row_to_action_item(self, row: sqlite3.Row) -> ActionItem:
         """Convert database row to ActionItem."""
+        # Handle new columns that may not exist in older databases
+        try:
+            original_due_date = row["original_due_date"]
+        except (KeyError, IndexError):
+            original_due_date = None
+
+        try:
+            is_meeting = bool(row["is_meeting"])
+        except (KeyError, IndexError):
+            is_meeting = False
+
         return ActionItem(
             id=row["id"],
             who=row["who"],
@@ -803,6 +831,8 @@ class DatabaseManager:
             description=row["description"],
             start_date=row["start_date"],
             due_date=row["due_date"],
+            original_due_date=original_due_date,
+            is_meeting=is_meeting,
             importance=row["importance"],
             urgency=row["urgency"],
             size=row["size"],

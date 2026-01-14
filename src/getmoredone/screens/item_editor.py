@@ -227,6 +227,30 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_due_clear.pack(side="left", padx=2)
         row_l += 1
 
+        # Is Meeting checkbox
+        ctk.CTkLabel(left_col, text="Is Meeting:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        self.is_meeting_var = ctk.BooleanVar(value=False)
+        self.is_meeting_checkbox = ctk.CTkCheckBox(
+            left_col,
+            text="",
+            variable=self.is_meeting_var,
+            onvalue=True,
+            offvalue=False
+        )
+        self.is_meeting_checkbox.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        row_l += 1
+
+        # Original Due Date (read-only display)
+        ctk.CTkLabel(left_col, text="Original Due Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        self.original_due_date_label = ctk.CTkLabel(
+            left_col,
+            text="-",
+            anchor="w",
+            text_color="gray"
+        )
+        self.original_due_date_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        row_l += 1
+
         # Organization Section
         ctk.CTkLabel(
             left_col,
@@ -425,6 +449,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         if self.item.due_date:
             self.due_date_entry.insert(0, self.item.due_date)
+
+        # Is Meeting
+        self.is_meeting_var.set(self.item.is_meeting)
+
+        # Original Due Date (read-only display)
+        if self.item.original_due_date:
+            self.original_due_date_label.configure(text=self.item.original_due_date)
+        else:
+            self.original_due_date_label.configure(text="-")
 
         # Priority factors
         if self.item.importance is not None:
@@ -860,6 +893,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             item.description = self.description_text.get("1.0", "end").strip() or None
             item.start_date = self.start_date_entry.get().strip() or None
             item.due_date = self.due_date_entry.get().strip() or None
+            item.is_meeting = self.is_meeting_var.get()
 
             # Priority factors
             item.importance = self.extract_factor_value(self.importance_var.get())

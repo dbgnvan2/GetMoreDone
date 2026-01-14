@@ -278,6 +278,31 @@ class Database:
                 ADD COLUMN link_type TEXT DEFAULT 'url'
             """)
 
+        # Check if is_meeting and original_due_date columns exist in action_items
+        cursor = conn.execute("PRAGMA table_info(action_items)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'is_meeting' not in columns:
+            # Add is_meeting column to action_items
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN is_meeting INTEGER DEFAULT 0
+            """)
+
+        if 'original_due_date' not in columns:
+            # Add original_due_date column to action_items
+            # Populate it with current due_date for existing items
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN original_due_date TEXT
+            """)
+            # Set original_due_date to due_date for existing items that have a due date
+            conn.execute("""
+                UPDATE action_items
+                SET original_due_date = due_date
+                WHERE due_date IS NOT NULL AND original_due_date IS NULL
+            """)
+
     def __enter__(self):
         """Context manager entry."""
         self.connect()

@@ -34,6 +34,8 @@ class ActionItem:
     parent_id: Optional[str] = None  # References action_items.id for hierarchical relationships
     start_date: Optional[str] = None
     due_date: Optional[str] = None
+    original_due_date: Optional[str] = None  # First due date value, set once
+    is_meeting: bool = False
     importance: Optional[int] = None
     urgency: Optional[int] = None
     size: Optional[int] = None
@@ -71,6 +73,27 @@ class ActionItem:
     def update_priority_score(self):
         """Update the priority_score field based on current factors."""
         self.priority_score = self.calculate_priority_score()
+
+    def validate_and_adjust_dates(self):
+        """
+        Validate and adjust dates according to business rules:
+        1. Due date must be >= start date
+        2. If due date is blank or < start date, set it to start date
+        3. Set original_due_date if this is the first time due_date has a value
+        """
+        # If we have a start date and due date
+        if self.start_date and self.due_date:
+            # Ensure due date is not before start date
+            if self.due_date < self.start_date:
+                self.due_date = self.start_date
+
+        # If we have a start date but no due date, set due to start
+        elif self.start_date and not self.due_date:
+            self.due_date = self.start_date
+
+        # Set original_due_date if it's None and we have a due_date
+        if self.original_due_date is None and self.due_date:
+            self.original_due_date = self.due_date
 
 
 @dataclass
