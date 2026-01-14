@@ -126,6 +126,14 @@ class TestNoteCreation:
         assert "GetMoreDone" in file_path
         assert file_path.endswith(".md")
 
+        # Verify filename format: {Title} - yyyy-mm-dd.md
+        filename = Path(file_path).name
+        assert "Test Note" in filename
+        assert filename.endswith(".md")
+        # Check date format (yyyy-mm-dd)
+        import re
+        assert re.search(r'\d{4}-\d{2}-\d{2}', filename)
+
         # Verify content
         content = Path(file_path).read_text()
         assert "---" in content  # Frontmatter
@@ -133,6 +141,11 @@ class TestNoteCreation:
         assert f"entity_id: {test_item.id}" in content
         assert "Test Note" in content
         assert "# My Notes" in content
+        # Check for new Obsidian properties
+        assert "PREV:" in content
+        assert "NEXT:" in content
+        assert "TAG:" in content
+        assert "Summary:" in content
 
     def test_create_note_with_metadata(self, temp_vault, test_item):
         """Test that note includes all metadata."""
@@ -151,6 +164,11 @@ class TestNoteCreation:
         assert 'who: "John Doe"' in content
         assert "due_date: 2026-12-31" in content
         assert "priority_score: 1600" in content
+        # Check for new Obsidian properties
+        assert "PREV:" in content
+        assert "NEXT:" in content
+        assert "TAG:" in content
+        assert "Summary:" in content
 
     def test_create_note_sanitizes_filename(self, temp_vault, test_item):
         """Test that special characters in title are sanitized."""
@@ -163,10 +181,17 @@ class TestNoteCreation:
         )
 
         filename = Path(file_path).name
-        # Should not contain special characters
+        # Should contain sanitized title and date
+        assert "Test" in filename
+        assert "Note" in filename
+        assert "With" in filename
+        # Should not contain special characters (except date separator -)
         assert "/" not in filename
-        assert ":" not in filename
         assert "*" not in filename
+        assert "?" not in filename
+        # Should have date format
+        import re
+        assert re.search(r'\d{4}-\d{2}-\d{2}', filename)
         assert "?" not in filename
 
 

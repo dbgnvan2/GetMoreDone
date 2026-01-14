@@ -53,22 +53,32 @@ def create_obsidian_note(
 
     # Sanitize title for filename
     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
-    safe_title = safe_title.replace(' ', '_')
     if not safe_title:
         safe_title = "untitled"
 
-    # Generate unique filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{entity_type}_{timestamp}_{safe_title[:50]}.md"
+    # Generate filename: {Title} - yyyy-mm-dd.md
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    filename = f"{safe_title} - {date_str}.md"
     file_path = notes_folder / filename
 
-    # Create frontmatter
+    # Handle duplicate filenames by appending a number
+    counter = 1
+    while file_path.exists():
+        filename = f"{safe_title} - {date_str} ({counter}).md"
+        file_path = notes_folder / filename
+        counter += 1
+
+    # Create frontmatter with Obsidian properties
     frontmatter_lines = [
         "---",
         f"type: {entity_type}",
         f"entity_id: {entity_id}",
         f'title: "{title}"',
-        f"created: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        f"created: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+        "PREV: ",
+        "NEXT: ",
+        "TAG: ",
+        "Summary: "
     ]
 
     # Add action item specific metadata
