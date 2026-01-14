@@ -146,6 +146,22 @@ class DatabaseManager:
         self.update_action_item(item)
         return True
 
+    def uncomplete_action_item(self, item_id: str) -> bool:
+        """
+        Reopen a completed action item (mark as open).
+
+        Returns:
+            True if item was found and reopened
+        """
+        item = self.get_action_item(item_id)
+        if not item:
+            return False
+
+        item.status = Status.OPEN
+        # Keep completed_at for historical tracking
+        self.update_action_item(item)
+        return True
+
     def duplicate_action_item(self, item_id: str) -> Optional[str]:
         """
         Duplicate an action item (creates new item with same fields).

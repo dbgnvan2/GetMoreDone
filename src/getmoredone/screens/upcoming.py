@@ -145,7 +145,10 @@ class UpcomingScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        frame = ctk.CTkFrame(self.scroll_frame)
+        # RED background for critical items
+        is_critical = (item.importance == 20 or item.urgency == 20)
+        bg_color = "darkred" if is_critical else None
+        frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         frame.grid_columnconfigure(1, weight=1)
 
         # Complete checkbox

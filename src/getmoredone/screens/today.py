@@ -129,7 +129,16 @@ class TodayScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray20" if is_completed else None)
+        # Determine background color: RED for critical items, gray for completed, default otherwise
+        is_critical = (item.importance == 20 or item.urgency == 20)
+        if is_critical and not is_completed:
+            bg_color = "darkred"
+        elif is_completed:
+            bg_color = "gray20"
+        else:
+            bg_color = None
+
+        frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         frame.grid_columnconfigure(1, weight=1)
 
         # Completion indicator

@@ -251,6 +251,17 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.original_due_date_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
+        # Completed Date (read-only display)
+        ctk.CTkLabel(left_col, text="Completed Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        self.completed_at_label = ctk.CTkLabel(
+            left_col,
+            text="-",
+            anchor="w",
+            text_color="lightgreen"
+        )
+        self.completed_at_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        row_l += 1
+
         # Organization Section
         ctk.CTkLabel(
             left_col,
@@ -458,6 +469,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self.original_due_date_label.configure(text=self.item.original_due_date)
         else:
             self.original_due_date_label.configure(text="-")
+
+        # Completed Date (read-only display)
+        if self.item.completed_at:
+            # Format: show date and time
+            completed_display = self.item.completed_at[:19].replace('T', ' ')
+            self.completed_at_label.configure(text=completed_display)
+        else:
+            self.completed_at_label.configure(text="-")
 
         # Priority factors
         if self.item.importance is not None:

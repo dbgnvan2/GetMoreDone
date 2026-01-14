@@ -126,7 +126,10 @@ class AllItemsScreen(ctk.CTkFrame):
 
         # Create item rows
         for idx, item in enumerate(items, start=1):
-            item_frame = ctk.CTkFrame(self.scroll_frame)
+            # RED background for critical items
+            is_critical = (item.importance == 20 or item.urgency == 20)
+            bg_color = "darkred" if is_critical else None
+            item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
             item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
             item_frame.grid_columnconfigure(1, weight=1)
 

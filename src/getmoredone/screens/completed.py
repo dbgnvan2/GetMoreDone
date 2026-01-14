@@ -99,7 +99,10 @@ class CompletedScreen(ctk.CTkFrame):
 
         # Display items
         for idx, item in enumerate(items):
-            item_frame = ctk.CTkFrame(self.scroll_frame)
+            # RED background for critical items (even when completed)
+            is_critical = (item.importance == 20 or item.urgency == 20)
+            bg_color = "darkred" if is_critical else None
+            item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
             item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
             item_frame.grid_columnconfigure(1, weight=1)
 
@@ -136,18 +139,34 @@ class CompletedScreen(ctk.CTkFrame):
             )
             score_label.grid(row=0, column=3, padx=5, pady=5)
 
-            # View button
-            btn_view = ctk.CTkButton(
+            # Edit button
+            btn_edit = ctk.CTkButton(
                 item_frame,
-                text="View",
+                text="Edit",
                 width=60,
-                command=lambda i=item.id: self.view_item(i)
+                command=lambda i=item.id: self.edit_item(i)
             )
-            btn_view.grid(row=0, column=4, padx=2, pady=5)
+            btn_edit.grid(row=0, column=4, padx=2, pady=5)
 
-    def view_item(self, item_id: str):
-        """View item details."""
+            # Uncomplete button
+            btn_uncomplete = ctk.CTkButton(
+                item_frame,
+                text="Reopen",
+                width=70,
+                fg_color="orange",
+                hover_color="darkorange",
+                command=lambda i=item.id: self.uncomplete_item(i)
+            )
+            btn_uncomplete.grid(row=0, column=5, padx=2, pady=5)
+
+    def edit_item(self, item_id: str):
+        """Edit item details."""
         from .item_editor import ItemEditorDialog
         dialog = ItemEditorDialog(self, self.db_manager, item_id)
         dialog.wait_window()
+        self.refresh()
+
+    def uncomplete_item(self, item_id: str):
+        """Reopen a completed item."""
+        self.db_manager.uncomplete_action_item(item_id)
         self.refresh()
