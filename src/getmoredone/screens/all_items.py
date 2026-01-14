@@ -199,6 +199,21 @@ class AllItemsScreen(ctk.CTkFrame):
             # Status
             ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=6, padx=5, pady=5)
 
+            # Action buttons
+            col = 7
+            # Timer button (only for open items)
+            if item.status == Status.OPEN:
+                btn_timer = ctk.CTkButton(
+                    item_frame,
+                    text="⏱ Timer",
+                    width=70,
+                    fg_color="darkgreen",
+                    hover_color="green",
+                    command=lambda i=item.id: self.start_timer(i)
+                )
+                btn_timer.grid(row=0, column=col, padx=2, pady=5)
+                col += 1
+
             # Edit button
             btn_edit = ctk.CTkButton(
                 item_frame,
@@ -206,12 +221,23 @@ class AllItemsScreen(ctk.CTkFrame):
                 width=60,
                 command=lambda i=item.id: self.edit_item(i)
             )
-            btn_edit.grid(row=0, column=7, padx=2, pady=5)
+            btn_edit.grid(row=0, column=col, padx=2, pady=5)
 
     def complete_item(self, item_id: str):
         """Mark item as complete."""
         self.db_manager.complete_action_item(item_id)
         self.refresh()
+
+    def start_timer(self, item_id: str):
+        """Start timer for an action item."""
+        # Get the action item
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+
+        # Open timer window
+        from .timer_window import TimerWindow
+        timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
     def edit_item(self, item_id: str):
         """Open item editor."""

@@ -264,23 +264,33 @@ class UpcomingScreen(ctk.CTkFrame):
             minutes_label.grid(row=0, column=8, padx=5, pady=5)
 
         # Action buttons
+        btn_timer = ctk.CTkButton(
+            frame,
+            text="⏱ Timer",
+            width=70,
+            fg_color="darkgreen",
+            hover_color="green",
+            command=lambda: self.start_timer(item.id)
+        )
+        btn_timer.grid(row=0, column=9, padx=2, pady=5)
+
         btn_edit = ctk.CTkButton(
             frame,
             text="Edit",
             width=60,
             command=lambda: self.edit_item(item.id)
         )
-        btn_edit.grid(row=0, column=9, padx=2, pady=5)
+        btn_edit.grid(row=0, column=10, padx=2, pady=5)
 
         btn_push = ctk.CTkButton(
             frame,
             text="Push",
             width=60,
-            fg_color="darkgreen",
-            hover_color="green",
+            fg_color="orange",
+            hover_color="darkorange",
             command=lambda: self.push_item(item.id)
         )
-        btn_push.grid(row=0, column=10, padx=2, pady=5)
+        btn_push.grid(row=0, column=11, padx=2, pady=5)
 
         return frame
 
@@ -323,6 +333,17 @@ class UpcomingScreen(ctk.CTkFrame):
         """Mark item as complete."""
         self.db_manager.complete_action_item(item_id)
         self.refresh()
+
+    def start_timer(self, item_id: str):
+        """Start timer for an action item."""
+        # Get the action item
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+
+        # Open timer window
+        from .timer_window import TimerWindow
+        timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
     def edit_item(self, item_id: str):
         """Open item editor."""

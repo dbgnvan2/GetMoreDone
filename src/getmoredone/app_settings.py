@@ -17,6 +17,15 @@ class AppSettings:
     obsidian_notes_subfolder: str = "GetMoreDone"
     completion_icon: str = "✓"  # Default green checkmark, can be customized to image path or emoji
 
+    # Timer settings
+    default_time_block_minutes: int = 30
+    default_break_minutes: int = 5
+    timer_window_width: int = 450
+    timer_window_height: int = 550
+    timer_window_x: Optional[int] = None
+    timer_window_y: Optional[int] = None
+    timer_warning_minutes: int = 10  # When to show green warning
+
     @classmethod
     def get_settings_path(cls) -> Path:
         """Get the path to the settings file."""
