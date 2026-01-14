@@ -139,20 +139,10 @@ class GetMoreDoneApp(ctk.CTk):
 
     def show_today(self):
         """Show Today screen."""
-        try:
-            print("DEBUG: show_today called")
-            from .screens.today import TodayScreen
-            print("DEBUG: TodayScreen imported")
-            self.clear_content()
-            print("DEBUG: Content cleared")
-            self.current_screen = TodayScreen(self.content_frame, self.db_manager)
-            print("DEBUG: TodayScreen created")
-            self.current_screen.grid(row=0, column=0, sticky="nsew")
-            print("DEBUG: TodayScreen gridded")
-        except Exception as e:
-            print(f"ERROR in show_today: {e}")
-            import traceback
-            traceback.print_exc()
+        from .screens.today import TodayScreen
+        self.clear_content()
+        self.current_screen = TodayScreen(self.content_frame, self.db_manager)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_upcoming(self):
         """Show Upcoming screen."""
