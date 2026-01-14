@@ -59,74 +59,90 @@ class GetMoreDoneApp(ctk.CTk):
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
         # Navigation buttons
+        self.btn_today = ctk.CTkButton(
+            self.sidebar,
+            text="Today",
+            command=self.show_today,
+            fg_color="darkgreen",
+            hover_color="green"
+        )
+        self.btn_today.grid(row=1, column=0, padx=20, pady=10)
+
         self.btn_upcoming = ctk.CTkButton(
             self.sidebar,
             text="Upcoming",
             command=self.show_upcoming
         )
-        self.btn_upcoming.grid(row=1, column=0, padx=20, pady=10)
+        self.btn_upcoming.grid(row=2, column=0, padx=20, pady=10)
 
         self.btn_all_items = ctk.CTkButton(
             self.sidebar,
             text="All Items",
             command=self.show_all_items
         )
-        self.btn_all_items.grid(row=2, column=0, padx=20, pady=10)
+        self.btn_all_items.grid(row=3, column=0, padx=20, pady=10)
 
         self.btn_hierarchical = ctk.CTkButton(
             self.sidebar,
             text="Hierarchical",
             command=self.show_hierarchical
         )
-        self.btn_hierarchical.grid(row=3, column=0, padx=20, pady=10)
+        self.btn_hierarchical.grid(row=4, column=0, padx=20, pady=10)
 
         self.btn_plan = ctk.CTkButton(
             self.sidebar,
             text="Plan",
             command=self.show_plan
         )
-        self.btn_plan.grid(row=4, column=0, padx=20, pady=10)
+        self.btn_plan.grid(row=5, column=0, padx=20, pady=10)
 
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
             command=self.show_completed
         )
-        self.btn_completed.grid(row=5, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=6, column=0, padx=20, pady=10)
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
             text="Contacts",
             command=self.show_contacts
         )
-        self.btn_contacts.grid(row=6, column=0, padx=20, pady=10)
+        self.btn_contacts.grid(row=7, column=0, padx=20, pady=10)
 
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
             command=self.show_defaults
         )
-        self.btn_defaults.grid(row=7, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=8, column=0, padx=20, pady=10)
 
         self.btn_stats = ctk.CTkButton(
             self.sidebar,
             text="Stats",
             command=self.show_stats
         )
-        self.btn_stats.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_stats.grid(row=9, column=0, padx=20, pady=10)
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
             text="Settings",
             command=self.show_settings
         )
-        self.btn_settings.grid(row=9, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=10, column=0, padx=20, pady=10)
 
     def clear_content(self):
         """Clear current screen from content area."""
         if self.current_screen:
             self.current_screen.destroy()
             self.current_screen = None
+
+    def show_today(self):
+        """Show Today screen."""
+        from .screens.today import TodayScreen
+        self.clear_content()
+        self.current_screen = TodayScreen(self.content_frame, self.db_manager)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_upcoming(self):
         """Show Upcoming screen."""

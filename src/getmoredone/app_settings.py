@@ -15,6 +15,7 @@ class AppSettings:
 
     obsidian_vault_path: Optional[str] = None
     obsidian_notes_subfolder: str = "GetMoreDone"
+    completion_icon: str = "✓"  # Default green checkmark, can be customized to image path or emoji
 
     @classmethod
     def get_settings_path(cls) -> Path:
