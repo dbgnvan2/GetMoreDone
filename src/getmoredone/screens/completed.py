@@ -75,6 +75,15 @@ class CompletedScreen(ctk.CTkFrame):
         )
         self.who_combo.grid(row=0, column=5, padx=5, pady=10)
 
+        # Stats label (count and total time)
+        self.stats_label = ctk.CTkLabel(
+            header,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="lightblue"
+        )
+        self.stats_label.grid(row=0, column=6, padx=(20, 10), pady=10)
+
     def refresh(self):
         """Refresh the list of completed items."""
         # Clear current items
@@ -87,6 +96,24 @@ class CompletedScreen(ctk.CTkFrame):
 
         # Get items
         items = self.db_manager.get_completed_items(days_back, who_filter)
+
+        # Calculate stats
+        count = len(items)
+        total_minutes = sum(item.planned_minutes for item in items if item.planned_minutes)
+
+        # Format total time
+        if total_minutes >= 60:
+            hours = total_minutes // 60
+            minutes = total_minutes % 60
+            if minutes > 0:
+                time_str = f"{hours}h {minutes}m"
+            else:
+                time_str = f"{hours}h"
+        else:
+            time_str = f"{total_minutes}m" if total_minutes > 0 else "0m"
+
+        # Update stats label
+        self.stats_label.configure(text=f"Count: {count} | Time: {time_str}")
 
         if not items:
             label = ctk.CTkLabel(
