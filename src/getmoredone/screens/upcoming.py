@@ -332,10 +332,12 @@ class UpcomingScreen(ctk.CTkFrame):
         self.refresh()
 
     def push_item(self, item_id: str):
-        """Open push dialog to move item to next day."""
-        from .reschedule_dialog import RescheduleDialog
-        dialog = RescheduleDialog(self, self.db_manager, item_id)
-        dialog.wait_window()
+        """Push item to today (set both start and due to today)."""
+        from datetime import datetime
+        today = datetime.now().date().strftime("%Y-%m-%d")
+
+        # Set both start and due dates to today
+        self.db_manager.reschedule_item(item_id, today, today, "Pushed to today")
         self.refresh()
 
     def create_new_item(self):
