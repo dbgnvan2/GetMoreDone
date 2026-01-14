@@ -369,44 +369,52 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.priority_label.pack(side="left", padx=10, pady=8)
         row_r += 1
 
-        # Obsidian Notes Section (only for existing items)
+        # Obsidian Notes Section
+        ctk.CTkLabel(
+            right_col,
+            text="Obsidian Notes",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        row_r += 1
+
+        # Notes list frame
+        self.notes_frame = ctk.CTkScrollableFrame(right_col, height=150)
+        self.notes_frame.grid(row=row_r, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.notes_frame.grid_columnconfigure(0, weight=1)
+        row_r += 1
+
+        # Notes buttons
+        notes_btn_frame = ctk.CTkFrame(right_col, fg_color="transparent")
+        notes_btn_frame.grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+        btn_create_note = ctk.CTkButton(
+            notes_btn_frame,
+            text="+ Create Note",
+            width=110,
+            command=self.create_note
+        )
+        btn_create_note.pack(side="left", padx=2)
+
+        btn_link_note = ctk.CTkButton(
+            notes_btn_frame,
+            text="+ Link Note",
+            width=100,
+            command=self.link_existing_note
+        )
+        btn_link_note.pack(side="left", padx=2)
+        row_r += 1
+
+        # Load notes (if item exists)
         if self.item_id:
-            ctk.CTkLabel(
-                right_col,
-                text="Obsidian Notes",
-                font=ctk.CTkFont(size=14, weight="bold")
-            ).grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
-            row_r += 1
-
-            # Notes list frame
-            self.notes_frame = ctk.CTkScrollableFrame(right_col, height=150)
-            self.notes_frame.grid(row=row_r, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
-            self.notes_frame.grid_columnconfigure(0, weight=1)
-            row_r += 1
-
-            # Notes buttons
-            notes_btn_frame = ctk.CTkFrame(right_col, fg_color="transparent")
-            notes_btn_frame.grid(row=row_r, column=0, columnspan=2, sticky="w", padx=10, pady=5)
-
-            btn_create_note = ctk.CTkButton(
-                notes_btn_frame,
-                text="+ Create Note",
-                width=110,
-                command=self.create_note
-            )
-            btn_create_note.pack(side="left", padx=2)
-
-            btn_link_note = ctk.CTkButton(
-                notes_btn_frame,
-                text="+ Link Note",
-                width=100,
-                command=self.link_existing_note
-            )
-            btn_link_note.pack(side="left", padx=2)
-            row_r += 1
-
-            # Load notes
             self.load_notes()
+        else:
+            # Show message for new items
+            ctk.CTkLabel(
+                self.notes_frame,
+                text="Item will be saved when you create or link a note",
+                font=ctk.CTkFont(size=11),
+                text_color="gray"
+            ).grid(row=0, column=0, pady=10)
 
         # === BUTTONS ===
         btn_frame = ctk.CTkFrame(self)
@@ -1287,9 +1295,82 @@ class ItemEditorDialog(ctk.CTkToplevel):
         )
         btn_delete.pack(side="left", padx=2)
 
+    def save_item_if_needed(self) -> bool:
+        """
+        Save the item if it's new (no item_id yet).
+        Returns True if successful or already has ID, False if validation fails.
+        """
+        if self.item_id:
+            # Already has an ID, nothing to do
+            return True
+
+        try:
+            # Create new item
+            item = ActionItem(who="", title="")
+
+            # Set fields
+            item.who = self.who_var.get().strip()
+            item.contact_id = self.selected_contact_id
+            item.title = self.title_entry.get().strip()
+            item.description = self.description_text.get("1.0", "end").strip() or None
+            item.start_date = self.start_date_entry.get().strip() or None
+            item.due_date = self.due_date_entry.get().strip() or None
+            item.is_meeting = self.is_meeting_var.get()
+
+            # Priority factors
+            item.importance = self.extract_factor_value(self.importance_var.get())
+            item.urgency = self.extract_factor_value(self.urgency_var.get())
+            item.size = self.extract_factor_value(self.size_var.get())
+            item.value = self.extract_factor_value(self.value_var.get())
+
+            # Organization
+            item.group = self.group_var.get().strip() or None
+            item.category = self.category_var.get().strip() or None
+
+            # Planned minutes
+            planned_text = self.planned_minutes_entry.get().strip()
+            item.planned_minutes = int(planned_text) if planned_text else None
+
+            # Validate dates
+            if item.start_date and item.due_date:
+                try:
+                    start = datetime.strptime(item.start_date, "%Y-%m-%d").date()
+                    due = datetime.strptime(item.due_date, "%Y-%m-%d").date()
+                    if due < start:
+                        self.error_label.configure(text="Error: Due date cannot be before Start date")
+                        return False
+                except ValueError:
+                    pass
+
+            # Validate
+            errors = Validator.validate_action_item(item)
+            if errors:
+                self.error_label.configure(text=errors[0].message)
+                return False
+
+            # Save and get the ID
+            self.db_manager.create_action_item(item, apply_defaults=True)
+            self.item_id = item.id
+            self.item = item
+
+            # Clear the notes frame and reload to show it's ready for notes
+            for widget in self.notes_frame.winfo_children():
+                widget.destroy()
+            self.load_notes()
+
+            # Update window title
+            self.title("Edit Action Item")
+
+            return True
+
+        except Exception as e:
+            self.error_label.configure(text=f"Error saving item: {str(e)}")
+            return False
+
     def create_note(self):
         """Open dialog to create a new Obsidian note."""
-        if not self.item_id:
+        # Save item first if it's new
+        if not self.save_item_if_needed():
             return
 
         # Check if Obsidian is configured
@@ -1307,7 +1388,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
     def link_existing_note(self):
         """Open dialog to link an existing note file."""
-        if not self.item_id:
+        # Save item first if it's new
+        if not self.save_item_if_needed():
             return
 
         LinkNoteDialog(self, self.db_manager, "action_item", self.item_id)
