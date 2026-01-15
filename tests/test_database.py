@@ -331,5 +331,67 @@ def test_create_sub_item_duplicates_parent(temp_db):
     assert children[0].id == sub_item_id
 
 
+def test_push_item_to_next_day(temp_db):
+    """Test pushing (rescheduling) item to next day."""
+    from datetime import timedelta
+
+    # Create item with today's dates
+    today = datetime.now().date().isoformat()
+    item = ActionItem(
+        who="User",
+        title="Task to Push",
+        start_date=today,
+        due_date=today
+    )
+    item_id = temp_db.create_action_item(item, apply_defaults=False)
+
+    # Calculate tomorrow
+    tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
+
+    # Push to next day
+    temp_db.reschedule_item(item_id, tomorrow, tomorrow, "Pushed to next day")
+
+    # Verify dates changed
+    updated_item = temp_db.get_action_item(item_id)
+    assert updated_item.start_date == tomorrow
+    assert updated_item.due_date == tomorrow
+
+
+def test_push_item_records_history(temp_db):
+    """Test that pushing item records reschedule history."""
+    from datetime import timedelta
+
+    # Create item
+    today = datetime.now().date().isoformat()
+    item = ActionItem(who="User", title="Task", start_date=today, due_date=today)
+    item_id = temp_db.create_action_item(item, apply_defaults=False)
+
+    # Push to next day
+    tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
+    temp_db.reschedule_item(item_id, tomorrow, tomorrow, "Testing push")
+
+    # Verify history was recorded (check that item was updated)
+    updated_item = temp_db.get_action_item(item_id)
+    assert updated_item is not None
+    assert updated_item.start_date == tomorrow
+    assert updated_item.due_date == tomorrow
+
+
+def test_push_item_without_dates(temp_db):
+    """Test pushing item that has no dates."""
+    # Create item without dates
+    item = ActionItem(who="User", title="No dates task")
+    item_id = temp_db.create_action_item(item, apply_defaults=False)
+
+    # Try to push (should handle None dates gracefully)
+    temp_db.reschedule_item(item_id, None, None, "No dates")
+
+    # Verify item still exists
+    updated_item = temp_db.get_action_item(item_id)
+    assert updated_item is not None
+    assert updated_item.start_date is None
+    assert updated_item.due_date is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

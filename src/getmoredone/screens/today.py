@@ -266,15 +266,15 @@ class TodayScreen(ctk.CTkFrame):
             )
             btn_edit.grid(row=0, column=6, padx=2, pady=5)
 
-            btn_delete = ctk.CTkButton(
+            btn_push = ctk.CTkButton(
                 frame,
-                text="Delete",
+                text="Push",
                 width=60,
-                fg_color="darkred",
-                hover_color="red",
-                command=lambda: self.delete_item(item.id, item.title)
+                fg_color="orange",
+                hover_color="darkorange",
+                command=lambda item_id=item.id: self.push_item(item_id)
             )
-            btn_delete.grid(row=0, column=7, padx=2, pady=5)
+            btn_push.grid(row=0, column=7, padx=2, pady=5)
 
         return frame
 
@@ -308,138 +308,9 @@ class TodayScreen(ctk.CTkFrame):
         dialog.wait_window()
         self.refresh()
 
-    def delete_item(self, item_id: str, item_title: str):
-        """Delete an action item with confirmation."""
-        # Create confirmation dialog
-        dialog = ConfirmDeleteDialog(self, item_title)
+    def push_item(self, item_id: str):
+        """Push item to next day."""
+        from .reschedule_dialog import RescheduleDialog
+        dialog = RescheduleDialog(self, self.db_manager, item_id)
         dialog.wait_window()
-
-        if dialog.confirmed:
-            # Check if item has children
-            children = self.db_manager.get_children(item_id)
-            if children:
-                # Show warning about children
-                warning = ChildrenWarningDialog(self, len(children))
-                warning.wait_window()
-
-                if not warning.confirmed:
-                    return  # User cancelled
-
-            # Delete the item
-            self.db_manager.delete_action_item(item_id)
-            self.refresh()
-
-
-class ConfirmDeleteDialog(ctk.CTkToplevel):
-    """Confirmation dialog for deleting an item."""
-
-    def __init__(self, parent, item_title: str):
-        super().__init__(parent)
-
-        self.confirmed = False
-
-        self.title("Confirm Delete")
-        self.geometry("400x150")
-
-        # Center on parent
-        self.transient(parent)
-        self.grab_set()
-
-        # Message
-        message = f"Are you sure you want to delete:\n\n{item_title}\n\nThis action cannot be undone."
-        ctk.CTkLabel(
-            self,
-            text=message,
-            font=ctk.CTkFont(size=12),
-            wraplength=350
-        ).pack(pady=20, padx=20)
-
-        # Buttons
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=10)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            width=100,
-            command=self.cancel
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Delete",
-            width=100,
-            fg_color="darkred",
-            hover_color="red",
-            command=self.confirm
-        ).pack(side="left", padx=5)
-
-    def confirm(self):
-        """Confirm deletion."""
-        self.confirmed = True
-        self.destroy()
-
-    def cancel(self):
-        """Cancel deletion."""
-        self.confirmed = False
-        self.destroy()
-
-
-class ChildrenWarningDialog(ctk.CTkToplevel):
-    """Warning dialog when deleting item with children."""
-
-    def __init__(self, parent, num_children: int):
-        super().__init__(parent)
-
-        self.confirmed = False
-
-        self.title("Warning: Item Has Children")
-        self.geometry("450x180")
-
-        # Center on parent
-        self.transient(parent)
-        self.grab_set()
-
-        # Message
-        message = (
-            f"This item has {num_children} child item(s).\n\n"
-            "Deleting this item will NOT delete the children.\n"
-            "Child items will become root items (no parent).\n\n"
-            "Do you want to continue?"
-        )
-        ctk.CTkLabel(
-            self,
-            text=message,
-            font=ctk.CTkFont(size=12),
-            wraplength=400
-        ).pack(pady=20, padx=20)
-
-        # Buttons
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=10)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            width=100,
-            command=self.cancel
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Delete Anyway",
-            width=120,
-            fg_color="darkred",
-            hover_color="red",
-            command=self.confirm
-        ).pack(side="left", padx=5)
-
-    def confirm(self):
-        """Confirm deletion."""
-        self.confirmed = True
-        self.destroy()
-
-    def cancel(self):
-        """Cancel deletion."""
-        self.confirmed = False
-        self.destroy()
+        self.refresh()
