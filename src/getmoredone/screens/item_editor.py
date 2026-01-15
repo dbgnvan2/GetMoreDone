@@ -448,6 +448,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_set_parent = ctk.CTkButton(btn_frame, text="Set Parent", command=self.set_parent, width=100)
             btn_set_parent.pack(side="left", padx=5)
 
+            btn_calendar = ctk.CTkButton(btn_frame, text="📅 Calendar", command=self.create_calendar_event, width=100, fg_color="purple", hover_color="darkviolet")
+            btn_calendar.pack(side="left", padx=5)
+
         # Error label in the center between buttons
         self.error_label = ctk.CTkLabel(btn_frame, text="", text_color="red", wraplength=600)
         self.error_label.pack(side="left", expand=True, padx=10)
@@ -1285,6 +1288,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Open set parent dialog
         SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
+
+    def create_calendar_event(self):
+        """Create a Google Calendar event linked to this item."""
+        if not self.item_id:
+            # Save the item first if it's new
+            if not self.save_item_if_needed():
+                return
+
+        # Open calendar dialog
+        from .calendar_dialog import CalendarEventDialog
+        dialog = CalendarEventDialog(self, self.db_manager, self.item_id)
+        dialog.wait_window()
+
+        # Refresh notes display to show the new calendar link
+        if dialog.result:
+            self.load_notes()
 
     def load_notes(self):
         """Load and display Obsidian notes for this item."""

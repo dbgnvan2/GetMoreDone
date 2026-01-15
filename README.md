@@ -15,6 +15,7 @@ A comprehensive Python task management application with GUI interface and SQLite
 🗓️ **Time Blocks** - Plan your day with visual time block scheduling
 📈 **Statistics** - Analyze planned vs actual time with insights by effort-cost and category
 🔄 **Reschedule History** - Never lose track of why dates changed
+📆 **Google Calendar Integration** - Create calendar events directly from action items with automatic linking
 ✨ **10 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, Plan, Completed, Contacts, Defaults, Stats, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
@@ -258,6 +259,39 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - Only one timer can run at a time (prevents confusion)
 - Timer must be stopped/completed before starting another
 
+### Google Calendar Integration
+
+Create Google Calendar events directly from action items with automatic linking.
+
+**Setup (One-Time):**
+1. See detailed setup instructions: `docs/google-calendar-setup.md`
+2. Get OAuth credentials from Google Cloud Console
+3. Place `credentials.json` in `~/.getmoredone/`
+4. First use will prompt for authorization in browser
+
+**Creating Calendar Events:**
+1. Open an action item in Item Editor
+2. Click **"📅 Calendar"** button (purple)
+3. Fill in event details:
+   - **Title**: Pre-filled from action item
+   - **Date**: Use quick buttons or enter YYYY-MM-DD
+   - **Time**: Set hour, minute, AM/PM
+   - **Duration**: Minutes (default: 60)
+   - **Description**: Optional (defaults to item description)
+   - **Location**: Optional meeting location or URL
+   - **Attendees**: Optional, comma-separated emails
+4. Click **"Create Calendar Event"**
+5. Event appears as a link in the item's Links tab
+
+**Benefits:**
+- 📆 Schedule meetings without leaving GetMoreDone
+- 🔗 Calendar link stored with action item for easy access
+- ⏰ Pre-fills event with action item details
+- 📧 Optionally invite attendees
+- 📍 Add location/meeting URL
+
+**Note:** Requires Google Calendar API credentials. See `docs/google-calendar-setup.md` for full setup instructions.
+
 ### Time Planning
 
 1. Go to **Plan** screen
@@ -351,6 +385,24 @@ pytest tests/test_database.py -v
   - Reschedule history deleted with item
   - Child items preserved (parent_id set to NULL)
 - Comprehensive test coverage (4 new tests in test_database.py)
+
+### Google Calendar Integration (NEW - January 2026)
+- Create calendar events directly from action items
+- 📅 Calendar button in Item Editor (purple, on button bar)
+- OAuth 2.0 authentication with secure token storage
+- Pre-fills event with action item details (title, description, dates)
+- Set start time, duration, location, and attendees
+- Calendar links automatically stored in item_links table
+- Events appear as clickable links in Links tab
+- Cross-platform support (requires credentials.json setup)
+- Complete setup guide in docs/google-calendar-setup.md
+- Features:
+  - 12-hour time format with AM/PM
+  - Quick date buttons (Today, +1)
+  - Duration in minutes (default: 60)
+  - Optional location and attendees
+  - Automatic browser authorization on first use
+- Link type: "google_calendar" for easy identification
 
 ### Contact Management
 - Full contact/client database with CRUD operations
