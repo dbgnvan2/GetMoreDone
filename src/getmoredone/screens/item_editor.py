@@ -298,8 +298,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.urgency_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
         tab1_row += 1
 
-        # Size
-        ctk.CTkLabel(self.tab_priority, text="Size:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
+        # Effort-Cost (Size internally)
+        ctk.CTkLabel(self.tab_priority, text="Effort-Cost:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
         size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
         self.size_var = ctk.StringVar(value="")
         self.size_combo = ctk.CTkComboBox(
@@ -1248,22 +1248,21 @@ class ItemEditorDialog(ctk.CTkToplevel):
         ItemEditorDialog(self.master, self.db_manager, parent_id)
 
     def create_sub_item(self):
-        """Create a new sub-item linked to this item."""
+        """Create a new sub-item as a duplicate of this item."""
         if not self.item_id:
             return
 
-        # Close this dialog and open a new one for the sub-item
-        # Create a new action item with parent_id set
-        from ..models import ActionItem
+        # Duplicate the parent item to create sub-item
+        sub_item_id = self.db_manager.duplicate_action_item(self.item_id)
 
-        sub_item = ActionItem(
-            who=self.who_var.get(),
-            title="",
-            parent_id=self.item_id
-        )
+        if not sub_item_id:
+            return
 
-        # Save the sub-item
-        sub_item_id = self.db_manager.create_action_item(sub_item, apply_defaults=True)
+        # Update the sub-item to set parent_id
+        sub_item = self.db_manager.get_action_item(sub_item_id)
+        if sub_item:
+            sub_item.parent_id = self.item_id
+            self.db_manager.update_action_item(sub_item)
 
         # Close this dialog
         self.destroy()

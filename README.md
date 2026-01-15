@@ -4,7 +4,7 @@ A comprehensive Python task management application with GUI interface and SQLite
 
 ## Features
 
-✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Size × Value
+✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Effort-Cost × Value
 ⏱️ **Action Timer** - Floating countdown timer with pause/resume, break time, and completion workflows
 📅 **Upcoming View** - See what's due in the next N days, grouped by date with total time, includes Group/Category columns
 👥 **Contact Management** - Full contact/client database with autocomplete search in WHO field
@@ -13,7 +13,7 @@ A comprehensive Python task management application with GUI interface and SQLite
 ⚙️ **Intelligent Defaults** - System-wide and per-client default settings with date offsets
 📊 **Time Tracking** - Track planned vs actual time with work logs and productivity insights
 🗓️ **Time Blocks** - Plan your day with visual time block scheduling
-📈 **Statistics** - Analyze planned vs actual time with insights by size and category
+📈 **Statistics** - Analyze planned vs actual time with insights by effort-cost and category
 🔄 **Reschedule History** - Never lose track of why dates changed
 ✨ **10 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, Plan, Completed, Contacts, Defaults, Stats, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
@@ -126,21 +126,24 @@ GetMoreDone/
 
 ### Priority Factors
 
-- **Importance**: Critical (20), High (10), Medium (5), Low (1), None (0)
-- **Urgency**: Critical (20), High (10), Medium (5), Low (1), None (0)
-- **Size**: XL (16), L (8), M (4), S (2), P (0)
-- **Value**: XL (16), L (8), M (4), S (2), P (0)
+- **Importance**: Critical (20), High (10), Medium (5), Low (1)
+- **Urgency**: Critical (20), High (10), Medium (5), Low (1)
+- **Effort-Cost**: XL (16), L (8), M (4), S (2)
+- **Value**: XL (16), L (8), M (4), S (2)
 
 ### Working with Hierarchical Tasks
 
 1. **Create a sub-item**: Open any existing item and click **"+ Create Sub-Item"**
-2. Sub-items inherit the WHO field from parent and can be edited independently
-3. **Navigate hierarchy**: Click "View Parent" button on sub-items to go up
-4. **Hierarchical View**: Click **Hierarchical** in sidebar to see full tree structure
+   - Sub-item is created as a **duplicate** of the parent (all fields copied)
+   - Includes: WHO, title, description, dates, priority factors, group, category, planned time
+   - Parent relationship is automatically set (parent_id)
+   - Edit the sub-item to customize as needed
+2. **Navigate hierarchy**: Click "View Parent" button on sub-items to go up
+3. **Hierarchical View**: Click **Hierarchical** in sidebar to see full tree structure
    - Shows parent-child relationships with visual indentation
    - Displays child count for parent items
    - Filter by status (open/completed/all)
-5. **Multi-level nesting**: Create grandchildren by adding sub-items to sub-items
+4. **Multi-level nesting**: Create grandchildren by adding sub-items to sub-items
 
 ### Setting Defaults
 
@@ -248,7 +251,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - **Hierarchical**: View parent-child relationships in tree structure with indentation
 - **Completed**: Review completed items by date range with count and total time stats
 - **Contacts**: Manage clients and contacts with searchable list
-- **Stats**: Analyze planned vs actual time, accuracy by size
+- **Stats**: Analyze planned vs actual time, accuracy by effort-cost
 
 ## Development
 
@@ -337,6 +340,8 @@ pytest tests/test_database.py -v
 ### Hierarchical Task Structure
 - Parent-child relationships with unlimited nesting levels
 - Create sub-items from any existing item with "+ Create Sub-Item" button
+  - Sub-items duplicate parent (all fields copied including title, dates, priority, etc.)
+  - Edit the duplicated sub-item to customize as needed
 - Navigate up with "View Parent" button on sub-items
 - Dedicated Hierarchical View screen with tree visualization
 - Breadth-first traversal for efficient subtree queries

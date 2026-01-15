@@ -98,7 +98,7 @@ class StatsScreen(ctk.CTkFrame):
         header_frame.grid(row=1, column=0, sticky="ew", pady=(10, 2), padx=5)
         header_frame.grid_columnconfigure(0, weight=1)
 
-        headers = ["Title", "Who", "Category", "Size", "Planned", "Actual", "Variance"]
+        headers = ["Title", "Who", "Category", "Effort-Cost", "Planned", "Actual", "Variance"]
         for col, header_text in enumerate(headers):
             ctk.CTkLabel(
                 header_frame,
@@ -125,7 +125,7 @@ class StatsScreen(ctk.CTkFrame):
             # Category
             ctk.CTkLabel(item_frame, text=stat['category'] or "-", width=100).grid(row=0, column=2, padx=5, pady=5)
 
-            # Size
+            # Effort-Cost (Size internally)
             ctk.CTkLabel(item_frame, text=stat['size'] or "-", width=60).grid(row=0, column=3, padx=5, pady=5)
 
             # Planned
@@ -154,7 +154,7 @@ class StatsScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=16, weight="bold")
         ).pack(anchor="w", padx=10, pady=(10, 5))
 
-        # Calculate average variance by size
+        # Calculate average variance by effort-cost (size)
         by_size = {}
         for stat in stats:
             size = stat['size'] or "Unknown"
@@ -163,7 +163,7 @@ class StatsScreen(ctk.CTkFrame):
             by_size[size]['count'] += 1
             by_size[size]['total_variance'] += stat['variance']
 
-        insights_text = "Average Variance by Size:\n"
+        insights_text = "Average Variance by Effort-Cost:\n"
         for size, data in by_size.items():
             avg_variance = data['total_variance'] / data['count']
             insights_text += f"  {size}: {avg_variance:+.1f}m (across {data['count']} items)\n"

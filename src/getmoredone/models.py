@@ -188,32 +188,28 @@ class PriorityFactors:
         "Critical": 20,
         "High": 10,
         "Medium": 5,
-        "Low": 1,
-        "None": 0
+        "Low": 1
     }
 
     URGENCY = {
         "Critical": 20,
         "High": 10,
         "Medium": 5,
-        "Low": 1,
-        "None": 0
+        "Low": 1
     }
 
     SIZE = {
         "XL": 16,
         "L": 8,
         "M": 4,
-        "S": 2,
-        "P": 0
+        "S": 2
     }
 
     VALUE = {
         "XL": 16,
         "L": 8,
         "M": 4,
-        "S": 2,
-        "P": 0
+        "S": 2
     }
 
 

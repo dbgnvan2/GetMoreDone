@@ -282,5 +282,54 @@ def test_get_children_returns_empty_for_deleted_parent(temp_db):
     assert len(children) == 0  # Children are orphaned, so won't show up here
 
 
+def test_create_sub_item_duplicates_parent(temp_db):
+    """Test that sub-items duplicate parent fields."""
+    # Create parent item with all fields set
+    parent = ActionItem(
+        who="ClientA",
+        title="Parent Task",
+        description="Parent description",
+        start_date="2026-01-15",
+        due_date="2026-01-20",
+        importance=10,
+        urgency=5,
+        size=4,
+        value=8,
+        group="Development",
+        category="Backend",
+        planned_minutes=120
+    )
+    parent_id = temp_db.create_action_item(parent, apply_defaults=False)
+
+    # Simulate sub-item creation: duplicate parent then set parent_id
+    sub_item_id = temp_db.duplicate_action_item(parent_id)
+    sub_item = temp_db.get_action_item(sub_item_id)
+    sub_item.parent_id = parent_id
+    temp_db.update_action_item(sub_item)
+
+    # Verify sub-item has all parent fields
+    sub_item = temp_db.get_action_item(sub_item_id)
+    parent = temp_db.get_action_item(parent_id)
+
+    assert sub_item.parent_id == parent_id
+    assert sub_item.who == parent.who
+    assert sub_item.title == parent.title
+    assert sub_item.description == parent.description
+    assert sub_item.start_date == parent.start_date
+    assert sub_item.due_date == parent.due_date
+    assert sub_item.importance == parent.importance
+    assert sub_item.urgency == parent.urgency
+    assert sub_item.size == parent.size
+    assert sub_item.value == parent.value
+    assert sub_item.group == parent.group
+    assert sub_item.category == parent.category
+    assert sub_item.planned_minutes == parent.planned_minutes
+
+    # Verify parent has the sub-item as child
+    children = temp_db.get_children(parent_id)
+    assert len(children) == 1
+    assert children[0].id == sub_item_id
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

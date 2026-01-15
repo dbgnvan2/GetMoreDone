@@ -119,8 +119,8 @@ class DefaultsScreen(ctk.CTkFrame):
         self.urgency_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
-        # Size
-        ctk.CTkLabel(scroll, text="Size:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        # Effort-Cost (Size internally)
+        ctk.CTkLabel(scroll, text="Effort-Cost:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
         size_values = [""] + [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
         self.size_var = ctk.StringVar(value="")
         self.size_combo = ctk.CTkComboBox(scroll, values=size_values, variable=self.size_var, width=200)

@@ -248,7 +248,7 @@ class UpcomingScreen(ctk.CTkFrame):
             ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=col, padx=2)
             col += 1
         if item.size:
-            ctk.CTkLabel(factors_frame, text=f"S:{item.size}", width=40).grid(row=0, column=col, padx=2)
+            ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=col, padx=2)
             col += 1
         if item.value:
             ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=col, padx=2)

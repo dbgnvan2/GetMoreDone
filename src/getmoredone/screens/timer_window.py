@@ -454,8 +454,8 @@ class TimerWindow(ctk.CTkToplevel):
         self.destroy()
 
         # Open editor for new item
-        from .item_editor import ActionItemEditor
-        editor = ActionItemEditor(self.master, self.db_manager, new_item.id)
+        from .item_editor import ItemEditorDialog
+        ItemEditorDialog(self.master, self.db_manager, new_item.id)
 
     def save_work_log(self, note: Optional[str] = None):
         """Save work log entry to database."""
