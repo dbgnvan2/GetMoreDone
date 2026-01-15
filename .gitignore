@@ -44,6 +44,11 @@ htmlcov/
 *.sqlite
 *.sqlite3
 
+# Google Calendar credentials (sensitive - never commit)
+credentials.json
+token.pickle
+.getmoredone/
+
 # OS
 .DS_Store
 Thumbs.db
