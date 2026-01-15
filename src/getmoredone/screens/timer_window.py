@@ -329,10 +329,12 @@ class TimerWindow(ctk.CTkToplevel):
                 # Work time finished, start break
                 self.work_seconds_remaining = 0
                 self.state = "in_break"
-                self.status_label.configure(text="Break time!", text_color="blue")
+                self.status_label.configure(text="⏰ BREAK TIME! ⏰", text_color="yellow", font=ctk.CTkFont(size=14, weight="bold"))
                 self.update_title_bar()
                 # Play break start sound
                 self.play_sound(is_break_start=True)
+                # Flash the window to get attention
+                self._flash_window()
 
         elif self.state == "in_break":
             self.break_seconds_remaining -= 1
@@ -340,8 +342,11 @@ class TimerWindow(ctk.CTkToplevel):
             if self.break_seconds_remaining <= 0:
                 # Break finished, auto-stop
                 self.break_seconds_remaining = 0
+                self.status_label.configure(text="⏰ BREAK OVER! ⏰", text_color="red", font=ctk.CTkFont(size=14, weight="bold"))
                 # Play break end sound
                 self.play_sound(is_break_start=False)
+                # Flash the window
+                self._flash_window()
                 self.stop_timer()
                 return
 
@@ -534,29 +539,75 @@ class TimerWindow(ctk.CTkToplevel):
             # Fall back to system beep on error
             self._play_system_beep()
 
+    def _flash_window(self):
+        """Flash the window to get user's attention."""
+        try:
+            # Flash the window by changing background colors briefly
+            original_bg = self._fg_color
+
+            def flash_on():
+                self.configure(fg_color="orange")
+                self.after(300, flash_off)
+
+            def flash_off():
+                self.configure(fg_color=original_bg)
+                self.after(300, flash_on2)
+
+            def flash_on2():
+                self.configure(fg_color="orange")
+                self.after(300, flash_off2)
+
+            def flash_off2():
+                self.configure(fg_color=original_bg)
+
+            # Start the flash sequence
+            self.after(100, flash_on)
+
+            # Also try to raise the window to front
+            self.lift()
+            self.focus_force()
+        except Exception as e:
+            print(f"Error flashing window: {e}")
+
     def _play_system_beep(self):
         """Play system beep/alert sound."""
         import sys
+        import os
 
         try:
             if sys.platform == "win32":
                 # Windows system beep
                 import winsound
-                winsound.MessageBeep(winsound.MB_OK)
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             elif sys.platform == "darwin":
                 # macOS system beep
-                import os
                 os.system('afplay /System/Library/Sounds/Glass.aiff &')
             else:
-                # Linux system beep
-                import os
-                os.system('paplay /usr/share/sounds/freedesktop/stereo/complete.oga &')
+                # Linux - try multiple methods
+                # Try paplay first (PulseAudio)
+                result = os.system('which paplay > /dev/null 2>&1')
+                if result == 0:
+                    os.system('paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null &')
+                else:
+                    # Try aplay (ALSA)
+                    result = os.system('which aplay > /dev/null 2>&1')
+                    if result == 0:
+                        os.system('aplay /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null &')
+                    else:
+                        # Try beep command
+                        result = os.system('which beep > /dev/null 2>&1')
+                        if result == 0:
+                            os.system('beep -f 800 -l 500 2>/dev/null &')
+                        else:
+                            # Last resort: terminal bell
+                            print('\a')
         except Exception as e:
             print(f"Error playing system beep: {e}")
             # Try terminal bell as last resort
             try:
                 print('\a')  # Terminal bell
             except:
+                pass  # Silently fail if nothing works
                 pass  # Give up silently
 
 
