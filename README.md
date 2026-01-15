@@ -22,7 +22,29 @@ A comprehensive Python task management application with GUI interface and SQLite
 
 ## Quick Start
 
-### 1. Setup Environment
+### One-Command Startup (Recommended)
+
+**Linux/Mac:**
+```bash
+./start.sh
+```
+
+**Windows:**
+```cmd
+start.bat
+```
+
+The startup script automatically:
+- Creates virtual environment (if needed)
+- Activates the environment
+- Installs/updates dependencies
+- Launches the application
+
+### Manual Setup
+
+If you prefer to run commands individually:
+
+#### 1. Setup Environment
 
 ```bash
 # Create and activate virtual environment
@@ -33,13 +55,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Create Demo Data (Optional)
+#### 2. Create Demo Data (Optional)
 
 ```bash
 python create_demo_data.py
 ```
 
-### 3. Run Application
+#### 3. Run Application
 
 ```bash
 python run.py
