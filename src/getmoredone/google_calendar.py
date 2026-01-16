@@ -26,13 +26,14 @@ SCOPES = ['https://www.googleapis.com/auth/calendar']
 class GoogleCalendarManager:
     """Manages Google Calendar API interactions."""
 
-    def __init__(self, credentials_file: Optional[str] = None, token_file: Optional[str] = None):
+    def __init__(self, credentials_file: Optional[str] = None, token_file: Optional[str] = None, force_reauth: bool = False):
         """
         Initialize Google Calendar manager.
 
         Args:
             credentials_file: Path to OAuth credentials JSON file
             token_file: Path to store/load token pickle file
+            force_reauth: If True, delete existing token and force re-authentication
         """
         if not GOOGLE_CALENDAR_AVAILABLE:
             raise ImportError(
@@ -47,6 +48,11 @@ class GoogleCalendarManager:
 
         self.credentials_file = credentials_file or str(self.data_dir / "credentials.json")
         self.token_file = token_file or str(self.data_dir / "token.pickle")
+
+        # Force re-authentication if requested (deletes zombie tokens)
+        if force_reauth and os.path.exists(self.token_file):
+            print(f"🗑️  Deleting old token (force re-authentication): {self.token_file}")
+            os.remove(self.token_file)
 
         self.service = None
         self._authenticate()
@@ -291,3 +297,36 @@ class GoogleCalendarManager:
 
         default_path = Path.home() / ".getmoredone" / "credentials.json"
         return default_path.exists()
+
+    @staticmethod
+    def check_token_validity(token_file: Optional[str] = None) -> dict:
+        """
+        Check if token file exists and get basic info about it.
+
+        Returns:
+            dict with keys: exists, valid, client_id, error
+        """
+        if not token_file:
+            token_file = str(Path.home() / ".getmoredone" / "token.pickle")
+
+        result = {
+            'exists': False,
+            'valid': None,
+            'client_id': None,
+            'error': None
+        }
+
+        if not os.path.exists(token_file):
+            return result
+
+        result['exists'] = True
+
+        try:
+            with open(token_file, 'rb') as token:
+                creds = pickle.load(token)
+                result['valid'] = creds.valid if hasattr(creds, 'valid') else None
+                result['client_id'] = creds.client_id if hasattr(creds, 'client_id') else None
+        except Exception as e:
+            result['error'] = str(e)
+
+        return result

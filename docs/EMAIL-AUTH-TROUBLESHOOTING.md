@@ -89,7 +89,86 @@ If the browser doesn't open automatically, the app will display:
 
 ## 🐛 Common Issues and Solutions
 
-### Issue 1: "Browser authentication failed: could not locate runnable browser"
+### Issue 1: 🧟 ZOMBIE TOKEN PROBLEM (Most Common!)
+
+**Symptoms:**
+- Google login screen shows a **different project name** than your credentials.json
+- Example: credentials.json says "getmoredone" but login shows "bowen1rag" or another old project
+- Error message: "There is a verification error with [old-project-name]"
+- Authentication fails even though credentials.json is correct
+
+**Cause:**
+Your Python script is using an **old token.pickle file** from a previous/different project instead of your current credentials.json. This is called a "Zombie Token."
+
+**How it Happens:**
+Most Google OAuth scripts follow this logic:
+1. Check if token.pickle exists
+2. If YES → Use that token (ignores credentials.json!)
+3. If NO → Load credentials.json and start new login
+
+If you ever:
+- Tested a different Google API project in the same directory
+- Renamed your project in Google Cloud Console
+- Copied credentials.json from a different project
+- Moved files from another machine
+
+...you may have a zombie token that doesn't match your current credentials.
+
+**Solution (Quick Fix):**
+
+```bash
+# Delete the zombie token
+rm ~/.getmoredone/token.pickle
+
+# Test authentication again
+python3 test_auth.py
+```
+
+**Solution (Using Test Script):**
+
+The test script now automatically detects zombie tokens:
+
+```bash
+python3 test_auth.py
+```
+
+If a zombie token is detected, you'll see:
+
+```
+🧟 ZOMBIE TOKEN DETECTED!
+Your token.pickle is from a DIFFERENT project than credentials.json!
+
+Credentials project: getmoredone
+Credentials client:  592866309318-3uth2a6j8ajkh...
+Token client:        123456789012-oldprojectid...
+
+Do you want to delete the old token and re-authenticate? (y/N):
+```
+
+Type `y` and press Enter to automatically delete the zombie token and re-authenticate with the correct credentials.
+
+**Verification:**
+
+After deleting the zombie token and re-authenticating:
+1. Check the Google login screen shows the CORRECT project name
+2. Complete authentication
+3. Verify new token.pickle matches your credentials:
+   ```bash
+   python3 test_auth.py
+   ```
+4. You should see "✅ Successfully authenticated with Google Calendar API!"
+
+**Prevention:**
+
+To avoid zombie tokens in the future:
+- Always delete token.pickle when switching projects
+- Keep credentials.json and token.pickle together
+- Don't copy token files between projects
+- Use the `force_reauth=True` parameter if implementing custom code
+
+---
+
+### Issue 2: "Browser authentication failed: could not locate runnable browser"
 
 **Cause:** No web browser available in the environment
 
@@ -97,7 +176,7 @@ If the browser doesn't open automatically, the app will display:
 - The app will automatically fall back to manual mode
 - Follow the URL and code entry instructions
 
-### Issue 2: "Google Calendar credentials not found"
+### Issue 3: "Google Calendar credentials not found"
 
 **Cause:** credentials.json is missing or in wrong location
 
@@ -110,7 +189,7 @@ ls -la ~/.getmoredone/credentials.json
 # See: /home/user/GetMoreDone/docs/google-calendar-setup.md
 ```
 
-### Issue 3: "Failed to create calendar event: 403"
+### Issue 4: "Failed to create calendar event: 403"
 
 **Cause:** Google Calendar API not enabled or OAuth app not approved
 
@@ -122,7 +201,7 @@ ls -la ~/.getmoredone/credentials.json
 5. Go to **"APIs & Services" > "OAuth consent screen"**
 6. If app is in "Testing" mode, ensure your email is in "Test users"
 
-### Issue 4: "Invalid credentials" or "Token expired"
+### Issue 5: "Invalid credentials" or "Token expired"
 
 **Cause:** Token is corrupted or credentials changed
 
@@ -135,7 +214,7 @@ rm ~/.getmoredone/token.pickle
 python3 -m getmoredone
 ```
 
-### Issue 5: "Permission denied" when saving token
+### Issue 6: "Permission denied" when saving token
 
 **Cause:** Directory permissions issue
 
@@ -149,7 +228,7 @@ chmod 600 ~/.getmoredone/credentials.json
 chmod 600 ~/.getmoredone/token.pickle
 ```
 
-### Issue 6: Authentication works but calendar event not created
+### Issue 7: Authentication works but calendar event not created
 
 **Cause:** API error or rate limiting
 

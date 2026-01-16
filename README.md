@@ -292,7 +292,24 @@ Create Google Calendar events directly from action items with automatic linking.
 
 **Note:** Requires Google Calendar API credentials. See `docs/google-calendar-setup.md` for full setup instructions.
 
-**Troubleshooting:** If you experience authentication issues, see `docs/EMAIL-AUTH-TROUBLESHOOTING.md` or run `./verify_auth.sh` to diagnose problems.
+**Troubleshooting Authentication Issues:**
+
+🧟 **ZOMBIE TOKEN PROBLEM** (Most Common Issue):
+If Google login shows a **different project name** than expected (e.g., shows "bowen1rag" instead of "getmoredone"), you have a zombie token from an old project.
+
+**Quick Fix:**
+```bash
+# Delete the old token
+rm ~/.getmoredone/token.pickle
+
+# Or use the fix script
+./fix_zombie_token.sh
+
+# Then re-authenticate
+python3 test_auth.py
+```
+
+**Other Issues:** See `docs/EMAIL-AUTH-TROUBLESHOOTING.md` or run `./verify_auth.sh` to diagnose problems.
 
 ### Time Planning
 
