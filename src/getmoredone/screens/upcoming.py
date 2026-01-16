@@ -353,12 +353,34 @@ class UpcomingScreen(ctk.CTkFrame):
         self.refresh()
 
     def push_item(self, item_id: str):
-        """Push item to today (set both start and due to today)."""
-        from datetime import datetime
-        today = datetime.now().date().strftime("%Y-%m-%d")
+        """Push item to next day without showing dialog."""
+        # Get the item
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
 
-        # Set both start and due dates to today
-        self.db_manager.reschedule_item(item_id, today, today, "Pushed to today")
+        # Calculate new dates (add 1 day)
+        new_start = None
+        new_due = None
+
+        if item.start_date:
+            try:
+                start_dt = datetime.strptime(item.start_date, "%Y-%m-%d")
+                new_start_dt = start_dt + timedelta(days=1)
+                new_start = new_start_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        if item.due_date:
+            try:
+                due_dt = datetime.strptime(item.due_date, "%Y-%m-%d")
+                new_due_dt = due_dt + timedelta(days=1)
+                new_due = new_due_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        # Push to next day directly (no dialog, no reason)
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason=None)
         self.refresh()
 
     def create_new_item(self):

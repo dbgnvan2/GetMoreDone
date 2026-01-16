@@ -309,8 +309,34 @@ class TodayScreen(ctk.CTkFrame):
         self.refresh()
 
     def push_item(self, item_id: str):
-        """Push item to next day."""
-        from .reschedule_dialog import RescheduleDialog
-        dialog = RescheduleDialog(self, self.db_manager, item_id)
-        dialog.wait_window()
+        """Push item to next day without showing dialog."""
+        from datetime import timedelta
+
+        # Get the item
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+
+        # Calculate new dates (add 1 day)
+        new_start = None
+        new_due = None
+
+        if item.start_date:
+            try:
+                start_dt = datetime.strptime(item.start_date, "%Y-%m-%d")
+                new_start_dt = start_dt + timedelta(days=1)
+                new_start = new_start_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        if item.due_date:
+            try:
+                due_dt = datetime.strptime(item.due_date, "%Y-%m-%d")
+                new_due_dt = due_dt + timedelta(days=1)
+                new_due = new_due_dt.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+        # Push to next day directly (no dialog, no reason)
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason=None)
         self.refresh()
