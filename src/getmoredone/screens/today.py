@@ -138,18 +138,28 @@ class TodayScreen(ctk.CTkFrame):
                 row += 1
 
     def get_todays_items(self):
-        """Get items for today (start_date <= today)."""
+        """Get items for today (start_date <= today for open items, completed_at = today for completed items)."""
         today = datetime.now().date().isoformat()
 
-        # Get all items where start date <= today (or due date if no start date)
+        # Get open items where start date <= today (or due date if no start date)
+        # AND completed items where completed_at is today
         query = """
             SELECT * FROM action_items
-            WHERE (start_date IS NOT NULL OR due_date IS NOT NULL)
-              AND COALESCE(start_date, due_date) <= ?
+            WHERE (
+                -- Open items: start/due date <= today
+                (status = 'open'
+                 AND (start_date IS NOT NULL OR due_date IS NOT NULL)
+                 AND COALESCE(start_date, due_date) <= ?)
+                OR
+                -- Completed items: completed today (date part of completed_at matches today)
+                (status = 'completed'
+                 AND completed_at IS NOT NULL
+                 AND DATE(completed_at) = ?)
+            )
             ORDER BY status ASC, COALESCE(start_date, due_date) ASC, priority_score DESC
         """
 
-        rows = self.db_manager.db.conn.execute(query, (today,)).fetchall()
+        rows = self.db_manager.db.conn.execute(query, (today, today)).fetchall()
         return [self.db_manager._row_to_action_item(row) for row in rows]
 
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:

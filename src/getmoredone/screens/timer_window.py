@@ -196,12 +196,27 @@ class TimerWindow(ctk.CTkToplevel):
         self.continue_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
         # Next Steps section
+        next_steps_header = ctk.CTkFrame(main_frame, fg_color="transparent")
+        next_steps_header.grid(row=5, column=0, pady=(20, 5), padx=10, sticky="ew")
+        next_steps_header.grid_columnconfigure(0, weight=1)
+
         next_steps_label = ctk.CTkLabel(
-            main_frame,
-            text="Next Steps:",
+            next_steps_header,
+            text="Notes:",
             font=ctk.CTkFont(size=14, weight="bold")
         )
-        next_steps_label.grid(row=5, column=0, pady=(20, 5), padx=10, sticky="w")
+        next_steps_label.grid(row=0, column=0, sticky="w")
+
+        # Save notes button
+        self.save_notes_button = ctk.CTkButton(
+            next_steps_header,
+            text="Save Notes",
+            width=100,
+            command=self.save_notes,
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        self.save_notes_button.grid(row=0, column=1, padx=5)
 
         self.next_steps_text = ctk.CTkTextbox(
             main_frame,
@@ -210,10 +225,33 @@ class TimerWindow(ctk.CTkToplevel):
         )
         self.next_steps_text.grid(row=6, column=0, pady=5, padx=10, sticky="nsew")
 
-        # Populate next steps
-        description = self.item.description or "No description provided."
+        # Populate next steps (keep editable, don't disable)
+        description = self.item.description or ""
         self.next_steps_text.insert("1.0", description)
-        self.next_steps_text.configure(state="disabled")
+
+    def save_notes(self):
+        """Save the edited notes back to the action item."""
+        try:
+            # Get the text from the textbox
+            notes = self.next_steps_text.get("1.0", "end-1c").strip()
+
+            # Update the item's description
+            self.item.description = notes if notes else None
+
+            # Save to database
+            self.db_manager.update_action_item(self.item)
+
+            print(f"[DEBUG] Notes saved for item: {self.item.id}")
+
+            # Visual feedback - briefly change button color
+            self.save_notes_button.configure(text="✓ Saved")
+            self.after(2000, lambda: self.save_notes_button.configure(text="Save Notes"))
+        except Exception as e:
+            print(f"[ERROR] Failed to save notes: {e}")
+            import traceback
+            traceback.print_exc()
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error", f"Failed to save notes: {e}")
 
     def format_time(self, seconds: int) -> str:
         """Format seconds as MM:SS."""
@@ -388,79 +426,116 @@ class TimerWindow(ctk.CTkToplevel):
 
     def finished_action(self):
         """Handle Finished workflow: complete action and close."""
-        # Prompt for completion note
-        dialog = CompletionNoteDialog(self, "Completion Note")
-        self.wait_window(dialog)
+        try:
+            print(f"[DEBUG] Finished button clicked for item: {self.item.id}")
 
-        completion_note = dialog.result
+            # Prompt for completion note
+            dialog = CompletionNoteDialog(self, "Completion Note")
+            self.wait_window(dialog)
 
-        # Create work log
-        self.save_work_log(completion_note)
+            completion_note = dialog.result
+            print(f"[DEBUG] Completion note: {completion_note}")
 
-        # Complete the action item
-        self.db_manager.complete_action_item(self.item.id)
+            # Create work log
+            self.save_work_log(completion_note)
+            print(f"[DEBUG] Work log saved")
 
-        # Close window
-        self.save_window_settings()
-        if self.on_close_callback:
-            self.on_close_callback()
-        self.destroy()
+            # Complete the action item
+            self.db_manager.complete_action_item(self.item.id)
+            print(f"[DEBUG] Action item completed")
+
+            # Close window
+            self.save_window_settings()
+            if self.on_close_callback:
+                self.on_close_callback()
+            self.destroy()
+            print(f"[DEBUG] Timer window closed")
+        except Exception as e:
+            print(f"[ERROR] Finished action failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Show error to user
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error", f"Failed to complete action: {e}")
 
     def continue_action(self):
         """Handle Continue workflow: complete current, duplicate for next day."""
-        # Prompt for completion note
-        completion_dialog = CompletionNoteDialog(self, "Completion Note")
-        self.wait_window(completion_dialog)
-        completion_note = completion_dialog.result
+        try:
+            print(f"[DEBUG] Continue button clicked for item: {self.item.id}")
 
-        # Prompt for next steps note with date selection
-        next_steps_dialog = NextStepsDialog(self)
-        self.wait_window(next_steps_dialog)
-        next_steps_result = next_steps_dialog.result
+            # Prompt for completion note
+            completion_dialog = CompletionNoteDialog(self, "Completion Note")
+            self.wait_window(completion_dialog)
+            completion_note = completion_dialog.result
+            print(f"[DEBUG] Completion note: {completion_note}")
 
-        if not next_steps_result:
-            # User cancelled, abort continue workflow
-            return
+            # Prompt for next steps note with date selection
+            next_steps_dialog = NextStepsDialog(self)
+            self.wait_window(next_steps_dialog)
+            next_steps_result = next_steps_dialog.result
 
-        next_steps_note = next_steps_result['note']
-        start_date = next_steps_result['start_date']
-        due_date = next_steps_result['due_date']
+            if not next_steps_result:
+                # User cancelled, abort continue workflow
+                print("[DEBUG] User cancelled next steps dialog")
+                return
 
-        # Save work log for current action
-        self.save_work_log(completion_note)
+            next_steps_note = next_steps_result['note']
+            start_date = next_steps_result['start_date']
+            due_date = next_steps_result['due_date']
+            print(f"[DEBUG] Next steps: {next_steps_note}, start: {start_date}, due: {due_date}")
 
-        # Complete current action
-        self.db_manager.complete_action_item(self.item.id)
+            # Save work log for current action
+            self.save_work_log(completion_note)
+            print(f"[DEBUG] Work log saved")
 
-        # Create duplicate with user-selected dates
-        new_item = ActionItem(
-            who=self.item.who,
-            title=self.item.title,
-            description=next_steps_note or self.item.description,
-            contact_id=self.item.contact_id,
-            start_date=start_date,
-            due_date=due_date,
-            importance=self.item.importance,
-            urgency=self.item.urgency,
-            size=self.item.size,
-            value=self.item.value,
-            group=self.item.group,
-            category=self.item.category,
-            planned_minutes=self.item.planned_minutes,
-            status="open"
-        )
+            # Complete current action
+            self.db_manager.complete_action_item(self.item.id)
+            print(f"[DEBUG] Current action completed")
 
-        self.db_manager.create_action_item(new_item)
+            # Create duplicate with user-selected dates
+            new_item = ActionItem(
+                who=self.item.who,
+                title=self.item.title,
+                description=next_steps_note or self.item.description,
+                contact_id=self.item.contact_id,
+                start_date=start_date,
+                due_date=due_date,
+                importance=self.item.importance,
+                urgency=self.item.urgency,
+                size=self.item.size,
+                value=self.item.value,
+                group=self.item.group,
+                category=self.item.category,
+                planned_minutes=self.item.planned_minutes,
+                status="open"
+            )
 
-        # Close timer and open editor for new item
-        self.save_window_settings()
-        if self.on_close_callback:
-            self.on_close_callback()
-        self.destroy()
+            self.db_manager.create_action_item(new_item)
+            print(f"[DEBUG] New item created with ID: {new_item.id}")
 
-        # Open editor for new item
-        from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self.master, self.db_manager, new_item.id)
+            # Save parent and db_manager before destroying window
+            parent = self.master
+            db_manager = self.db_manager
+            new_item_id = new_item.id
+
+            # Close timer and open editor for new item
+            self.save_window_settings()
+            if self.on_close_callback:
+                self.on_close_callback()
+            self.destroy()
+            print(f"[DEBUG] Timer window closed")
+
+            # Open editor for new item
+            from .item_editor import ItemEditorDialog
+            ItemEditorDialog(parent, db_manager, new_item_id)
+            print(f"[DEBUG] Item editor opened")
+        except Exception as e:
+            print(f"[ERROR] Continue action failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Show error to user
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error", f"Failed to continue action: {e}")
 
     def save_work_log(self, note: Optional[str] = None):
         """Save work log entry to database."""
