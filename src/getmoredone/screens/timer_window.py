@@ -23,7 +23,7 @@ class TimerWindow(ctk.CTkToplevel):
         self.settings = AppSettings.load()
 
         # Timer state
-        self.state = "stopped"  # stopped, running, paused, in_break
+        self.timer_state = "stopped"  # stopped, running, paused, in_break
         self.time_block_minutes = item.planned_minutes or self.settings.default_time_block_minutes
         self.break_minutes = self.settings.default_break_minutes
         self.work_minutes = self.time_block_minutes - self.break_minutes
@@ -303,7 +303,7 @@ class TimerWindow(ctk.CTkToplevel):
         except ValueError:
             pass
 
-        self.state = "running"
+        self.timer_state = "running"
         self.start_timestamp = datetime.now()
         self.last_tick_time = datetime.now()
 
@@ -319,8 +319,8 @@ class TimerWindow(ctk.CTkToplevel):
 
     def pause_timer(self):
         """Pause the timer."""
-        if self.state == "running" or self.state == "in_break":
-            self.state = "paused"
+        if self.timer_state == "running" or self.timer_state == "in_break":
+            self.timer_state = "paused"
             self.pause_timestamp = datetime.now()
             self.pause_button.configure(text="Resume")
             self.status_label.configure(text="Paused", text_color="orange")
@@ -330,7 +330,7 @@ class TimerWindow(ctk.CTkToplevel):
                 self.after_cancel(self.update_timer_id)
                 self.update_timer_id = None
 
-        elif self.state == "paused":
+        elif self.timer_state == "paused":
             # Resume
             self.resume_timestamp = datetime.now()
 
@@ -339,18 +339,18 @@ class TimerWindow(ctk.CTkToplevel):
                 pause_duration = (self.resume_timestamp - self.pause_timestamp).total_seconds()
                 # Note: pause duration is already excluded from work time in tick()
 
-            self.state = "running" if self.work_seconds_remaining > 0 else "in_break"
+            self.timer_state = "running" if self.work_seconds_remaining > 0 else "in_break"
             self.pause_button.configure(text="Pause")
             self.status_label.configure(
-                text="Working..." if self.state == "running" else "Break time!",
-                text_color="green" if self.state == "running" else "blue"
+                text="Working..." if self.timer_state == "running" else "Break time!",
+                text_color="green" if self.timer_state == "running" else "blue"
             )
             self.last_tick_time = datetime.now()
             self.tick()
 
     def stop_timer(self):
         """Stop the timer."""
-        self.state = "stopped"
+        self.timer_state = "stopped"
 
         # Cancel timer updates
         if self.update_timer_id:
@@ -369,7 +369,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def tick(self):
         """Timer tick - called every second."""
-        if self.state not in ["running", "in_break"]:
+        if self.timer_state not in ["running", "in_break"]:
             return
 
         now = datetime.now()
@@ -389,13 +389,13 @@ class TimerWindow(ctk.CTkToplevel):
         self.last_tick_time = now
 
         # Countdown
-        if self.state == "running":
+        if self.timer_state == "running":
             self.work_seconds_remaining -= 1
 
             if self.work_seconds_remaining <= 0:
                 # Work time finished, start break
                 self.work_seconds_remaining = 0
-                self.state = "in_break"
+                self.timer_state = "in_break"
                 self.status_label.configure(text="⏰ BREAK TIME! ⏰", text_color="yellow", font=ctk.CTkFont(size=14, weight="bold"))
                 self.update_title_bar()
                 # Play break start sound
@@ -403,7 +403,7 @@ class TimerWindow(ctk.CTkToplevel):
                 # Flash the window to get attention
                 self._flash_window()
 
-        elif self.state == "in_break":
+        elif self.timer_state == "in_break":
             self.break_seconds_remaining -= 1
 
             if self.break_seconds_remaining <= 0:
@@ -425,7 +425,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def update_display(self):
         """Update time display and title bar."""
-        if self.state == "in_break":
+        if self.timer_state == "in_break":
             self.time_remaining_label.configure(
                 text=self.format_time(self.break_seconds_remaining),
                 text_color="blue"
@@ -446,7 +446,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def update_title_bar(self):
         """Update window title with time remaining."""
-        if self.state == "in_break":
+        if self.timer_state == "in_break":
             title = f"{self.item.title} - BREAK {self.format_time(self.break_seconds_remaining)}"
         else:
             title = f"{self.item.title} - {self.format_time(self.work_seconds_remaining)}"
@@ -583,7 +583,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def on_window_close(self):
         """Handle window close event - treat as Stop."""
-        if self.state in ["running", "paused", "in_break"]:
+        if self.timer_state in ["running", "paused", "in_break"]:
             self.stop_timer()
 
         self.save_window_settings()
