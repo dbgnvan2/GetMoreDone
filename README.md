@@ -292,6 +292,8 @@ Create Google Calendar events directly from action items with automatic linking.
 
 **Note:** Requires Google Calendar API credentials. See `docs/google-calendar-setup.md` for full setup instructions.
 
+**Troubleshooting:** If you experience authentication issues, see `docs/EMAIL-AUTH-TROUBLESHOOTING.md` or run `./verify_auth.sh` to diagnose problems.
+
 ### Time Planning
 
 1. Go to **Plan** screen
