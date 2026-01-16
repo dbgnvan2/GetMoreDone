@@ -261,7 +261,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 
 ### Google Calendar Integration
 
-Create Google Calendar events directly from action items with automatic linking.
+Create Google Calendar events directly from action items with automatic linking and meeting tracking.
 
 **Configuration Directory:**
 GetMoreDone stores credentials in your home directory:
@@ -283,20 +283,29 @@ This keeps credentials secure and shared across all projects.
 3. Fill in event details:
    - **Title**: Pre-filled from action item
    - **Date**: Use quick buttons or enter YYYY-MM-DD
-   - **Time**: Set hour, minute, AM/PM
+   - **Time**: Set hour, minute, AM/PM (uses your local timezone automatically)
    - **Duration**: Minutes (default: 60)
    - **Description**: Optional (defaults to item description)
    - **Location**: Optional meeting location or URL
    - **Attendees**: Optional, comma-separated emails
 4. Click **"Create Calendar Event"**
 5. Event appears as a link in the item's Links tab
+6. Action item automatically marked as meeting with scheduled time displayed
+
+**Meeting Tracking:**
+- ✅ **"Is Meeting"** checkbox automatically checked when calendar event created
+- 🕒 **"Meeting Time"** field displays the scheduled date/time
+- 📊 Track which action items are meetings vs regular tasks
+- 🔍 Filter and report on meetings separately
 
 **Benefits:**
 - 📆 Schedule meetings without leaving GetMoreDone
 - 🔗 Calendar link stored with action item for easy access
 - ⏰ Pre-fills event with action item details
+- 🌍 Uses your local timezone automatically (no more timezone confusion!)
 - 📧 Optionally invite attendees
 - 📍 Add location/meeting URL
+- 📝 Automatically tracks meeting status and time
 
 **Note:** Requires Google Calendar API credentials. See `docs/google-calendar-setup.md` for full setup instructions.
 
@@ -356,15 +365,15 @@ pytest tests/test_database.py -v
 - Location: `data/getmoredone.db`
 - Backup from Settings screen or copy the file
 - Schema includes:
-  - **action_items** - Tasks with parent_id for hierarchical relationships
+  - **action_items** - Tasks with parent_id for hierarchical relationships, is_meeting flag, and meeting_start_time
   - **contacts** - Clients/contacts with name, type, email, phone, notes
   - **defaults** - System and per-contact default settings
   - **time_blocks** - Time block planning
   - **work_logs** - Time tracking
   - **reschedule_history** - Change audit trail
-  - **item_links** - Attachments and references
+  - **item_links** - Attachments and references (including google_calendar links)
 - Foreign keys: contact_id → contacts, parent_id → action_items (self-referencing)
-- Automatic migrations for schema updates
+- Automatic migrations for schema updates (including new meeting tracking fields)
 
 ## Technologies
 
@@ -372,6 +381,8 @@ pytest tests/test_database.py -v
 - **SQLite** - Embedded database (no server required)
 - **CustomTkinter** - Modern, customizable GUI framework
 - **pytest** - Comprehensive testing framework
+- **Google Calendar API** - OAuth 2.0 integration for calendar events
+- **tzlocal** - Automatic timezone detection for accurate event scheduling
 
 ## Architecture
 
@@ -419,6 +430,8 @@ pytest tests/test_database.py -v
 - OAuth 2.0 authentication with secure token storage
 - Pre-fills event with action item details (title, description, dates)
 - Set start time, duration, location, and attendees
+- **Automatic timezone detection** - Uses your local timezone (no more hardcoded timezones!)
+- **Meeting tracking** - Automatically sets is_meeting flag and meeting_start_time when creating events
 - Calendar links automatically stored in item_links table
 - Events appear as clickable links in Links tab
 - Cross-platform support (requires credentials.json setup)
@@ -429,7 +442,11 @@ pytest tests/test_database.py -v
   - Duration in minutes (default: 60)
   - Optional location and attendees
   - Automatic browser authorization on first use
+  - **"Is Meeting" checkbox** automatically checked after event creation
+  - **"Meeting Time" field** displays scheduled meeting date/time
+  - Timezone auto-detection using tzlocal library
 - Link type: "google_calendar" for easy identification
+- Meeting data stored in action_items table (is_meeting, meeting_start_time)
 
 ### Contact Management
 - Full contact/client database with CRUD operations

@@ -7,8 +7,10 @@ GetMoreDone can create Google Calendar events directly from action items, making
 - 📅 Create calendar events from action items
 - 🔗 Automatic linking of calendar events to tasks
 - ⏰ Set start time, duration, location, and attendees
+- 🌍 **Automatic timezone detection** - uses your local timezone
 - 📝 Pre-fill event with action item details
 - 🔄 Events appear as links in the item editor
+- ✅ **Meeting tracking** - automatically marks items as meetings with scheduled time
 
 ## Configuration Directory
 
@@ -36,6 +38,7 @@ Both files are sensitive and should be kept private.
    - google-auth-oauthlib
    - google-auth-httplib2
    - google-api-python-client
+   - tzlocal (for automatic timezone detection)
 
 2. Google Cloud Project with Calendar API enabled
 3. OAuth 2.0 credentials
@@ -115,13 +118,16 @@ A `token.pickle` file will be created in `~/.getmoredone/` to save your authoriz
 3. Fill in the event details:
    - **Event Title**: Defaults to action item title
    - **Date**: Use quick buttons (Today, +1) or enter YYYY-MM-DD
-   - **Start Time**: Hour (1-12), Minute (0-59), AM/PM
+   - **Start Time**: Hour (1-12), Minute (0-59), AM/PM (uses your local timezone)
    - **Duration**: In minutes (default: 60)
    - **Description**: Optional (defaults to action item description)
    - **Location**: Optional
    - **Attendees**: Optional, comma-separated emails
 4. Click **"Create Calendar Event"**
-5. The event is created and a link appears in the item's Links section
+5. The event is created and automatically:
+   - A link appears in the item's Links section
+   - **"Is Meeting"** checkbox is checked
+   - **"Meeting Time"** field displays the scheduled time
 
 ### Viewing Calendar Events
 
@@ -142,6 +148,22 @@ A `token.pickle` file will be created in `~/.getmoredone/` to save your authoriz
 **Solution**: Install dependencies:
 ```bash
 pip install -r requirements.txt
+```
+
+**If using a virtual environment (venv)**, make sure to activate it first:
+```bash
+source venv/bin/activate  # Linux/Mac
+# or
+venv\Scripts\activate  # Windows
+
+# Then install
+pip install -r requirements.txt
+```
+
+**Or use the startup script** (recommended):
+```bash
+./start.sh  # Linux/Mac
+start.bat   # Windows
 ```
 
 ### "Google Calendar credentials not found"
@@ -178,6 +200,16 @@ pip install -r requirements.txt
 2. Copy and paste it into your browser manually
 3. Complete authorization and return to app
 
+### Calendar event appears at wrong time
+
+**This should not happen anymore** - GetMoreDone now auto-detects your timezone.
+
+If you still see incorrect times:
+1. Verify your system timezone is set correctly
+2. Restart GetMoreDone to pick up timezone changes
+3. Check if `tzlocal` is installed: `pip show tzlocal`
+4. If issue persists, check the terminal for timezone detection warnings
+
 ## Security Notes
 
 - **credentials.json**: Contains OAuth client credentials, keep private
@@ -186,16 +218,22 @@ pip install -r requirements.txt
 - Never commit these files to version control
 - The `.gitignore` already excludes these files
 
-## Timezone Configuration
+## Timezone Handling
 
-By default, events are created in **America/New_York** timezone. To change this:
+**Automatic Detection:**
+GetMoreDone automatically detects and uses your **local timezone** when creating calendar events. No configuration needed!
 
-1. Edit `src/getmoredone/google_calendar.py`
-2. Find `'timeZone': 'America/New_York'`
-3. Replace with your timezone (e.g., `'America/Los_Angeles'`, `'Europe/London'`)
-4. Restart GetMoreDone
+- Uses the `tzlocal` library to detect your system's timezone
+- Events are created in your local timezone automatically
+- No more timezone confusion or manual configuration
+- Falls back to UTC if timezone detection fails (rare)
 
-[List of valid timezones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
+**Example:**
+- If you're in California (Pacific Time), events use `America/Los_Angeles`
+- If you're in London, events use `Europe/London`
+- If you're in Tokyo, events use `Asia/Tokyo`
+
+This ensures calendar events appear at the correct time in Google Calendar, regardless of where you are.
 
 ## Privacy
 
@@ -209,8 +247,12 @@ By default, events are created in **America/New_York** timezone. To change this:
 - **API**: Google Calendar API v3
 - **Authentication**: OAuth 2.0 (Desktop app flow)
 - **Scopes**: `https://www.googleapis.com/auth/calendar`
-- **Storage**: SQLite (links), Local files (credentials/tokens)
+- **Storage**: SQLite (links, meeting data), Local files (credentials/tokens)
 - **Link Type**: `google_calendar` (stored in `item_links` table)
+- **Timezone**: Auto-detected using `tzlocal` library
+- **Meeting Tracking**:
+  - `is_meeting` flag in `action_items` table (INTEGER, 0 or 1)
+  - `meeting_start_time` in `action_items` table (TEXT, ISO datetime format)
 
 ## Uninstalling
 
