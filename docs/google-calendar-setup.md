@@ -10,6 +10,25 @@ GetMoreDone can create Google Calendar events directly from action items, making
 - 📝 Pre-fill event with action item details
 - 🔄 Events appear as links in the item editor
 
+## Configuration Directory
+
+GetMoreDone stores Google Calendar credentials and authentication tokens in:
+```
+~/.getmoredone/
+```
+
+This is your **home directory**, not the project directory. This approach:
+- ✅ Keeps credentials secure (less likely to commit to git)
+- ✅ Persists across project clones/deletions
+- ✅ Shares credentials across multiple GetMoreDone projects
+- ✅ Follows standard patterns (like ~/.ssh, ~/.aws)
+
+**Files stored:**
+- `credentials.json` - OAuth client credentials (you provide this)
+- `token.pickle` - Your authentication token (auto-generated on first login)
+
+Both files are sensitive and should be kept private.
+
 ## Prerequisites
 
 1. Python packages (already in requirements.txt):

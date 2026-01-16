@@ -263,6 +263,14 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 
 Create Google Calendar events directly from action items with automatic linking.
 
+**Configuration Directory:**
+GetMoreDone stores credentials in your home directory:
+```
+~/.getmoredone/credentials.json  # OAuth credentials (you provide)
+~/.getmoredone/token.pickle      # Auth token (auto-generated)
+```
+This keeps credentials secure and shared across all projects.
+
 **Setup (One-Time):**
 1. See detailed setup instructions: `docs/google-calendar-setup.md`
 2. Get OAuth credentials from Google Cloud Console
