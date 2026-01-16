@@ -425,43 +425,38 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_frame = ctk.CTkFrame(self)
         btn_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
 
-        btn_save = ctk.CTkButton(btn_frame, text="Save", command=self.save_item, width=100)
+        # Row 1: Primary actions
+        top_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
+        top_row.pack(fill="x", pady=(0, 5))
+
+        btn_save = ctk.CTkButton(top_row, text="Save", command=self.save_item, width=100)
         btn_save.pack(side="left", padx=5)
 
         if not self.item_id:
-            btn_save_new = ctk.CTkButton(btn_frame, text="Save + New", command=self.save_and_new, width=100)
+            btn_save_new = ctk.CTkButton(top_row, text="Save + New", command=self.save_and_new, width=100)
             btn_save_new.pack(side="left", padx=5)
 
         if self.item_id:
-            btn_duplicate = ctk.CTkButton(btn_frame, text="Duplicate", command=self.duplicate_item, width=100)
+            btn_duplicate = ctk.CTkButton(top_row, text="Duplicate", command=self.duplicate_item, width=100)
             btn_duplicate.pack(side="left", padx=5)
 
-            btn_complete = ctk.CTkButton(btn_frame, text="Complete", command=self.complete_item, width=100)
+            btn_complete = ctk.CTkButton(top_row, text="Complete", command=self.complete_item, width=100)
             btn_complete.pack(side="left", padx=5)
 
-            btn_create_sub = ctk.CTkButton(btn_frame, text="+ Create Sub-Item", command=self.create_sub_item, width=120)
-            btn_create_sub.pack(side="left", padx=5)
-
-            btn_show_children = ctk.CTkButton(btn_frame, text="Show Children", command=self.show_children, width=110)
-            btn_show_children.pack(side="left", padx=5)
-
-            btn_set_parent = ctk.CTkButton(btn_frame, text="Set Parent", command=self.set_parent, width=100)
-            btn_set_parent.pack(side="left", padx=5)
-
-            btn_calendar = ctk.CTkButton(btn_frame, text="📅 Calendar", command=self.create_calendar_event, width=100, fg_color="purple", hover_color="darkviolet")
+            btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event, width=100, fg_color="purple", hover_color="darkviolet")
             btn_calendar.pack(side="left", padx=5)
 
-        # Error label in the center between buttons
-        self.error_label = ctk.CTkLabel(btn_frame, text="", text_color="red", wraplength=600)
+        # Error label
+        self.error_label = ctk.CTkLabel(top_row, text="", text_color="red", wraplength=600)
         self.error_label.pack(side="left", expand=True, padx=10)
 
-        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_cancel = ctk.CTkButton(top_row, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="right", padx=5)
 
         # Delete button (only for existing items)
         if self.item_id:
             btn_delete = ctk.CTkButton(
-                btn_frame,
+                top_row,
                 text="Delete",
                 command=self.delete_item,
                 width=100,
@@ -469,6 +464,20 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 hover_color="red"
             )
             btn_delete.pack(side="right", padx=5)
+
+        # Row 2: Secondary actions (only for existing items)
+        if self.item_id:
+            bottom_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
+            bottom_row.pack(fill="x")
+
+            btn_create_sub = ctk.CTkButton(bottom_row, text="+ Create Sub-Item", command=self.create_sub_item, width=120)
+            btn_create_sub.pack(side="left", padx=5)
+
+            btn_show_children = ctk.CTkButton(bottom_row, text="Show Children", command=self.show_children, width=110)
+            btn_show_children.pack(side="left", padx=5)
+
+            btn_set_parent = ctk.CTkButton(bottom_row, text="Set Parent", command=self.set_parent, width=100)
+            btn_set_parent.pack(side="left", padx=5)
 
         # Store references for responsive layout
         self.left_col = left_col
