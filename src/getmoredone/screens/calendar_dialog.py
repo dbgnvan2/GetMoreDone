@@ -243,7 +243,9 @@ class CalendarEventDialog(ctk.CTkToplevel):
 
             # Store the calendar link as an ItemLink
             calendar_url = event_result.get('htmlLink')
-            if calendar_url:
+            event_id = event_result.get('id')
+
+            if calendar_url and event_id:
                 from ..models import ItemLink
                 link = ItemLink(
                     item_id=self.item_id,
@@ -252,6 +254,12 @@ class CalendarEventDialog(ctk.CTkToplevel):
                     link_type="google_calendar"
                 )
                 self.db_manager.add_item_link(link)
+
+                # Open Google Calendar edit screen in browser
+                import webbrowser
+                # Construct edit URL - use the event ID to open edit screen
+                edit_url = f"https://calendar.google.com/calendar/u/0/r/eventedit/{event_id}"
+                webbrowser.open(edit_url)
 
                 self.result = calendar_url
                 self.destroy()
