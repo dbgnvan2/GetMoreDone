@@ -207,6 +207,17 @@ class TimerWindow(ctk.CTkToplevel):
         )
         next_steps_label.grid(row=0, column=0, sticky="w")
 
+        # Pop out notes button
+        self.popout_notes_button = ctk.CTkButton(
+            next_steps_header,
+            text="Pop Out",
+            width=90,
+            command=self.open_next_action_window,
+            fg_color="blue",
+            hover_color="darkblue"
+        )
+        self.popout_notes_button.grid(row=0, column=1, padx=5)
+
         # Save notes button
         self.save_notes_button = ctk.CTkButton(
             next_steps_header,
@@ -216,7 +227,7 @@ class TimerWindow(ctk.CTkToplevel):
             fg_color="green",
             hover_color="darkgreen"
         )
-        self.save_notes_button.grid(row=0, column=1, padx=5)
+        self.save_notes_button.grid(row=0, column=2, padx=5)
 
         self.next_steps_text = ctk.CTkTextbox(
             main_frame,
@@ -252,6 +263,24 @@ class TimerWindow(ctk.CTkToplevel):
             traceback.print_exc()
             import tkinter.messagebox as messagebox
             messagebox.showerror("Error", f"Failed to save notes: {e}")
+
+    def open_next_action_window(self):
+        """Open the independent Next Action Window."""
+        try:
+            # Save current notes from the textbox first
+            notes = self.next_steps_text.get("1.0", "end-1c").strip()
+            self.item.description = notes if notes else None
+            self.db_manager.update_action_item(self.item)
+
+            # Open the floating window
+            NextActionWindow(self, self.db_manager, self.item)
+            print(f"[DEBUG] Next Action Window opened for item: {self.item.id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to open Next Action Window: {e}")
+            import traceback
+            traceback.print_exc()
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error", f"Failed to open Next Action Window: {e}")
 
     def format_time(self, seconds: int) -> str:
         """Format seconds as MM:SS."""
@@ -448,7 +477,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.save_window_settings()
             if self.on_close_callback:
                 self.on_close_callback()
-            self.destroy()
+            self._cleanup_and_destroy()
             print(f"[DEBUG] Timer window closed")
         except Exception as e:
             print(f"[ERROR] Finished action failed: {e}")
@@ -522,7 +551,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.save_window_settings()
             if self.on_close_callback:
                 self.on_close_callback()
-            self.destroy()
+            self._cleanup_and_destroy()
             print(f"[DEBUG] Timer window closed")
 
             # Open editor for new item
@@ -562,7 +591,24 @@ class TimerWindow(ctk.CTkToplevel):
         if self.on_close_callback:
             self.on_close_callback()
 
-        self.destroy()
+        self._cleanup_and_destroy()
+
+    def _cleanup_and_destroy(self):
+        """Clean up resources and destroy window safely."""
+        # Cancel any pending timer callbacks
+        if self.update_timer_id:
+            try:
+                self.after_cancel(self.update_timer_id)
+            except:
+                pass
+            self.update_timer_id = None
+
+        # Destroy the window
+        try:
+            self.destroy()
+        except Exception as e:
+            # Ignore errors during destruction (e.g., customtkinter scaling tracker race condition)
+            print(f"[DEBUG] Window destruction completed with minor error (safe to ignore): {e}")
 
     def save_window_settings(self):
         """Save window position and size to settings."""
@@ -742,6 +788,146 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         """Skip note and close."""
         self.result = None
         self.destroy()
+
+
+class NextActionWindow(ctk.CTkToplevel):
+    """Floating window for viewing/editing action item notes independently."""
+
+    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem):
+        super().__init__(parent)
+
+        self.db_manager = db_manager
+        self.item = item
+        self.settings = AppSettings.load()
+
+        self.setup_window()
+        self.create_widgets()
+
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self.on_window_close)
+
+    def setup_window(self):
+        """Configure window properties."""
+        self.title(f"Notes: {self.item.title}")
+
+        # Set size from settings (or defaults)
+        width = getattr(self.settings, 'next_action_window_width', 500)
+        height = getattr(self.settings, 'next_action_window_height', 400)
+
+        # Set position if saved, otherwise offset from center
+        next_action_x = getattr(self.settings, 'next_action_window_x', None)
+        next_action_y = getattr(self.settings, 'next_action_window_y', None)
+
+        if next_action_x and next_action_y:
+            self.geometry(f"{width}x{height}+{next_action_x}+{next_action_y}")
+        else:
+            # Offset from center
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+            x = (screen_width - width) // 2 + 50
+            y = (screen_height - height) // 2 + 50
+            self.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Make window stay on top
+        self.attributes('-topmost', True)
+
+        # Make window resizable
+        self.minsize(300, 200)
+        self.resizable(True, True)
+
+        # Grid configuration
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+    def create_widgets(self):
+        """Create all UI widgets."""
+        # Main container
+        main_frame = ctk.CTkFrame(self)
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        main_frame.grid_rowconfigure(2, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+
+        # Action title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text=self.item.title,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            wraplength=450
+        )
+        title_label.grid(row=0, column=0, pady=(10, 5), padx=10, sticky="ew")
+
+        # Header with Save button
+        header_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        header_frame.grid(row=1, column=0, pady=(10, 5), padx=10, sticky="ew")
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        notes_label = ctk.CTkLabel(
+            header_frame,
+            text="Notes:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        notes_label.grid(row=0, column=0, sticky="w")
+
+        # Save button
+        self.save_button = ctk.CTkButton(
+            header_frame,
+            text="Save Notes",
+            width=100,
+            command=self.save_notes,
+            fg_color="green",
+            hover_color="darkgreen"
+        )
+        self.save_button.grid(row=0, column=1, padx=5)
+
+        # Notes textbox
+        self.notes_text = ctk.CTkTextbox(
+            main_frame,
+            wrap="word"
+        )
+        self.notes_text.grid(row=2, column=0, pady=5, padx=10, sticky="nsew")
+
+        # Populate notes
+        description = self.item.description or ""
+        self.notes_text.insert("1.0", description)
+        self.notes_text.focus()
+
+    def save_notes(self):
+        """Save the edited notes back to the action item."""
+        try:
+            # Get the text from the textbox
+            notes = self.notes_text.get("1.0", "end-1c").strip()
+
+            # Update the item's description
+            self.item.description = notes if notes else None
+
+            # Save to database
+            self.db_manager.update_action_item(self.item)
+
+            print(f"[DEBUG] Notes saved for item: {self.item.id}")
+
+            # Visual feedback - briefly change button color
+            self.save_button.configure(text="✓ Saved")
+            self.after(2000, lambda: self.save_button.configure(text="Save Notes"))
+        except Exception as e:
+            print(f"[ERROR] Failed to save notes: {e}")
+            import traceback
+            traceback.print_exc()
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error", f"Failed to save notes: {e}")
+
+    def on_window_close(self):
+        """Handle window close event."""
+        self.save_window_settings()
+        self.destroy()
+
+    def save_window_settings(self):
+        """Save window position and size to settings."""
+        # Store in settings
+        self.settings.next_action_window_width = self.winfo_width()
+        self.settings.next_action_window_height = self.winfo_height()
+        self.settings.next_action_window_x = self.winfo_x()
+        self.settings.next_action_window_y = self.winfo_y()
+        self.settings.save()
 
 
 class NextStepsDialog(ctk.CTkToplevel):

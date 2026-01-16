@@ -26,6 +26,12 @@ class AppSettings:
     timer_window_y: Optional[int] = None
     timer_warning_minutes: int = 10  # When to show green warning
 
+    # Next Action Window settings
+    next_action_window_width: int = 500
+    next_action_window_height: int = 400
+    next_action_window_x: Optional[int] = None
+    next_action_window_y: Optional[int] = None
+
     # Audio settings
     enable_break_sounds: bool = True
     break_start_sound: Optional[str] = None  # Path to WAV file for break start
