@@ -14,6 +14,7 @@ try:
     from google_auth_oauthlib.flow import InstalledAppFlow
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
+    from tzlocal import get_localzone
     GOOGLE_CALENDAR_AVAILABLE = True
 except ImportError:
     GOOGLE_CALENDAR_AVAILABLE = False
@@ -171,6 +172,22 @@ class GoogleCalendarManager:
         self.service = build('calendar', 'v3', credentials=creds)
         print("✅ Google Calendar service initialized successfully!")
 
+    def _get_local_timezone(self) -> str:
+        """
+        Get the local timezone name in IANA format.
+
+        Returns:
+            IANA timezone name (e.g., 'America/Los_Angeles')
+            Falls back to 'UTC' if detection fails
+        """
+        try:
+            tz = get_localzone()
+            return str(tz)
+        except Exception:
+            # Fallback to UTC if we can't detect local timezone
+            print("⚠️  Warning: Could not detect local timezone, using UTC")
+            return 'UTC'
+
     def create_event(
         self,
         summary: str,
@@ -199,17 +216,20 @@ class GoogleCalendarManager:
         """
         end_datetime = start_datetime + timedelta(minutes=duration_minutes)
 
+        # Get local timezone
+        local_tz = self._get_local_timezone()
+
         event = {
             'summary': summary,
             'description': description or '',
             'location': location or '',
             'start': {
                 'dateTime': start_datetime.isoformat(),
-                'timeZone': 'America/New_York',  # TODO: Make configurable
+                'timeZone': local_tz,
             },
             'end': {
                 'dateTime': end_datetime.isoformat(),
-                'timeZone': 'America/New_York',
+                'timeZone': local_tz,
             },
             'reminders': {
                 'useDefault': False,
@@ -257,13 +277,14 @@ class GoogleCalendarManager:
                 event['description'] = description
             if start_datetime and duration_minutes:
                 end_datetime = start_datetime + timedelta(minutes=duration_minutes)
+                local_tz = self._get_local_timezone()
                 event['start'] = {
                     'dateTime': start_datetime.isoformat(),
-                    'timeZone': 'America/New_York',
+                    'timeZone': local_tz,
                 }
                 event['end'] = {
                     'dateTime': end_datetime.isoformat(),
-                    'timeZone': 'America/New_York',
+                    'timeZone': local_tz,
                 }
 
             updated_event = self.service.events().update(

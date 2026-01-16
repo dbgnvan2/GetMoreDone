@@ -255,6 +255,11 @@ class CalendarEventDialog(ctk.CTkToplevel):
                 )
                 self.db_manager.add_item_link(link)
 
+                # Update the action item to mark it as a meeting and store the meeting time
+                self.item.is_meeting = True
+                self.item.meeting_start_time = start_datetime.isoformat()
+                self.db_manager.update_action_item(self.item)
+
                 # Open the calendar event in browser (htmlLink already points to the event)
                 import webbrowser
                 webbrowser.open(calendar_url)

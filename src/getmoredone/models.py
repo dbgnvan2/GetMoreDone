@@ -36,6 +36,7 @@ class ActionItem:
     due_date: Optional[str] = None
     original_due_date: Optional[str] = None  # First due date value, set once
     is_meeting: bool = False
+    meeting_start_time: Optional[str] = None  # ISO datetime for when meeting is scheduled
     importance: Optional[int] = None
     urgency: Optional[int] = None
     size: Optional[int] = None

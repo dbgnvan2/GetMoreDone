@@ -59,14 +59,15 @@ class DatabaseManager:
         self.db.conn.execute("""
             INSERT INTO action_items (
                 id, who, contact_id, parent_id, title, description, start_date, due_date,
-                original_due_date, is_meeting,
+                original_due_date, is_meeting, meeting_start_time,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
+            item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
@@ -108,7 +109,7 @@ class DatabaseManager:
         self.db.conn.execute("""
             UPDATE action_items SET
                 who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?,
-                start_date = ?, due_date = ?, original_due_date = ?, is_meeting = ?,
+                start_date = ?, due_date = ?, original_due_date = ?, is_meeting = ?, meeting_start_time = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
                 planned_minutes = ?, status = ?, completed_at = ?,
@@ -117,6 +118,7 @@ class DatabaseManager:
         """, (
             item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
+            item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
@@ -838,6 +840,11 @@ class DatabaseManager:
         except (KeyError, IndexError):
             is_meeting = False
 
+        try:
+            meeting_start_time = row["meeting_start_time"]
+        except (KeyError, IndexError):
+            meeting_start_time = None
+
         return ActionItem(
             id=row["id"],
             who=row["who"],
@@ -849,6 +856,7 @@ class DatabaseManager:
             due_date=row["due_date"],
             original_due_date=original_due_date,
             is_meeting=is_meeting,
+            meeting_start_time=meeting_start_time,
             importance=row["importance"],
             urgency=row["urgency"],
             size=row["size"],

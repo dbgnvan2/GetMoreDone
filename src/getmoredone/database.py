@@ -74,6 +74,9 @@ class Database:
 
                 start_date        TEXT,
                 due_date          TEXT,
+                original_due_date TEXT,
+                is_meeting        INTEGER DEFAULT 0,
+                meeting_start_time TEXT,
 
                 importance        INTEGER,
                 urgency           INTEGER,
@@ -301,6 +304,13 @@ class Database:
                 UPDATE action_items
                 SET original_due_date = due_date
                 WHERE due_date IS NOT NULL AND original_due_date IS NULL
+            """)
+
+        if 'meeting_start_time' not in columns:
+            # Add meeting_start_time column to action_items
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN meeting_start_time TEXT
             """)
 
     def __enter__(self):
