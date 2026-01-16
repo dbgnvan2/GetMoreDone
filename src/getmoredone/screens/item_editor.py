@@ -244,6 +244,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.is_meeting_checkbox.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
+        # Meeting Start Time (read-only, set when calendar event is created)
+        ctk.CTkLabel(left_col, text="Meeting Time:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        self.meeting_time_label = ctk.CTkLabel(left_col, text="Not scheduled", anchor="w")
+        self.meeting_time_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        row_l += 1
+
         # Planned Minutes (keep in left column for now)
         ctk.CTkLabel(left_col, text="Planned Minutes:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
         self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0", width=320)
@@ -504,6 +510,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Is Meeting
         self.is_meeting_var.set(self.item.is_meeting)
+
+        # Meeting Start Time (read-only display)
+        if self.item.meeting_start_time:
+            # Format: show date and time (YYYY-MM-DD HH:MM)
+            meeting_display = self.item.meeting_start_time[:16].replace('T', ' ')
+            self.meeting_time_label.configure(text=meeting_display)
+        else:
+            self.meeting_time_label.configure(text="Not scheduled")
 
         # Original Due Date (read-only display)
         if self.item.original_due_date:
@@ -1310,8 +1324,19 @@ class ItemEditorDialog(ctk.CTkToplevel):
         dialog = CalendarEventDialog(self, self.db_manager, self.item_id)
         dialog.wait_window()
 
-        # Refresh notes display to show the new calendar link
+        # Refresh item data and notes display to show the new calendar link
         if dialog.result:
+            # Reload the item to get updated is_meeting and meeting_start_time
+            self.item = self.db_manager.get_action_item(self.item_id)
+            # Update the is_meeting checkbox to reflect the change
+            self.is_meeting_var.set(self.item.is_meeting)
+            # Update the meeting time display
+            if self.item.meeting_start_time:
+                meeting_display = self.item.meeting_start_time[:16].replace('T', ' ')
+                self.meeting_time_label.configure(text=meeting_display)
+            else:
+                self.meeting_time_label.configure(text="Not scheduled")
+            # Refresh notes/links display
             self.load_notes()
 
     def load_notes(self):
