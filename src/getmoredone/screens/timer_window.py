@@ -41,6 +41,9 @@ class TimerWindow(ctk.CTkToplevel):
         # UI update timer
         self.update_timer_id = None
 
+        # Track pop-out window for note synchronization
+        self.next_action_window = None
+
         # Window setup
         self.setup_window()
         self.create_widgets()
@@ -254,6 +257,10 @@ class TimerWindow(ctk.CTkToplevel):
 
             print(f"[DEBUG] Notes saved for item: {self.item.id}")
 
+            # Refresh the pop-out window if it exists
+            if self.next_action_window and self.next_action_window.winfo_exists():
+                self.next_action_window.refresh_notes()
+
             # Visual feedback - briefly change button color
             self.save_notes_button.configure(text="✓ Saved")
             self.after(2000, lambda: self.save_notes_button.configure(text="Save Notes"))
@@ -264,16 +271,34 @@ class TimerWindow(ctk.CTkToplevel):
             import tkinter.messagebox as messagebox
             messagebox.showerror("Error", f"Failed to save notes: {e}")
 
+    def refresh_notes(self):
+        """Refresh notes textbox from the current item data."""
+        try:
+            # Clear and update the textbox with current item description
+            self.next_steps_text.delete("1.0", "end")
+            description = self.item.description or ""
+            self.next_steps_text.insert("1.0", description)
+            print(f"[DEBUG] Notes refreshed in TimerWindow for item: {self.item.id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to refresh notes in TimerWindow: {e}")
+
     def open_next_action_window(self):
         """Open the independent Next Action Window."""
         try:
+            # If window already exists, just bring it to front
+            if self.next_action_window and self.next_action_window.winfo_exists():
+                self.next_action_window.lift()
+                self.next_action_window.focus_force()
+                print(f"[DEBUG] Next Action Window already open, bringing to front")
+                return
+
             # Save current notes from the textbox first
             notes = self.next_steps_text.get("1.0", "end-1c").strip()
             self.item.description = notes if notes else None
             self.db_manager.update_action_item(self.item)
 
-            # Open the floating window
-            NextActionWindow(self, self.db_manager, self.item)
+            # Open the floating window and keep reference
+            self.next_action_window = NextActionWindow(self, self.db_manager, self.item, self)
             print(f"[DEBUG] Next Action Window opened for item: {self.item.id}")
         except Exception as e:
             print(f"[ERROR] Failed to open Next Action Window: {e}")
@@ -793,11 +818,12 @@ class CompletionNoteDialog(ctk.CTkToplevel):
 class NextActionWindow(ctk.CTkToplevel):
     """Floating window for viewing/editing action item notes independently."""
 
-    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem):
+    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem, parent_window=None):
         super().__init__(parent)
 
         self.db_manager = db_manager
         self.item = item
+        self.parent_window = parent_window  # Reference to TimerWindow for sync
         self.settings = AppSettings.load()
 
         self.setup_window()
@@ -905,6 +931,10 @@ class NextActionWindow(ctk.CTkToplevel):
 
             print(f"[DEBUG] Notes saved for item: {self.item.id}")
 
+            # Refresh the parent window (TimerWindow) if it exists
+            if self.parent_window and self.parent_window.winfo_exists():
+                self.parent_window.refresh_notes()
+
             # Visual feedback - briefly change button color
             self.save_button.configure(text="✓ Saved")
             self.after(2000, lambda: self.save_button.configure(text="Save Notes"))
@@ -915,8 +945,23 @@ class NextActionWindow(ctk.CTkToplevel):
             import tkinter.messagebox as messagebox
             messagebox.showerror("Error", f"Failed to save notes: {e}")
 
+    def refresh_notes(self):
+        """Refresh notes textbox from the current item data."""
+        try:
+            # Clear and update the textbox with current item description
+            self.notes_text.delete("1.0", "end")
+            description = self.item.description or ""
+            self.notes_text.insert("1.0", description)
+            print(f"[DEBUG] Notes refreshed in NextActionWindow for item: {self.item.id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to refresh notes in NextActionWindow: {e}")
+
     def on_window_close(self):
         """Handle window close event."""
+        # Clear the parent's reference to this window
+        if self.parent_window and self.parent_window.winfo_exists():
+            self.parent_window.next_action_window = None
+
         self.save_window_settings()
         self.destroy()
 
