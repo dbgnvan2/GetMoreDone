@@ -3,11 +3,13 @@ Item editor dialog for creating and editing action items.
 """
 
 import customtkinter as ctk
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING
 
 from ..models import ActionItem, PriorityFactors, ItemLink
 from ..validation import Validator
+from ..app_settings import AppSettings
+from ..date_utils import increment_date
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -669,11 +671,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self.validate_and_adjust_due_date()
 
     def adjust_date(self, entry_widget, days_delta: int):
-        """Add or subtract days from the current date in the field."""
-        from datetime import datetime, timedelta
+        """Add or subtract days from the current date in the field, using weekend-aware logic."""
+        from datetime import datetime
 
         # Clear any previous error messages
         self.error_label.configure(text="")
+
+        # Load settings for weekend handling
+        settings = AppSettings.load()
 
         current_text = entry_widget.get().strip()
         if not current_text:
@@ -687,7 +692,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 # If invalid format, use today
                 base_date = datetime.now().date()
 
-        new_date = base_date + timedelta(days=days_delta)
+        # Use weekend-aware date increment
+        new_date = increment_date(base_date, days_delta, settings.include_saturday, settings.include_sunday)
 
         # If adjusting due date, validate it won't go below start date
         if entry_widget == self.due_date_entry:
@@ -717,7 +723,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
                     due_base = datetime.strptime(due_text, "%Y-%m-%d").date()
                     # If due was >= old start, maintain the gap by incrementing
                     if due_base >= base_date:
-                        new_due = due_base + timedelta(days=days_delta)
+                        new_due = increment_date(due_base, days_delta, settings.include_saturday, settings.include_sunday)
                         self.due_date_entry.delete(0, "end")
                         self.due_date_entry.insert(0, new_due.strftime("%Y-%m-%d"))
                     else:

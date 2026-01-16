@@ -3,12 +3,13 @@ Today view screen - shows items for today including completed ones.
 """
 
 import customtkinter as ctk
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional
 
 from ..db_manager import DatabaseManager
 from ..models import ActionItem
 from ..app_settings import AppSettings
+from ..date_utils import increment_date
 
 
 class TodayScreen(ctk.CTkFrame):
@@ -319,31 +320,32 @@ class TodayScreen(ctk.CTkFrame):
         self.refresh()
 
     def push_item(self, item_id: str):
-        """Push item to next day without showing dialog."""
-        from datetime import timedelta
-
+        """Push item to next day without showing dialog, using weekend-aware logic."""
         # Get the item
         item = self.db_manager.get_action_item(item_id)
         if not item:
             return
 
-        # Calculate new dates (add 1 day)
+        # Load settings for weekend handling
+        settings = AppSettings.load()
+
+        # Calculate new dates (add 1 day using weekend-aware logic)
         new_start = None
         new_due = None
 
         if item.start_date:
             try:
-                start_dt = datetime.strptime(item.start_date, "%Y-%m-%d")
-                new_start_dt = start_dt + timedelta(days=1)
-                new_start = new_start_dt.strftime("%Y-%m-%d")
+                start_dt = date.fromisoformat(item.start_date)
+                new_start_dt = increment_date(start_dt, 1, settings.include_saturday, settings.include_sunday)
+                new_start = new_start_dt.isoformat()
             except ValueError:
                 pass
 
         if item.due_date:
             try:
-                due_dt = datetime.strptime(item.due_date, "%Y-%m-%d")
-                new_due_dt = due_dt + timedelta(days=1)
-                new_due = new_due_dt.strftime("%Y-%m-%d")
+                due_dt = date.fromisoformat(item.due_date)
+                new_due_dt = increment_date(due_dt, 1, settings.include_saturday, settings.include_sunday)
+                new_due = new_due_dt.isoformat()
             except ValueError:
                 pass
 

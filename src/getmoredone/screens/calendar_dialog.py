@@ -3,8 +3,11 @@ Dialog for creating Google Calendar events linked to action items.
 """
 
 import customtkinter as ctk
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING
+
+from ..app_settings import AppSettings
+from ..date_utils import increment_date
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -76,7 +79,7 @@ class CalendarEventDialog(ctk.CTkToplevel):
         btn_today.grid(row=0, column=2, padx=2, pady=5)
 
         btn_tomorrow = ctk.CTkButton(date_frame, text="+1", width=50,
-                                     command=lambda: self.set_date(datetime.now().date() + timedelta(days=1)))
+                                     command=self.increment_date_by_one)
         btn_tomorrow.grid(row=0, column=3, padx=2, pady=5)
 
         # Time Frame
@@ -150,6 +153,23 @@ class CalendarEventDialog(ctk.CTkToplevel):
         """Set date in the entry field."""
         self.date_entry.delete(0, "end")
         self.date_entry.insert(0, date.isoformat())
+
+    def increment_date_by_one(self):
+        """Increment date by 1 day using weekend-aware logic."""
+        settings = AppSettings.load()
+        current_date = datetime.now().date()
+
+        # Get current date from entry if it has a value
+        date_str = self.date_entry.get().strip()
+        if date_str:
+            try:
+                current_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+
+        # Increment by 1 day using weekend-aware logic
+        new_date = increment_date(current_date, 1, settings.include_saturday, settings.include_sunday)
+        self.set_date(new_date)
 
     def create_event(self):
         """Create the calendar event and link it to the action item."""

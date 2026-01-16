@@ -37,6 +37,10 @@ class AppSettings:
     break_start_sound: Optional[str] = None  # Path to WAV file for break start
     break_end_sound: Optional[str] = None    # Path to WAV file for break end
 
+    # Date increment settings
+    include_saturday: bool = True  # Include Saturday in date calculations (push, +/-)
+    include_sunday: bool = True    # Include Sunday in date calculations (push, +/-)
+
     @classmethod
     def get_settings_path(cls) -> Path:
         """Get the path to the settings file."""

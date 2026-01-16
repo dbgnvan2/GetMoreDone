@@ -4,11 +4,12 @@ Provides a countdown timer with pause/resume and completion workflows.
 """
 
 import customtkinter as ctk
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Optional, Callable
 from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
+from ..date_utils import increment_date
 
 
 class TimerWindow(ctk.CTkToplevel):
@@ -554,8 +555,8 @@ class TimerWindow(ctk.CTkToplevel):
             completion_note = completion_dialog.result
             print(f"[DEBUG] Completion note: {completion_note}")
 
-            # Prompt for next steps note with date selection
-            next_steps_dialog = NextStepsDialog(self)
+            # Prompt for next steps note (without date selection)
+            next_steps_dialog = CompletionNoteDialog(self, "Next Steps Note")
             self.wait_window(next_steps_dialog)
 
             # Check if window still exists after second dialog
@@ -563,17 +564,33 @@ class TimerWindow(ctk.CTkToplevel):
                 print("[DEBUG] Window was closed during next steps dialog")
                 return
 
-            next_steps_result = next_steps_dialog.result
+            next_steps_note = next_steps_dialog.result
+            print(f"[DEBUG] Next steps: {next_steps_note}")
 
-            if not next_steps_result:
-                # User cancelled, abort continue workflow
-                print("[DEBUG] User cancelled next steps dialog")
-                return
+            # Auto-calculate dates by incrementing by 1 day using weekend-aware logic
+            settings = AppSettings.load()
 
-            next_steps_note = next_steps_result['note']
-            start_date = next_steps_result['start_date']
-            due_date = next_steps_result['due_date']
-            print(f"[DEBUG] Next steps: {next_steps_note}, start: {start_date}, due: {due_date}")
+            # Parse current dates
+            current_start = date.fromisoformat(self.item.start_date) if self.item.start_date else date.today()
+            current_due = date.fromisoformat(self.item.due_date) if self.item.due_date else date.today()
+
+            # Increment by 1 day using weekend settings
+            new_start = increment_date(
+                current_start,
+                1,
+                settings.include_saturday,
+                settings.include_sunday
+            )
+            new_due = increment_date(
+                current_due,
+                1,
+                settings.include_saturday,
+                settings.include_sunday
+            )
+
+            start_date = new_start.isoformat()
+            due_date = new_due.isoformat()
+            print(f"[DEBUG] Auto-calculated dates - start: {start_date}, due: {due_date}")
 
             # Save work log for current action
             self.save_work_log(completion_note)
@@ -583,7 +600,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.db_manager.complete_action_item(self.item.id)
             print(f"[DEBUG] Current action completed")
 
-            # Create duplicate with user-selected dates
+            # Create duplicate with auto-calculated dates
             new_item = ActionItem(
                 who=self.item.who,
                 title=self.item.title,
@@ -1124,15 +1141,17 @@ class NextStepsDialog(ctk.CTkToplevel):
         ).pack(side="left", expand=True, padx=5)
 
     def set_date(self, entry: ctk.CTkEntry, days_offset: int):
-        """Set date to today + offset."""
-        from datetime import date, timedelta
-        new_date = (date.today() + timedelta(days=days_offset)).isoformat()
+        """Set date to today + offset using weekend-aware logic."""
+        settings = AppSettings.load()
+        new_date = increment_date(date.today(), days_offset, settings.include_saturday, settings.include_sunday)
         entry.delete(0, "end")
-        entry.insert(0, new_date)
+        entry.insert(0, new_date.isoformat())
 
     def adjust_date(self, entry: ctk.CTkEntry, days: int):
-        """Adjust current date by days."""
-        from datetime import datetime, timedelta
+        """Adjust current date by days using weekend-aware logic."""
+        from datetime import datetime
+        settings = AppSettings.load()
+
         current = entry.get().strip()
         if not current:
             self.set_date(entry, days)
@@ -1140,9 +1159,9 @@ class NextStepsDialog(ctk.CTkToplevel):
 
         try:
             current_date = datetime.strptime(current, "%Y-%m-%d").date()
-            new_date = (current_date + timedelta(days=days)).isoformat()
+            new_date = increment_date(current_date, days, settings.include_saturday, settings.include_sunday)
             entry.delete(0, "end")
-            entry.insert(0, new_date)
+            entry.insert(0, new_date.isoformat())
         except ValueError:
             # Invalid date, reset to today + days
             self.set_date(entry, days)

@@ -37,6 +37,7 @@ class SettingsScreen(ctk.CTkFrame):
         self.create_database_section()
         self.create_obsidian_section()
         self.create_appearance_section()
+        self.create_date_increment_section()
 
     def create_header(self):
         """Create header."""
@@ -221,6 +222,74 @@ class SettingsScreen(ctk.CTkFrame):
             command=lambda choice: ctk.set_appearance_mode(choice)
         )
         theme_combo.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+    def create_date_increment_section(self):
+        """Create date increment settings section."""
+        section = ctk.CTkFrame(self)
+        section.grid(row=4, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Date Increment Settings",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 15))
+
+        # Include Saturday checkbox
+        self.include_saturday_var = ctk.BooleanVar(value=self.settings.include_saturday)
+        saturday_checkbox = ctk.CTkCheckBox(
+            section,
+            text="Include Saturday in date calculations (push, +/- buttons)",
+            variable=self.include_saturday_var
+        )
+        saturday_checkbox.grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+        # Include Sunday checkbox
+        self.include_sunday_var = ctk.BooleanVar(value=self.settings.include_sunday)
+        sunday_checkbox = ctk.CTkCheckBox(
+            section,
+            text="Include Sunday in date calculations (push, +/- buttons)",
+            variable=self.include_sunday_var
+        )
+        sunday_checkbox.grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+        # Save button
+        btn_save = ctk.CTkButton(
+            section,
+            text="Save Settings",
+            command=self.save_date_increment_settings,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=150
+        )
+        btn_save.grid(row=3, column=0, sticky="w", padx=10, pady=10)
+
+        # Status label
+        self.date_increment_status_label = ctk.CTkLabel(section, text="", text_color="green")
+        self.date_increment_status_label.grid(row=3, column=1, sticky="w", padx=10, pady=10)
+
+        # Info
+        info_text = ("These settings control how dates are incremented when using:\n"
+                    "• Push button (move item to next day)\n"
+                    "• +/- buttons in date fields\n"
+                    "• Continue button (duplicate action for next day)\n\n"
+                    "Note: Manual date entry is not affected by these settings.")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        )
+
+    def save_date_increment_settings(self):
+        """Save date increment settings."""
+        self.settings.include_saturday = self.include_saturday_var.get()
+        self.settings.include_sunday = self.include_sunday_var.get()
+
+        self.settings.save()
+
+        self.date_increment_status_label.configure(
+            text="✓ Settings saved",
+            text_color="green"
+        )
 
     def backup_database(self):
         """Backup the database file."""
