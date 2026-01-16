@@ -483,9 +483,25 @@ class TimerWindow(ctk.CTkToplevel):
         try:
             print(f"[DEBUG] Finished button clicked for item: {self.item.id}")
 
+            # Check if window still exists
+            if not self.winfo_exists():
+                print("[ERROR] Window already destroyed, cannot complete action")
+                return
+
             # Prompt for completion note
             dialog = CompletionNoteDialog(self, "Completion Note")
             self.wait_window(dialog)
+
+            # Check if window still exists after dialog (user might have closed it)
+            if not self.winfo_exists():
+                print("[DEBUG] Window was closed while dialog was open, completing action anyway")
+                # Still save the work log and complete the item even if window is gone
+                completion_note = dialog.result
+                self.save_work_log(completion_note)
+                self.db_manager.complete_action_item(self.item.id)
+                if self.on_close_callback:
+                    self.on_close_callback()
+                return
 
             completion_note = dialog.result
             print(f"[DEBUG] Completion note: {completion_note}")
@@ -508,24 +524,45 @@ class TimerWindow(ctk.CTkToplevel):
             print(f"[ERROR] Finished action failed: {e}")
             import traceback
             traceback.print_exc()
-            # Show error to user
-            import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to complete action: {e}")
+            # Show error to user - only if window still exists
+            try:
+                import tkinter.messagebox as messagebox
+                messagebox.showerror("Error", f"Failed to complete action: {e}")
+            except:
+                # Window might be destroyed, just log the error
+                print(f"[ERROR] Could not show error dialog: {e}")
 
     def continue_action(self):
         """Handle Continue workflow: complete current, duplicate for next day."""
         try:
             print(f"[DEBUG] Continue button clicked for item: {self.item.id}")
 
+            # Check if window still exists
+            if not self.winfo_exists():
+                print("[ERROR] Window already destroyed, cannot continue action")
+                return
+
             # Prompt for completion note
             completion_dialog = CompletionNoteDialog(self, "Completion Note")
             self.wait_window(completion_dialog)
+
+            # Check if window still exists after first dialog
+            if not self.winfo_exists():
+                print("[DEBUG] Window was closed during completion dialog")
+                return
+
             completion_note = completion_dialog.result
             print(f"[DEBUG] Completion note: {completion_note}")
 
             # Prompt for next steps note with date selection
             next_steps_dialog = NextStepsDialog(self)
             self.wait_window(next_steps_dialog)
+
+            # Check if window still exists after second dialog
+            if not self.winfo_exists():
+                print("[DEBUG] Window was closed during next steps dialog")
+                return
+
             next_steps_result = next_steps_dialog.result
 
             if not next_steps_result:
@@ -587,9 +624,13 @@ class TimerWindow(ctk.CTkToplevel):
             print(f"[ERROR] Continue action failed: {e}")
             import traceback
             traceback.print_exc()
-            # Show error to user
-            import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to continue action: {e}")
+            # Show error to user - only if window still exists
+            try:
+                import tkinter.messagebox as messagebox
+                messagebox.showerror("Error", f"Failed to continue action: {e}")
+            except:
+                # Window might be destroyed, just log the error
+                print(f"[ERROR] Could not show error dialog: {e}")
 
     def save_work_log(self, note: Optional[str] = None):
         """Save work log entry to database."""
@@ -637,11 +678,20 @@ class TimerWindow(ctk.CTkToplevel):
 
     def save_window_settings(self):
         """Save window position and size to settings."""
-        self.settings.timer_window_width = self.winfo_width()
-        self.settings.timer_window_height = self.winfo_height()
-        self.settings.timer_window_x = self.winfo_x()
-        self.settings.timer_window_y = self.winfo_y()
-        self.settings.save()
+        try:
+            # Check if window still exists before accessing properties
+            if not self.winfo_exists():
+                print("[DEBUG] Window already destroyed, skipping settings save")
+                return
+
+            self.settings.timer_window_width = self.winfo_width()
+            self.settings.timer_window_height = self.winfo_height()
+            self.settings.timer_window_x = self.winfo_x()
+            self.settings.timer_window_y = self.winfo_y()
+            self.settings.save()
+        except Exception as e:
+            # If window was destroyed during save, log but don't fail
+            print(f"[DEBUG] Could not save window settings (window may be destroyed): {e}")
 
     def play_sound(self, is_break_start: bool):
         """Play sound for break start or break end."""
@@ -771,11 +821,16 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         self.attributes('-topmost', True)  # Appear above always-on-top timer window
         self.grab_set()
 
-        # Center on parent
-        self.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - 400) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - 250) // 2
-        self.geometry(f"+{x}+{y}")
+        # Center on parent if it still exists
+        try:
+            self.update_idletasks()
+            if parent.winfo_exists():
+                x = parent.winfo_x() + (parent.winfo_width() - 400) // 2
+                y = parent.winfo_y() + (parent.winfo_height() - 250) // 2
+                self.geometry(f"+{x}+{y}")
+        except Exception as e:
+            # If parent is destroyed, just use default position
+            print(f"[DEBUG] Could not center dialog on parent: {e}")
 
         # Widgets
         label = ctk.CTkLabel(self, text=title, font=ctk.CTkFont(size=14, weight="bold"))
@@ -989,11 +1044,16 @@ class NextStepsDialog(ctk.CTkToplevel):
         self.attributes('-topmost', True)  # Appear above always-on-top timer window
         self.grab_set()
 
-        # Center on parent
-        self.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - 450) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - 400) // 2
-        self.geometry(f"+{x}+{y}")
+        # Center on parent if it still exists
+        try:
+            self.update_idletasks()
+            if parent.winfo_exists():
+                x = parent.winfo_x() + (parent.winfo_width() - 450) // 2
+                y = parent.winfo_y() + (parent.winfo_height() - 400) // 2
+                self.geometry(f"+{x}+{y}")
+        except Exception as e:
+            # If parent is destroyed, just use default position
+            print(f"[DEBUG] Could not center dialog on parent: {e}")
 
         # Main container
         main_frame = ctk.CTkFrame(self)
