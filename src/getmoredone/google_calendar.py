@@ -108,10 +108,13 @@ class GoogleCalendarManager:
 
                 # Try local server method first (opens browser)
                 try:
+                    # Force consent prompt to avoid browser OAuth cache issues
+                    # This ensures we use the correct client_id even if browser has cached old session
                     creds = flow.run_local_server(
                         port=0,
                         open_browser=True,
-                        success_message='Authentication successful! You can close this window.'
+                        success_message='Authentication successful! You can close this window.',
+                        prompt='consent'  # Force re-consent to avoid cached OAuth sessions
                     )
                     print("\n✅ Authentication successful via browser!")
 
