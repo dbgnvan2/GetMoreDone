@@ -489,6 +489,13 @@ class TimerWindow(ctk.CTkToplevel):
                 print("[ERROR] Window already destroyed, cannot complete action")
                 return
 
+            # Update action item's notes from the timer window BEFORE showing dialog
+            timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
+            if timer_notes:
+                self.item.description = timer_notes
+                self.db_manager.update_action_item(self.item)
+                print(f"[DEBUG] Updated action item notes from timer window")
+
             # Prompt for completion note
             dialog = CompletionNoteDialog(self, "Completion Note")
             self.wait_window(dialog)
@@ -542,6 +549,13 @@ class TimerWindow(ctk.CTkToplevel):
             if not self.winfo_exists():
                 print("[ERROR] Window already destroyed, cannot continue action")
                 return
+
+            # Update action item's notes from the timer window BEFORE showing dialogs
+            timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
+            if timer_notes:
+                self.item.description = timer_notes
+                self.db_manager.update_action_item(self.item)
+                print(f"[DEBUG] Updated original action item notes from timer window")
 
             # Prompt for completion note
             completion_dialog = CompletionNoteDialog(self, "Completion Note")

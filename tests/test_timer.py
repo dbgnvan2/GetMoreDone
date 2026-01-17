@@ -210,6 +210,39 @@ class TestTimerWorkflows:
         assert len(logs) == 1
         assert logs[0].minutes == work_minutes
 
+    def test_finished_updates_notes_from_timer(self, db_manager, sample_item):
+        """Test that Finished button updates action item notes from timer window."""
+        # Simulate timer session with updated notes
+        original_notes = sample_item.description
+        assert original_notes == "Test task description with next steps"
+
+        # Simulate user editing notes in timer window
+        timer_window_notes = "Updated notes from Action Timer - task completed with modifications"
+
+        # Update the item's description (simulating what the Finished button does)
+        sample_item.description = timer_window_notes
+        db_manager.update_action_item(sample_item)
+
+        # Create work log
+        work_log = WorkLog(
+            item_id=sample_item.id,
+            started_at=datetime.now().isoformat(),
+            ended_at=datetime.now().isoformat(),
+            minutes=25,
+            note="Finished workflow test"
+        )
+        db_manager.create_work_log(work_log)
+
+        # Complete the item
+        db_manager.complete_action_item(sample_item.id)
+
+        # Verify item is completed with updated notes
+        item = db_manager.get_action_item(sample_item.id)
+        assert item.status == Status.COMPLETED
+        assert item.completed_at is not None
+        assert item.description == timer_window_notes
+        assert item.description != original_notes
+
     def test_continue_workflow(self, db_manager, sample_item):
         """Test the Continue workflow."""
         # Simulate timer session for today
@@ -258,6 +291,89 @@ class TestTimerWorkflows:
         assert new_item.status == Status.OPEN
         assert new_item.start_date == tomorrow
         assert new_item.description == "Continue with phase 2"
+
+    def test_continue_updates_original_notes_and_creates_new_action(self, db_manager, sample_item):
+        """Test that Continue button updates original notes and creates new action with +1 day dates."""
+        from datetime import date
+        from src.getmoredone.date_utils import increment_date
+        from src.getmoredone.app_settings import AppSettings
+
+        # Store original description
+        original_notes = sample_item.description
+        assert original_notes == "Test task description with next steps"
+
+        # Simulate user editing notes in timer window
+        timer_window_notes = "Updated notes from Action Timer - progress made on task"
+
+        # Update the original item's description (simulating what Continue button does)
+        sample_item.description = timer_window_notes
+        db_manager.update_action_item(sample_item)
+
+        # Create work log
+        work_log = WorkLog(
+            item_id=sample_item.id,
+            started_at=datetime.now().isoformat(),
+            ended_at=datetime.now().isoformat(),
+            minutes=25,
+            note="Continue workflow test"
+        )
+        db_manager.create_work_log(work_log)
+
+        # Complete original item
+        db_manager.complete_action_item(sample_item.id)
+
+        # Get settings for date increment
+        settings = AppSettings()
+
+        # Parse current dates
+        current_start = date.fromisoformat(sample_item.start_date)
+        current_due = date.fromisoformat(sample_item.due_date)
+
+        # Increment by 1 day using weekend-aware logic
+        new_start = increment_date(current_start, 1, settings.include_saturday, settings.include_sunday)
+        new_due = increment_date(current_due, 1, settings.include_saturday, settings.include_sunday)
+
+        # Create new action item with updated dates and next steps notes
+        next_steps_note = "Next steps for tomorrow"
+        new_item = ActionItem(
+            who=sample_item.who,
+            title=sample_item.title,
+            description=next_steps_note,
+            contact_id=sample_item.contact_id,
+            start_date=new_start.isoformat(),
+            due_date=new_due.isoformat(),
+            importance=sample_item.importance,
+            urgency=sample_item.urgency,
+            size=sample_item.size,
+            value=sample_item.value,
+            group=sample_item.group,
+            category=sample_item.category,
+            planned_minutes=sample_item.planned_minutes,
+            status=Status.OPEN
+        )
+        db_manager.create_action_item(new_item)
+
+        # Verify original is completed with updated notes
+        original = db_manager.get_action_item(sample_item.id)
+        assert original.status == Status.COMPLETED
+        assert original.completed_at is not None
+        assert original.description == timer_window_notes
+        assert original.description != original_notes
+
+        # Verify new item has correct properties
+        assert new_item.id != sample_item.id
+        assert new_item.status == Status.OPEN
+        assert new_item.description == next_steps_note
+
+        # Verify dates are incremented by 1 day (weekend-aware)
+        assert new_item.start_date == new_start.isoformat()
+        assert new_item.due_date == new_due.isoformat()
+
+        # Verify the new dates are after the original dates
+        new_start_date = date.fromisoformat(new_item.start_date)
+        new_due_date = date.fromisoformat(new_item.due_date)
+        assert new_start_date > current_start
+        assert new_due_date > current_due
 
 
 class TestTimerStateManagement:
