@@ -547,7 +547,7 @@ class TimerWindow(ctk.CTkToplevel):
                 print(f"[ERROR] Could not show error dialog: {e}")
 
     def continue_action(self):
-        """Handle Continue workflow: complete current, duplicate for next day."""
+        """Handle Continue workflow: update current, duplicate, complete, show Next Action screen, present editor."""
         try:
             print(f"[DEBUG] Continue button clicked for item: {self.item.id}")
 
@@ -562,100 +562,42 @@ class TimerWindow(ctk.CTkToplevel):
                 self.next_action_window.destroy()
                 self.next_action_window = None
 
-            # Update action item's notes from the timer window BEFORE showing dialogs
+            # Step 2: Update Current Action Item with notes from the timer window
             timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
             if timer_notes:
                 self.item.description = timer_notes
                 self.db_manager.update_action_item(self.item)
-                print(f"[DEBUG] Current Next Action record updated with notes")
+                print(f"[DEBUG] Step 2: Current Action Item updated with notes")
 
             # Save references we'll need if window gets destroyed
             parent = self.master
             db_manager = self.db_manager
             item = self.item
             on_close_callback = self.on_close_callback
+            start_timestamp = self.start_timestamp
+            work_seconds_elapsed = self.work_seconds_elapsed
 
-            # Prompt for completion note
+            # Prompt for completion note (for work log)
             completion_dialog = CompletionNoteDialog(self, "Completion Note")
             self.wait_window(completion_dialog)
 
             completion_note = completion_dialog.result
             print(f"[DEBUG] Completion note: {completion_note}")
 
-            # Check if window still exists after first dialog
+            # Check if window still exists after dialog
             window_exists = self.winfo_exists()
             if not window_exists:
                 print("[DEBUG] Window was closed during completion dialog, continuing workflow anyway")
 
-            # Prompt for next steps note (without date selection)
-            # Use parent if this window was destroyed
-            dialog_parent = self if window_exists else parent
-            next_steps_dialog = CompletionNoteDialog(dialog_parent, "Next Steps Note")
-
-            # Only wait_window if we're using self as parent (window still exists)
-            if window_exists:
-                self.wait_window(next_steps_dialog)
-                # Check again after second dialog
-                window_exists = self.winfo_exists()
-                if not window_exists:
-                    print("[DEBUG] Window was closed during next steps dialog, continuing workflow anyway")
-            else:
-                # Window already destroyed, just wait for the dialog
-                dialog_parent.wait_window(next_steps_dialog)
-
-            next_steps_note = next_steps_dialog.result
-            print(f"[DEBUG] Next steps: {next_steps_note}")
-
-            # Auto-calculate dates by incrementing by 1 day using weekend-aware logic
-            settings = AppSettings.load()
-
-            # Parse current dates (use saved item reference)
-            current_start = date.fromisoformat(item.start_date) if item.start_date else date.today()
-            current_due = date.fromisoformat(item.due_date) if item.due_date else date.today()
-
-            # Increment by 1 day using weekend settings
-            new_start = increment_date(
-                current_start,
-                1,
-                settings.include_saturday,
-                settings.include_sunday
-            )
-            new_due = increment_date(
-                current_due,
-                1,
-                settings.include_saturday,
-                settings.include_sunday
-            )
-
-            start_date = new_start.isoformat()
-            due_date = new_due.isoformat()
-            print(f"[DEBUG] Auto-calculated dates - start: {start_date}, due: {due_date}")
-
-            # Save work log for current action
-            if window_exists:
-                self.save_work_log(completion_note)
-            else:
-                # Window destroyed, save work log manually
-                if self.start_timestamp:
-                    work_log = WorkLog(
-                        item_id=item.id,
-                        started_at=self.start_timestamp.isoformat(),
-                        ended_at=datetime.now().isoformat(),
-                        minutes=self.work_seconds_elapsed // 60,
-                        note=completion_note
-                    )
-                    db_manager.create_work_log(work_log)
-            print(f"[DEBUG] Work log saved")
-
-            # Create duplicate with auto-calculated dates
-            print(f"[DEBUG] Creating New Next Action from Current Next Action")
+            # Step 3: Duplicate Current Action Item Record
+            print(f"[DEBUG] Step 3: Duplicating Current Action Item")
             new_item = ActionItem(
                 who=item.who,
                 title=item.title,
-                description=next_steps_note or item.description,
+                description=item.description,  # Will be updated later from Next Action dialog
                 contact_id=item.contact_id,
-                start_date=start_date,
-                due_date=due_date,
+                start_date=item.start_date,  # Will be updated later from Next Action dialog
+                due_date=item.due_date,  # Will be updated later from Next Action dialog
                 importance=item.importance,
                 urgency=item.urgency,
                 size=item.size,
@@ -665,14 +607,58 @@ class TimerWindow(ctk.CTkToplevel):
                 planned_minutes=item.planned_minutes,
                 status="open"
             )
-
-            # Save the new item FIRST
             db_manager.create_action_item(new_item)
-            print(f"[DEBUG] New Next Action Saved with ID: {new_item.id}")
+            print(f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}")
 
-            # THEN complete current action
+            # Step 4: Save Current Action Item as completed (with work log)
+            if start_timestamp:
+                work_log = WorkLog(
+                    item_id=item.id,
+                    started_at=start_timestamp.isoformat(),
+                    ended_at=datetime.now().isoformat(),
+                    minutes=work_seconds_elapsed // 60,
+                    note=completion_note
+                )
+                db_manager.create_work_log(work_log)
+                print(f"[DEBUG] Step 4: Work log saved")
+
             db_manager.complete_action_item(item.id)
-            print(f"[DEBUG] Current Next Action record marked Completed")
+            print(f"[DEBUG] Step 4: Current Action Item saved as completed")
+
+            # Step 5: Present Next Action Screen
+            dialog_parent = parent if not window_exists else self
+            next_action_dialog = NextStepsDialog(dialog_parent)
+
+            if window_exists:
+                self.wait_window(next_action_dialog)
+                window_exists = self.winfo_exists()
+            else:
+                dialog_parent.wait_window(next_action_dialog)
+
+            # Step 6: Next Action Screen closed (save or cancel)
+            next_action_result = next_action_dialog.result
+            print(f"[DEBUG] Step 5-6: Next Action Screen presented and closed")
+
+            if next_action_result:
+                # Update the new item with the next action details
+                new_item.description = next_action_result['note'] or new_item.description
+                new_item.start_date = next_action_result['start_date']
+                new_item.due_date = next_action_result['due_date']
+                db_manager.update_action_item(new_item)
+                print(f"[DEBUG] New Action Item updated with Next Action details")
+            else:
+                # User cancelled - use default next day dates
+                settings = AppSettings.load()
+                current_start = date.fromisoformat(item.start_date) if item.start_date else date.today()
+                current_due = date.fromisoformat(item.due_date) if item.due_date else date.today()
+
+                new_start = increment_date(current_start, 1, settings.include_saturday, settings.include_sunday)
+                new_due = increment_date(current_due, 1, settings.include_saturday, settings.include_sunday)
+
+                new_item.start_date = new_start.isoformat()
+                new_item.due_date = new_due.isoformat()
+                db_manager.update_action_item(new_item)
+                print(f"[DEBUG] Next Action cancelled - using default next day dates")
 
             new_item_id = new_item.id
 
@@ -682,17 +668,18 @@ class TimerWindow(ctk.CTkToplevel):
                 if on_close_callback:
                     on_close_callback()
                 self._cleanup_and_destroy()
-                print(f"[DEBUG] Window closed")
+                print(f"[DEBUG] Timer window closed")
             else:
                 # Window already destroyed, just call the callback
                 if on_close_callback:
                     on_close_callback()
-                print(f"[DEBUG] Window closed (was already destroyed during dialog)")
+                print(f"[DEBUG] Timer window closed (was already destroyed during dialog)")
 
-            # Open editor for new item
+            # Step 7: Present New Action Item Record
             from .item_editor import ItemEditorDialog
             ItemEditorDialog(parent, db_manager, new_item_id)
-            print(f"[DEBUG] Item editor opened")
+            print(f"[DEBUG] Step 7: New Action Item Record presented in editor")
+            # Step 8: User updates and saves (happens in the editor)
         except Exception as e:
             print(f"[ERROR] Continue action failed: {e}")
             import traceback
