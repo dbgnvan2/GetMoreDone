@@ -17,6 +17,7 @@ class CompletedScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
+        self.columns_expanded = True  # Track column visibility state
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -75,6 +76,15 @@ class CompletedScreen(ctk.CTkFrame):
         )
         self.who_combo.grid(row=0, column=5, padx=5, pady=10)
 
+        # Expand/Collapse button
+        self.expand_collapse_btn = ctk.CTkButton(
+            header,
+            text="Collapse",
+            width=100,
+            command=self.toggle_columns
+        )
+        self.expand_collapse_btn.grid(row=0, column=6, padx=5, pady=10)
+
         # Stats label (count and total time)
         self.stats_label = ctk.CTkLabel(
             header,
@@ -82,7 +92,13 @@ class CompletedScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color="lightblue"
         )
-        self.stats_label.grid(row=0, column=6, padx=(20, 10), pady=10)
+        self.stats_label.grid(row=0, column=7, padx=(20, 10), pady=10)
+
+    def toggle_columns(self):
+        """Toggle between expanded and collapsed column view."""
+        self.columns_expanded = not self.columns_expanded
+        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.refresh()
 
     def refresh(self):
         """Refresh the list of completed items."""
@@ -166,6 +182,26 @@ class CompletedScreen(ctk.CTkFrame):
             )
             score_label.grid(row=0, column=3, padx=5, pady=5)
 
+            # Factor chips (I, U, E, V) - only shown when expanded
+            col_offset = 0
+            if self.columns_expanded:
+                factors_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+                factors_frame.grid(row=0, column=4, padx=5, pady=5)
+                factor_col = 0
+                if item.importance:
+                    ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                if item.urgency:
+                    ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                if item.size:
+                    ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                if item.value:
+                    ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                col_offset = 1
+
             # Edit button
             btn_edit = ctk.CTkButton(
                 item_frame,
@@ -173,7 +209,7 @@ class CompletedScreen(ctk.CTkFrame):
                 width=60,
                 command=lambda i=item.id: self.edit_item(i)
             )
-            btn_edit.grid(row=0, column=4, padx=2, pady=5)
+            btn_edit.grid(row=0, column=4+col_offset, padx=2, pady=5)
 
             # Uncomplete button
             btn_uncomplete = ctk.CTkButton(
@@ -184,7 +220,7 @@ class CompletedScreen(ctk.CTkFrame):
                 hover_color="darkorange",
                 command=lambda i=item.id: self.uncomplete_item(i)
             )
-            btn_uncomplete.grid(row=0, column=5, padx=2, pady=5)
+            btn_uncomplete.grid(row=0, column=5+col_offset, padx=2, pady=5)
 
     def edit_item(self, item_id: str):
         """Edit item details."""

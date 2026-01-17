@@ -19,6 +19,7 @@ class AllItemsScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
+        self.columns_expanded = True  # Track column visibility state
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -73,13 +74,28 @@ class AllItemsScreen(ctk.CTkFrame):
         )
         self.who_combo.grid(row=0, column=4, padx=5, pady=10)
 
+        # Expand/Collapse button
+        self.expand_collapse_btn = ctk.CTkButton(
+            header,
+            text="Collapse",
+            width=100,
+            command=self.toggle_columns
+        )
+        self.expand_collapse_btn.grid(row=0, column=6, padx=5, pady=10)
+
         # New Item button
         btn_new = ctk.CTkButton(
             header,
             text="+ New Item",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=6, padx=10, pady=10)
+        btn_new.grid(row=0, column=7, padx=10, pady=10)
+
+    def toggle_columns(self):
+        """Toggle between expanded and collapsed column view."""
+        self.columns_expanded = not self.columns_expanded
+        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.refresh()
 
     def refresh(self):
         """Refresh the list of items."""
@@ -196,11 +212,31 @@ class AllItemsScreen(ctk.CTkFrame):
                 width=80
             ).grid(row=0, column=5, padx=5, pady=5)
 
+            # Factor chips (I, U, E, V) - only shown when expanded
+            col_offset = 0
+            if self.columns_expanded:
+                factors_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+                factors_frame.grid(row=0, column=6, padx=5, pady=5)
+                factor_col = 0
+                if item.importance:
+                    ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                if item.urgency:
+                    ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                if item.size:
+                    ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                if item.value:
+                    ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=factor_col, padx=2)
+                    factor_col += 1
+                col_offset = 1
+
             # Status
-            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=6, padx=5, pady=5)
+            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=6+col_offset, padx=5, pady=5)
 
             # Action buttons
-            col = 7
+            col = 7 + col_offset
             # Timer button (only for open items)
             if item.status == Status.OPEN:
                 btn_timer = ctk.CTkButton(

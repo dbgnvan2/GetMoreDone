@@ -22,6 +22,7 @@ class UpcomingScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
+        self.columns_expanded = True  # Track column visibility state
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -80,13 +81,28 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         self.who_combo.grid(row=0, column=5, padx=5, pady=10)
 
+        # Expand/Collapse button
+        self.expand_collapse_btn = ctk.CTkButton(
+            header,
+            text="Collapse",
+            width=100,
+            command=self.toggle_columns
+        )
+        self.expand_collapse_btn.grid(row=0, column=6, padx=5, pady=10)
+
         # New Item button
         btn_new = ctk.CTkButton(
             header,
             text="+ New Item",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=6, padx=10, pady=10)
+        btn_new.grid(row=0, column=7, padx=10, pady=10)
+
+    def toggle_columns(self):
+        """Toggle between expanded and collapsed column view."""
+        self.columns_expanded = not self.columns_expanded
+        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.refresh()
 
     def refresh(self):
         """Refresh the list of upcoming items."""
@@ -238,23 +254,26 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         score_label.grid(row=0, column=6, padx=5, pady=5)
 
-        # Factor chips
-        factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        factors_frame.grid(row=0, column=7, padx=5, pady=5)
+        # Factor chips (I, U, E, V) - only shown when expanded
+        col_offset = 0
+        if self.columns_expanded:
+            factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
+            factors_frame.grid(row=0, column=7, padx=5, pady=5)
 
-        col = 0
-        if item.importance:
-            ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=col, padx=2)
-            col += 1
-        if item.urgency:
-            ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=col, padx=2)
-            col += 1
-        if item.size:
-            ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=col, padx=2)
-            col += 1
-        if item.value:
-            ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=col, padx=2)
-            col += 1
+            col = 0
+            if item.importance:
+                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            if item.urgency:
+                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            if item.size:
+                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            if item.value:
+                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            col_offset = 1
 
         # Planned minutes
         if item.planned_minutes:
@@ -263,7 +282,7 @@ class UpcomingScreen(ctk.CTkFrame):
                 text=f"{item.planned_minutes}m",
                 width=50
             )
-            minutes_label.grid(row=0, column=8, padx=5, pady=5)
+            minutes_label.grid(row=0, column=7+col_offset, padx=5, pady=5)
 
         # Action buttons
         btn_timer = ctk.CTkButton(
@@ -274,7 +293,7 @@ class UpcomingScreen(ctk.CTkFrame):
             hover_color="green",
             command=lambda: self.start_timer(item.id)
         )
-        btn_timer.grid(row=0, column=9, padx=2, pady=5)
+        btn_timer.grid(row=0, column=8+col_offset, padx=2, pady=5)
 
         btn_edit = ctk.CTkButton(
             frame,
@@ -282,7 +301,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=60,
             command=lambda: self.edit_item(item.id)
         )
-        btn_edit.grid(row=0, column=10, padx=2, pady=5)
+        btn_edit.grid(row=0, column=9+col_offset, padx=2, pady=5)
 
         btn_push = ctk.CTkButton(
             frame,
@@ -292,7 +311,7 @@ class UpcomingScreen(ctk.CTkFrame):
             hover_color="darkorange",
             command=lambda: self.push_item(item.id)
         )
-        btn_push.grid(row=0, column=11, padx=2, pady=5)
+        btn_push.grid(row=0, column=10+col_offset, padx=2, pady=5)
 
         return frame
 

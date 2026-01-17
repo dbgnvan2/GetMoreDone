@@ -19,6 +19,7 @@ class TodayScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.settings = AppSettings.load()
+        self.columns_expanded = True  # Track column visibility state
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -34,6 +35,15 @@ class TodayScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=24, weight="bold")
         ).grid(row=0, column=0, sticky="w")
 
+        # Expand/Collapse button
+        self.expand_collapse_btn = ctk.CTkButton(
+            header_frame,
+            text="Collapse",
+            width=100,
+            command=self.toggle_columns
+        )
+        self.expand_collapse_btn.grid(row=0, column=1, padx=5)
+
         # New Item button
         btn_new = ctk.CTkButton(
             header_frame,
@@ -43,7 +53,7 @@ class TodayScreen(ctk.CTkFrame):
             hover_color="darkgreen",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=1, padx=5)
+        btn_new.grid(row=0, column=2, padx=5)
 
         # Refresh button
         btn_refresh = ctk.CTkButton(
@@ -52,7 +62,7 @@ class TodayScreen(ctk.CTkFrame):
             width=100,
             command=self.refresh
         )
-        btn_refresh.grid(row=0, column=2, padx=5)
+        btn_refresh.grid(row=0, column=3, padx=5)
 
         # Scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self)
@@ -60,6 +70,12 @@ class TodayScreen(ctk.CTkFrame):
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load items
+        self.load_items()
+
+    def toggle_columns(self):
+        """Toggle between expanded and collapsed column view."""
+        self.columns_expanded = not self.columns_expanded
+        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
         self.load_items()
 
     def refresh(self):
@@ -257,7 +273,27 @@ class TodayScreen(ctk.CTkFrame):
         )
         score_label.grid(row=0, column=4, padx=5, pady=5)
 
+        # Factor chips (I, U, E, V) - only shown when expanded
+        factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        if self.columns_expanded:
+            factors_frame.grid(row=0, column=5, padx=5, pady=5)
+            col = 0
+            if item.importance:
+                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            if item.urgency:
+                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            if item.size:
+                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+            if item.value:
+                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=col, padx=2)
+                col += 1
+
         # Action buttons (only for open items)
+        # Column positions shift based on whether factors are shown
+        btn_col_start = 6 if self.columns_expanded else 5
         if not is_completed:
             btn_timer = ctk.CTkButton(
                 frame,
@@ -267,7 +303,7 @@ class TodayScreen(ctk.CTkFrame):
                 hover_color="green",
                 command=lambda: self.start_timer(item.id)
             )
-            btn_timer.grid(row=0, column=5, padx=2, pady=5)
+            btn_timer.grid(row=0, column=btn_col_start, padx=2, pady=5)
 
             btn_edit = ctk.CTkButton(
                 frame,
@@ -275,7 +311,7 @@ class TodayScreen(ctk.CTkFrame):
                 width=60,
                 command=lambda: self.edit_item(item.id)
             )
-            btn_edit.grid(row=0, column=6, padx=2, pady=5)
+            btn_edit.grid(row=0, column=btn_col_start+1, padx=2, pady=5)
 
             btn_push = ctk.CTkButton(
                 frame,
@@ -285,7 +321,7 @@ class TodayScreen(ctk.CTkFrame):
                 hover_color="darkorange",
                 command=lambda item_id=item.id: self.push_item(item_id)
             )
-            btn_push.grid(row=0, column=7, padx=2, pady=5)
+            btn_push.grid(row=0, column=btn_col_start+2, padx=2, pady=5)
 
         return frame
 
