@@ -782,3 +782,128 @@ class VPSManager:
                     breadcrumb.insert(0, {'type': 'segment', 'data': segment})
 
         return breadcrumb
+
+    # ========================================================================
+    # DELETE METHODS (WITH CHILD RECORD PROTECTION)
+    # ========================================================================
+
+    def _has_children(self, table: str, parent_id_column: str, parent_id: str) -> bool:
+        """Check if a record has child records."""
+        cursor = self.db.conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE {parent_id_column} = ?",
+            (parent_id,)
+        )
+        count = cursor.fetchone()[0]
+        return count > 0
+
+    def delete_tl_vision(self, vision_id: str) -> bool:
+        """
+        Delete a TL Vision if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for annual visions
+        if self._has_children('annual_visions', 'tl_vision_id', vision_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM tl_visions WHERE id = ?",
+            (vision_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_annual_vision(self, vision_id: str) -> bool:
+        """
+        Delete an Annual Vision if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for annual plans
+        if self._has_children('annual_plans', 'annual_vision_id', vision_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM annual_visions WHERE id = ?",
+            (vision_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_annual_plan(self, plan_id: str) -> bool:
+        """
+        Delete an Annual Plan if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for quarter initiatives
+        if self._has_children('quarter_initiatives', 'annual_plan_id', plan_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM annual_plans WHERE id = ?",
+            (plan_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_quarter_initiative(self, initiative_id: str) -> bool:
+        """
+        Delete a Quarter Initiative if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for month tactics
+        if self._has_children('month_tactics', 'quarter_initiative_id', initiative_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM quarter_initiatives WHERE id = ?",
+            (initiative_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_month_tactic(self, tactic_id: str) -> bool:
+        """
+        Delete a Month Tactic if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for week actions
+        if self._has_children('week_actions', 'month_tactic_id', tactic_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM month_tactics WHERE id = ?",
+            (tactic_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_week_action(self, action_id: str) -> bool:
+        """
+        Delete a Week Action if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for linked action items
+        if self._has_children('action_items', 'week_action_id', action_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM week_actions WHERE id = ?",
+            (action_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_segment(self, segment_id: str) -> bool:
+        """
+        Delete a Segment if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        # Check for TL visions
+        if self._has_children('tl_visions', 'segment_description_id', segment_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM segment_descriptions WHERE id = ?",
+            (segment_id,)
+        )
+        self.db.conn.commit()
+        return True

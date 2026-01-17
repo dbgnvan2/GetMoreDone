@@ -360,6 +360,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_tl_vision(vision['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_tl_vision(vision['id']), fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
+
         return frame
 
     def create_annual_vision_row(self, vision: Dict[str, Any], indent: int) -> ctk.CTkFrame:
@@ -386,6 +389,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_annual_vision(vision['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
+
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_vision(vision['id']), fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
 
@@ -415,6 +421,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_annual_plan(plan['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_plan(plan['id']), fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
+
         return frame
 
     def create_quarter_initiative_row(self, initiative: Dict[str, Any], indent: int) -> ctk.CTkFrame:
@@ -442,6 +451,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_quarter_initiative(initiative['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
+
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_quarter_initiative(initiative['id']), fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
 
@@ -472,6 +484,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_month_tactic(tactic['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_month_tactic(tactic['id']), fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
+
         return frame
 
     def create_week_action_row(self, action: Dict[str, Any], indent: int) -> ctk.CTkFrame:
@@ -498,6 +513,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_week_action(action['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
+
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_week_action(action['id']), fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
 
@@ -779,3 +797,90 @@ class VPSPlanningScreen(ctk.CTkFrame):
             )
             self.wait_window(dialog)
             self.refresh()
+
+    # ========================================================================
+    # DELETE METHODS
+    # ========================================================================
+
+    def _confirm_delete(self, entity_type: str, entity_name: str) -> bool:
+        """Show confirmation dialog for deletion."""
+        from tkinter import messagebox
+        return messagebox.askyesno(
+            "Confirm Deletion",
+            f"Are you sure you want to delete this {entity_type}?\n\n{entity_name}\n\nThis action cannot be undone.",
+            icon='warning'
+        )
+
+    def _show_error_has_children(self, entity_type: str):
+        """Show error message when deletion fails due to child records."""
+        from tkinter import messagebox
+        messagebox.showerror(
+            "Cannot Delete",
+            f"Cannot delete this {entity_type} because it has child records.\n\nPlease delete all child records first."
+        )
+
+    def delete_tl_vision(self, vision_id: str):
+        """Delete a TL Vision."""
+        vision = self.vps_manager.get_tl_vision(vision_id)
+        if vision:
+            if self._confirm_delete("TL Vision", vision['title']):
+                result = self.vps_manager.delete_tl_vision(vision_id)
+                if result:
+                    self.refresh()
+                else:
+                    self._show_error_has_children("TL Vision")
+
+    def delete_annual_vision(self, vision_id: str):
+        """Delete an Annual Vision."""
+        vision = self.vps_manager.get_annual_vision(vision_id)
+        if vision:
+            if self._confirm_delete("Annual Vision", vision['title']):
+                result = self.vps_manager.delete_annual_vision(vision_id)
+                if result:
+                    self.refresh()
+                else:
+                    self._show_error_has_children("Annual Vision")
+
+    def delete_annual_plan(self, plan_id: str):
+        """Delete an Annual Plan."""
+        plan = self.vps_manager.get_annual_plan(plan_id)
+        if plan:
+            if self._confirm_delete("Annual Plan", plan['theme']):
+                result = self.vps_manager.delete_annual_plan(plan_id)
+                if result:
+                    self.refresh()
+                else:
+                    self._show_error_has_children("Annual Plan")
+
+    def delete_quarter_initiative(self, initiative_id: str):
+        """Delete a Quarter Initiative."""
+        initiative = self.vps_manager.get_quarter_initiative(initiative_id)
+        if initiative:
+            if self._confirm_delete("Quarter Initiative", initiative['title']):
+                result = self.vps_manager.delete_quarter_initiative(initiative_id)
+                if result:
+                    self.refresh()
+                else:
+                    self._show_error_has_children("Quarter Initiative")
+
+    def delete_month_tactic(self, tactic_id: str):
+        """Delete a Month Tactic."""
+        tactic = self.vps_manager.get_month_tactic(tactic_id)
+        if tactic:
+            if self._confirm_delete("Month Tactic", tactic['priority_focus']):
+                result = self.vps_manager.delete_month_tactic(tactic_id)
+                if result:
+                    self.refresh()
+                else:
+                    self._show_error_has_children("Month Tactic")
+
+    def delete_week_action(self, action_id: str):
+        """Delete a Week Action."""
+        action = self.vps_manager.get_week_action(action_id)
+        if action:
+            if self._confirm_delete("Week Action", action['title']):
+                result = self.vps_manager.delete_week_action(action_id)
+                if result:
+                    self.refresh()
+                else:
+                    self._show_error_has_children("Week Action")
