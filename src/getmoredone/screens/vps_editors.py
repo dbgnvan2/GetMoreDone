@@ -6,6 +6,8 @@ import customtkinter as ctk
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 
+from ..widgets.date_picker import DatePickerButton
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
 
@@ -923,16 +925,16 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Week Start:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.week_start_entry = ctk.CTkEntry(main_frame, placeholder_text="YYYY-MM-DD")
-        self.week_start_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.week_start_picker = DatePickerButton(main_frame)
+        self.week_start_picker.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Week End Date
         ctk.CTkLabel(main_frame, text="Week End:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.week_end_entry = ctk.CTkEntry(main_frame, placeholder_text="YYYY-MM-DD")
-        self.week_end_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.week_end_picker = DatePickerButton(main_frame)
+        self.week_end_picker.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Title
@@ -977,9 +979,9 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             return
 
         if self.action['week_start_date']:
-            self.week_start_entry.insert(0, self.action['week_start_date'])
+            self.week_start_picker.set_date(self.action['week_start_date'])
         if self.action['week_end_date']:
-            self.week_end_entry.insert(0, self.action['week_end_date'])
+            self.week_end_picker.set_date(self.action['week_end_date'])
         if self.action['title']:
             self.title_entry.insert(0, self.action['title'])
         if self.action['description']:
@@ -990,8 +992,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
     def save_action(self):
         """Validate and save the action."""
         # Get values
-        week_start = self.week_start_entry.get().strip()
-        week_end = self.week_end_entry.get().strip()
+        week_start = self.week_start_picker.get_date()
+        week_end = self.week_end_picker.get_date()
         title = self.title_entry.get().strip()
 
         if not (week_start and week_end and title):

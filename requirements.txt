@@ -5,6 +5,7 @@ pytest-cov>=4.1.0
 # GUI Libraries (uncomment the one you want to use)
 # Option 1: CustomTkinter (modern themed tkinter)
 customtkinter>=5.2.0
+tkcalendar>=1.6.1  # Calendar date picker widget
 
 # Option 2: PyQt6 (more powerful, professional)
 # PyQt6>=6.6.0
