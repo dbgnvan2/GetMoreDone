@@ -558,11 +558,36 @@ class VPSPlanningScreen(ctk.CTkFrame):
         segments = self.vps_manager.get_all_segments()
         for segment in segments:
             self.expanded_nodes.add(f"segment-{segment['id']}")
+
             # Expand TL Visions
             tl_visions = self.vps_manager.get_tl_visions(segment_id=segment['id'])
-            for vision in tl_visions:
-                self.expanded_nodes.add(f"tl_vision-{vision['id']}")
-                # Could continue expanding all levels, but this gets expensive
+            for tl_vision in tl_visions:
+                self.expanded_nodes.add(f"tl_vision-{tl_vision['id']}")
+
+                # Expand Annual Visions
+                annual_visions = self.vps_manager.get_annual_visions(tl_vision_id=tl_vision['id'])
+                for annual_vision in annual_visions:
+                    self.expanded_nodes.add(f"annual_vision-{annual_vision['id']}")
+
+                    # Expand Annual Plans
+                    annual_plans = self.vps_manager.get_annual_plans(annual_vision_id=annual_vision['id'])
+                    for annual_plan in annual_plans:
+                        self.expanded_nodes.add(f"annual_plan-{annual_plan['id']}")
+
+                        # Expand Quarter Initiatives
+                        quarter_initiatives = self.vps_manager.get_quarter_initiatives(annual_plan_id=annual_plan['id'])
+                        for quarter_initiative in quarter_initiatives:
+                            self.expanded_nodes.add(f"quarter_initiative-{quarter_initiative['id']}")
+
+                            # Expand Month Tactics
+                            month_tactics = self.vps_manager.get_month_tactics(quarter_initiative_id=quarter_initiative['id'])
+                            for month_tactic in month_tactics:
+                                self.expanded_nodes.add(f"month_tactic-{month_tactic['id']}")
+
+                                # Expand Week Actions
+                                week_actions = self.vps_manager.get_week_actions(month_tactic_id=month_tactic['id'])
+                                for week_action in week_actions:
+                                    self.expanded_nodes.add(f"week_action-{week_action['id']}")
         self.refresh()
 
     def collapse_all(self):

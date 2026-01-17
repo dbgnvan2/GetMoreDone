@@ -829,8 +829,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         self.year_entry.insert(0, str(self.tactic['year']))
         if self.tactic['priority_focus']:
             self.focus_entry.insert(0, self.tactic['priority_focus'])
-        if self.tactic['detailed_description']:
-            self.description_text.insert("1.0", self.tactic['detailed_description'])
+        if self.tactic['description']:
+            self.description_text.insert("1.0", self.tactic['description'])
 
     def save_tactic(self):
         """Validate and save the tactic."""
@@ -856,7 +856,7 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
                     month=month,
                     year=year,
                     priority_focus=priority_focus,
-                    detailed_description=description
+                    description=description
                 )
             else:
                 # Create new
@@ -866,7 +866,7 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
                     month=month,
                     year=year,
                     priority_focus=priority_focus,
-                    detailed_description=description
+                    description=description
                 )
 
             # Close dialog
