@@ -489,6 +489,12 @@ class TimerWindow(ctk.CTkToplevel):
                 print("[ERROR] Window already destroyed, cannot complete action")
                 return
 
+            # Close the Next Action window FIRST if it exists
+            if self.next_action_window and self.next_action_window.winfo_exists():
+                print(f"[DEBUG] Closing Next Action window before completing")
+                self.next_action_window.destroy()
+                self.next_action_window = None
+
             # Update action item's notes from the timer window BEFORE showing dialog
             timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
             if timer_notes:
@@ -550,33 +556,52 @@ class TimerWindow(ctk.CTkToplevel):
                 print("[ERROR] Window already destroyed, cannot continue action")
                 return
 
+            # Close the Next Action window FIRST if it exists
+            if self.next_action_window and self.next_action_window.winfo_exists():
+                print(f"[DEBUG] Closing Next Action window before continuing")
+                self.next_action_window.destroy()
+                self.next_action_window = None
+
             # Update action item's notes from the timer window BEFORE showing dialogs
             timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
             if timer_notes:
                 self.item.description = timer_notes
                 self.db_manager.update_action_item(self.item)
-                print(f"[DEBUG] Updated original action item notes from timer window")
+                print(f"[DEBUG] Current Next Action record updated with notes")
+
+            # Save references we'll need if window gets destroyed
+            parent = self.master
+            db_manager = self.db_manager
+            item = self.item
+            on_close_callback = self.on_close_callback
 
             # Prompt for completion note
             completion_dialog = CompletionNoteDialog(self, "Completion Note")
             self.wait_window(completion_dialog)
 
-            # Check if window still exists after first dialog
-            if not self.winfo_exists():
-                print("[DEBUG] Window was closed during completion dialog")
-                return
-
             completion_note = completion_dialog.result
             print(f"[DEBUG] Completion note: {completion_note}")
 
-            # Prompt for next steps note (without date selection)
-            next_steps_dialog = CompletionNoteDialog(self, "Next Steps Note")
-            self.wait_window(next_steps_dialog)
+            # Check if window still exists after first dialog
+            window_exists = self.winfo_exists()
+            if not window_exists:
+                print("[DEBUG] Window was closed during completion dialog, continuing workflow anyway")
 
-            # Check if window still exists after second dialog
-            if not self.winfo_exists():
-                print("[DEBUG] Window was closed during next steps dialog")
-                return
+            # Prompt for next steps note (without date selection)
+            # Use parent if this window was destroyed
+            dialog_parent = self if window_exists else parent
+            next_steps_dialog = CompletionNoteDialog(dialog_parent, "Next Steps Note")
+
+            # Only wait_window if we're using self as parent (window still exists)
+            if window_exists:
+                self.wait_window(next_steps_dialog)
+                # Check again after second dialog
+                window_exists = self.winfo_exists()
+                if not window_exists:
+                    print("[DEBUG] Window was closed during next steps dialog, continuing workflow anyway")
+            else:
+                # Window already destroyed, just wait for the dialog
+                dialog_parent.wait_window(next_steps_dialog)
 
             next_steps_note = next_steps_dialog.result
             print(f"[DEBUG] Next steps: {next_steps_note}")
@@ -584,9 +609,9 @@ class TimerWindow(ctk.CTkToplevel):
             # Auto-calculate dates by incrementing by 1 day using weekend-aware logic
             settings = AppSettings.load()
 
-            # Parse current dates
-            current_start = date.fromisoformat(self.item.start_date) if self.item.start_date else date.today()
-            current_due = date.fromisoformat(self.item.due_date) if self.item.due_date else date.today()
+            # Parse current dates (use saved item reference)
+            current_start = date.fromisoformat(item.start_date) if item.start_date else date.today()
+            current_due = date.fromisoformat(item.due_date) if item.due_date else date.today()
 
             # Increment by 1 day using weekend settings
             new_start = increment_date(
@@ -607,45 +632,62 @@ class TimerWindow(ctk.CTkToplevel):
             print(f"[DEBUG] Auto-calculated dates - start: {start_date}, due: {due_date}")
 
             # Save work log for current action
-            self.save_work_log(completion_note)
+            if window_exists:
+                self.save_work_log(completion_note)
+            else:
+                # Window destroyed, save work log manually
+                if self.start_timestamp:
+                    work_log = WorkLog(
+                        item_id=item.id,
+                        started_at=self.start_timestamp.isoformat(),
+                        ended_at=datetime.now().isoformat(),
+                        minutes=self.work_seconds_elapsed // 60,
+                        note=completion_note
+                    )
+                    db_manager.create_work_log(work_log)
             print(f"[DEBUG] Work log saved")
 
-            # Complete current action
-            self.db_manager.complete_action_item(self.item.id)
-            print(f"[DEBUG] Current action completed")
-
             # Create duplicate with auto-calculated dates
+            print(f"[DEBUG] Creating New Next Action from Current Next Action")
             new_item = ActionItem(
-                who=self.item.who,
-                title=self.item.title,
-                description=next_steps_note or self.item.description,
-                contact_id=self.item.contact_id,
+                who=item.who,
+                title=item.title,
+                description=next_steps_note or item.description,
+                contact_id=item.contact_id,
                 start_date=start_date,
                 due_date=due_date,
-                importance=self.item.importance,
-                urgency=self.item.urgency,
-                size=self.item.size,
-                value=self.item.value,
-                group=self.item.group,
-                category=self.item.category,
-                planned_minutes=self.item.planned_minutes,
+                importance=item.importance,
+                urgency=item.urgency,
+                size=item.size,
+                value=item.value,
+                group=item.group,
+                category=item.category,
+                planned_minutes=item.planned_minutes,
                 status="open"
             )
 
-            self.db_manager.create_action_item(new_item)
-            print(f"[DEBUG] New item created with ID: {new_item.id}")
+            # Complete current action
+            db_manager.complete_action_item(item.id)
+            print(f"[DEBUG] Current Next Action record marked Completed")
 
-            # Save parent and db_manager before destroying window
-            parent = self.master
-            db_manager = self.db_manager
+            # Save the new item
+            db_manager.create_action_item(new_item)
+            print(f"[DEBUG] New Next Action Saved with ID: {new_item.id}")
+
             new_item_id = new_item.id
 
-            # Close timer and open editor for new item
-            self.save_window_settings()
-            if self.on_close_callback:
-                self.on_close_callback()
-            self._cleanup_and_destroy()
-            print(f"[DEBUG] Timer window closed")
+            # Close timer if it still exists
+            if window_exists:
+                self.save_window_settings()
+                if on_close_callback:
+                    on_close_callback()
+                self._cleanup_and_destroy()
+                print(f"[DEBUG] Window closed")
+            else:
+                # Window already destroyed, just call the callback
+                if on_close_callback:
+                    on_close_callback()
+                print(f"[DEBUG] Window closed (was already destroyed during dialog)")
 
             # Open editor for new item
             from .item_editor import ItemEditorDialog
