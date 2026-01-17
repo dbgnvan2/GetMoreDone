@@ -225,7 +225,7 @@ class CompletedScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Edit item details."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.db_manager, item_id)
+        dialog = ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager)
         dialog.wait_window()
         self.refresh()
 

@@ -739,7 +739,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             dialog = ItemEditorDialog(
                 self, self.app.db_manager,
                 week_action_id=week_action_id,
-                segment_description_id=week_action['segment_description_id']
+                segment_description_id=week_action['segment_description_id'],
+                vps_manager=self.vps_manager
             )
             self.wait_window(dialog)
             self.refresh()
@@ -816,7 +817,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def edit_action_item(self, item_id: str):
         """Edit an Action Item."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.app.db_manager, item_id=item_id)
+        dialog = ItemEditorDialog(self, self.app.db_manager, item_id=item_id, vps_manager=self.vps_manager)
         self.wait_window(dialog)
         self.refresh()
 

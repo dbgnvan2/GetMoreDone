@@ -13,20 +13,24 @@ from ..date_utils import increment_date
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
+    from ..vps_manager import VPSManager
 
 
 class ItemEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing action items."""
 
     def __init__(self, parent, db_manager: 'DatabaseManager', item_id: Optional[str] = None,
-                 week_action_id: Optional[str] = None, segment_description_id: Optional[str] = None):
+                 week_action_id: Optional[str] = None, segment_description_id: Optional[str] = None,
+                 vps_manager: Optional['VPSManager'] = None):
         super().__init__(parent)
 
         self.db_manager = db_manager
+        self.vps_manager = vps_manager
         self.item_id = item_id
         self.item: Optional[ActionItem] = None
         self.week_action_id = week_action_id
         self.segment_description_id = segment_description_id
+        self.week_action_options = {}  # Map display string to week_action_id
 
         # Load item if editing
         if item_id:
@@ -368,6 +372,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.category_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
+        # Week Action (VPS Integration)
+        ctk.CTkLabel(self.tab_organization, text="Week Action:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        self.week_action_var = ctk.StringVar(value="")
+        self.week_action_combo = ctk.CTkComboBox(self.tab_organization, values=[""], variable=self.week_action_var, width=250)
+        self.week_action_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        tab2_row += 1
+
+        # Load week actions if vps_manager is available
+        self.load_week_actions()
+
         # Original Due Date (read-only display)
         ctk.CTkLabel(self.tab_organization, text="Original Due Date:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         self.original_due_date_label = ctk.CTkLabel(
@@ -495,6 +509,35 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.right_col = right_col
         self.main_frame = main_frame
 
+    def load_week_actions(self):
+        """Load week actions into the dropdown if vps_manager is available."""
+        if not self.vps_manager:
+            self.week_action_combo.configure(values=["(VPS Manager not available)"], state="disabled")
+            return
+
+        try:
+            # Get all week actions
+            week_actions = self.vps_manager.get_week_actions(active_only=False)
+
+            if not week_actions:
+                self.week_action_combo.configure(values=["(No Week Actions available)"])
+                return
+
+            # Create display strings: "Week YYYY-MM-DD: Title"
+            self.week_action_options = {}  # Map display string to week_action_id
+            display_values = ["(None)"]  # Allow clearing the week action
+
+            for wa in week_actions:
+                display = f"Week {wa['week_start_date']}: {wa['title']}"
+                display_values.append(display)
+                self.week_action_options[display] = wa['id']
+
+            self.week_action_combo.configure(values=display_values)
+
+        except Exception as e:
+            print(f"Error loading week actions: {e}")
+            self.week_action_combo.configure(values=["(Error loading week actions)"], state="disabled")
+
     def load_item_data(self):
         """Load item data into form fields."""
         if not self.item:
@@ -571,6 +614,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         if self.item.planned_minutes is not None:
             self.planned_minutes_entry.insert(0, str(self.item.planned_minutes))
+
+        # Week Action
+        if self.item.week_action_id and self.vps_manager:
+            # Find the matching week action and set the display value
+            for display, wa_id in self.week_action_options.items():
+                if wa_id == self.item.week_action_id:
+                    self.week_action_var.set(display)
+                    break
 
         self.update_priority_display()
 
@@ -1126,9 +1177,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
             planned_text = self.planned_minutes_entry.get().strip()
             item.planned_minutes = int(planned_text) if planned_text else None
 
-            # VPS fields (set from constructor parameters for new items)
-            if not self.item_id:
+            # VPS fields
+            # Week Action (from dropdown if available, otherwise from constructor)
+            week_action_display = self.week_action_var.get().strip()
+            if week_action_display and week_action_display != "(None)" and hasattr(self, 'week_action_options'):
+                # User selected a week action from dropdown
+                item.week_action_id = self.week_action_options.get(week_action_display)
+            elif week_action_display == "(None)":
+                # User explicitly selected "(None)" to clear the week action
+                item.week_action_id = None
+            elif not self.item_id:
+                # New item: use constructor parameter if no dropdown selection
                 item.week_action_id = self.week_action_id
+            # For existing items with no dropdown change, week_action_id remains unchanged
+
+            # Segment Description (from constructor for new items)
+            if not self.item_id:
                 item.segment_description_id = self.segment_description_id
 
             # Validate dates: due date must be >= start date
@@ -1164,7 +1228,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Save and open a new item editor."""
         self.save_item()
         if not self.winfo_exists():
-            ItemEditorDialog(self.master, self.db_manager)
+            ItemEditorDialog(self.master, self.db_manager, vps_manager=self.vps_manager)
 
     def duplicate_item(self):
         """Duplicate the current item."""
@@ -1172,7 +1236,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             new_id = self.db_manager.duplicate_action_item(self.item_id)
             self.destroy()
             if new_id:
-                ItemEditorDialog(self.master, self.db_manager, new_id)
+                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager)
 
     def complete_item(self):
         """Mark item as complete."""
@@ -1285,7 +1349,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
     def view_parent_item(self, parent_id: str):
         """Open the parent item in a new editor dialog."""
         self.destroy()
-        ItemEditorDialog(self.master, self.db_manager, parent_id)
+        ItemEditorDialog(self.master, self.db_manager, parent_id, vps_manager=self.vps_manager)
 
     def create_sub_item(self):
         """Create a new sub-item as a duplicate of this item."""
@@ -1308,7 +1372,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.destroy()
 
         # Open editor for the new sub-item
-        ItemEditorDialog(self.master, self.db_manager, sub_item_id)
+        ItemEditorDialog(self.master, self.db_manager, sub_item_id, vps_manager=self.vps_manager)
 
     def show_children(self):
         """Show list of child items in a new dialog."""
@@ -1324,7 +1388,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         # Open set parent dialog
-        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
+        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager)
 
     def create_calendar_event(self):
         """Create a Google Calendar event linked to this item."""
@@ -1677,7 +1741,7 @@ class ShowChildrenDialog(ctk.CTkToplevel):
         # Close this dialog
         self.destroy()
         # Open editor for the child
-        ItemEditorDialog(self.master, self.db_manager, child_id)
+        ItemEditorDialog(self.master, self.db_manager, child_id, vps_manager=self.vps_manager)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
@@ -1707,12 +1771,13 @@ class ShowChildrenDialog(ctk.CTkToplevel):
 class SetParentDialog(ctk.CTkToplevel):
     """Dialog for selecting a parent item."""
 
-    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_item_title: str):
+    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_item_title: str, vps_manager=None):
         super().__init__(parent)
         self.db_manager = db_manager
         self.current_item_id = current_item_id
         self.current_item_title = current_item_title
         self.parent_dialog = parent
+        self.vps_manager = vps_manager
 
         self.title(f"Set Parent for: {current_item_title}")
         self.geometry("900x600")
@@ -1898,7 +1963,7 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Close and reopen the parent editor to show updated parent info
         self.parent_dialog.destroy()
-        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id)
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager)
 
     def clear_parent(self):
         """Clear the parent (make this a root item)."""
@@ -1913,7 +1978,7 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Close and reopen the parent editor to show updated parent info
         self.parent_dialog.destroy()
-        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id)
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""

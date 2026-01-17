@@ -4,20 +4,24 @@ Today view screen - shows items for today including completed ones.
 
 import customtkinter as ctk
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ..db_manager import DatabaseManager
 from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
 
+if TYPE_CHECKING:
+    from ..app import GetMoreDoneApp
+
 
 class TodayScreen(ctk.CTkFrame):
     """Screen showing today's items (start <= today), including completed items."""
 
-    def __init__(self, parent, db_manager: DatabaseManager):
+    def __init__(self, parent, db_manager: DatabaseManager, app: 'GetMoreDoneApp'):
         super().__init__(parent)
         self.db_manager = db_manager
+        self.app = app
         self.settings = AppSettings.load()
         self.columns_expanded = True  # Track column visibility state
 
@@ -344,14 +348,14 @@ class TodayScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.db_manager, item_id)
+        dialog = ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager)
         dialog.wait_window()
         self.refresh()
 
     def create_new_item(self):
         """Open item editor for new item."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.db_manager)
+        dialog = ItemEditorDialog(self, self.db_manager, vps_manager=self.app.vps_manager)
         dialog.wait_window()
         self.refresh()
 

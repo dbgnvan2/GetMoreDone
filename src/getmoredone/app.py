@@ -154,7 +154,7 @@ class GetMoreDoneApp(ctk.CTk):
         """Show Today screen."""
         from .screens.today import TodayScreen
         self.clear_content()
-        self.current_screen = TodayScreen(self.content_frame, self.db_manager)
+        self.current_screen = TodayScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_upcoming(self):
