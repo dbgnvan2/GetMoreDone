@@ -666,13 +666,13 @@ class TimerWindow(ctk.CTkToplevel):
                 status="open"
             )
 
-            # Complete current action
-            db_manager.complete_action_item(item.id)
-            print(f"[DEBUG] Current Next Action record marked Completed")
-
-            # Save the new item
+            # Save the new item FIRST
             db_manager.create_action_item(new_item)
             print(f"[DEBUG] New Next Action Saved with ID: {new_item.id}")
+
+            # THEN complete current action
+            db_manager.complete_action_item(item.id)
+            print(f"[DEBUG] Current Next Action record marked Completed")
 
             new_item_id = new_item.id
 
