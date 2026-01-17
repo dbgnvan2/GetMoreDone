@@ -18,12 +18,15 @@ if TYPE_CHECKING:
 class ItemEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing action items."""
 
-    def __init__(self, parent, db_manager: 'DatabaseManager', item_id: Optional[str] = None):
+    def __init__(self, parent, db_manager: 'DatabaseManager', item_id: Optional[str] = None,
+                 week_action_id: Optional[str] = None, segment_description_id: Optional[str] = None):
         super().__init__(parent)
 
         self.db_manager = db_manager
         self.item_id = item_id
         self.item: Optional[ActionItem] = None
+        self.week_action_id = week_action_id
+        self.segment_description_id = segment_description_id
 
         # Load item if editing
         if item_id:
@@ -1122,6 +1125,11 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Planned minutes
             planned_text = self.planned_minutes_entry.get().strip()
             item.planned_minutes = int(planned_text) if planned_text else None
+
+            # VPS fields (set from constructor parameters for new items)
+            if not self.item_id:
+                item.week_action_id = self.week_action_id
+                item.segment_description_id = self.segment_description_id
 
             # Validate dates: due date must be >= start date
             if item.start_date and item.due_date:

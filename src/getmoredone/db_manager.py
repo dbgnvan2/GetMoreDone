@@ -62,8 +62,9 @@ class DatabaseManager:
                 original_due_date, is_meeting, meeting_start_time,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
+                week_action_id, segment_description_id, is_habit, percent_complete,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
@@ -71,6 +72,8 @@ class DatabaseManager:
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
+            item.week_action_id, item.segment_description_id, 1 if item.is_habit else 0,
+            item.percent_complete,
             item.created_at, item.updated_at
         ))
 
@@ -113,6 +116,7 @@ class DatabaseManager:
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
                 planned_minutes = ?, status = ?, completed_at = ?,
+                week_action_id = ?, segment_description_id = ?, is_habit = ?, percent_complete = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
@@ -122,6 +126,8 @@ class DatabaseManager:
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
+            item.week_action_id, item.segment_description_id, 1 if item.is_habit else 0,
+            item.percent_complete,
             item.updated_at, item.id
         ))
 
@@ -845,6 +851,26 @@ class DatabaseManager:
         except (KeyError, IndexError):
             meeting_start_time = None
 
+        try:
+            week_action_id = row["week_action_id"]
+        except (KeyError, IndexError):
+            week_action_id = None
+
+        try:
+            segment_description_id = row["segment_description_id"]
+        except (KeyError, IndexError):
+            segment_description_id = None
+
+        try:
+            is_habit = bool(row["is_habit"])
+        except (KeyError, IndexError):
+            is_habit = False
+
+        try:
+            percent_complete = row["percent_complete"]
+        except (KeyError, IndexError):
+            percent_complete = 0
+
         return ActionItem(
             id=row["id"],
             who=row["who"],
@@ -867,6 +893,10 @@ class DatabaseManager:
             planned_minutes=row["planned_minutes"],
             status=row["status"],
             completed_at=row["completed_at"],
+            week_action_id=week_action_id,
+            segment_description_id=segment_description_id,
+            is_habit=is_habit,
+            percent_complete=percent_complete,
             created_at=row["created_at"],
             updated_at=row["updated_at"]
         )

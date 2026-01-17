@@ -47,6 +47,10 @@ class ActionItem:
     planned_minutes: Optional[int] = None
     status: str = "open"
     completed_at: Optional[str] = None
+    week_action_id: Optional[str] = None  # References week_actions.id for VPS integration
+    segment_description_id: Optional[str] = None  # References segment_descriptions.id for VPS integration
+    is_habit: bool = False  # VPS: Indicates if this is a habit item
+    percent_complete: int = 0  # VPS: Completion percentage (0-100)
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())

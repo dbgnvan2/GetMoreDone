@@ -733,11 +733,13 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def add_action_item(self, week_action_id: str):
         """Add an Action Item to a Week Action."""
-        from .vps_editors import ActionItemEditorDialog
+        from .item_editor import ItemEditorDialog
         week_action = self.vps_manager.get_week_action(week_action_id)
         if week_action:
-            dialog = ActionItemEditorDialog(
-                self, self.vps_manager, week_action_id, week_action['segment_description_id']
+            dialog = ItemEditorDialog(
+                self, self.app.db_manager,
+                week_action_id=week_action_id,
+                segment_description_id=week_action['segment_description_id']
             )
             self.wait_window(dialog)
             self.refresh()
@@ -813,15 +815,10 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def edit_action_item(self, item_id: str):
         """Edit an Action Item."""
-        from .vps_editors import ActionItemEditorDialog
-        item = self.vps_manager.get_action_item(item_id)
-        if item:
-            dialog = ActionItemEditorDialog(
-                self, self.vps_manager, item['week_action_id'],
-                item['segment_description_id'], item_id
-            )
-            self.wait_window(dialog)
-            self.refresh()
+        from .item_editor import ItemEditorDialog
+        dialog = ItemEditorDialog(self, self.app.db_manager, item_id=item_id)
+        self.wait_window(dialog)
+        self.refresh()
 
     # ========================================================================
     # DELETE METHODS
