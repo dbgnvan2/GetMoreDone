@@ -558,7 +558,73 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def create_new_tl_vision(self):
         """Create a new TL Vision."""
-        print("TODO: Implement create TL Vision dialog")
+        # Get all segments
+        segments = self.vps_manager.get_all_segments()
+
+        if not segments:
+            # No segments available
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "No Segments",
+                "Please create a life segment first before adding visions."
+            )
+            return
+
+        # If only one segment, use it automatically
+        if len(segments) == 1:
+            segment_id = segments[0]['id']
+            from .vps_editors import TLVisionEditorDialog
+            dialog = TLVisionEditorDialog(self, self.vps_manager, segment_id)
+            self.wait_window(dialog)
+            self.refresh()
+            return
+
+        # Multiple segments - show selection dialog
+        self.show_segment_selector_dialog(segments)
+
+    def show_segment_selector_dialog(self, segments: List[Dict[str, Any]]):
+        """Show a dialog to select which segment to create a vision for."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Select Life Segment")
+        dialog.geometry("400x300")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Title
+        title_label = ctk.CTkLabel(
+            dialog,
+            text="Select a Life Segment for your Vision",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        title_label.pack(pady=20, padx=20)
+
+        # Create button for each segment
+        for segment in segments:
+            btn = ctk.CTkButton(
+                dialog,
+                text=f"🎯 {segment['name']}",
+                fg_color=segment['color_hex'],
+                command=lambda s=segment['id']: self.on_segment_selected(dialog, s),
+                height=40
+            )
+            btn.pack(pady=5, padx=20, fill="x")
+
+        # Cancel button
+        cancel_btn = ctk.CTkButton(
+            dialog,
+            text="Cancel",
+            command=dialog.destroy,
+            fg_color="gray"
+        )
+        cancel_btn.pack(pady=20)
+
+    def on_segment_selected(self, dialog, segment_id: str):
+        """Handle segment selection and open TL Vision editor."""
+        dialog.destroy()
+        from .vps_editors import TLVisionEditorDialog
+        editor = TLVisionEditorDialog(self, self.vps_manager, segment_id)
+        self.wait_window(editor)
+        self.refresh()
 
     def add_tl_vision(self, segment_id: str):
         """Add a TL Vision to a segment."""
