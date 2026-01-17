@@ -6,6 +6,7 @@ Handles SQLite schema creation and connection management.
 import sqlite3
 from pathlib import Path
 from typing import Optional
+from .vps_schema import VPSSchema
 
 
 class Database:
@@ -234,6 +235,9 @@ class Database:
             CREATE INDEX IF NOT EXISTS idx_contact_links_contact
             ON contact_links(contact_id)
         """)
+
+        # Initialize VPS (Visionary Planning System) schema
+        VPSSchema.initialize_vps_schema(conn)
 
         conn.commit()
 

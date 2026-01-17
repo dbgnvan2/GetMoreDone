@@ -6,6 +6,7 @@ import customtkinter as ctk
 from typing import Optional
 
 from .db_manager import DatabaseManager
+from .vps_manager import VPSManager
 
 
 class GetMoreDoneApp(ctk.CTk):
@@ -24,6 +25,9 @@ class GetMoreDoneApp(ctk.CTk):
 
         # Initialize database
         self.db_manager = DatabaseManager()
+
+        # Initialize VPS manager
+        self.vps_manager = VPSManager()
 
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
@@ -89,47 +93,56 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_hierarchical.grid(row=4, column=0, padx=20, pady=10)
 
+        self.btn_vps_planning = ctk.CTkButton(
+            self.sidebar,
+            text="VPS Planning",
+            command=self.show_vps_planning,
+            fg_color="purple",
+            hover_color="mediumpurple"
+        )
+        self.btn_vps_planning.grid(row=5, column=0, padx=20, pady=10)
+
         self.btn_plan = ctk.CTkButton(
             self.sidebar,
             text="Plan",
             command=self.show_plan
         )
-        self.btn_plan.grid(row=5, column=0, padx=20, pady=10)
+        self.btn_plan.grid(row=6, column=0, padx=20, pady=10)
 
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
             command=self.show_completed
         )
-        self.btn_completed.grid(row=6, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=7, column=0, padx=20, pady=10)
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
             text="Contacts",
             command=self.show_contacts
         )
-        self.btn_contacts.grid(row=7, column=0, padx=20, pady=10)
+        self.btn_contacts.grid(row=8, column=0, padx=20, pady=10)
 
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
             command=self.show_defaults
         )
-        self.btn_defaults.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=9, column=0, padx=20, pady=10)
 
         self.btn_stats = ctk.CTkButton(
             self.sidebar,
             text="Stats",
             command=self.show_stats
         )
-        self.btn_stats.grid(row=9, column=0, padx=20, pady=10)
+        self.btn_stats.grid(row=10, column=0, padx=20, pady=10)
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
             text="Settings",
             command=self.show_settings
         )
-        self.btn_settings.grid(row=10, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=11, column=0, padx=20, pady=10)
 
     def clear_content(self):
         """Clear current screen from content area."""
@@ -163,6 +176,13 @@ class GetMoreDoneApp(ctk.CTk):
         from .screens.hierarchical import HierarchicalScreen
         self.clear_content()
         self.current_screen = HierarchicalScreen(self.content_frame, self.db_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_vps_planning(self):
+        """Show VPS Planning screen."""
+        from .screens.vps_planning import VPSPlanningScreen
+        self.clear_content()
+        self.current_screen = VPSPlanningScreen(self.content_frame, self.vps_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_plan(self):
@@ -215,6 +235,7 @@ class GetMoreDoneApp(ctk.CTk):
     def on_closing(self):
         """Handle window closing."""
         self.db_manager.close()
+        self.vps_manager.close()
         self.destroy()
 
 
