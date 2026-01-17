@@ -567,6 +567,43 @@ class VPSManager:
 
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_action_item(self, action_item_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single action item by ID."""
+        cursor = self.db.conn.execute("""
+            SELECT * FROM action_items
+            WHERE id = ?
+        """, (action_item_id,))
+
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def update_action_item(self, action_item_id: str, **kwargs) -> bool:
+        """Update an action item with provided fields."""
+        if not kwargs:
+            return False
+
+        # Build update query dynamically
+        fields = []
+        values = []
+        for key, value in kwargs.items():
+            fields.append(f"{key} = ?")
+            values.append(value)
+
+        # Add updated_at timestamp
+        fields.append("updated_at = ?")
+        values.append(datetime.now().isoformat())
+        values.append(action_item_id)
+
+        query = f"""
+            UPDATE action_items
+            SET {', '.join(fields)}
+            WHERE id = ?
+        """
+
+        self.db.conn.execute(query, values)
+        self.db.conn.commit()
+        return True
+
     # ========================================================================
     # HABIT TRACKING
     # ========================================================================

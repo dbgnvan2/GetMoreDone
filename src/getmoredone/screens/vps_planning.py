@@ -635,11 +635,25 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def add_annual_vision(self, tl_vision_id: str):
         """Add an Annual Vision to a TL Vision."""
-        print(f"TODO: Add Annual Vision to TL Vision {tl_vision_id}")
+        from .vps_editors import AnnualVisionEditorDialog
+        tl_vision = self.vps_manager.get_tl_vision(tl_vision_id)
+        if tl_vision:
+            dialog = AnnualVisionEditorDialog(
+                self, self.vps_manager, tl_vision_id, tl_vision['segment_description_id']
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def add_annual_plan(self, annual_vision_id: str):
         """Add an Annual Plan to an Annual Vision."""
-        print(f"TODO: Add Annual Plan to Annual Vision {annual_vision_id}")
+        from .vps_editors import AnnualPlanEditorDialog
+        annual_vision = self.vps_manager.get_annual_vision(annual_vision_id)
+        if annual_vision:
+            dialog = AnnualPlanEditorDialog(
+                self, self.vps_manager, annual_vision_id, annual_vision['segment_description_id']
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def add_quarter_initiative(self, annual_plan_id: str):
         """Add a Quarter Initiative to an Annual Plan."""
@@ -654,7 +668,14 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def add_month_tactic(self, quarter_initiative_id: str):
         """Add a Month Tactic to a Quarter Initiative."""
-        print(f"TODO: Add Month Tactic to Quarter Initiative {quarter_initiative_id}")
+        from .vps_editors import MonthTacticEditorDialog
+        initiative = self.vps_manager.get_quarter_initiative(quarter_initiative_id)
+        if initiative:
+            dialog = MonthTacticEditorDialog(
+                self, self.vps_manager, quarter_initiative_id, initiative['segment_description_id']
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def add_week_action(self, month_tactic_id: str):
         """Add a Week Action to a Month Tactic."""
@@ -669,7 +690,14 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def add_action_item(self, week_action_id: str):
         """Add an Action Item to a Week Action."""
-        print(f"TODO: Add Action Item to Week Action {week_action_id}")
+        from .vps_editors import ActionItemEditorDialog
+        week_action = self.vps_manager.get_week_action(week_action_id)
+        if week_action:
+            dialog = ActionItemEditorDialog(
+                self, self.vps_manager, week_action_id, week_action['segment_description_id']
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def edit_tl_vision(self, vision_id: str):
         """Edit a TL Vision."""
@@ -682,11 +710,27 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def edit_annual_vision(self, vision_id: str):
         """Edit an Annual Vision."""
-        print(f"TODO: Edit Annual Vision {vision_id}")
+        from .vps_editors import AnnualVisionEditorDialog
+        vision = self.vps_manager.get_annual_vision(vision_id)
+        if vision:
+            dialog = AnnualVisionEditorDialog(
+                self, self.vps_manager, vision['tl_vision_id'],
+                vision['segment_description_id'], vision_id
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def edit_annual_plan(self, plan_id: str):
         """Edit an Annual Plan."""
-        print(f"TODO: Edit Annual Plan {plan_id}")
+        from .vps_editors import AnnualPlanEditorDialog
+        plan = self.vps_manager.get_annual_plan(plan_id)
+        if plan:
+            dialog = AnnualPlanEditorDialog(
+                self, self.vps_manager, plan['annual_vision_id'],
+                plan['segment_description_id'], plan_id
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def edit_quarter_initiative(self, initiative_id: str):
         """Edit a Quarter Initiative."""
@@ -702,7 +746,15 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def edit_month_tactic(self, tactic_id: str):
         """Edit a Month Tactic."""
-        print(f"TODO: Edit Month Tactic {tactic_id}")
+        from .vps_editors import MonthTacticEditorDialog
+        tactic = self.vps_manager.get_month_tactic(tactic_id)
+        if tactic:
+            dialog = MonthTacticEditorDialog(
+                self, self.vps_manager, tactic['quarter_initiative_id'],
+                tactic['segment_description_id'], tactic_id
+            )
+            self.wait_window(dialog)
+            self.refresh()
 
     def edit_week_action(self, action_id: str):
         """Edit a Week Action."""
@@ -718,5 +770,12 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def edit_action_item(self, item_id: str):
         """Edit an Action Item."""
-        # Can reuse existing GMD item editor
-        print(f"TODO: Edit Action Item {item_id}")
+        from .vps_editors import ActionItemEditorDialog
+        item = self.vps_manager.get_action_item(item_id)
+        if item:
+            dialog = ActionItemEditorDialog(
+                self, self.vps_manager, item['week_action_id'],
+                item['segment_description_id'], item_id
+            )
+            self.wait_window(dialog)
+            self.refresh()
