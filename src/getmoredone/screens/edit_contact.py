@@ -128,14 +128,6 @@ class EditContactDialog(ctk.CTkToplevel):
             )
             btn_delete.grid(row=0, column=0, padx=5, pady=10)
 
-        # Cancel button
-        btn_cancel = ctk.CTkButton(
-            btn_frame,
-            text="Cancel",
-            command=self.cancel
-        )
-        btn_cancel.grid(row=0, column=2, padx=5, pady=10)
-
         # Save button
         btn_save = ctk.CTkButton(
             btn_frame,
@@ -144,7 +136,15 @@ class EditContactDialog(ctk.CTkToplevel):
             fg_color="green",
             hover_color="darkgreen"
         )
-        btn_save.grid(row=0, column=3, padx=5, pady=10)
+        btn_save.grid(row=0, column=2, padx=5, pady=10)
+
+        # Cancel button
+        btn_cancel = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=self.cancel
+        )
+        btn_cancel.grid(row=0, column=3, padx=5, pady=10)
 
         # Focus on name field
         self.name_entry.focus()

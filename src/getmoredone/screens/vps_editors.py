@@ -115,11 +115,11 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_vision)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_vision_data(self):
         """Load existing vision data into form."""
@@ -307,11 +307,11 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_initiative)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_initiative_data(self):
         """Load existing initiative data into form."""
@@ -475,11 +475,11 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_vision)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_vision_data(self):
         """Load existing vision data into form."""
@@ -647,11 +647,11 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_plan)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_plan_data(self):
         """Load existing plan data into form."""
@@ -664,8 +664,8 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             self.theme_entry.insert(0, self.plan['theme'])
         if self.plan['objective']:
             self.objective_text.insert("1.0", self.plan['objective'])
-        if self.plan['full_description']:
-            self.description_text.insert("1.0", self.plan['full_description'])
+        if self.plan.get('description'):
+            self.description_text.insert("1.0", self.plan['description'])
 
     def save_plan(self):
         """Validate and save the plan."""
@@ -673,10 +673,20 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
         try:
             year = int(self.year_entry.get().strip())
         except ValueError:
+            ctk.CTkMessageBox(
+                title="Validation Error",
+                message="Year must be a valid integer",
+                icon="cancel"
+            )
             return
 
         theme = self.theme_entry.get().strip()
         if not theme:
+            ctk.CTkMessageBox(
+                title="Validation Error",
+                message="Theme is required",
+                icon="cancel"
+            )
             return
 
         objective = self.objective_text.get("1.0", "end-1c").strip()
@@ -691,7 +701,7 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
                     year=year,
                     theme=theme,
                     objective=objective,
-                    full_description=description
+                    description=description
                 )
             else:
                 # Create new
@@ -701,14 +711,18 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
                     year=year,
                     theme=theme,
                     objective=objective,
-                    full_description=description
+                    description=description
                 )
 
             # Close dialog
             self.destroy()
 
         except Exception as e:
-            print(f"Error saving annual plan: {e}")
+            ctk.CTkMessageBox(
+                title="Error",
+                message=f"Error saving annual plan: {e}",
+                icon="cancel"
+            )
 
 
 class MonthTacticEditorDialog(ctk.CTkToplevel):
@@ -799,11 +813,11 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_tactic)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_tactic_data(self):
         """Load existing tactic data into form."""
@@ -951,11 +965,11 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_action)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_action_data(self):
         """Load existing action data into form."""
@@ -1149,11 +1163,11 @@ class ActionItemEditorDialog(ctk.CTkToplevel):
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=0, padx=5, pady=5)
-
         btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_action_item)
-        btn_save.grid(row=0, column=1, padx=5, pady=5)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_action_item_data(self):
         """Load existing action item data into form."""
