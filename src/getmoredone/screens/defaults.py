@@ -143,6 +143,16 @@ class DefaultsScreen(ctk.CTkFrame):
         ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
         row += 1
 
+        # WHO
+        ctk.CTkLabel(scroll, text="WHO:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        who_field_values = self.db_manager.get_distinct_who_values()
+        if not who_field_values:
+            who_field_values = ["Self"]
+        self.who_field_var = ctk.StringVar(value="")
+        self.who_field_combo = ctk.CTkComboBox(scroll, values=[""] + who_field_values, variable=self.who_field_var, width=200)
+        self.who_field_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
         # Group
         ctk.CTkLabel(scroll, text="Group:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
         self.group_entry = ctk.CTkEntry(scroll, width=200)
@@ -242,6 +252,9 @@ class DefaultsScreen(ctk.CTkFrame):
                     self.value_var.set(f"{k} ({v})")
                     break
 
+        if defaults.who:
+            self.who_field_var.set(defaults.who)
+
         if defaults.group:
             self.group_entry.insert(0, defaults.group)
 
@@ -267,6 +280,7 @@ class DefaultsScreen(ctk.CTkFrame):
         self.urgency_var.set("")
         self.size_var.set("")
         self.value_var.set("")
+        self.who_field_var.set("")
         self.group_entry.delete(0, "end")
         self.category_entry.delete(0, "end")
         self.planned_minutes_entry.delete(0, "end")
@@ -299,6 +313,7 @@ class DefaultsScreen(ctk.CTkFrame):
             defaults = Defaults(
                 scope_type=scope_type,
                 scope_key=scope_key,
+                who=self.who_field_var.get().strip() or None,
                 importance=self.extract_factor_value(self.importance_var.get()),
                 urgency=self.extract_factor_value(self.urgency_var.get()),
                 size=self.extract_factor_value(self.size_var.get()),

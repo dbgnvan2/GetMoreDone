@@ -30,6 +30,7 @@ class ActionItem:
     who: str
     title: str
     description: Optional[str] = None
+    next_action: Optional[str] = None
     contact_id: Optional[int] = None  # References contacts.id
     parent_id: Optional[str] = None  # References action_items.id for hierarchical relationships
     start_date: Optional[str] = None
@@ -132,6 +133,7 @@ class Defaults:
     scope_type: str  # "system", "who", or "contact"
     scope_key: Optional[str] = None  # None for system, who value for who-scope
     contact_id: Optional[int] = None  # References contacts.id for contact-scope defaults
+    who: Optional[str] = None
     importance: Optional[int] = None
     urgency: Optional[int] = None
     size: Optional[int] = None

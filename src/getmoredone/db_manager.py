@@ -58,15 +58,16 @@ class DatabaseManager:
 
         self.db.conn.execute("""
             INSERT INTO action_items (
-                id, who, contact_id, parent_id, title, description, start_date, due_date,
+                id, who, contact_id, parent_id, title, description, next_action, start_date, due_date,
                 original_due_date, is_meeting, meeting_start_time,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 week_action_id, segment_description_id, is_habit, percent_complete,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
+            item.next_action,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
@@ -111,7 +112,7 @@ class DatabaseManager:
 
         self.db.conn.execute("""
             UPDATE action_items SET
-                who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?,
+                who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?, next_action = ?,
                 start_date = ?, due_date = ?, original_due_date = ?, is_meeting = ?, meeting_start_time = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
@@ -120,7 +121,7 @@ class DatabaseManager:
                 updated_at = ?
             WHERE id = ?
         """, (
-            item.who, item.contact_id, item.parent_id, item.title, item.description,
+            item.who, item.contact_id, item.parent_id, item.title, item.description, item.next_action,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
@@ -427,11 +428,11 @@ class DatabaseManager:
         """Save or update defaults."""
         self.db.conn.execute("""
             INSERT OR REPLACE INTO defaults (
-                scope_type, scope_key, contact_id, importance, urgency, size, value,
+                scope_type, scope_key, contact_id, who, importance, urgency, size, value,
                 "group", category, planned_minutes, start_offset_days, due_offset_days
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            defaults.scope_type, defaults.scope_key, defaults.contact_id,
+            defaults.scope_type, defaults.scope_key, defaults.contact_id, defaults.who,
             defaults.importance, defaults.urgency, defaults.size, defaults.value,
             defaults.group, defaults.category, defaults.planned_minutes,
             defaults.start_offset_days, defaults.due_offset_days
@@ -449,6 +450,11 @@ class DatabaseManager:
         """Apply system and who defaults to an action item."""
         # Get system defaults
         system_defaults = self.get_defaults("system")
+
+        # Apply WHO default from system defaults if item.who is empty or None
+        if not item.who or not item.who.strip():
+            if system_defaults and system_defaults.who:
+                item.who = system_defaults.who
 
         # Get who-specific defaults
         who_defaults = self.get_defaults("who", item.who)
@@ -871,6 +877,11 @@ class DatabaseManager:
         except (KeyError, IndexError):
             percent_complete = 0
 
+        try:
+            next_action = row["next_action"]
+        except (KeyError, IndexError):
+            next_action = None
+
         return ActionItem(
             id=row["id"],
             who=row["who"],
@@ -878,6 +889,7 @@ class DatabaseManager:
             parent_id=row["parent_id"],
             title=row["title"],
             description=row["description"],
+            next_action=next_action,
             start_date=row["start_date"],
             due_date=row["due_date"],
             original_due_date=original_due_date,
@@ -903,10 +915,17 @@ class DatabaseManager:
 
     def _row_to_defaults(self, row: sqlite3.Row) -> Defaults:
         """Convert database row to Defaults."""
+        # Handle who column which may not exist in older databases
+        try:
+            who = row["who"]
+        except (KeyError, IndexError):
+            who = None
+
         return Defaults(
             scope_type=row["scope_type"],
             scope_key=row["scope_key"],
             contact_id=row["contact_id"],
+            who=who,
             importance=row["importance"],
             urgency=row["urgency"],
             size=row["size"],

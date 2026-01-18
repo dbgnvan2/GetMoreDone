@@ -72,6 +72,7 @@ class Database:
                 parent_id        TEXT REFERENCES action_items(id) ON DELETE SET NULL,
                 title            TEXT NOT NULL,
                 description      TEXT,
+                next_action      TEXT,
 
                 start_date        TEXT,
                 due_date          TEXT,
@@ -128,6 +129,7 @@ class Database:
                 scope_key         TEXT,
                 contact_id        INTEGER REFERENCES contacts(id),
 
+                who               TEXT,
                 importance        INTEGER,
                 urgency           INTEGER,
                 size              INTEGER,
@@ -274,6 +276,13 @@ class Database:
                 ADD COLUMN contact_id INTEGER REFERENCES contacts(id)
             """)
 
+        if 'who' not in columns:
+            # Add who column to defaults
+            conn.execute("""
+                ALTER TABLE defaults
+                ADD COLUMN who TEXT
+            """)
+
         # Check if link_type column exists in item_links
         cursor = conn.execute("PRAGMA table_info(item_links)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -315,6 +324,13 @@ class Database:
             conn.execute("""
                 ALTER TABLE action_items
                 ADD COLUMN meeting_start_time TEXT
+            """)
+
+        if 'next_action' not in columns:
+            # Add next_action column to action_items
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN next_action TEXT
             """)
 
     def __enter__(self):

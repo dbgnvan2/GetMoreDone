@@ -173,7 +173,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Description
         ctk.CTkLabel(left_col, text="Description:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
         self.description_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.description_text.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        self.description_text.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        row_l += 1
+
+        # Next Action
+        ctk.CTkLabel(left_col, text="Next Action:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
+        self.next_action_text = ctk.CTkTextbox(left_col, height=100, width=320)
+        self.next_action_text.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
         row_l += 1
 
         # Dates Section
@@ -549,6 +555,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         if self.item.description:
             self.description_text.insert("1.0", self.item.description)
+
+        if self.item.next_action:
+            self.next_action_text.insert("1.0", self.item.next_action)
 
         if self.item.start_date:
             self.start_date_entry.insert(0, self.item.start_date)
@@ -1159,6 +1168,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             item.contact_id = self.selected_contact_id
             item.title = self.title_entry.get().strip()
             item.description = self.description_text.get("1.0", "end").strip() or None
+            item.next_action = self.next_action_text.get("1.0", "end").strip() or None
             item.start_date = self.start_date_entry.get().strip() or None
             item.due_date = self.due_date_entry.get().strip() or None
             item.is_meeting = self.is_meeting_var.get()
@@ -1489,6 +1499,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             item.contact_id = self.selected_contact_id
             item.title = self.title_entry.get().strip()
             item.description = self.description_text.get("1.0", "end").strip() or None
+            item.next_action = self.next_action_text.get("1.0", "end").strip() or None
             item.start_date = self.start_date_entry.get().strip() or None
             item.due_date = self.due_date_entry.get().strip() or None
             item.is_meeting = self.is_meeting_var.get()
