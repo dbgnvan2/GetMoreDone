@@ -335,6 +335,8 @@ class DefaultsScreen(ctk.CTkFrame):
 
             self.db_manager.save_defaults(defaults)
             self.status_label.configure(text="Defaults saved successfully!")
+            # Refresh form to show saved values
+            self.load_defaults()
 
         except Exception as e:
             self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
