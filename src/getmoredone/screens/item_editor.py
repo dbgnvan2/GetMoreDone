@@ -146,6 +146,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.who_entry.bind('<Button-1>', self.on_who_click)  # Show on click
         self.who_entry.bind('<Tab>', lambda e: self.hide_contact_suggestions())
         self.who_entry.bind('<Escape>', lambda e: self.hide_contact_suggestions())
+        self.who_entry.bind('<FocusOut>', lambda e: self.on_who_changed())  # Apply defaults when focus leaves WHO field
 
         # Dropdown for contact suggestions
         self.contact_suggestions_frame = None
@@ -154,13 +155,24 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Try to auto-select contact if who name matches a contact
         if not self.item_id:
-            # Set default who value
-            contacts = self.db_manager.get_all_contacts(active_only=True)
-            if contacts:
-                self.who_var.set(contacts[0].name)
-                self.selected_contact_id = contacts[0].id
+            # Set default who value - check system defaults first
+            system_defaults = self.db_manager.get_defaults("system")
+            if system_defaults and system_defaults.who:
+                self.who_var.set(system_defaults.who)
+                # Try to match with a contact
+                contacts = self.db_manager.get_all_contacts(active_only=True)
+                for contact in contacts:
+                    if contact.name == system_defaults.who:
+                        self.selected_contact_id = contact.id
+                        break
             else:
-                self.who_var.set("Self")
+                # Fall back to first active contact or "Self"
+                contacts = self.db_manager.get_all_contacts(active_only=True)
+                if contacts:
+                    self.who_var.set(contacts[0].name)
+                    self.selected_contact_id = contacts[0].id
+                else:
+                    self.who_var.set("Self")
 
         row_l += 1
 
@@ -801,10 +813,25 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
     def apply_defaults_to_form(self):
         """Apply system and who-specific defaults to form fields for new items."""
-        who = self.who_var.get()
-
-        # Get defaults
+        # First, get system defaults to check WHO field
         system_defaults = self.db_manager.get_defaults("system")
+
+        # Apply WHO from system defaults if set and current WHO is empty or default
+        if system_defaults and system_defaults.who:
+            current_who = self.who_var.get()
+            # Only set if WHO is empty or is the auto-filled first contact
+            # This ensures system default WHO takes precedence
+            if not current_who:
+                self.who_var.set(system_defaults.who)
+                # Try to match with a contact
+                contacts = self.db_manager.get_all_contacts(active_only=True)
+                for contact in contacts:
+                    if contact.name == system_defaults.who:
+                        self.selected_contact_id = contact.id
+                        break
+
+        # Now get the current WHO value (which may have been updated)
+        who = self.who_var.get()
         who_defaults = self.db_manager.get_defaults("who", who)
 
         # Helper to get default value with precedence

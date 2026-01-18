@@ -95,6 +95,24 @@ class DefaultsScreen(ctk.CTkFrame):
         )
         self.who_combo.pack(side="left", padx=5)
 
+        # Default Who section
+        ctk.CTkLabel(
+            scroll,
+            text="Default Who",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        row += 1
+
+        # WHO field
+        ctk.CTkLabel(scroll, text="WHO:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
+        who_field_values = self.db_manager.get_distinct_who_values()
+        if not who_field_values:
+            who_field_values = ["Self"]
+        self.who_field_var = ctk.StringVar(value="")
+        self.who_field_combo = ctk.CTkComboBox(scroll, values=[""] + who_field_values, variable=self.who_field_var, width=200)
+        self.who_field_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
         # Priority factors section
         ctk.CTkLabel(
             scroll,
@@ -135,22 +153,12 @@ class DefaultsScreen(ctk.CTkFrame):
         self.value_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
-        # Organization section
+        # Organization Factors section
         ctk.CTkLabel(
             scroll,
-            text="Organization",
+            text="Organization Factors",
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
-        row += 1
-
-        # WHO
-        ctk.CTkLabel(scroll, text="WHO:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-        who_field_values = self.db_manager.get_distinct_who_values()
-        if not who_field_values:
-            who_field_values = ["Self"]
-        self.who_field_var = ctk.StringVar(value="")
-        self.who_field_combo = ctk.CTkComboBox(scroll, values=[""] + who_field_values, variable=self.who_field_var, width=200)
-        self.who_field_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
         # Group
