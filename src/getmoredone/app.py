@@ -3,6 +3,7 @@ Main application window for GetMoreDone.
 """
 
 import customtkinter as ctk
+from datetime import datetime
 from typing import Optional
 
 from .db_manager import DatabaseManager
@@ -16,7 +17,10 @@ class GetMoreDoneApp(ctk.CTk):
         super().__init__()
 
         # Configure window
-        self.title("GetMoreDone")
+        today = datetime.now()
+        day_of_week = today.strftime("%A")
+        date_str = today.strftime("%B %d, %Y")
+        self.title(f"GetMoreDone - {day_of_week}, {date_str}")
         self.geometry("1200x700")
 
         # Set theme
