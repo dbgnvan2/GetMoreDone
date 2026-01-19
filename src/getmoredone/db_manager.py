@@ -228,6 +228,77 @@ class DatabaseManager:
 
         return self.duplicate_action_item(item_id)
 
+    def create_followup_item(self, item_id: str) -> Optional[str]:
+        """
+        Create a follow-up Action Item linked to the original item.
+        Useful when an item isn't completed and needs to be rescheduled.
+
+        The new item will:
+        - Inherit properties from the original
+        - Be linked via parent_id to the original
+        - Have dates shifted forward by 1 day
+        - Status set to "open"
+
+        Returns:
+            ID of new follow-up item, or None if original not found
+        """
+        from datetime import datetime, timedelta
+
+        original = self.get_action_item(item_id)
+        if not original:
+            return None
+
+        # Calculate new dates (shift by 1 day)
+        new_start_date = None
+        new_due_date = None
+
+        if original.start_date:
+            start_dt = datetime.fromisoformat(original.start_date)
+            new_start_date = (start_dt + timedelta(days=1)).date().isoformat()
+
+        if original.due_date:
+            due_dt = datetime.fromisoformat(original.due_date)
+            new_due_date = (due_dt + timedelta(days=1)).date().isoformat()
+
+        # Create new item with same properties
+        new_item = ActionItem(
+            who=original.who,
+            contact_id=original.contact_id,
+            title=original.title,
+            description=original.description,
+            next_action=original.next_action,
+            parent_id=item_id,  # Link to original item
+            start_date=new_start_date,
+            due_date=new_due_date,
+            importance=original.importance,
+            urgency=original.urgency,
+            size=original.size,
+            value=original.value,
+            group=original.group,
+            category=original.category,
+            planned_minutes=original.planned_minutes,
+            week_action_id=original.week_action_id,
+            segment_description_id=original.segment_description_id,
+            is_habit=original.is_habit,
+            status="open"  # Explicitly set to open
+        )
+
+        new_id = self.create_action_item(new_item, apply_defaults=False)
+
+        # Copy linked notes and other links
+        if new_id:
+            original_links = self.get_item_links(item_id)
+            for link in original_links:
+                new_link = ItemLink(
+                    item_id=new_id,
+                    url=link.url,
+                    label=link.label,
+                    link_type=link.link_type
+                )
+                self.add_item_link(new_link)
+
+        return new_id
+
     # ==================== HIERARCHICAL OPERATIONS ====================
 
     def get_children(self, parent_id: str) -> List[ActionItem]:

@@ -502,7 +502,11 @@ class VPSManager:
 
     def create_week_action(self, month_tactic_id: str, segment_description_id: str,
                           week_start_date: str, week_end_date: str, title: str,
-                          description: str = "", outcome_expected: str = "") -> str:
+                          description: str = "", outcome_expected: str = "",
+                          step_1: str = "", step_2: str = "", step_3: str = "",
+                          step_4: str = "", step_5: str = "",
+                          key_result_1: str = "", key_result_2: str = "", key_result_3: str = "",
+                          key_result_4: str = "", key_result_5: str = "") -> str:
         """Create a new week action."""
         action_id = f"wa-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -510,10 +514,14 @@ class VPSManager:
         self.db.conn.execute("""
             INSERT INTO week_actions
             (id, month_tactic_id, segment_description_id, week_start_date, week_end_date,
-             title, description, outcome_expected, status, is_active, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned', 1, ?, ?)
+             title, description, outcome_expected, status, is_active, created_at, updated_at,
+             step_1, step_2, step_3, step_4, step_5,
+             key_result_1, key_result_2, key_result_3, key_result_4, key_result_5)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (action_id, month_tactic_id, segment_description_id, week_start_date,
-              week_end_date, title, description, outcome_expected, now, now))
+              week_end_date, title, description, outcome_expected, now, now,
+              step_1, step_2, step_3, step_4, step_5,
+              key_result_1, key_result_2, key_result_3, key_result_4, key_result_5))
 
         self.db.conn.commit()
         return action_id
@@ -521,7 +529,9 @@ class VPSManager:
     def update_week_action(self, action_id: str, **kwargs) -> bool:
         """Update a week action's fields."""
         allowed_fields = {'title', 'description', 'outcome_expected', 'status',
-                         'order_index', 'is_active', 'week_start_date', 'week_end_date'}
+                         'order_index', 'is_active', 'week_start_date', 'week_end_date',
+                         'step_1', 'step_2', 'step_3', 'step_4', 'step_5',
+                         'key_result_1', 'key_result_2', 'key_result_3', 'key_result_4', 'key_result_5'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -538,6 +548,63 @@ class VPSManager:
         )
         self.db.conn.commit()
         return True
+
+    def auto_create_action_items_from_steps(self, week_action_id: str) -> List[str]:
+        """
+        Auto-create Action Items from non-blank Step fields in a Week Action.
+        Returns list of created action item IDs.
+        """
+        from datetime import timedelta
+        from .models import ActionItem
+
+        # Get the week action
+        week_action = self.get_week_action(week_action_id)
+        if not week_action:
+            return []
+
+        week_start_date = week_action['week_start_date']
+        segment_id = week_action['segment_description_id']
+        created_item_ids = []
+
+        # Process each step field
+        day_offset = 0
+        for i in range(1, 6):
+            step_field = f'step_{i}'
+            key_result_field = f'key_result_{i}'
+
+            step_value = week_action.get(step_field, '').strip() if week_action.get(step_field) else ''
+            key_result_value = week_action.get(key_result_field, '').strip() if week_action.get(key_result_field) else ''
+
+            # Only create Action Item if Step is non-blank
+            if step_value:
+                # Calculate start date (week_start + day_offset)
+                from datetime import datetime
+                start_dt = datetime.fromisoformat(week_start_date)
+                item_start_date = (start_dt + timedelta(days=day_offset)).date().isoformat()
+
+                # Build description from Step and Key Result
+                description = f"Step {i}: {step_value}"
+                if key_result_value:
+                    description += f"\nKey Result: {key_result_value}"
+
+                # Create Action Item using db_manager
+                action_item = ActionItem(
+                    who="",  # Will be filled by system defaults
+                    title=step_value[:100],  # Use step as title (limit to reasonable length)
+                    description=description,
+                    start_date=item_start_date,
+                    week_action_id=week_action_id,
+                    segment_description_id=segment_id
+                )
+
+                # Create the item (apply_defaults=True will use system defaults)
+                item_id = self.db.create_action_item(action_item, apply_defaults=True)
+                created_item_ids.append(item_id)
+
+                # Increment day offset for next action item
+                day_offset += 1
+
+        return created_item_ids
 
     # ========================================================================
     # ACTION ITEMS (VPS Extensions)

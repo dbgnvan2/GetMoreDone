@@ -591,11 +591,26 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Step 3: Duplicate Current Action Item Record
             print(f"[DEBUG] Step 3: Duplicating Current Action Item")
+
+            # Determine parent_id for new item based on current item's parent status
+            # If current item has no parent, new item becomes child of current
+            # If current item has a parent, new item becomes sibling (shares same parent)
+            new_parent_id = None
+            if item.parent_id:
+                # Current item is a child, so new item should use the same parent
+                new_parent_id = item.parent_id
+                print(f"[DEBUG] Current item has parent {item.parent_id}, new item will share this parent")
+            else:
+                # Current item has no parent, so new item becomes child of current
+                new_parent_id = item.id
+                print(f"[DEBUG] Current item has no parent, new item will be child of current item")
+
             new_item = ActionItem(
                 who=item.who,
                 title=item.title,
                 description=item.description,  # Will be updated later from Next Action dialog
                 contact_id=item.contact_id,
+                parent_id=new_parent_id,  # Set parent_id based on logic above
                 start_date=item.start_date,  # Will be updated later from Next Action dialog
                 due_date=item.due_date,  # Will be updated later from Next Action dialog
                 importance=item.importance,
@@ -608,7 +623,7 @@ class TimerWindow(ctk.CTkToplevel):
                 status="open"
             )
             db_manager.create_action_item(new_item)
-            print(f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}")
+            print(f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
             # Step 4: Save Current Action Item as completed (with work log)
             if start_timestamp:

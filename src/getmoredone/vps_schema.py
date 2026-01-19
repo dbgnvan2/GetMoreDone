@@ -152,7 +152,17 @@ class VPSSchema:
                 order_index          INTEGER,
                 is_active            INTEGER DEFAULT 1,
                 created_at           TEXT NOT NULL,
-                updated_at           TEXT NOT NULL
+                updated_at           TEXT NOT NULL,
+                step_1               TEXT,
+                step_2               TEXT,
+                step_3               TEXT,
+                step_4               TEXT,
+                step_5               TEXT,
+                key_result_1         TEXT,
+                key_result_2         TEXT,
+                key_result_3         TEXT,
+                key_result_4         TEXT,
+                key_result_5         TEXT
             )
         """)
 
@@ -160,6 +170,11 @@ class VPSSchema:
         # EXTEND ACTION_ITEMS for VPS Integration
         # ========================================================================
         VPSSchema._extend_action_items(conn)
+
+        # ========================================================================
+        # EXTEND WEEK_ACTIONS for Step/Key Result fields
+        # ========================================================================
+        VPSSchema._extend_week_actions(conn)
 
         # ========================================================================
         # HABIT_TRACKING (Daily completion tracking for habits)
@@ -218,6 +233,31 @@ class VPSSchema:
                 ALTER TABLE action_items
                 ADD COLUMN segment_description_id TEXT REFERENCES segment_descriptions(id) ON DELETE SET NULL
             """)
+
+    @staticmethod
+    def _extend_week_actions(conn: sqlite3.Connection):
+        """Add Step and Key Result columns to existing week_actions table."""
+        # Check which columns already exist
+        cursor = conn.execute("PRAGMA table_info(week_actions)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        # Add Step fields
+        for i in range(1, 6):
+            field_name = f'step_{i}'
+            if field_name not in columns:
+                conn.execute(f"""
+                    ALTER TABLE week_actions
+                    ADD COLUMN {field_name} TEXT
+                """)
+
+        # Add Key Result fields
+        for i in range(1, 6):
+            field_name = f'key_result_{i}'
+            if field_name not in columns:
+                conn.execute(f"""
+                    ALTER TABLE week_actions
+                    ADD COLUMN {field_name} TEXT
+                """)
 
     @staticmethod
     def _create_indexes(conn: sqlite3.Connection):

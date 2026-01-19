@@ -898,7 +898,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Week Action")
 
-        self.geometry("600x450")
+        self.geometry("700x900")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -961,6 +961,34 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         self.outcome_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
+        # Add separator
+        separator = ctk.CTkFrame(main_frame, height=2, fg_color="gray")
+        separator.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        row += 1
+
+        # Step and Key Result fields
+        self.step_entries = []
+        self.key_result_entries = []
+
+        for i in range(1, 6):
+            # Step field
+            ctk.CTkLabel(main_frame, text=f"Step {i}:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            step_entry = ctk.CTkEntry(main_frame, placeholder_text=f"Step {i} (50 chars max)")
+            step_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+            self.step_entries.append(step_entry)
+            row += 1
+
+            # Key Result field
+            ctk.CTkLabel(main_frame, text=f"Key Result {i}:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            key_result_entry = ctk.CTkEntry(main_frame, placeholder_text=f"Key Result {i} (50 chars max)")
+            key_result_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+            self.key_result_entries.append(key_result_entry)
+            row += 1
+
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
         button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
@@ -989,6 +1017,16 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         if self.action['outcome_expected']:
             self.outcome_text.insert("1.0", self.action['outcome_expected'])
 
+        # Load Step and Key Result fields
+        for i in range(1, 6):
+            step_value = self.action.get(f'step_{i}', '')
+            if step_value:
+                self.step_entries[i-1].insert(0, step_value)
+
+            key_result_value = self.action.get(f'key_result_{i}', '')
+            if key_result_value:
+                self.key_result_entries[i-1].insert(0, key_result_value)
+
     def save_action(self):
         """Validate and save the action."""
         # Get values
@@ -1002,6 +1040,15 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         description = self.description_text.get("1.0", "end-1c").strip()
         outcome = self.outcome_text.get("1.0", "end-1c").strip()
 
+        # Get Step and Key Result values (limit to 50 chars each)
+        steps = {}
+        key_results = {}
+        for i in range(1, 6):
+            step_value = self.step_entries[i-1].get().strip()[:50]
+            key_result_value = self.key_result_entries[i-1].get().strip()[:50]
+            steps[f'step_{i}'] = step_value
+            key_results[f'key_result_{i}'] = key_result_value
+
         # Save or update
         try:
             if self.action_id:
@@ -1012,19 +1059,26 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                     week_end_date=week_end,
                     title=title,
                     description=description,
-                    outcome_expected=outcome
+                    outcome_expected=outcome,
+                    **steps,
+                    **key_results
                 )
             else:
                 # Create new
-                self.vps_manager.create_week_action(
+                action_id = self.vps_manager.create_week_action(
                     month_tactic_id=self.month_tactic_id,
                     segment_description_id=self.segment_id,
                     week_start_date=week_start,
                     week_end_date=week_end,
                     title=title,
                     description=description,
-                    outcome_expected=outcome
+                    outcome_expected=outcome,
+                    **steps,
+                    **key_results
                 )
+
+                # Auto-create Action Items from non-blank Steps
+                self.vps_manager.auto_create_action_items_from_steps(action_id)
 
             # Close dialog
             self.destroy()

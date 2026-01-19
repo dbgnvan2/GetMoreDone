@@ -483,6 +483,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_duplicate = ctk.CTkButton(top_row, text="Duplicate", command=self.duplicate_item, width=100)
             btn_duplicate.pack(side="left", padx=5)
 
+            btn_followup = ctk.CTkButton(top_row, text="Create Follow-up", command=self.create_followup, width=120, fg_color="orange", hover_color="darkorange")
+            btn_followup.pack(side="left", padx=5)
+
             btn_complete = ctk.CTkButton(top_row, text="Complete", command=self.complete_item, width=100)
             btn_complete.pack(side="left", padx=5)
 
@@ -1272,6 +1275,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Duplicate the current item."""
         if self.item_id:
             new_id = self.db_manager.duplicate_action_item(self.item_id)
+            self.destroy()
+            if new_id:
+                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager)
+
+    def create_followup(self):
+        """Create a follow-up item linked to the current item."""
+        if self.item_id:
+            new_id = self.db_manager.create_followup_item(self.item_id)
             self.destroy()
             if new_id:
                 ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager)
