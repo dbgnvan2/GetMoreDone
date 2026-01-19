@@ -520,8 +520,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_create_sub = ctk.CTkButton(bottom_row, text="+ Create Sub-Item", command=self.create_sub_item, width=120)
             btn_create_sub.pack(side="left", padx=5)
 
-            btn_show_children = ctk.CTkButton(bottom_row, text="Show Children", command=self.show_children, width=110)
-            btn_show_children.pack(side="left", padx=5)
+            btn_show_related = ctk.CTkButton(bottom_row, text="Show Related", command=self.show_related, width=110)
+            btn_show_related.pack(side="left", padx=5)
 
             btn_set_parent = ctk.CTkButton(bottom_row, text="Set Parent", command=self.set_parent, width=100)
             btn_set_parent.pack(side="left", padx=5)
@@ -1303,21 +1303,49 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if not item:
             return
 
+        # Check if item has children - prevent deletion if it does
+        children = self.db_manager.get_children(self.item_id)
+        if children:
+            # Show error message - deletion not allowed
+            error_dialog = ctk.CTkToplevel(self)
+            error_dialog.title("Cannot Delete")
+            error_dialog.geometry("400x150")
+            error_dialog.transient(self)
+            error_dialog.grab_set()
+
+            # Center on parent
+            error_dialog.update_idletasks()
+            x = self.winfo_rootx() + (self.winfo_width() - 400) // 2
+            y = self.winfo_rooty() + (self.winfo_height() - 150) // 2
+            error_dialog.geometry(f"400x150+{x}+{y}")
+
+            message = (
+                f"Cannot delete this item.\n\n"
+                f"This item has {len(children)} child item(s).\n"
+                f"Please remove or reassign the children first."
+            )
+
+            ctk.CTkLabel(
+                error_dialog,
+                text=message,
+                wraplength=350,
+                justify="center"
+            ).pack(pady=20)
+
+            ctk.CTkButton(
+                error_dialog,
+                text="OK",
+                command=error_dialog.destroy,
+                width=100
+            ).pack(pady=10)
+
+            return  # Don't proceed with deletion
+
         # Create confirmation dialog
         dialog = DeleteConfirmDialog(self, item.title)
         dialog.wait_window()
 
         if dialog.confirmed:
-            # Check if item has children
-            children = self.db_manager.get_children(self.item_id)
-            if children:
-                # Show warning about children
-                warning = DeleteChildrenWarningDialog(self, len(children))
-                warning.wait_window()
-
-                if not warning.confirmed:
-                    return  # User cancelled
-
             # Delete the item
             self.db_manager.delete_action_item(self.item_id)
             self.destroy()
@@ -1423,13 +1451,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Open editor for the new sub-item
         ItemEditorDialog(self.master, self.db_manager, sub_item_id, vps_manager=self.vps_manager)
 
-    def show_children(self):
-        """Show list of child items in a new dialog."""
+    def show_related(self):
+        """Show list of related items (parent and children) in a new dialog."""
         if not self.item_id:
             return
 
-        # Open children list dialog
-        ShowChildrenDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item")
+        # Open related items dialog
+        ShowRelatedDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager)
 
     def set_parent(self):
         """Open dialog to set/change the parent item."""
@@ -1644,22 +1672,23 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.load_notes()
 
 
-class ShowChildrenDialog(ctk.CTkToplevel):
-    """Dialog for showing list of child items."""
+class ShowRelatedDialog(ctk.CTkToplevel):
+    """Dialog for showing related items (parent and children)."""
 
-    def __init__(self, parent, db_manager: 'DatabaseManager', parent_item_id: str, parent_title: str):
+    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_title: str, vps_manager=None):
         super().__init__(parent)
         self.db_manager = db_manager
-        self.parent_item_id = parent_item_id
-        self.parent_title = parent_title
+        self.current_item_id = current_item_id
+        self.current_title = current_title
+        self.vps_manager = vps_manager
 
-        self.title(f"Children of: {parent_title}")
-        self.geometry("900x600")
+        self.title(f"Related Items: {current_title}")
+        self.geometry("900x700")
 
         # Create UI
         self.create_ui()
 
-        # Load children
+        # Load related items
         self.refresh()
 
         # Make dialog modal
@@ -1677,11 +1706,11 @@ class ShowChildrenDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             header_frame,
-            text=f"Child Items of: {self.parent_title}",
+            text=f"Related Items: {self.current_title}",
             font=ctk.CTkFont(size=16, weight="bold")
         ).pack(side="left", padx=10, pady=10)
 
-        # Scrollable frame for children list
+        # Scrollable frame for related items list
         self.scroll_frame = ctk.CTkScrollableFrame(self)
         self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.scroll_frame.grid_columnconfigure(0, weight=1)
@@ -1694,25 +1723,97 @@ class ShowChildrenDialog(ctk.CTkToplevel):
         btn_close.pack(side="right", padx=5)
 
     def refresh(self):
-        """Refresh the list of children."""
+        """Refresh the list of related items (parent and children)."""
         # Clear current list
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
 
+        current_row = 0
+
+        # Get current item to check for parent
+        current_item = self.db_manager.get_action_item(self.current_item_id)
+
+        # Show parent section if exists
+        if current_item and current_item.parent_id:
+            parent_item = self.db_manager.get_action_item(current_item.parent_id)
+            if parent_item:
+                # Parent section header
+                parent_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
+                parent_header.grid(row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
+                ctk.CTkLabel(
+                    parent_header,
+                    text="PARENT ITEM",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="cyan"
+                ).pack(pady=5)
+                current_row += 1
+
+                # Create header row for parent
+                self.create_header_row(current_row)
+                current_row += 1
+
+                # Display parent
+                self.create_item_row(parent_item, current_row)
+                current_row += 1
+
+                # Add spacing
+                ctk.CTkLabel(self.scroll_frame, text="").grid(row=current_row, column=0, pady=10)
+                current_row += 1
+
         # Get children
-        children = self.db_manager.get_children(self.parent_item_id)
+        children = self.db_manager.get_children(self.current_item_id)
 
-        if not children:
+        # Show children section
+        if children:
+            # Children section header
+            children_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
+            children_header.grid(row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
             ctk.CTkLabel(
-                self.scroll_frame,
-                text="No child items found",
-                font=ctk.CTkFont(size=14)
-            ).grid(row=0, column=0, pady=20)
-            return
+                children_header,
+                text="CHILD ITEMS",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="yellow"
+            ).pack(pady=5)
+            current_row += 1
 
-        # Create header row
+            # Create header row for children
+            self.create_header_row(current_row)
+            current_row += 1
+
+            # Display each child
+            for child in children:
+                self.create_item_row(child, current_row)
+                current_row += 1
+        else:
+            # Only show "no children" message if there's also no parent
+            if not (current_item and current_item.parent_id):
+                ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No related items found",
+                    font=ctk.CTkFont(size=14)
+                ).grid(row=current_row, column=0, pady=20)
+            elif current_row > 0:
+                # There is a parent but no children
+                children_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
+                children_header.grid(row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
+                ctk.CTkLabel(
+                    children_header,
+                    text="CHILD ITEMS",
+                    font=ctk.CTkFont(size=14, weight="bold"),
+                    text_color="yellow"
+                ).pack(pady=5)
+                current_row += 1
+
+                ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No child items found",
+                    font=ctk.CTkFont(size=12)
+                ).grid(row=current_row, column=0, pady=10)
+
+    def create_header_row(self, row: int):
+        """Create a header row for items."""
         header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
-        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
+        header_frame.grid(row=row, column=0, sticky="ew", pady=(0, 5), padx=5)
         header_frame.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(header_frame, text="Title (Who)", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
@@ -1731,12 +1832,8 @@ class ShowChildrenDialog(ctk.CTkToplevel):
             row=0, column=4, padx=5, pady=5
         )
 
-        # Display each child
-        for idx, child in enumerate(children):
-            self.create_child_row(child, idx + 1)
-
-    def create_child_row(self, item: ActionItem, row: int):
-        """Create a row for a child item."""
+    def create_item_row(self, item: ActionItem, row: int):
+        """Create a row for an item (parent or child)."""
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
         frame.grid_columnconfigure(0, weight=1)
@@ -1782,16 +1879,16 @@ class ShowChildrenDialog(ctk.CTkToplevel):
             frame,
             text="Edit",
             width=80,
-            command=lambda: self.edit_child(item.id)
+            command=lambda: self.edit_item(item.id)
         )
         btn_edit.grid(row=0, column=4, padx=5, pady=5)
 
-    def edit_child(self, child_id: str):
-        """Open editor for a child item."""
+    def edit_item(self, item_id: str):
+        """Open editor for an item."""
         # Close this dialog
         self.destroy()
-        # Open editor for the child
-        ItemEditorDialog(self.master, self.db_manager, child_id, vps_manager=self.vps_manager)
+        # Open editor for the item
+        ItemEditorDialog(self.master, self.db_manager, item_id, vps_manager=self.vps_manager)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
@@ -1799,7 +1896,7 @@ class ShowChildrenDialog(ctk.CTkToplevel):
 
         # Get dialog dimensions
         dialog_width = 900
-        dialog_height = 600
+        dialog_height = 700
 
         # Get parent window position
         parent_x = self.master.winfo_rootx()
