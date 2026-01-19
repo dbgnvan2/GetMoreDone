@@ -448,8 +448,24 @@ class DatabaseManager:
 
     def save_defaults(self, defaults: Defaults):
         """Save or update defaults."""
+        # SQLite treats NULL != NULL, so INSERT OR REPLACE doesn't work properly
+        # with NULL in PRIMARY KEY. We need to DELETE first, then INSERT.
+
+        # Delete any existing row with the same scope
+        if defaults.scope_key is None:
+            self.db.conn.execute(
+                "DELETE FROM defaults WHERE scope_type = ? AND scope_key IS NULL",
+                (defaults.scope_type,)
+            )
+        else:
+            self.db.conn.execute(
+                "DELETE FROM defaults WHERE scope_type = ? AND scope_key = ?",
+                (defaults.scope_type, defaults.scope_key)
+            )
+
+        # Insert the new defaults
         self.db.conn.execute("""
-            INSERT OR REPLACE INTO defaults (
+            INSERT INTO defaults (
                 scope_type, scope_key, contact_id, who, importance, urgency, size, value,
                 "group", category, planned_minutes, start_offset_days, due_offset_days
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
