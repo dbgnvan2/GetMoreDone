@@ -38,6 +38,7 @@ class SettingsScreen(ctk.CTkFrame):
         self.create_obsidian_section()
         self.create_appearance_section()
         self.create_date_increment_section()
+        self.create_organizational_factors_section()
 
     def create_header(self):
         """Create header."""
@@ -290,6 +291,291 @@ class SettingsScreen(ctk.CTkFrame):
             text="✓ Settings saved",
             text_color="green"
         )
+
+    def create_organizational_factors_section(self):
+        """Create organizational factors management section."""
+        section = ctk.CTkFrame(self)
+        section.grid(row=5, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(0, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Organizational Factors",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 15))
+
+        # Info
+        info_text = ("Manage the values for Group and Category fields.\n"
+                    "Edit values to rename them across all items, or delete values with replacement.")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=1, column=0, sticky="w", padx=10, pady=5
+        )
+
+        # Create tabs for Groups and Categories
+        tabview = ctk.CTkTabview(section)
+        tabview.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
+
+        # Groups tab
+        groups_tab = tabview.add("Groups")
+        self.create_factor_editor(groups_tab, "group")
+
+        # Categories tab
+        categories_tab = tabview.add("Categories")
+        self.create_factor_editor(categories_tab, "category")
+
+    def create_factor_editor(self, parent, factor_type: str):
+        """Create editor for a specific organizational factor."""
+        parent.grid_columnconfigure(0, weight=1)
+
+        # Scrollable frame for list
+        scroll = ctk.CTkScrollableFrame(parent, height=300)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        scroll.grid_columnconfigure(1, weight=1)
+
+        # Get current values
+        if factor_type == "group":
+            values = self.db_manager.get_distinct_groups()
+        else:
+            values = self.db_manager.get_distinct_categories()
+
+        # Display each value with edit/delete buttons
+        for idx, value in enumerate(values):
+            # Value label
+            value_label = ctk.CTkLabel(scroll, text=value, anchor="w")
+            value_label.grid(row=idx, column=0, sticky="w", padx=10, pady=5)
+
+            # Edit button
+            btn_edit = ctk.CTkButton(
+                scroll,
+                text="Rename",
+                width=80,
+                command=lambda v=value, ft=factor_type: self.edit_factor_value(v, ft)
+            )
+            btn_edit.grid(row=idx, column=1, padx=5, pady=5)
+
+            # Delete button
+            btn_delete = ctk.CTkButton(
+                scroll,
+                text="Delete",
+                width=80,
+                fg_color="darkred",
+                hover_color="red",
+                command=lambda v=value, ft=factor_type: self.delete_factor_value(v, ft)
+            )
+            btn_delete.grid(row=idx, column=2, padx=5, pady=5)
+
+        # Add refresh button
+        btn_refresh = ctk.CTkButton(
+            parent,
+            text="Refresh List",
+            command=lambda: self.refresh_organizational_factors()
+        )
+        btn_refresh.grid(row=1, column=0, padx=10, pady=5)
+
+    def edit_factor_value(self, old_value: str, factor_type: str):
+        """Edit (rename) an organizational factor value."""
+        # Create dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Rename {factor_type.capitalize()}")
+        dialog.geometry("500x250")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        # Content
+        ctk.CTkLabel(
+            dialog,
+            text=f"Rename {factor_type.capitalize()}: {old_value}",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(padx=20, pady=(20, 10))
+
+        ctk.CTkLabel(dialog, text="New value:").pack(padx=20, pady=5)
+        new_value_var = ctk.StringVar(value=old_value)
+        entry = ctk.CTkEntry(dialog, textvariable=new_value_var, width=300)
+        entry.pack(padx=20, pady=5)
+
+        # Global replace option
+        replace_var = ctk.BooleanVar(value=True)
+        checkbox = ctk.CTkCheckBox(
+            dialog,
+            text="Replace this value in all existing items",
+            variable=replace_var
+        )
+        checkbox.pack(padx=20, pady=10)
+
+        # Status label
+        status_label = ctk.CTkLabel(dialog, text="")
+        status_label.pack(padx=20, pady=5)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(padx=20, pady=10)
+
+        def save():
+            new_value = new_value_var.get().strip()
+            if not new_value:
+                status_label.configure(text="Please enter a value", text_color="red")
+                return
+
+            if new_value == old_value:
+                dialog.destroy()
+                return
+
+            try:
+                if replace_var.get():
+                    # Global replace
+                    self.db_manager.update_organizational_factor(
+                        factor_type, old_value, new_value
+                    )
+                    status_label.configure(
+                        text=f"✓ Replaced in all items",
+                        text_color="green"
+                    )
+                else:
+                    status_label.configure(
+                        text="Value not replaced (option unchecked)",
+                        text_color="orange"
+                    )
+
+                # Close dialog after a brief delay
+                dialog.after(1000, dialog.destroy)
+                # Refresh the organizational factors section
+                self.refresh_organizational_factors()
+
+            except Exception as e:
+                status_label.configure(text=f"Error: {str(e)}", text_color="red")
+
+        ctk.CTkButton(btn_frame, text="Save", command=save).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy).pack(side="left", padx=5)
+
+    def delete_factor_value(self, value: str, factor_type: str):
+        """Delete an organizational factor value."""
+        # Create dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Delete {factor_type.capitalize()}")
+        dialog.geometry("500x300")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        # Content
+        ctk.CTkLabel(
+            dialog,
+            text=f"Delete {factor_type.capitalize()}: {value}",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(padx=20, pady=(20, 10))
+
+        ctk.CTkLabel(
+            dialog,
+            text="What should happen to items with this value?",
+            wraplength=450
+        ).pack(padx=20, pady=5)
+
+        # Replacement options
+        action_var = ctk.StringVar(value="clear")
+
+        ctk.CTkRadioButton(
+            dialog,
+            text="Clear the value (set to empty)",
+            variable=action_var,
+            value="clear"
+        ).pack(padx=20, pady=5)
+
+        replace_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        replace_frame.pack(padx=20, pady=5)
+
+        ctk.CTkRadioButton(
+            replace_frame,
+            text="Replace with:",
+            variable=action_var,
+            value="replace"
+        ).pack(side="left", padx=5)
+
+        # Get other values for replacement
+        if factor_type == "group":
+            other_values = [v for v in self.db_manager.get_distinct_groups() if v != value]
+        else:
+            other_values = [v for v in self.db_manager.get_distinct_categories() if v != value]
+
+        replacement_var = ctk.StringVar(value=other_values[0] if other_values else "")
+        replacement_combo = ctk.CTkComboBox(
+            replace_frame,
+            values=other_values if other_values else [""],
+            variable=replacement_var,
+            width=200
+        )
+        replacement_combo.pack(side="left", padx=5)
+
+        # Status label
+        status_label = ctk.CTkLabel(dialog, text="")
+        status_label.pack(padx=20, pady=5)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(padx=20, pady=10)
+
+        def delete():
+            try:
+                if action_var.get() == "clear":
+                    # Remove the value (set to NULL)
+                    self.db_manager.delete_organizational_factor(
+                        factor_type, value, None
+                    )
+                    status_label.configure(
+                        text=f"✓ Deleted (cleared in all items)",
+                        text_color="green"
+                    )
+                else:
+                    # Replace with another value
+                    replacement = replacement_var.get().strip()
+                    if not replacement:
+                        status_label.configure(text="Please select a replacement value", text_color="red")
+                        return
+
+                    self.db_manager.delete_organizational_factor(
+                        factor_type, value, replacement
+                    )
+                    status_label.configure(
+                        text=f"✓ Deleted (replaced with '{replacement}')",
+                        text_color="green"
+                    )
+
+                # Close dialog after a brief delay
+                dialog.after(1000, dialog.destroy)
+                # Refresh the organizational factors section
+                self.refresh_organizational_factors()
+
+            except Exception as e:
+                status_label.configure(text=f"Error: {str(e)}", text_color="red")
+
+        ctk.CTkButton(btn_frame, text="Delete", fg_color="darkred", hover_color="red", command=delete).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy).pack(side="left", padx=5)
+
+    def refresh_organizational_factors(self):
+        """Refresh the organizational factors section."""
+        # Destroy and recreate the section
+        # Find the section frame
+        for child in self.winfo_children():
+            if isinstance(child, ctk.CTkFrame):
+                # Check if it's the organizational factors section (row 5)
+                info = child.grid_info()
+                if info.get('row') == 5:
+                    child.destroy()
+                    break
+
+        # Recreate the section
+        self.create_organizational_factors_section()
 
     def backup_database(self):
         """Backup the database file."""

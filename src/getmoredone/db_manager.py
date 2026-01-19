@@ -430,10 +430,17 @@ class DatabaseManager:
         if scope_type == "system":
             scope_key = None
 
-        row = self.db.conn.execute(
-            "SELECT * FROM defaults WHERE scope_type = ? AND scope_key IS ?",
-            (scope_type, scope_key)
-        ).fetchone()
+        # SQLite requires special handling for NULL comparisons
+        if scope_key is None:
+            row = self.db.conn.execute(
+                "SELECT * FROM defaults WHERE scope_type = ? AND scope_key IS NULL",
+                (scope_type,)
+            ).fetchone()
+        else:
+            row = self.db.conn.execute(
+                "SELECT * FROM defaults WHERE scope_type = ? AND scope_key = ?",
+                (scope_type, scope_key)
+            ).fetchone()
 
         if row:
             return self._row_to_defaults(row)
@@ -704,6 +711,50 @@ class DatabaseManager:
             "SELECT DISTINCT category FROM action_items WHERE category IS NOT NULL ORDER BY category"
         ).fetchall()
         return [row["category"] for row in rows]
+
+    def update_organizational_factor(self, factor_type: str, old_value: str, new_value: str):
+        """Update an organizational factor value across all items."""
+        if factor_type == "group":
+            self.db.conn.execute(
+                'UPDATE action_items SET "group" = ? WHERE "group" = ?',
+                (new_value, old_value)
+            )
+        elif factor_type == "category":
+            self.db.conn.execute(
+                'UPDATE action_items SET category = ? WHERE category = ?',
+                (new_value, old_value)
+            )
+        self.db.conn.commit()
+
+    def delete_organizational_factor(self, factor_type: str, value: str, replacement: Optional[str]):
+        """Delete an organizational factor value, optionally replacing with another value."""
+        if factor_type == "group":
+            if replacement is None:
+                # Clear the value
+                self.db.conn.execute(
+                    'UPDATE action_items SET "group" = NULL WHERE "group" = ?',
+                    (value,)
+                )
+            else:
+                # Replace with another value
+                self.db.conn.execute(
+                    'UPDATE action_items SET "group" = ? WHERE "group" = ?',
+                    (replacement, value)
+                )
+        elif factor_type == "category":
+            if replacement is None:
+                # Clear the value
+                self.db.conn.execute(
+                    'UPDATE action_items SET category = NULL WHERE category = ?',
+                    (value,)
+                )
+            else:
+                # Replace with another value
+                self.db.conn.execute(
+                    'UPDATE action_items SET category = ? WHERE category = ?',
+                    (replacement, value)
+                )
+        self.db.conn.commit()
 
     # ==================== CONTACTS ====================
 

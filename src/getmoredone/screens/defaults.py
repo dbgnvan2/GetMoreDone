@@ -163,14 +163,18 @@ class DefaultsScreen(ctk.CTkFrame):
 
         # Group
         ctk.CTkLabel(scroll, text="Group:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-        self.group_entry = ctk.CTkEntry(scroll, width=200)
-        self.group_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        group_values = self.db_manager.get_distinct_groups()
+        self.group_var = ctk.StringVar(value="")
+        self.group_combo = ctk.CTkComboBox(scroll, values=[""] + group_values, variable=self.group_var, width=200)
+        self.group_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
         # Category
         ctk.CTkLabel(scroll, text="Category:").grid(row=row, column=0, sticky="w", padx=10, pady=5)
-        self.category_entry = ctk.CTkEntry(scroll, width=200)
-        self.category_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        category_values = self.db_manager.get_distinct_categories()
+        self.category_var = ctk.StringVar(value="")
+        self.category_combo = ctk.CTkComboBox(scroll, values=[""] + category_values, variable=self.category_var, width=200)
+        self.category_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
         # Planned minutes
@@ -264,10 +268,10 @@ class DefaultsScreen(ctk.CTkFrame):
             self.who_field_var.set(defaults.who)
 
         if defaults.group:
-            self.group_entry.insert(0, defaults.group)
+            self.group_var.set(defaults.group)
 
         if defaults.category:
-            self.category_entry.insert(0, defaults.category)
+            self.category_var.set(defaults.category)
 
         if defaults.planned_minutes is not None:
             self.planned_minutes_entry.insert(0, str(defaults.planned_minutes))
@@ -289,8 +293,8 @@ class DefaultsScreen(ctk.CTkFrame):
         self.size_var.set("")
         self.value_var.set("")
         self.who_field_var.set("")
-        self.group_entry.delete(0, "end")
-        self.category_entry.delete(0, "end")
+        self.group_var.set("")
+        self.category_var.set("")
         self.planned_minutes_entry.delete(0, "end")
         self.start_offset_entry.delete(0, "end")
         self.due_offset_entry.delete(0, "end")
@@ -326,8 +330,8 @@ class DefaultsScreen(ctk.CTkFrame):
                 urgency=self.extract_factor_value(self.urgency_var.get()),
                 size=self.extract_factor_value(self.size_var.get()),
                 value=self.extract_factor_value(self.value_var.get()),
-                group=self.group_entry.get().strip() or None,
-                category=self.category_entry.get().strip() or None,
+                group=self.group_var.get().strip() or None,
+                category=self.category_var.get().strip() or None,
                 planned_minutes=int(self.planned_minutes_entry.get()) if self.planned_minutes_entry.get().strip() else None,
                 start_offset_days=start_offset,
                 due_offset_days=due_offset
