@@ -26,8 +26,8 @@ class GetMoreDoneApp(ctk.CTk):
         # Initialize database
         self.db_manager = DatabaseManager()
 
-        # Initialize VPS manager
-        self.vps_manager = VPSManager()
+        # Initialize VPS manager with shared db_manager
+        self.vps_manager = VPSManager(db_manager=self.db_manager)
 
         # Configure grid
         self.grid_columnconfigure(1, weight=1)

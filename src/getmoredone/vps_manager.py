@@ -9,16 +9,21 @@ from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
 from .database import Database
+from .db_manager import DatabaseManager
 
 
 class VPSManager:
     """Manages all VPS database operations."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, db_manager: Optional[DatabaseManager] = None):
         """Initialize VPS manager with database connection."""
         self.db = Database(db_path)
         self.db.connect()
         self.db.initialize_schema()
+
+        # Store db_manager for action item operations
+        # If not provided, create one using the same db_path
+        self.db_manager = db_manager if db_manager else DatabaseManager(db_path)
 
     def close(self):
         """Close database connection."""
@@ -598,7 +603,7 @@ class VPSManager:
                 )
 
                 # Create the item (apply_defaults=True will use system defaults)
-                item_id = self.db.create_action_item(action_item, apply_defaults=True)
+                item_id = self.db_manager.create_action_item(action_item, apply_defaults=True)
                 created_item_ids.append(item_id)
 
                 # Increment day offset for next action item

@@ -431,6 +431,253 @@ class TestVPSRecordCreation:
         assert any("Claude Test" in str(title) for title in breadcrumb_titles if title)
 
 
+class TestWeekActionWithSteps:
+    """Test creating Week Actions with Steps that auto-generate Action Items."""
+
+    def test_create_week_action_with_steps_creates_action_items(self, vps_manager):
+        """Test that Week Action steps auto-create Action Items in the database."""
+        # Setup full hierarchy
+        segments = vps_manager.get_all_segments()
+        segment_id = segments[0]['id']
+
+        tl_vision_id = vps_manager.create_tl_vision(
+            segment_description_id=segment_id,
+            start_year=2026,
+            end_year=2031,
+            title="Vision",
+            vision_statement="Statement"
+        )
+
+        annual_vision_id = vps_manager.create_annual_vision(
+            tl_vision_id=tl_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            title="Annual",
+            vision_statement="Annual"
+        )
+
+        annual_plan_id = vps_manager.create_annual_plan(
+            annual_vision_id=annual_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            theme="Theme",
+            objective="Objective"
+        )
+
+        quarter_id = vps_manager.create_quarter_initiative(
+            annual_plan_id=annual_plan_id,
+            segment_description_id=segment_id,
+            quarter=1,
+            year=2026,
+            title="Q1",
+            outcome_statement="Outcomes"
+        )
+
+        month_id = vps_manager.create_month_tactic(
+            quarter_initiative_id=quarter_id,
+            segment_description_id=segment_id,
+            month=1,
+            year=2026,
+            priority_focus="Focus",
+            description="Description"
+        )
+
+        # Create Week Action with steps and key results
+        week_start = date(2026, 1, 19).isoformat()
+        week_end = date(2026, 1, 25).isoformat()
+
+        week_id = vps_manager.create_week_action(
+            month_tactic_id=month_id,
+            segment_description_id=segment_id,
+            week_start_date=week_start,
+            week_end_date=week_end,
+            title="Claude Test Week Action with Steps",
+            description="Testing auto-creation of action items",
+            outcome_expected="All steps should create action items",
+            step_1="Complete first task",
+            key_result_1="Task 1 completed successfully",
+            step_2="Complete second task",
+            key_result_2="Task 2 completed successfully",
+            step_3="Complete third task",
+            key_result_3="Task 3 completed successfully"
+        )
+
+        assert week_id is not None
+        assert week_id.startswith("wa-")
+
+        # Verify week action was created
+        week_action = vps_manager.get_week_action(week_id)
+        assert week_action is not None
+        assert week_action['step_1'] == "Complete first task"
+        assert week_action['key_result_1'] == "Task 1 completed successfully"
+
+        # Auto-create action items from steps
+        created_item_ids = vps_manager.auto_create_action_items_from_steps(week_id)
+
+        # Verify that 3 action items were created
+        assert len(created_item_ids) == 3, f"Expected 3 action items, got {len(created_item_ids)}"
+
+        # Verify each action item was created in the database
+        for i, item_id in enumerate(created_item_ids, start=1):
+            action_item = vps_manager.db_manager.get_action_item(item_id)
+            assert action_item is not None, f"Action item {i} not found in database"
+            assert action_item.week_action_id == week_id
+            assert action_item.segment_description_id == segment_id
+            assert f"Step {i}:" in action_item.description
+            assert f"Complete {['first', 'second', 'third'][i-1]} task" in action_item.title
+
+        # Verify dates are incrementing
+        first_item = vps_manager.db_manager.get_action_item(created_item_ids[0])
+        second_item = vps_manager.db_manager.get_action_item(created_item_ids[1])
+        third_item = vps_manager.db_manager.get_action_item(created_item_ids[2])
+
+        assert first_item.start_date == "2026-01-19"
+        assert second_item.start_date == "2026-01-20"
+        assert third_item.start_date == "2026-01-21"
+
+    def test_create_week_action_with_partial_steps(self, vps_manager):
+        """Test that only non-blank steps create action items."""
+        # Setup
+        segments = vps_manager.get_all_segments()
+        segment_id = segments[0]['id']
+
+        tl_vision_id = vps_manager.create_tl_vision(
+            segment_description_id=segment_id,
+            start_year=2026,
+            end_year=2031,
+            title="Vision",
+            vision_statement="Statement"
+        )
+
+        annual_vision_id = vps_manager.create_annual_vision(
+            tl_vision_id=tl_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            title="Annual",
+            vision_statement="Annual"
+        )
+
+        annual_plan_id = vps_manager.create_annual_plan(
+            annual_vision_id=annual_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            theme="Theme",
+            objective="Objective"
+        )
+
+        quarter_id = vps_manager.create_quarter_initiative(
+            annual_plan_id=annual_plan_id,
+            segment_description_id=segment_id,
+            quarter=1,
+            year=2026,
+            title="Q1",
+            outcome_statement="Outcomes"
+        )
+
+        month_id = vps_manager.create_month_tactic(
+            quarter_initiative_id=quarter_id,
+            segment_description_id=segment_id,
+            month=1,
+            year=2026,
+            priority_focus="Focus",
+            description="Description"
+        )
+
+        # Create Week Action with only 2 steps filled
+        week_start = date(2026, 1, 19).isoformat()
+        week_end = date(2026, 1, 25).isoformat()
+
+        week_id = vps_manager.create_week_action(
+            month_tactic_id=month_id,
+            segment_description_id=segment_id,
+            week_start_date=week_start,
+            week_end_date=week_end,
+            title="Partial Steps Week",
+            step_1="First step only",
+            step_3="Third step only"
+            # step_2, step_4, step_5 are blank
+        )
+
+        # Auto-create action items
+        created_item_ids = vps_manager.auto_create_action_items_from_steps(week_id)
+
+        # Should create exactly 2 action items (step_1 and step_3)
+        assert len(created_item_ids) == 2
+
+        # Verify items were created
+        first_item = vps_manager.db_manager.get_action_item(created_item_ids[0])
+        second_item = vps_manager.db_manager.get_action_item(created_item_ids[1])
+
+        assert "First step only" in first_item.title
+        assert "Third step only" in second_item.title
+
+    def test_week_action_with_no_steps_creates_no_items(self, vps_manager):
+        """Test that Week Action with no steps creates no action items."""
+        # Setup
+        segments = vps_manager.get_all_segments()
+        segment_id = segments[0]['id']
+
+        tl_vision_id = vps_manager.create_tl_vision(
+            segment_description_id=segment_id,
+            start_year=2026,
+            end_year=2031,
+            title="Vision",
+            vision_statement="Statement"
+        )
+
+        annual_vision_id = vps_manager.create_annual_vision(
+            tl_vision_id=tl_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            title="Annual",
+            vision_statement="Annual"
+        )
+
+        annual_plan_id = vps_manager.create_annual_plan(
+            annual_vision_id=annual_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            theme="Theme",
+            objective="Objective"
+        )
+
+        quarter_id = vps_manager.create_quarter_initiative(
+            annual_plan_id=annual_plan_id,
+            segment_description_id=segment_id,
+            quarter=1,
+            year=2026,
+            title="Q1",
+            outcome_statement="Outcomes"
+        )
+
+        month_id = vps_manager.create_month_tactic(
+            quarter_initiative_id=quarter_id,
+            segment_description_id=segment_id,
+            month=1,
+            year=2026,
+            priority_focus="Focus",
+            description="Description"
+        )
+
+        # Create Week Action with NO steps
+        week_start = date(2026, 1, 19).isoformat()
+        week_end = date(2026, 1, 25).isoformat()
+
+        week_id = vps_manager.create_week_action(
+            month_tactic_id=month_id,
+            segment_description_id=segment_id,
+            week_start_date=week_start,
+            week_end_date=week_end,
+            title="No Steps Week"
+        )
+
+        # Auto-create action items (should create none)
+        created_item_ids = vps_manager.auto_create_action_items_from_steps(week_id)
+
+        # Should create 0 action items
+        assert len(created_item_ids) == 0
+
+
 class TestVPSRecordUpdates:
     """Test updating VPS records and marking them complete."""
 
