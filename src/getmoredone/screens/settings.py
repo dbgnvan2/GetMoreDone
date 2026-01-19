@@ -29,16 +29,13 @@ class SettingsScreen(ctk.CTkFrame):
         self.settings = AppSettings.load()
 
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
         # Create header
         self.create_header()
 
-        # Create settings sections
-        self.create_database_section()
-        self.create_obsidian_section()
-        self.create_appearance_section()
-        self.create_date_increment_section()
-        self.create_organizational_factors_section()
+        # Create tabbed interface
+        self.create_tabs()
 
     def create_header(self):
         """Create header."""
@@ -52,10 +49,35 @@ class SettingsScreen(ctk.CTkFrame):
         )
         title.pack(side="left", padx=10, pady=10)
 
-    def create_database_section(self):
+    def create_tabs(self):
+        """Create tabbed interface for settings."""
+        # Create tabview
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+        # Tab 1: Database Management (Database + Obsidian)
+        db_tab = self.tabview.add("Database Management")
+        db_tab.grid_columnconfigure(0, weight=1)
+        self.create_database_section(db_tab)
+        self.create_obsidian_section(db_tab)
+
+        # Tab 2: Appearance (Appearance + Date Settings)
+        appearance_tab = self.tabview.add("Appearance")
+        appearance_tab.grid_columnconfigure(0, weight=1)
+        self.create_appearance_section(appearance_tab)
+        self.create_date_increment_section(appearance_tab)
+
+        # Tab 3: Organizational Factors
+        org_tab = self.tabview.add("Organizational Factors")
+        org_tab.grid_columnconfigure(0, weight=1)
+        self.create_organizational_factors_section(org_tab)
+
+    def create_database_section(self, parent=None):
         """Create database management section."""
-        section = ctk.CTkFrame(self)
-        section.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         section.grid_columnconfigure(1, weight=1)
 
         # Section title
@@ -89,10 +111,12 @@ class SettingsScreen(ctk.CTkFrame):
             row=3, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
 
-    def create_obsidian_section(self):
+    def create_obsidian_section(self, parent=None):
         """Create Obsidian integration section."""
-        section = ctk.CTkFrame(self)
-        section.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
         section.grid_columnconfigure(1, weight=1)
 
         # Section title
@@ -199,10 +223,12 @@ class SettingsScreen(ctk.CTkFrame):
                 text_color="red"
             )
 
-    def create_appearance_section(self):
+    def create_appearance_section(self, parent=None):
         """Create appearance settings section."""
-        section = ctk.CTkFrame(self)
-        section.grid(row=3, column=0, sticky="ew", padx=10, pady=10)
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
 
         # Section title
         ctk.CTkLabel(
@@ -224,10 +250,12 @@ class SettingsScreen(ctk.CTkFrame):
         )
         theme_combo.grid(row=1, column=1, sticky="w", padx=10, pady=5)
 
-    def create_date_increment_section(self):
+    def create_date_increment_section(self, parent=None):
         """Create date increment settings section."""
-        section = ctk.CTkFrame(self)
-        section.grid(row=4, column=0, sticky="ew", padx=10, pady=10)
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
         section.grid_columnconfigure(1, weight=1)
 
         # Section title
@@ -292,10 +320,12 @@ class SettingsScreen(ctk.CTkFrame):
             text_color="green"
         )
 
-    def create_organizational_factors_section(self):
+    def create_organizational_factors_section(self, parent=None):
         """Create organizational factors management section."""
-        section = ctk.CTkFrame(self)
-        section.grid(row=5, column=0, sticky="ew", padx=10, pady=10)
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         section.grid_columnconfigure(0, weight=1)
 
         # Section title
@@ -564,18 +594,15 @@ class SettingsScreen(ctk.CTkFrame):
 
     def refresh_organizational_factors(self):
         """Refresh the organizational factors section."""
-        # Destroy and recreate the section
-        # Find the section frame
-        for child in self.winfo_children():
-            if isinstance(child, ctk.CTkFrame):
-                # Check if it's the organizational factors section (row 5)
-                info = child.grid_info()
-                if info.get('row') == 5:
-                    child.destroy()
-                    break
+        # Get the Organizational Factors tab
+        org_tab = self.tabview.tab("Organizational Factors")
+
+        # Destroy all children in the tab
+        for child in org_tab.winfo_children():
+            child.destroy()
 
         # Recreate the section
-        self.create_organizational_factors_section()
+        self.create_organizational_factors_section(org_tab)
 
     def backup_database(self):
         """Backup the database file."""
