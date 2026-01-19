@@ -173,7 +173,7 @@ class DatabaseManager:
 
     def duplicate_action_item(self, item_id: str) -> Optional[str]:
         """
-        Duplicate an action item (creates new item with same fields).
+        Duplicate an action item (creates new item with same fields and linked notes).
 
         Returns:
             ID of new item, or None if original not found
@@ -199,7 +199,22 @@ class DatabaseManager:
             planned_minutes=original.planned_minutes
         )
 
-        return self.create_action_item(new_item, apply_defaults=False)
+        new_id = self.create_action_item(new_item, apply_defaults=False)
+
+        # Duplicate linked notes and other links
+        if new_id:
+            original_links = self.get_item_links(item_id)
+            for link in original_links:
+                # Create a new link with the same properties but new ID and item_id
+                new_link = ItemLink(
+                    item_id=new_id,
+                    url=link.url,
+                    label=link.label,
+                    link_type=link.link_type
+                )
+                self.add_item_link(new_link)
+
+        return new_id
 
     def complete_and_create(self, item_id: str) -> Optional[str]:
         """

@@ -486,8 +486,9 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_complete = ctk.CTkButton(top_row, text="Complete", command=self.complete_item, width=100)
             btn_complete.pack(side="left", padx=5)
 
-            btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event, width=100, fg_color="purple", hover_color="darkviolet")
-            btn_calendar.pack(side="left", padx=5)
+        # Calendar button (available for both new and existing items)
+        btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event, width=100, fg_color="purple", hover_color="darkviolet")
+        btn_calendar.pack(side="left", padx=5)
 
         # Error label
         self.error_label = ctk.CTkLabel(top_row, text="", text_color="red", wraplength=600)
