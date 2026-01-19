@@ -36,6 +36,7 @@ class AppSettings:
     enable_break_sounds: bool = True
     break_start_sound: Optional[str] = None  # Path to WAV file for break start
     break_end_sound: Optional[str] = None    # Path to WAV file for break end
+    music_folder: Optional[str] = None       # Path to folder containing music files for timer
 
     # Date increment settings
     include_saturday: bool = True  # Include Saturday in date calculations (push, +/-)

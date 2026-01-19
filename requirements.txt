@@ -6,6 +6,7 @@ pytest-cov>=4.1.0
 # Option 1: CustomTkinter (modern themed tkinter)
 customtkinter>=5.2.0
 tkcalendar>=1.6.1  # Calendar date picker widget
+pygame>=2.5.0  # Audio playback for timer music
 
 # Option 2: PyQt6 (more powerful, professional)
 # PyQt6>=6.6.0

@@ -67,7 +67,12 @@ class SettingsScreen(ctk.CTkFrame):
         self.create_appearance_section(appearance_tab)
         self.create_date_increment_section(appearance_tab)
 
-        # Tab 3: Organizational Factors
+        # Tab 3: Timer & Audio
+        timer_tab = self.tabview.add("Timer & Audio")
+        timer_tab.grid_columnconfigure(0, weight=1)
+        self.create_timer_audio_section(timer_tab)
+
+        # Tab 4: Organizational Factors
         org_tab = self.tabview.add("Organizational Factors")
         org_tab.grid_columnconfigure(0, weight=1)
         self.create_organizational_factors_section(org_tab)
@@ -316,6 +321,74 @@ class SettingsScreen(ctk.CTkFrame):
         self.settings.save()
 
         self.date_increment_status_label.configure(
+            text="✓ Settings saved",
+            text_color="green"
+        )
+
+    def create_timer_audio_section(self, parent=None):
+        """Create timer and audio settings section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Timer Music",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(10, 15))
+
+        # Music folder path
+        ctk.CTkLabel(section, text="Music Folder:").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+
+        self.music_folder_var = ctk.StringVar(value=self.settings.music_folder or "")
+        music_folder_entry = ctk.CTkEntry(section, textvariable=self.music_folder_var, width=300)
+        music_folder_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+        btn_browse = ctk.CTkButton(
+            section,
+            text="Browse",
+            width=80,
+            command=self.browse_music_folder
+        )
+        btn_browse.grid(row=1, column=2, padx=5, pady=5)
+
+        # Save button
+        btn_save = ctk.CTkButton(
+            section,
+            text="Save Settings",
+            command=self.save_timer_audio_settings,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=150
+        )
+        btn_save.grid(row=2, column=0, sticky="w", padx=10, pady=10)
+
+        # Status label
+        self.timer_audio_status_label = ctk.CTkLabel(section, text="", text_color="green")
+        self.timer_audio_status_label.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+
+        # Info
+        info_text = ("Select a folder containing music files (MP3, WAV, OGG, FLAC).\n"
+                    "When you start a timer, a random music file from this folder will play.")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=3, column=0, columnspan=3, sticky="w", padx=10, pady=5
+        )
+
+    def browse_music_folder(self):
+        """Open folder browser for music folder."""
+        path = filedialog.askdirectory(title="Select Music Folder")
+        if path:
+            self.music_folder_var.set(path)
+
+    def save_timer_audio_settings(self):
+        """Save timer and audio settings."""
+        self.settings.music_folder = self.music_folder_var.get().strip() or None
+        self.settings.save()
+
+        self.timer_audio_status_label.configure(
             text="✓ Settings saved",
             text_color="green"
         )

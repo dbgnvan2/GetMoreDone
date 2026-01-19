@@ -6,6 +6,9 @@ Provides a countdown timer with pause/resume and completion workflows.
 import customtkinter as ctk
 from datetime import datetime, timedelta, date
 from typing import Optional, Callable
+import random
+import os
+from pathlib import Path
 from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
@@ -44,6 +47,10 @@ class TimerWindow(ctk.CTkToplevel):
 
         # Track pop-out window for note synchronization
         self.next_action_window = None
+
+        # Music playback
+        self.music_player = None
+        self.current_music_file = None
 
         # Window setup
         self.setup_window()
@@ -340,6 +347,9 @@ class TimerWindow(ctk.CTkToplevel):
         self.time_block_value.configure(state="disabled")
         self.status_label.configure(text="Working...", text_color="green")
 
+        # Start music playback
+        self._start_music()
+
         # Start timer loop
         self.tick()
 
@@ -350,6 +360,9 @@ class TimerWindow(ctk.CTkToplevel):
             self.pause_timestamp = datetime.now()
             self.pause_button.configure(text="Resume")
             self.status_label.configure(text="Paused", text_color="orange")
+
+            # Pause music
+            self._pause_music()
 
             # Cancel timer updates
             if self.update_timer_id:
@@ -371,12 +384,19 @@ class TimerWindow(ctk.CTkToplevel):
                 text="Working..." if self.timer_state == "running" else "Break time!",
                 text_color="green" if self.timer_state == "running" else "blue"
             )
+
+            # Resume music
+            self._resume_music()
+
             self.last_tick_time = datetime.now()
             self.tick()
 
     def stop_timer(self):
         """Stop the timer."""
         self.timer_state = "stopped"
+
+        # Stop music
+        self._stop_music()
 
         # Cancel timer updates
         if self.update_timer_id:
@@ -736,6 +756,9 @@ class TimerWindow(ctk.CTkToplevel):
 
     def _cleanup_and_destroy(self):
         """Clean up resources and destroy window safely."""
+        # Stop music if playing
+        self._stop_music()
+
         # Cancel any pending timer callbacks
         if self.update_timer_id:
             try:
@@ -880,6 +903,95 @@ class TimerWindow(ctk.CTkToplevel):
             except:
                 pass  # Silently fail if nothing works
                 pass  # Give up silently
+
+    def _get_random_music_file(self) -> Optional[str]:
+        """Get a random music file from the configured music folder."""
+        if not self.settings.music_folder:
+            return None
+
+        music_folder = Path(self.settings.music_folder)
+        if not music_folder.exists() or not music_folder.is_dir():
+            return None
+
+        # Supported audio formats
+        audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'}
+
+        # Get all audio files in the folder
+        music_files = [
+            f for f in music_folder.iterdir()
+            if f.is_file() and f.suffix.lower() in audio_extensions
+        ]
+
+        if not music_files:
+            return None
+
+        # Return a random music file
+        return str(random.choice(music_files))
+
+    def _start_music(self):
+        """Start playing music from the configured folder."""
+        try:
+            # Get a random music file
+            music_file = self._get_random_music_file()
+            if not music_file:
+                return
+
+            self.current_music_file = music_file
+
+            # Initialize pygame mixer if not already initialized
+            try:
+                import pygame
+                if not pygame.mixer.get_init():
+                    pygame.mixer.init()
+
+                # Load and play the music file
+                pygame.mixer.music.load(music_file)
+                pygame.mixer.music.play(-1)  # -1 means loop indefinitely
+                print(f"[DEBUG] Playing music: {Path(music_file).name}")
+            except ImportError:
+                print("[DEBUG] pygame not installed - music playback disabled")
+                print("[DEBUG] Install pygame with: pip install pygame")
+            except Exception as e:
+                print(f"[DEBUG] Error playing music: {e}")
+
+        except Exception as e:
+            print(f"[DEBUG] Error starting music: {e}")
+
+    def _stop_music(self):
+        """Stop playing music."""
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.music.stop()
+                print("[DEBUG] Music stopped")
+        except ImportError:
+            pass  # pygame not installed
+        except Exception as e:
+            print(f"[DEBUG] Error stopping music: {e}")
+
+    def _pause_music(self):
+        """Pause the currently playing music."""
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.music.pause()
+                print("[DEBUG] Music paused")
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[DEBUG] Error pausing music: {e}")
+
+    def _resume_music(self):
+        """Resume the paused music."""
+        try:
+            import pygame
+            if pygame.mixer.get_init():
+                pygame.mixer.music.unpause()
+                print("[DEBUG] Music resumed")
+        except ImportError:
+            pass
+        except Exception as e:
+            print(f"[DEBUG] Error resuming music: {e}")
 
 
 class CompletionNoteDialog(ctk.CTkToplevel):
