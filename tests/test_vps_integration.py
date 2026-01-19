@@ -677,6 +677,104 @@ class TestWeekActionWithSteps:
         # Should create 0 action items
         assert len(created_item_ids) == 0
 
+    def test_update_week_action_with_new_steps_creates_more_items(self, vps_manager):
+        """Test that updating a Week Action with new steps creates additional Action Items without duplicates."""
+        # Setup hierarchy
+        segments = vps_manager.get_all_segments()
+        segment_id = segments[0]['id']
+
+        tl_vision_id = vps_manager.create_tl_vision(
+            segment_description_id=segment_id,
+            start_year=2026,
+            end_year=2031,
+            title="Vision",
+            vision_statement="Statement"
+        )
+
+        annual_vision_id = vps_manager.create_annual_vision(
+            tl_vision_id=tl_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            title="Annual",
+            vision_statement="Annual"
+        )
+
+        annual_plan_id = vps_manager.create_annual_plan(
+            annual_vision_id=annual_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            theme="Theme",
+            objective="Objective"
+        )
+
+        quarter_id = vps_manager.create_quarter_initiative(
+            annual_plan_id=annual_plan_id,
+            segment_description_id=segment_id,
+            quarter=1,
+            year=2026,
+            title="Q1",
+            outcome_statement="Outcomes"
+        )
+
+        month_id = vps_manager.create_month_tactic(
+            quarter_initiative_id=quarter_id,
+            segment_description_id=segment_id,
+            month=1,
+            year=2026,
+            priority_focus="Focus",
+            description="Description"
+        )
+
+        # Create Week Action with only 2 steps initially
+        week_start = date(2026, 1, 19).isoformat()
+        week_end = date(2026, 1, 25).isoformat()
+
+        week_id = vps_manager.create_week_action(
+            month_tactic_id=month_id,
+            segment_description_id=segment_id,
+            week_start_date=week_start,
+            week_end_date=week_end,
+            title="Week Action with Growing Steps",
+            description="Testing update with new steps",
+            step_1="Initial step one",
+            step_2="Initial step two"
+        )
+
+        # Auto-create action items from initial steps (should create 2)
+        created_item_ids = vps_manager.auto_create_action_items_from_steps(week_id)
+        assert len(created_item_ids) == 2, f"Expected 2 action items initially, got {len(created_item_ids)}"
+
+        # Update the Week Action to add 2 more steps
+        vps_manager.update_week_action(
+            week_id,
+            step_3="Added step three",
+            step_4="Added step four"
+        )
+
+        # Auto-create again (should create 2 more items, NOT recreate the first 2)
+        new_item_ids = vps_manager.auto_create_action_items_from_steps(week_id)
+        assert len(new_item_ids) == 2, f"Expected 2 new action items, got {len(new_item_ids)}"
+
+        # Verify total of 4 action items exist for this week action
+        all_items = vps_manager.get_action_items_for_week_action(week_id)
+        assert len(all_items) == 4, f"Expected 4 total action items, got {len(all_items)}"
+
+        # Verify the descriptions match the expected steps
+        descriptions = [item['description'] for item in all_items]
+        assert any("Step 1:" in desc for desc in descriptions)
+        assert any("Step 2:" in desc for desc in descriptions)
+        assert any("Step 3:" in desc for desc in descriptions)
+        assert any("Step 4:" in desc for desc in descriptions)
+
+        # Verify no duplicates - each step number should appear exactly once
+        step_numbers = []
+        import re
+        for desc in descriptions:
+            match = re.match(r'Step (\d+):', desc)
+            if match:
+                step_numbers.append(int(match.group(1)))
+        assert sorted(step_numbers) == [1, 2, 3, 4], f"Expected steps [1,2,3,4], got {sorted(step_numbers)}"
+
 
 class TestVPSRecordUpdates:
     """Test updating VPS records and marking them complete."""

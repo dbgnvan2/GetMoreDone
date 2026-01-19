@@ -1063,6 +1063,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                     **steps,
                     **key_results
                 )
+                # Auto-create Action Items from non-blank Steps (idempotent - won't create duplicates)
+                self.vps_manager.auto_create_action_items_from_steps(self.action_id)
             else:
                 # Create new
                 action_id = self.vps_manager.create_week_action(

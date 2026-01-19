@@ -557,10 +557,12 @@ class VPSManager:
     def auto_create_action_items_from_steps(self, week_action_id: str) -> List[str]:
         """
         Auto-create Action Items from non-blank Step fields in a Week Action.
+        This method is idempotent - it won't create duplicates if called multiple times.
         Returns list of created action item IDs.
         """
         from datetime import timedelta
         from .models import ActionItem
+        import re
 
         # Get the week action
         week_action = self.get_week_action(week_action_id)
@@ -571,6 +573,18 @@ class VPSManager:
         segment_id = week_action['segment_description_id']
         created_item_ids = []
 
+        # Get existing Action Items for this Week Action
+        existing_items = self.get_action_items_for_week_action(week_action_id)
+
+        # Determine which steps already have Action Items by checking descriptions
+        existing_step_numbers = set()
+        for item in existing_items:
+            desc = item.get('description', '')
+            # Look for "Step {i}:" pattern in description
+            match = re.match(r'Step (\d+):', desc)
+            if match:
+                existing_step_numbers.add(int(match.group(1)))
+
         # Process each step field
         day_offset = 0
         for i in range(1, 6):
@@ -580,8 +594,8 @@ class VPSManager:
             step_value = week_action.get(step_field, '').strip() if week_action.get(step_field) else ''
             key_result_value = week_action.get(key_result_field, '').strip() if week_action.get(key_result_field) else ''
 
-            # Only create Action Item if Step is non-blank
-            if step_value:
+            # Only create Action Item if Step is non-blank AND doesn't already have an item
+            if step_value and i not in existing_step_numbers:
                 # Calculate start date (week_start + day_offset)
                 from datetime import datetime
                 start_dt = datetime.fromisoformat(week_start_date)
