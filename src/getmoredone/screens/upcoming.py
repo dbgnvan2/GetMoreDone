@@ -254,11 +254,22 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         score_label.grid(row=0, column=6, padx=5, pady=5)
 
+        # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
+        time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
+        time_label = ctk.CTkLabel(
+            frame,
+            text=time_text,
+            width=50,
+            anchor="w",
+            text_color="lightyellow"
+        )
+        time_label.grid(row=0, column=7, padx=5, pady=5)
+
         # Factor chips (I, U, E, V) - only shown when expanded
         col_offset = 0
         if self.columns_expanded:
             factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
-            factors_frame.grid(row=0, column=7, padx=5, pady=5)
+            factors_frame.grid(row=0, column=8, padx=5, pady=5)
 
             col = 0
             if item.importance:
@@ -275,16 +286,8 @@ class UpcomingScreen(ctk.CTkFrame):
                 col += 1
             col_offset = 1
 
-        # Planned minutes
-        if item.planned_minutes:
-            minutes_label = ctk.CTkLabel(
-                frame,
-                text=f"{item.planned_minutes}m",
-                width=50
-            )
-            minutes_label.grid(row=0, column=7+col_offset, padx=5, pady=5)
-
         # Action buttons
+        # Buttons are at column 8 (collapsed) or 9 (expanded)
         btn_timer = ctk.CTkButton(
             frame,
             text="⏱ Timer",

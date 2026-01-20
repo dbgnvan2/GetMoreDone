@@ -129,8 +129,8 @@ class AllItemsScreen(ctk.CTkFrame):
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
         header_frame.grid_columnconfigure(1, weight=1)
 
-        headers = ["✓", "Title", "Who", "Start", "Due", "Priority", "Status", "Actions"]
-        col_weights = [0, 1, 0, 0, 0, 0, 0, 0]
+        headers = ["✓", "Title", "Who", "Start", "Due", "Priority", "Est. Time", "Status", "Actions"]
+        col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0]
 
         for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
             header_frame.grid_columnconfigure(col, weight=weight)
@@ -212,11 +212,20 @@ class AllItemsScreen(ctk.CTkFrame):
                 width=80
             ).grid(row=0, column=5, padx=5, pady=5)
 
+            # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
+            time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
+            ctk.CTkLabel(
+                item_frame,
+                text=time_text,
+                width=60,
+                text_color="lightyellow"
+            ).grid(row=0, column=6, padx=5, pady=5)
+
             # Factor chips (I, U, E, V) - only shown when expanded
             col_offset = 0
             if self.columns_expanded:
                 factors_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
-                factors_frame.grid(row=0, column=6, padx=5, pady=5)
+                factors_frame.grid(row=0, column=7, padx=5, pady=5)
                 factor_col = 0
                 if item.importance:
                     ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=factor_col, padx=2)
@@ -233,10 +242,10 @@ class AllItemsScreen(ctk.CTkFrame):
                 col_offset = 1
 
             # Status
-            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=6+col_offset, padx=5, pady=5)
+            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=7+col_offset, padx=5, pady=5)
 
             # Action buttons
-            col = 7 + col_offset
+            col = 8 + col_offset
             # Timer button (only for open items)
             if item.status == Status.OPEN:
                 btn_timer = ctk.CTkButton(

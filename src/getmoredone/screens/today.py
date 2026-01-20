@@ -277,10 +277,21 @@ class TodayScreen(ctk.CTkFrame):
         )
         score_label.grid(row=0, column=4, padx=5, pady=5)
 
+        # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
+        time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
+        time_label = ctk.CTkLabel(
+            frame,
+            text=time_text,
+            width=50,
+            anchor="w",
+            text_color="lightyellow"
+        )
+        time_label.grid(row=0, column=5, padx=5, pady=5)
+
         # Factor chips (I, U, E, V) - only shown when expanded
         factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
         if self.columns_expanded:
-            factors_frame.grid(row=0, column=5, padx=5, pady=5)
+            factors_frame.grid(row=0, column=6, padx=5, pady=5)
             col = 0
             if item.importance:
                 ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=col, padx=2)
@@ -297,7 +308,7 @@ class TodayScreen(ctk.CTkFrame):
 
         # Action buttons (only for open items)
         # Column positions shift based on whether factors are shown
-        btn_col_start = 6 if self.columns_expanded else 5
+        btn_col_start = 7 if self.columns_expanded else 6
         if not is_completed:
             btn_timer = ctk.CTkButton(
                 frame,
