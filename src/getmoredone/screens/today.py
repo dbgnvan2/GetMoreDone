@@ -24,6 +24,7 @@ class TodayScreen(ctk.CTkFrame):
         self.app = app
         self.settings = AppSettings.load()
         self.columns_expanded = True  # Track column visibility state
+        self.show_top_3_only = False  # Track Top 3 mode
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -48,6 +49,17 @@ class TodayScreen(ctk.CTkFrame):
         )
         self.expand_collapse_btn.grid(row=0, column=1, padx=5)
 
+        # Top 3 toggle button
+        self.top3_btn = ctk.CTkButton(
+            header_frame,
+            text="Show All",
+            width=100,
+            fg_color="blue",
+            hover_color="darkblue",
+            command=self.toggle_top3
+        )
+        self.top3_btn.grid(row=0, column=2, padx=5)
+
         # New Item button
         btn_new = ctk.CTkButton(
             header_frame,
@@ -57,7 +69,7 @@ class TodayScreen(ctk.CTkFrame):
             hover_color="darkgreen",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=2, padx=5)
+        btn_new.grid(row=0, column=3, padx=5)
 
         # Refresh button
         btn_refresh = ctk.CTkButton(
@@ -66,7 +78,7 @@ class TodayScreen(ctk.CTkFrame):
             width=100,
             command=self.refresh
         )
-        btn_refresh.grid(row=0, column=3, padx=5)
+        btn_refresh.grid(row=0, column=4, padx=5)
 
         # Scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self)
@@ -80,6 +92,12 @@ class TodayScreen(ctk.CTkFrame):
         """Toggle between expanded and collapsed column view."""
         self.columns_expanded = not self.columns_expanded
         self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.load_items()
+
+    def toggle_top3(self):
+        """Toggle between showing all items and showing only top 3 by priority."""
+        self.show_top_3_only = not self.show_top_3_only
+        self.top3_btn.configure(text="Show All" if self.show_top_3_only else "Top 3")
         self.load_items()
 
     def refresh(self):
@@ -113,6 +131,13 @@ class TodayScreen(ctk.CTkFrame):
             # Separate open and completed items
             open_items = [item for item in items if item.status == "open"]
             completed_items = [item for item in items if item.status == "completed"]
+
+            # Filter to top 3 by priority if toggle is on
+            # Items are already sorted by priority_score DESC in the query
+            if self.show_top_3_only and len(open_items) > 3:
+                # Sort open items by priority_score descending to ensure top 3
+                open_items_sorted = sorted(open_items, key=lambda x: x.priority_score, reverse=True)
+                open_items = open_items_sorted[:3]
 
             row = 0
 

@@ -5,7 +5,7 @@ A comprehensive Python task management application with GUI interface and SQLite
 ## Features
 
 ✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Effort-Cost × Value
-⏱️ **Action Timer** - Floating countdown timer with pause/resume, break time, and completion workflows
+⏱️ **Action Timer** - Floating countdown timer with pause/resume, break time, music playback, and completion workflows
 📅 **Upcoming View** - See what's due in the next N days, grouped by date with total time, includes Group/Category columns
 👥 **Contact Management** - Full contact/client database with autocomplete search in WHO field
 🔗 **Hierarchical Tasks** - Create parent-child relationships with unlimited nesting (grandparent→parent→child→grandchild)
@@ -16,6 +16,7 @@ A comprehensive Python task management application with GUI interface and SQLite
 📈 **Statistics** - Analyze planned vs actual time with insights by effort-cost and category
 🔄 **Reschedule History** - Never lose track of why dates changed
 📆 **Google Calendar Integration** - Create calendar events directly from action items with automatic linking
+🎵 **Music Playback** - Background music during work sessions with volume control and format conversion tools
 ✨ **10 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, Plan, Completed, Contacts, Defaults, Stats, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
@@ -186,8 +187,9 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
    - **Time To Finish**: Countdown for work time (e.g., 25 minutes)
    - **Wrap/Break**: Break duration (e.g., 5 minutes)
    - **Next Steps**: Shows the action item's description to help you get started
+   - **Currently Playing**: Track name from your music folder (if configured)
 3. Optionally edit the Time Block value before starting
-4. Click **Start** to begin the countdown
+4. Click **Start** to begin the countdown (music starts automatically if configured)
 
 **Timer Controls:**
 - **Start**: Begin countdown (required click, doesn't auto-start)
@@ -239,6 +241,15 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - You can click Finished/Continue during break (no need to wait)
 - Break time is not optional (but you can ignore it and finish early)
 
+**Music Playback:**
+- **Background Music**: Plays random tracks from your configured music folder during work sessions
+- **Automatic Playback**: Music starts when you click Start and stops when you finish or pause
+- **Track Display**: Currently playing track name shown in status (♫ Track Name)
+- **Volume Control**: Adjustable volume slider in Settings > Timer & Audio (0-100%)
+- **Supported Formats**: MP3, WAV, OGG (best compatibility)
+- **Format Conversion**: Use `convert_music_to_mp3.py` script to convert M4A/AAC/WMA/FLAC to MP3
+- **Configuration**: Set music folder path in Settings > Timer & Audio
+
 **Audio Alerts:**
 - **Break Start Sound**: Plays when work time ends and break begins
 - **Break End Sound**: Plays when break time expires
@@ -248,12 +259,14 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - Cross-platform support (Windows, macOS, Linux)
 
 **Settings:**
-- **Default Time Block**: 30 minutes (editable in Settings)
-- **Default Break Time**: 5 minutes (editable in Settings)
-- **Warning Time**: Green warning appears at < 10 minutes (editable in Settings)
+- **Default Time Block**: 30 minutes (editable in Settings > Timer & Audio)
+- **Default Break Time**: 5 minutes (editable in Settings > Timer & Audio)
+- **Warning Time**: Green warning appears at < 10 minutes (editable in Settings > Timer & Audio)
 - **Enable Break Sounds**: Toggle audio alerts on/off
 - **Break Start Sound**: Path to custom WAV file (optional)
 - **Break End Sound**: Path to custom WAV file (optional)
+- **Music Folder**: Path to folder containing music files for timer playback
+- **Music Volume**: Volume slider (0-100%, default 70%)
 
 **Single Timer Policy:**
 - Only one timer can run at a time (prevents confusion)
@@ -380,9 +393,12 @@ pytest tests/test_database.py -v
 - **Python 3.11+** - Modern Python with type hints
 - **SQLite** - Embedded database (no server required)
 - **CustomTkinter** - Modern, customizable GUI framework
+- **pygame** - Audio playback for timer music and sound effects
 - **pytest** - Comprehensive testing framework
 - **Google Calendar API** - OAuth 2.0 integration for calendar events
 - **tzlocal** - Automatic timezone detection for accurate event scheduling
+- **cairosvg** - SVG icon rendering for modern UI controls
+- **Pillow** - Image processing for icon conversion
 
 ## Architecture
 
@@ -400,6 +416,16 @@ pytest tests/test_database.py -v
 - Automatic break time calculation (Time Block - Break = Work Time)
 - Visual indicators: White time display, green warning (< 10 min), blue break time
 - **Audio alerts**: Plays sound at break start and break end (optional, customizable)
+- **Music playback**: Background music during work sessions with pygame integration
+  - Random track selection from configured music folder
+  - Supports MP3, WAV, OGG formats (best compatibility)
+  - Volume control slider (0-100%)
+  - Currently playing track display (♫ Track Name)
+  - Automatic pause/resume with timer controls
+  - Format conversion tool for M4A/AAC to MP3 (`convert_music_to_mp3.py`)
+- **SVG icon support**: Modern, scalable icons for play, pause, stop, volume, and music controls
+  - Icon caching system for performance
+  - cairosvg-based rendering
 - Finished workflow: Complete action with work log and completion note
 - **Continue workflow**: Complete current, select dates for next action, capture next steps
   - Custom date selection with quick buttons (Today, +1)
@@ -410,7 +436,7 @@ pytest tests/test_database.py -v
 - **NEW: "+ New Item" button on TODAY screen** for quick action creation
 - Work logs saved with started_at, ended_at, minutes, and notes
 - Single timer policy (one at a time)
-- Settings for time block (30 min), break (5 min), audio alerts, custom sounds
+- Settings for time block (30 min), break (5 min), audio alerts, custom sounds, music folder, and volume
 
 ### Item Deletion (NEW - January 2026)
 - Delete button in Item Editor (red button, bottom right)
