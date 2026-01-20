@@ -51,6 +51,7 @@ class TimerWindow(ctk.CTkToplevel):
         # Music playback
         self.music_player = None
         self.current_music_file = None
+        self.current_track_name = None
 
         # Window setup
         self.setup_window()
@@ -345,7 +346,7 @@ class TimerWindow(ctk.CTkToplevel):
         self.pause_button.configure(state="normal", text="Pause")
         self.stop_button.configure(state="normal")
         self.time_block_value.configure(state="disabled")
-        self.status_label.configure(text="Working...", text_color="green")
+        self._update_status_label("Working...", "green")
 
         # Start music playback
         self._start_music()
@@ -359,7 +360,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.timer_state = "paused"
             self.pause_timestamp = datetime.now()
             self.pause_button.configure(text="Resume")
-            self.status_label.configure(text="Paused", text_color="orange")
+            self._update_status_label("Paused", "orange")
 
             # Pause music
             self._pause_music()
@@ -380,10 +381,9 @@ class TimerWindow(ctk.CTkToplevel):
 
             self.timer_state = "running" if self.work_seconds_remaining > 0 else "in_break"
             self.pause_button.configure(text="Pause")
-            self.status_label.configure(
-                text="Working..." if self.timer_state == "running" else "Break time!",
-                text_color="green" if self.timer_state == "running" else "blue"
-            )
+            status_text = "Working..." if self.timer_state == "running" else "Break time!"
+            status_color = "green" if self.timer_state == "running" else "blue"
+            self._update_status_label(status_text, status_color)
 
             # Resume music
             self._resume_music()
@@ -408,7 +408,7 @@ class TimerWindow(ctk.CTkToplevel):
         self.pause_button.configure(state="disabled", text="Pause")
         self.stop_button.configure(state="disabled")
         self.time_block_value.configure(state="normal")
-        self.status_label.configure(text="Stopped", text_color="red")
+        self._update_status_label("Stopped", "red")
 
         # Show completion buttons
         self.completion_frame.grid()
@@ -442,7 +442,8 @@ class TimerWindow(ctk.CTkToplevel):
                 # Work time finished, start break
                 self.work_seconds_remaining = 0
                 self.timer_state = "in_break"
-                self.status_label.configure(text="⏰ BREAK TIME! ⏰", text_color="yellow", font=ctk.CTkFont(size=14, weight="bold"))
+                self._update_status_label("⏰ BREAK TIME! ⏰", "yellow")
+                self.status_label.configure(font=ctk.CTkFont(size=14, weight="bold"))
                 self.update_title_bar()
                 # Play break start sound
                 self.play_sound(is_break_start=True)
@@ -455,7 +456,8 @@ class TimerWindow(ctk.CTkToplevel):
             if self.break_seconds_remaining <= 0:
                 # Break finished, auto-stop
                 self.break_seconds_remaining = 0
-                self.status_label.configure(text="⏰ BREAK OVER! ⏰", text_color="red", font=ctk.CTkFont(size=14, weight="bold"))
+                self._update_status_label("⏰ BREAK OVER! ⏰", "red")
+                self.status_label.configure(font=ctk.CTkFont(size=14, weight="bold"))
                 # Play break end sound
                 self.play_sound(is_break_start=False)
                 # Flash the window
@@ -863,6 +865,31 @@ class TimerWindow(ctk.CTkToplevel):
         except Exception as e:
             print(f"Error flashing window: {e}")
 
+    def _update_status_label(self, text: str, color: str):
+        """Update status label with optional track name."""
+        if self.current_track_name:
+            display_text = f"{text}\n♫ {self.current_track_name}"
+        else:
+            display_text = text
+        # Reset font to normal unless it's a break notification
+        if "BREAK" in text.upper():
+            self.status_label.configure(text=display_text, text_color=color)
+        else:
+            self.status_label.configure(text=display_text, text_color=color, font=ctk.CTkFont(size=11))
+
+    def _update_status_with_track(self):
+        """Update the current status to include track information."""
+        # Get current status text and color
+        current_text = self.status_label.cget("text")
+        current_color = self.status_label.cget("text_color")
+
+        # Remove any existing track info
+        if "\n♫" in current_text:
+            current_text = current_text.split("\n♫")[0]
+
+        # Update with track name
+        self._update_status_label(current_text, current_color)
+
     def _play_system_beep(self):
         """Play system beep/alert sound."""
         import sys
@@ -954,7 +981,11 @@ class TimerWindow(ctk.CTkToplevel):
                 # Load and play the music file
                 pygame.mixer.music.load(music_file)
                 pygame.mixer.music.play(-1)  # -1 means loop indefinitely
-                print(f"[INFO] Playing music: {Path(music_file).name}")
+
+                # Store track name and update status
+                self.current_track_name = Path(music_file).name
+                self._update_status_with_track()
+                print(f"[INFO] Playing music: {self.current_track_name}")
             except ImportError:
                 print("[INFO] pygame not installed - music playback disabled")
                 print("[INFO] Install pygame with: pip install pygame")
@@ -974,6 +1005,7 @@ class TimerWindow(ctk.CTkToplevel):
             import pygame
             if pygame.mixer.get_init():
                 pygame.mixer.music.stop()
+                self.current_track_name = None
                 print("[DEBUG] Music stopped")
         except ImportError:
             pass  # pygame not installed
