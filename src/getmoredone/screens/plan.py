@@ -120,74 +120,90 @@ class PlanScreen(ctk.CTkFrame):
 
     def load_backlog(self):
         """Load open items into backlog."""
-        for widget in self.backlog_scroll.winfo_children():
-            widget.destroy()
+        # Temporarily remove backlog_scroll from grid to prevent flickering during rebuild
+        grid_info = self.backlog_scroll.grid_info()
+        self.backlog_scroll.grid_remove()
 
-        items = self.db_manager.get_all_items(
-            status_filter="open",
-            sort_by="priority_score",
-            sort_desc=True
-        )
+        try:
+            for widget in self.backlog_scroll.winfo_children():
+                widget.destroy()
 
-        for item in items[:50]:  # Limit to 50 items
-            frame = ctk.CTkFrame(self.backlog_scroll)
-            frame.grid(sticky="ew", pady=2)
-            frame.grid_columnconfigure(0, weight=1)
-
-            info_text = f"{item.title} (P:{item.priority_score})"
-            if item.planned_minutes:
-                info_text += f" - {item.planned_minutes}m"
-
-            ctk.CTkLabel(frame, text=info_text, anchor="w").grid(
-                row=0, column=0, sticky="w", padx=5, pady=5
+            items = self.db_manager.get_all_items(
+                status_filter="open",
+                sort_by="priority_score",
+                sort_desc=True
             )
+
+            for item in items[:50]:  # Limit to 50 items
+                frame = ctk.CTkFrame(self.backlog_scroll)
+                frame.grid(sticky="ew", pady=2)
+                frame.grid_columnconfigure(0, weight=1)
+
+                info_text = f"{item.title} (P:{item.priority_score})"
+                if item.planned_minutes:
+                    info_text += f" - {item.planned_minutes}m"
+
+                ctk.CTkLabel(frame, text=info_text, anchor="w").grid(
+                    row=0, column=0, sticky="w", padx=5, pady=5
+                )
+        finally:
+            # Restore backlog_scroll to grid
+            self.backlog_scroll.grid(**grid_info)
 
     def load_time_blocks(self):
         """Load time blocks for selected date."""
-        for widget in self.blocks_scroll.winfo_children():
-            widget.destroy()
+        # Temporarily remove blocks_scroll from grid to prevent flickering during rebuild
+        grid_info = self.blocks_scroll.grid_info()
+        self.blocks_scroll.grid_remove()
 
-        selected_date = self.date_var.get()
-        blocks = self.db_manager.get_time_blocks(selected_date)
+        try:
+            for widget in self.blocks_scroll.winfo_children():
+                widget.destroy()
 
-        if not blocks:
-            ctk.CTkLabel(
-                self.blocks_scroll,
-                text="No time blocks for this date"
-            ).grid(row=0, column=0, pady=20)
-            return
+            selected_date = self.date_var.get()
+            blocks = self.db_manager.get_time_blocks(selected_date)
 
-        for block in blocks:
-            frame = ctk.CTkFrame(self.blocks_scroll)
-            frame.grid(sticky="ew", pady=2, padx=5)
-            frame.grid_columnconfigure(1, weight=1)
+            if not blocks:
+                ctk.CTkLabel(
+                    self.blocks_scroll,
+                    text="No time blocks for this date"
+                ).grid(row=0, column=0, pady=20)
+                return
 
-            # Time
-            ctk.CTkLabel(
-                frame,
-                text=f"{block.start_time} - {block.end_time}",
-                width=120
-            ).grid(row=0, column=0, padx=5, pady=5)
+            for block in blocks:
+                frame = ctk.CTkFrame(self.blocks_scroll)
+                frame.grid(sticky="ew", pady=2, padx=5)
+                frame.grid_columnconfigure(1, weight=1)
 
-            # Label/item
-            label_text = block.label or "Unassigned"
-            ctk.CTkLabel(frame, text=label_text, anchor="w").grid(
-                row=0, column=1, sticky="w", padx=5, pady=5
-            )
+                # Time
+                ctk.CTkLabel(
+                    frame,
+                    text=f"{block.start_time} - {block.end_time}",
+                    width=120
+                ).grid(row=0, column=0, padx=5, pady=5)
 
-            # Minutes
-            ctk.CTkLabel(frame, text=f"{block.planned_minutes}m", width=60).grid(
-                row=0, column=2, padx=5, pady=5
-            )
+                # Label/item
+                label_text = block.label or "Unassigned"
+                ctk.CTkLabel(frame, text=label_text, anchor="w").grid(
+                    row=0, column=1, sticky="w", padx=5, pady=5
+                )
 
-            # Delete button
-            btn_delete = ctk.CTkButton(
-                frame,
-                text="Delete",
-                width=60,
-                command=lambda b=block.id: self.delete_block(b)
-            )
-            btn_delete.grid(row=0, column=3, padx=5, pady=5)
+                # Minutes
+                ctk.CTkLabel(frame, text=f"{block.planned_minutes}m", width=60).grid(
+                    row=0, column=2, padx=5, pady=5
+                )
+
+                # Delete button
+                btn_delete = ctk.CTkButton(
+                    frame,
+                    text="Delete",
+                    width=60,
+                    command=lambda b=block.id: self.delete_block(b)
+                )
+                btn_delete.grid(row=0, column=3, padx=5, pady=5)
+        finally:
+            # Restore blocks_scroll to grid
+            self.blocks_scroll.grid(**grid_info)
 
     def add_time_block(self):
         """Add a new time block."""

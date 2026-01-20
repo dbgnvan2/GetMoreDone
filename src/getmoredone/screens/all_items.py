@@ -99,174 +99,182 @@ class AllItemsScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the list of items."""
-        # Clear current items
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
+        # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
+        grid_info = self.scroll_frame.grid_info()
+        self.scroll_frame.grid_remove()
 
-        # Get filters
-        status_filter = None if self.status_var.get() == "all" else self.status_var.get()
-        who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+        try:
+            # Clear current items
+            for widget in self.scroll_frame.winfo_children():
+                widget.destroy()
 
-        # Get items (sorted by start_date)
-        items = self.db_manager.get_all_items(
-            status_filter=status_filter,
-            who_filter=who_filter,
-            sort_by="start_date",
-            sort_desc=False
-        )
+            # Get filters
+            status_filter = None if self.status_var.get() == "all" else self.status_var.get()
+            who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
-        if not items:
-            label = ctk.CTkLabel(
-                self.scroll_frame,
-                text="No items found",
-                font=ctk.CTkFont(size=14)
+            # Get items (sorted by start_date)
+            items = self.db_manager.get_all_items(
+                status_filter=status_filter,
+                who_filter=who_filter,
+                sort_by="start_date",
+                sort_desc=False
             )
-            label.grid(row=0, column=0, pady=20)
-            return
 
-        # Create table header
-        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
-        header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
-        header_frame.grid_columnconfigure(1, weight=1)
-
-        headers = ["✓", "Title", "Who", "Start", "Due", "Priority", "Est. Time", "Status", "Actions"]
-        col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0]
-
-        for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
-            header_frame.grid_columnconfigure(col, weight=weight)
-            ctk.CTkLabel(
-                header_frame,
-                text=header_text,
-                font=ctk.CTkFont(weight="bold")
-            ).grid(row=0, column=col, padx=5, pady=5, sticky="w")
-
-        # Create item rows
-        for idx, item in enumerate(items, start=1):
-            # RED background for critical items
-            is_critical = (item.importance == 20 or item.urgency == 20)
-            bg_color = "darkred" if is_critical else None
-            item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
-            item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
-            item_frame.grid_columnconfigure(1, weight=1)
-
-            # Checkbox
-            if item.status == Status.OPEN:
-                var = ctk.BooleanVar(value=False)
-                checkbox = ctk.CTkCheckBox(
-                    item_frame,
-                    text="",
-                    variable=var,
-                    width=30,
-                    command=lambda i=item.id: self.complete_item(i)
+            if not items:
+                label = ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No items found",
+                    font=ctk.CTkFont(size=14)
                 )
-                checkbox.grid(row=0, column=0, padx=5, pady=5)
-            else:
-                ctk.CTkLabel(item_frame, text="✓").grid(row=0, column=0, padx=5, pady=5)
+                label.grid(row=0, column=0, pady=20)
+                return
 
-            # Title
-            ctk.CTkLabel(
-                item_frame,
-                text=item.title,
-                anchor="w"
-            ).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            # Create table header
+            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+            header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
+            header_frame.grid_columnconfigure(1, weight=1)
 
-            # Who
-            ctk.CTkLabel(item_frame, text=item.who, width=100).grid(row=0, column=2, padx=5, pady=5)
+            headers = ["✓", "Title", "Who", "Start", "Due", "Priority", "Est. Time", "Status", "Actions"]
+            col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0]
 
-            # Start date
-            start_text = item.start_date or "-"
-            if item.start_date:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(item.start_date)
-                    start_text = dt.strftime("%m/%d")
-                except:
-                    pass
-            ctk.CTkLabel(
-                item_frame,
-                text=start_text,
-                width=60,
-                text_color="lightblue"
-            ).grid(row=0, column=3, padx=5, pady=5)
+            for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
+                header_frame.grid_columnconfigure(col, weight=weight)
+                ctk.CTkLabel(
+                    header_frame,
+                    text=header_text,
+                    font=ctk.CTkFont(weight="bold")
+                ).grid(row=0, column=col, padx=5, pady=5, sticky="w")
 
-            # Due date
-            due_text = item.due_date or "-"
-            if item.due_date:
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(item.due_date)
-                    due_text = dt.strftime("%m/%d")
-                except:
-                    pass
-            ctk.CTkLabel(
-                item_frame,
-                text=due_text,
-                width=60,
-                text_color="orange"
-            ).grid(row=0, column=4, padx=5, pady=5)
+            # Create item rows
+            for idx, item in enumerate(items, start=1):
+                # RED background for critical items
+                is_critical = (item.importance == 20 or item.urgency == 20)
+                bg_color = "darkred" if is_critical else None
+                item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+                item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
+                item_frame.grid_columnconfigure(1, weight=1)
 
-            # Priority
-            ctk.CTkLabel(
-                item_frame,
-                text=str(item.priority_score),
-                width=80
-            ).grid(row=0, column=5, padx=5, pady=5)
+                # Checkbox
+                if item.status == Status.OPEN:
+                    var = ctk.BooleanVar(value=False)
+                    checkbox = ctk.CTkCheckBox(
+                        item_frame,
+                        text="",
+                        variable=var,
+                        width=30,
+                        command=lambda i=item.id: self.complete_item(i)
+                    )
+                    checkbox.grid(row=0, column=0, padx=5, pady=5)
+                else:
+                    ctk.CTkLabel(item_frame, text="✓").grid(row=0, column=0, padx=5, pady=5)
 
-            # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
-            time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
-            ctk.CTkLabel(
-                item_frame,
-                text=time_text,
-                width=60,
-                text_color="lightyellow"
-            ).grid(row=0, column=6, padx=5, pady=5)
-
-            # Factor chips (I, U, E, V) - only shown when expanded
-            col_offset = 0
-            if self.columns_expanded:
-                factors_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
-                factors_frame.grid(row=0, column=7, padx=5, pady=5)
-                factor_col = 0
-                if item.importance:
-                    ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=factor_col, padx=2)
-                    factor_col += 1
-                if item.urgency:
-                    ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=factor_col, padx=2)
-                    factor_col += 1
-                if item.size:
-                    ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=factor_col, padx=2)
-                    factor_col += 1
-                if item.value:
-                    ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=factor_col, padx=2)
-                    factor_col += 1
-                col_offset = 1
-
-            # Status
-            ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=7+col_offset, padx=5, pady=5)
-
-            # Action buttons
-            col = 8 + col_offset
-            # Timer button (only for open items)
-            if item.status == Status.OPEN:
-                btn_timer = ctk.CTkButton(
+                # Title
+                ctk.CTkLabel(
                     item_frame,
-                    text="⏱ Timer",
-                    width=70,
-                    fg_color="darkgreen",
-                    hover_color="green",
-                    command=lambda i=item.id: self.start_timer(i)
-                )
-                btn_timer.grid(row=0, column=col, padx=2, pady=5)
-                col += 1
+                    text=item.title,
+                    anchor="w"
+                ).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-            # Edit button
-            btn_edit = ctk.CTkButton(
-                item_frame,
-                text="Edit",
-                width=60,
-                command=lambda i=item.id: self.edit_item(i)
-            )
-            btn_edit.grid(row=0, column=col, padx=2, pady=5)
+                # Who
+                ctk.CTkLabel(item_frame, text=item.who, width=100).grid(row=0, column=2, padx=5, pady=5)
+
+                # Start date
+                start_text = item.start_date or "-"
+                if item.start_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(item.start_date)
+                        start_text = dt.strftime("%m/%d")
+                    except:
+                        pass
+                ctk.CTkLabel(
+                    item_frame,
+                    text=start_text,
+                    width=60,
+                    text_color="lightblue"
+                ).grid(row=0, column=3, padx=5, pady=5)
+
+                # Due date
+                due_text = item.due_date or "-"
+                if item.due_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(item.due_date)
+                        due_text = dt.strftime("%m/%d")
+                    except:
+                        pass
+                ctk.CTkLabel(
+                    item_frame,
+                    text=due_text,
+                    width=60,
+                    text_color="orange"
+                ).grid(row=0, column=4, padx=5, pady=5)
+
+                # Priority
+                ctk.CTkLabel(
+                    item_frame,
+                    text=str(item.priority_score),
+                    width=80
+                ).grid(row=0, column=5, padx=5, pady=5)
+
+                # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
+                time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
+                ctk.CTkLabel(
+                    item_frame,
+                    text=time_text,
+                    width=60,
+                    text_color="lightyellow"
+                ).grid(row=0, column=6, padx=5, pady=5)
+
+                # Factor chips (I, U, E, V) - only shown when expanded
+                col_offset = 0
+                if self.columns_expanded:
+                    factors_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+                    factors_frame.grid(row=0, column=7, padx=5, pady=5)
+                    factor_col = 0
+                    if item.importance:
+                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    if item.urgency:
+                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    if item.size:
+                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    if item.value:
+                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    col_offset = 1
+
+                # Status
+                ctk.CTkLabel(item_frame, text=item.status, width=80).grid(row=0, column=7+col_offset, padx=5, pady=5)
+
+                # Action buttons
+                col = 8 + col_offset
+                # Timer button (only for open items)
+                if item.status == Status.OPEN:
+                    btn_timer = ctk.CTkButton(
+                        item_frame,
+                        text="⏱ Timer",
+                        width=70,
+                        fg_color="darkgreen",
+                        hover_color="green",
+                        command=lambda i=item.id: self.start_timer(i)
+                    )
+                    btn_timer.grid(row=0, column=col, padx=2, pady=5)
+                    col += 1
+
+                # Edit button
+                btn_edit = ctk.CTkButton(
+                    item_frame,
+                    text="Edit",
+                    width=60,
+                    command=lambda i=item.id: self.edit_item(i)
+                )
+                btn_edit.grid(row=0, column=col, padx=2, pady=5)
+        finally:
+            # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
+            self.scroll_frame.grid(**grid_info)
 
     def complete_item(self, item_id: str):
         """Mark item as complete."""

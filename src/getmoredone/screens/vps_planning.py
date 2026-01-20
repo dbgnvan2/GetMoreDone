@@ -98,32 +98,40 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the planning tree."""
-        # Clear current tree
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
+        # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
+        grid_info = self.scroll_frame.grid_info()
+        self.scroll_frame.grid_remove()
 
-        # Get selected segment
-        selected_segment = self.segment_var.get()
+        try:
+            # Clear current tree
+            for widget in self.scroll_frame.winfo_children():
+                widget.destroy()
 
-        # Get all segments or filtered segment
-        segments = self.vps_manager.get_all_segments()
+            # Get selected segment
+            selected_segment = self.segment_var.get()
 
-        if selected_segment != "all":
-            segments = [seg for seg in segments if seg['name'] == selected_segment]
+            # Get all segments or filtered segment
+            segments = self.vps_manager.get_all_segments()
 
-        if not segments:
-            label = ctk.CTkLabel(
-                self.scroll_frame,
-                text="No life segments defined. Create your first vision!",
-                font=ctk.CTkFont(size=14)
-            )
-            label.grid(row=0, column=0, pady=20)
-            return
+            if selected_segment != "all":
+                segments = [seg for seg in segments if seg['name'] == selected_segment]
 
-        # Display each segment tree
-        row = 0
-        for segment in segments:
-            row = self.display_segment_tree(segment, row)
+            if not segments:
+                label = ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No life segments defined. Create your first vision!",
+                    font=ctk.CTkFont(size=14)
+                )
+                label.grid(row=0, column=0, pady=20)
+                return
+
+            # Display each segment tree
+            row = 0
+            for segment in segments:
+                row = self.display_segment_tree(segment, row)
+        finally:
+            # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
+            self.scroll_frame.grid(**grid_info)
 
     def display_segment_tree(self, segment: Dict[str, Any], row: int) -> int:
         """Display a segment and its complete hierarchy."""

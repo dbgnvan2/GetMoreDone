@@ -71,30 +71,38 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the hierarchical list."""
-        # Clear current items
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
+        # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
+        grid_info = self.scroll_frame.grid_info()
+        self.scroll_frame.grid_remove()
 
-        # Get status filter
-        status = self.status_var.get()
-        status_filter = None if status == "all" else status
+        try:
+            # Clear current items
+            for widget in self.scroll_frame.winfo_children():
+                widget.destroy()
 
-        # Get root items (items with no parent)
-        root_items = self.db_manager.get_root_items(status_filter=status_filter)
+            # Get status filter
+            status = self.status_var.get()
+            status_filter = None if status == "all" else status
 
-        if not root_items:
-            label = ctk.CTkLabel(
-                self.scroll_frame,
-                text="No root items found",
-                font=ctk.CTkFont(size=14)
-            )
-            label.grid(row=0, column=0, pady=20)
-            return
+            # Get root items (items with no parent)
+            root_items = self.db_manager.get_root_items(status_filter=status_filter)
 
-        # Display each root item and its children recursively
-        row = 0
-        for item in root_items:
-            row = self.display_item_tree(item, row, 0)
+            if not root_items:
+                label = ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No root items found",
+                    font=ctk.CTkFont(size=14)
+                )
+                label.grid(row=0, column=0, pady=20)
+                return
+
+            # Display each root item and its children recursively
+            row = 0
+            for item in root_items:
+                row = self.display_item_tree(item, row, 0)
+        finally:
+            # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
+            self.scroll_frame.grid(**grid_info)
 
     def display_item_tree(self, item: ActionItem, row: int, indent_level: int) -> int:
         """

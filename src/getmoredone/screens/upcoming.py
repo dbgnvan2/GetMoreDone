@@ -106,60 +106,68 @@ class UpcomingScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the list of upcoming items."""
-        # Clear current items
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
+        # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
+        grid_info = self.scroll_frame.grid_info()
+        self.scroll_frame.grid_remove()
 
-        # Get filters
-        n_days = int(self.days_var.get())
-        who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+        try:
+            # Clear current items
+            for widget in self.scroll_frame.winfo_children():
+                widget.destroy()
 
-        # Get items
-        items = self.db_manager.get_upcoming_items(n_days, who_filter)
+            # Get filters
+            n_days = int(self.days_var.get())
+            who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
-        if not items:
-            label = ctk.CTkLabel(
-                self.scroll_frame,
-                text="No upcoming items",
-                font=ctk.CTkFont(size=14)
-            )
-            label.grid(row=0, column=0, pady=20)
-            return
+            # Get items
+            items = self.db_manager.get_upcoming_items(n_days, who_filter)
 
-        # Group by start date (or due date if no start date)
-        grouped = {}
-        for item in items:
-            date_key = item.start_date or item.due_date or "No start date"
-            if date_key not in grouped:
-                grouped[date_key] = []
-            grouped[date_key].append(item)
+            if not items:
+                label = ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No upcoming items",
+                    font=ctk.CTkFont(size=14)
+                )
+                label.grid(row=0, column=0, pady=20)
+                return
 
-        # Display grouped items
-        row = 0
-        for start_date in sorted(grouped.keys()):
-            items_for_date = grouped[start_date]
+            # Group by start date (or due date if no start date)
+            grouped = {}
+            for item in items:
+                date_key = item.start_date or item.due_date or "No start date"
+                if date_key not in grouped:
+                    grouped[date_key] = []
+                grouped[date_key].append(item)
 
-            # Date header
-            total_planned = sum(item.planned_minutes or 0 for item in items_for_date)
-            date_label = self.format_date_header(start_date, len(items_for_date), total_planned)
+            # Display grouped items
+            row = 0
+            for start_date in sorted(grouped.keys()):
+                items_for_date = grouped[start_date]
 
-            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
-            header_frame.grid(row=row, column=0, sticky="ew", pady=(10, 0), padx=5)
-            header_frame.grid_columnconfigure(0, weight=1)
+                # Date header
+                total_planned = sum(item.planned_minutes or 0 for item in items_for_date)
+                date_label = self.format_date_header(start_date, len(items_for_date), total_planned)
 
-            ctk.CTkLabel(
-                header_frame,
-                text=date_label,
-                font=ctk.CTkFont(size=14, weight="bold")
-            ).grid(row=0, column=0, sticky="w", padx=10, pady=5)
+                header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+                header_frame.grid(row=row, column=0, sticky="ew", pady=(10, 0), padx=5)
+                header_frame.grid_columnconfigure(0, weight=1)
 
-            row += 1
+                ctk.CTkLabel(
+                    header_frame,
+                    text=date_label,
+                    font=ctk.CTkFont(size=14, weight="bold")
+                ).grid(row=0, column=0, sticky="w", padx=10, pady=5)
 
-            # Items for this date
-            for item in items_for_date:
-                item_frame = self.create_item_row(item)
-                item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
                 row += 1
+
+                # Items for this date
+                for item in items_for_date:
+                    item_frame = self.create_item_row(item)
+                    item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+                    row += 1
+        finally:
+            # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
+            self.scroll_frame.grid(**grid_info)
 
     def create_item_row(self, item: ActionItem) -> ctk.CTkFrame:
         """Create a row for an action item."""
