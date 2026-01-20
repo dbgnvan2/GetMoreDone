@@ -20,6 +20,7 @@ class AllItemsScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.columns_expanded = True  # Track column visibility state
+        self.search_query = ""  # Track search query
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -39,7 +40,7 @@ class AllItemsScreen(ctk.CTkFrame):
         """Create header with filters and controls."""
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(5, weight=1)
+        header.grid_columnconfigure(7, weight=1)
 
         # Title
         title = ctk.CTkLabel(
@@ -49,8 +50,26 @@ class AllItemsScreen(ctk.CTkFrame):
         )
         title.grid(row=0, column=0, padx=10, pady=10)
 
+        # Search entry
+        self.search_entry = ctk.CTkEntry(
+            header,
+            placeholder_text="Search title, description, next action...",
+            width=200
+        )
+        self.search_entry.grid(row=0, column=1, padx=5, pady=10)
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        # Search button
+        btn_search = ctk.CTkButton(
+            header,
+            text="Search",
+            width=80,
+            command=self.perform_search
+        )
+        btn_search.grid(row=0, column=2, padx=5, pady=10)
+
         # Status filter
-        ctk.CTkLabel(header, text="Status:").grid(row=0, column=1, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Status:").grid(row=0, column=3, padx=(20, 5), pady=10)
         self.status_var = ctk.StringVar(value="open")
         self.status_combo = ctk.CTkComboBox(
             header,
@@ -59,10 +78,10 @@ class AllItemsScreen(ctk.CTkFrame):
             width=120,
             command=lambda _: self.refresh()
         )
-        self.status_combo.grid(row=0, column=2, padx=5, pady=10)
+        self.status_combo.grid(row=0, column=4, padx=5, pady=10)
 
         # Who filter
-        ctk.CTkLabel(header, text="Who:").grid(row=0, column=3, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Who:").grid(row=0, column=5, padx=(20, 5), pady=10)
         who_values = ["All"] + self.db_manager.get_distinct_who_values()
         self.who_var = ctk.StringVar(value="All")
         self.who_combo = ctk.CTkComboBox(
@@ -72,7 +91,7 @@ class AllItemsScreen(ctk.CTkFrame):
             width=150,
             command=lambda _: self.refresh()
         )
-        self.who_combo.grid(row=0, column=4, padx=5, pady=10)
+        self.who_combo.grid(row=0, column=6, padx=5, pady=10)
 
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
@@ -81,7 +100,7 @@ class AllItemsScreen(ctk.CTkFrame):
             width=100,
             command=self.toggle_columns
         )
-        self.expand_collapse_btn.grid(row=0, column=6, padx=5, pady=10)
+        self.expand_collapse_btn.grid(row=0, column=8, padx=5, pady=10)
 
         # New Item button
         btn_new = ctk.CTkButton(
@@ -89,7 +108,12 @@ class AllItemsScreen(ctk.CTkFrame):
             text="+ New Item",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=7, padx=10, pady=10)
+        btn_new.grid(row=0, column=9, padx=10, pady=10)
+
+    def perform_search(self):
+        """Perform search and update the view."""
+        self.search_query = self.search_entry.get().strip()
+        self.refresh()
 
     def toggle_columns(self):
         """Toggle between expanded and collapsed column view."""
@@ -112,13 +136,21 @@ class AllItemsScreen(ctk.CTkFrame):
             status_filter = None if self.status_var.get() == "all" else self.status_var.get()
             who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
-            # Get items (sorted by start_date)
-            items = self.db_manager.get_all_items(
-                status_filter=status_filter,
-                who_filter=who_filter,
-                sort_by="start_date",
-                sort_desc=False
-            )
+            # Get items (use search if query exists, otherwise get all)
+            if self.search_query:
+                items = self.db_manager.search_items(self.search_query)
+                # Apply filters to search results
+                if status_filter:
+                    items = [item for item in items if item.status == status_filter]
+                if who_filter:
+                    items = [item for item in items if item.who == who_filter]
+            else:
+                items = self.db_manager.get_all_items(
+                    status_filter=status_filter,
+                    who_filter=who_filter,
+                    sort_by="start_date",
+                    sort_desc=False
+                )
 
             if not items:
                 label = ctk.CTkLabel(

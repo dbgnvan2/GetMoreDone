@@ -484,14 +484,14 @@ class DatabaseManager:
         return [self._row_to_action_item(row) for row in rows]
 
     def search_items(self, search_text: str) -> List[ActionItem]:
-        """Search items by title or description."""
+        """Search items by title, description, or next_action."""
         query = """
             SELECT * FROM action_items
-            WHERE title LIKE ? OR description LIKE ?
+            WHERE title LIKE ? OR description LIKE ? OR next_action LIKE ?
             ORDER BY priority_score DESC
         """
         pattern = f"%{search_text}%"
-        rows = self.db.conn.execute(query, (pattern, pattern)).fetchall()
+        rows = self.db.conn.execute(query, (pattern, pattern, pattern)).fetchall()
         return [self._row_to_action_item(row) for row in rows]
 
     # ==================== DEFAULTS ====================

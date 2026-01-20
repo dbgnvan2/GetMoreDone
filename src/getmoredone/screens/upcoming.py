@@ -23,6 +23,7 @@ class UpcomingScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.columns_expanded = True  # Track column visibility state
+        self.search_query = ""  # Track search query
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -42,7 +43,7 @@ class UpcomingScreen(ctk.CTkFrame):
         """Create header with controls."""
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(3, weight=1)
+        header.grid_columnconfigure(5, weight=1)
 
         # Title
         title = ctk.CTkLabel(
@@ -52,8 +53,26 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         title.grid(row=0, column=0, padx=10, pady=10)
 
+        # Search entry
+        self.search_entry = ctk.CTkEntry(
+            header,
+            placeholder_text="Search title, description, next action...",
+            width=200
+        )
+        self.search_entry.grid(row=0, column=1, padx=5, pady=10)
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        # Search button
+        btn_search = ctk.CTkButton(
+            header,
+            text="Search",
+            width=80,
+            command=self.perform_search
+        )
+        btn_search.grid(row=0, column=2, padx=5, pady=10)
+
         # N-days selector
-        ctk.CTkLabel(header, text="Next").grid(row=0, column=1, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Next").grid(row=0, column=3, padx=(20, 5), pady=10)
 
         self.days_var = ctk.StringVar(value="7")
         self.days_combo = ctk.CTkComboBox(
@@ -63,12 +82,12 @@ class UpcomingScreen(ctk.CTkFrame):
             width=80,
             command=lambda _: self.refresh()
         )
-        self.days_combo.grid(row=0, column=2, padx=5, pady=10)
+        self.days_combo.grid(row=0, column=4, padx=5, pady=10)
 
-        ctk.CTkLabel(header, text="days").grid(row=0, column=3, sticky="w", padx=5, pady=10)
+        ctk.CTkLabel(header, text="days").grid(row=0, column=5, sticky="w", padx=5, pady=10)
 
         # Who filter
-        ctk.CTkLabel(header, text="Who:").grid(row=0, column=4, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Who:").grid(row=0, column=6, padx=(20, 5), pady=10)
 
         who_values = ["All"] + self.db_manager.get_distinct_who_values()
         self.who_var = ctk.StringVar(value="All")
@@ -79,7 +98,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=150,
             command=lambda _: self.refresh()
         )
-        self.who_combo.grid(row=0, column=5, padx=5, pady=10)
+        self.who_combo.grid(row=0, column=7, padx=5, pady=10)
 
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
@@ -88,7 +107,7 @@ class UpcomingScreen(ctk.CTkFrame):
             width=100,
             command=self.toggle_columns
         )
-        self.expand_collapse_btn.grid(row=0, column=6, padx=5, pady=10)
+        self.expand_collapse_btn.grid(row=0, column=8, padx=5, pady=10)
 
         # New Item button
         btn_new = ctk.CTkButton(
@@ -96,7 +115,12 @@ class UpcomingScreen(ctk.CTkFrame):
             text="+ New Item",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=7, padx=10, pady=10)
+        btn_new.grid(row=0, column=9, padx=10, pady=10)
+
+    def perform_search(self):
+        """Perform search and update the view."""
+        self.search_query = self.search_entry.get().strip()
+        self.refresh()
 
     def toggle_columns(self):
         """Toggle between expanded and collapsed column view."""
@@ -119,8 +143,26 @@ class UpcomingScreen(ctk.CTkFrame):
             n_days = int(self.days_var.get())
             who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
-            # Get items
-            items = self.db_manager.get_upcoming_items(n_days, who_filter)
+            # Get items (use search if query exists, otherwise get upcoming)
+            if self.search_query:
+                items = self.db_manager.search_items(self.search_query)
+                # Apply filters to search results
+                today = datetime.now().date()
+                end_date = today + timedelta(days=n_days)
+                filtered_items = []
+                for item in items:
+                    # Only include open items
+                    if item.status != "open":
+                        continue
+                    # Check date range
+                    item_date = item.start_date or item.due_date
+                    if item_date and item_date <= end_date.isoformat():
+                        # Apply who filter
+                        if who_filter is None or item.who == who_filter:
+                            filtered_items.append(item)
+                items = filtered_items
+            else:
+                items = self.db_manager.get_upcoming_items(n_days, who_filter)
 
             if not items:
                 label = ctk.CTkLabel(

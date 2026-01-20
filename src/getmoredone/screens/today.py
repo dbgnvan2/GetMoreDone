@@ -25,6 +25,7 @@ class TodayScreen(ctk.CTkFrame):
         self.settings = AppSettings.load()
         self.columns_expanded = True  # Track column visibility state
         self.show_top_3_only = False  # Track Top 3 mode
+        self.search_query = ""  # Track search query
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -32,13 +33,31 @@ class TodayScreen(ctk.CTkFrame):
         # Header
         header_frame = ctk.CTkFrame(self, fg_color="transparent")
         header_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
-        header_frame.grid_columnconfigure(1, weight=1)
+        header_frame.grid_columnconfigure(5, weight=1)
 
         ctk.CTkLabel(
             header_frame,
             text="Today's Items",
             font=ctk.CTkFont(size=24, weight="bold")
         ).grid(row=0, column=0, sticky="w")
+
+        # Search entry
+        self.search_entry = ctk.CTkEntry(
+            header_frame,
+            placeholder_text="Search title, description, next action...",
+            width=250
+        )
+        self.search_entry.grid(row=0, column=1, padx=5)
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        # Search button
+        btn_search = ctk.CTkButton(
+            header_frame,
+            text="Search",
+            width=80,
+            command=self.perform_search
+        )
+        btn_search.grid(row=0, column=2, padx=5)
 
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
@@ -47,7 +66,7 @@ class TodayScreen(ctk.CTkFrame):
             width=100,
             command=self.toggle_columns
         )
-        self.expand_collapse_btn.grid(row=0, column=1, padx=5)
+        self.expand_collapse_btn.grid(row=0, column=3, padx=5)
 
         # Top 3 toggle button
         self.top3_btn = ctk.CTkButton(
@@ -58,7 +77,7 @@ class TodayScreen(ctk.CTkFrame):
             hover_color="darkblue",
             command=self.toggle_top3
         )
-        self.top3_btn.grid(row=0, column=2, padx=5)
+        self.top3_btn.grid(row=0, column=4, padx=5)
 
         # New Item button
         btn_new = ctk.CTkButton(
@@ -69,7 +88,7 @@ class TodayScreen(ctk.CTkFrame):
             hover_color="darkgreen",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=3, padx=5)
+        btn_new.grid(row=0, column=6, padx=5)
 
         # Refresh button
         btn_refresh = ctk.CTkButton(
@@ -78,7 +97,7 @@ class TodayScreen(ctk.CTkFrame):
             width=100,
             command=self.refresh
         )
-        btn_refresh.grid(row=0, column=4, padx=5)
+        btn_refresh.grid(row=0, column=7, padx=5)
 
         # Scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self)
@@ -86,6 +105,11 @@ class TodayScreen(ctk.CTkFrame):
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load items
+        self.load_items()
+
+    def perform_search(self):
+        """Perform search and update the view."""
+        self.search_query = self.search_entry.get().strip()
         self.load_items()
 
     def toggle_columns(self):
@@ -194,6 +218,24 @@ class TodayScreen(ctk.CTkFrame):
     def get_todays_items(self):
         """Get items for today (start_date <= today for open items, completed_at = today for completed items)."""
         today = datetime.now().date().isoformat()
+
+        # If search query exists, use search instead
+        if self.search_query:
+            all_items = self.db_manager.search_items(self.search_query)
+            # Filter to today's items
+            todays_items = []
+            for item in all_items:
+                # Include open items where start/due date <= today
+                if item.status == "open":
+                    if item.start_date and item.start_date <= today:
+                        todays_items.append(item)
+                    elif not item.start_date and item.due_date and item.due_date <= today:
+                        todays_items.append(item)
+                # Include completed items completed today
+                elif item.status == "completed" and item.completed_at:
+                    if item.completed_at.startswith(today):
+                        todays_items.append(item)
+            return todays_items
 
         # Get open items where start date <= today (or due date if no start date)
         # AND completed items where completed_at is today

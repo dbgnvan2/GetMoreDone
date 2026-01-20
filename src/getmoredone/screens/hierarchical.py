@@ -19,6 +19,7 @@ class HierarchicalScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
+        self.search_query = ""  # Track search query
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -38,7 +39,7 @@ class HierarchicalScreen(ctk.CTkFrame):
         """Create header with controls."""
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(1, weight=1)
+        header.grid_columnconfigure(3, weight=1)
 
         # Title
         title = ctk.CTkLabel(
@@ -48,8 +49,26 @@ class HierarchicalScreen(ctk.CTkFrame):
         )
         title.grid(row=0, column=0, padx=10, pady=10)
 
+        # Search entry
+        self.search_entry = ctk.CTkEntry(
+            header,
+            placeholder_text="Search title, description, next action...",
+            width=200
+        )
+        self.search_entry.grid(row=0, column=1, padx=5, pady=10)
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        # Search button
+        btn_search = ctk.CTkButton(
+            header,
+            text="Search",
+            width=80,
+            command=self.perform_search
+        )
+        btn_search.grid(row=0, column=2, padx=5, pady=10)
+
         # Status filter
-        ctk.CTkLabel(header, text="Status:").grid(row=0, column=2, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Status:").grid(row=0, column=4, padx=(20, 5), pady=10)
 
         self.status_var = ctk.StringVar(value="open")
         self.status_combo = ctk.CTkComboBox(
@@ -59,7 +78,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             width=120,
             command=lambda _: self.refresh()
         )
-        self.status_combo.grid(row=0, column=3, padx=5, pady=10)
+        self.status_combo.grid(row=0, column=5, padx=5, pady=10)
 
         # New Item button
         btn_new = ctk.CTkButton(
@@ -67,7 +86,12 @@ class HierarchicalScreen(ctk.CTkFrame):
             text="+ New Item",
             command=self.create_new_item
         )
-        btn_new.grid(row=0, column=4, padx=10, pady=10)
+        btn_new.grid(row=0, column=6, padx=10, pady=10)
+
+    def perform_search(self):
+        """Perform search and update the view."""
+        self.search_query = self.search_entry.get().strip()
+        self.refresh()
 
     def refresh(self):
         """Refresh the hierarchical list."""
@@ -84,8 +108,17 @@ class HierarchicalScreen(ctk.CTkFrame):
             status = self.status_var.get()
             status_filter = None if status == "all" else status
 
-            # Get root items (items with no parent)
-            root_items = self.db_manager.get_root_items(status_filter=status_filter)
+            # Get items (use search if query exists, otherwise get root items)
+            if self.search_query:
+                all_items = self.db_manager.search_items(self.search_query)
+                # Apply status filter to search results
+                if status_filter:
+                    all_items = [item for item in all_items if item.status == status_filter]
+                # For search results, show all matching items (not just roots)
+                root_items = all_items
+            else:
+                # Get root items (items with no parent)
+                root_items = self.db_manager.get_root_items(status_filter=status_filter)
 
             if not root_items:
                 label = ctk.CTkLabel(
@@ -96,10 +129,18 @@ class HierarchicalScreen(ctk.CTkFrame):
                 label.grid(row=0, column=0, pady=20)
                 return
 
-            # Display each root item and its children recursively
+            # Display each item
             row = 0
-            for item in root_items:
-                row = self.display_item_tree(item, row, 0)
+            if self.search_query:
+                # For search results, display items in a flat list
+                for item in root_items:
+                    item_frame = self.create_item_row(item, 0)
+                    item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+                    row += 1
+            else:
+                # Display root items and their children recursively
+                for item in root_items:
+                    row = self.display_item_tree(item, row, 0)
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
             self.scroll_frame.grid(**grid_info)
