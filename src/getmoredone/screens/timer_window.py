@@ -940,20 +940,31 @@ class TimerWindow(ctk.CTkToplevel):
         if not music_folder.exists() or not music_folder.is_dir():
             return None
 
-        # Supported audio formats
-        audio_extensions = {'.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.wma'}
+        # Supported audio formats (pygame has best support for these)
+        # Note: M4A/AAC/WMA may not work reliably on all systems
+        preferred_formats = {'.mp3', '.wav', '.ogg'}
+        problematic_formats = {'.flac', '.m4a', '.aac', '.wma'}
+        all_formats = preferred_formats | problematic_formats
 
         # Get all audio files in the folder
         music_files = [
             f for f in music_folder.iterdir()
-            if f.is_file() and f.suffix.lower() in audio_extensions
+            if f.is_file() and f.suffix.lower() in all_formats
         ]
 
         if not music_files:
             return None
 
-        # Return a random music file
-        return str(random.choice(music_files))
+        # Prefer well-supported formats
+        preferred_files = [f for f in music_files if f.suffix.lower() in preferred_formats]
+        if preferred_files:
+            return str(random.choice(preferred_files))
+
+        # Fall back to any file, but warn
+        selected = random.choice(music_files)
+        print(f"[WARNING] Selected {selected.suffix} file - this format may not play correctly")
+        print(f"[WARNING] For best results, use MP3, WAV, or OGG files")
+        return str(selected)
 
     def _start_music(self):
         """Start playing music from the configured folder."""
@@ -982,6 +993,7 @@ class TimerWindow(ctk.CTkToplevel):
                     print(f"[DEBUG] Pygame mixer initialized: {pygame.mixer.get_init()}")
 
                 # Load and play the music file
+                file_ext = Path(music_file).suffix.lower()
                 pygame.mixer.music.load(music_file)
 
                 # Set volume from settings
@@ -991,18 +1003,39 @@ class TimerWindow(ctk.CTkToplevel):
 
                 pygame.mixer.music.play(-1)  # -1 means loop indefinitely
 
+                # Check if playback actually started
+                # Give it a moment to start
+                import time
+                time.sleep(0.1)
+
+                if not pygame.mixer.music.get_busy():
+                    print(f"[ERROR] Music file loaded but won't play: {file_ext} format may not be supported")
+                    print(f"[ERROR] File: {Path(music_file).name}")
+                    print(f"[INFO] SOLUTION: Convert your music to MP3, WAV, or OGG format")
+                    print(f"[INFO] M4A/AAC files often don't work with pygame on macOS")
+                    self.current_track_name = None
+                    return
+
                 # Store track name and update status
                 self.current_track_name = Path(music_file).name
                 self._update_status_with_track()
-                print(f"[INFO] Playing music: {self.current_track_name}")
-                print(f"[INFO] If you don't hear anything, check:")
-                print(f"[INFO]   - System volume/audio output device")
-                print(f"[INFO]   - Settings > Timer & Audio > Music Volume (currently {volume:.0%})")
+                print(f"[INFO] ✓ Playing music: {self.current_track_name}")
+                print(f"[INFO] Volume: {volume:.0%}")
+
+                if file_ext in ['.m4a', '.aac', '.wma', '.flac']:
+                    print(f"[INFO] Note: {file_ext} format may have playback issues")
+                    print(f"[INFO] If you hear clicks/silence, convert to MP3 or WAV")
             except ImportError:
                 print("[INFO] pygame not installed - music playback disabled")
                 print("[INFO] Install pygame with: pip install pygame")
             except Exception as e:
                 print(f"[ERROR] Error playing music: {e}")
+                print(f"[ERROR] File: {Path(music_file).name if music_file else 'unknown'}")
+                if 'music_file' in locals():
+                    file_ext = Path(music_file).suffix.lower()
+                    if file_ext in ['.m4a', '.aac', '.wma']:
+                        print(f"[ERROR] {file_ext} format is not well-supported by pygame")
+                        print(f"[INFO] Convert to MP3, WAV, or OGG for reliable playback")
                 import traceback
                 traceback.print_exc()
 
