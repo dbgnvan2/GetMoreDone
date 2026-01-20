@@ -355,6 +355,26 @@ class SettingsScreen(ctk.CTkFrame):
         )
         btn_browse.grid(row=1, column=2, padx=5, pady=5)
 
+        # Music volume slider
+        ctk.CTkLabel(section, text="Music Volume:").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+
+        volume_frame = ctk.CTkFrame(section, fg_color="transparent")
+        volume_frame.grid(row=2, column=1, columnspan=2, sticky="ew", padx=10, pady=5)
+
+        self.music_volume_var = ctk.DoubleVar(value=self.settings.music_volume)
+        self.music_volume_slider = ctk.CTkSlider(
+            volume_frame,
+            from_=0.0,
+            to=1.0,
+            variable=self.music_volume_var,
+            width=200,
+            command=self.update_volume_label
+        )
+        self.music_volume_slider.pack(side="left", padx=(0, 10))
+
+        self.volume_label = ctk.CTkLabel(volume_frame, text=f"{int(self.settings.music_volume * 100)}%", width=40)
+        self.volume_label.pack(side="left")
+
         # Save button
         btn_save = ctk.CTkButton(
             section,
@@ -364,17 +384,18 @@ class SettingsScreen(ctk.CTkFrame):
             hover_color="green",
             width=150
         )
-        btn_save.grid(row=2, column=0, sticky="w", padx=10, pady=10)
+        btn_save.grid(row=3, column=0, sticky="w", padx=10, pady=10)
 
         # Status label
         self.timer_audio_status_label = ctk.CTkLabel(section, text="", text_color="green")
-        self.timer_audio_status_label.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+        self.timer_audio_status_label.grid(row=3, column=1, sticky="w", padx=10, pady=10)
 
         # Info
-        info_text = ("Select a folder containing music files (MP3, WAV, OGG, FLAC).\n"
-                    "When you start a timer, a random music file from this folder will play.")
+        info_text = ("Select a folder containing music files (MP3, WAV, OGG, FLAC, M4A).\n"
+                    "When you start a timer, a random music file from this folder will play.\n"
+                    "Adjust volume to control music playback loudness (70% recommended).")
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=3, column=0, columnspan=3, sticky="w", padx=10, pady=5
+            row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
         )
 
     def browse_music_folder(self):
@@ -383,13 +404,19 @@ class SettingsScreen(ctk.CTkFrame):
         if path:
             self.music_folder_var.set(path)
 
+    def update_volume_label(self, value):
+        """Update volume label when slider changes."""
+        percentage = int(float(value) * 100)
+        self.volume_label.configure(text=f"{percentage}%")
+
     def save_timer_audio_settings(self):
         """Save timer and audio settings."""
         self.settings.music_folder = self.music_folder_var.get().strip() or None
+        self.settings.music_volume = self.music_volume_var.get()
         self.settings.save()
 
         self.timer_audio_status_label.configure(
-            text="✓ Settings saved",
+            text=f"✓ Settings saved (Volume: {int(self.settings.music_volume * 100)}%)",
             text_color="green"
         )
 

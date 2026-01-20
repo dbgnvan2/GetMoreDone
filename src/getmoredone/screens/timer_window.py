@@ -976,16 +976,28 @@ class TimerWindow(ctk.CTkToplevel):
             try:
                 import pygame
                 if not pygame.mixer.get_init():
-                    pygame.mixer.init()
+                    # Initialize with better compatibility settings
+                    # frequency=44100, size=-16, channels=2, buffer=512
+                    pygame.mixer.init(44100, -16, 2, 512)
+                    print(f"[DEBUG] Pygame mixer initialized: {pygame.mixer.get_init()}")
 
                 # Load and play the music file
                 pygame.mixer.music.load(music_file)
+
+                # Set volume from settings
+                volume = self.settings.music_volume
+                pygame.mixer.music.set_volume(volume)
+                print(f"[DEBUG] Music volume set to: {volume:.1%}")
+
                 pygame.mixer.music.play(-1)  # -1 means loop indefinitely
 
                 # Store track name and update status
                 self.current_track_name = Path(music_file).name
                 self._update_status_with_track()
                 print(f"[INFO] Playing music: {self.current_track_name}")
+                print(f"[INFO] If you don't hear anything, check:")
+                print(f"[INFO]   - System volume/audio output device")
+                print(f"[INFO]   - Settings > Timer & Audio > Music Volume (currently {volume:.0%})")
             except ImportError:
                 print("[INFO] pygame not installed - music playback disabled")
                 print("[INFO] Install pygame with: pip install pygame")
