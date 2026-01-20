@@ -20,6 +20,8 @@ pygame>=2.5.0  # Audio playback for timer music
 
 # Utilities
 python-dotenv>=1.0.0
+Pillow>=10.0.0  # Image handling for icons
+cairosvg>=2.7.0  # SVG to PNG conversion for icon rendering
 
 # Google Calendar Integration
 google-auth>=2.25.0

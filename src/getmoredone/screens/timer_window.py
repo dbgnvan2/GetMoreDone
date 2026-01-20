@@ -13,6 +13,7 @@ from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
+from ..utils.icon_loader import load_play_icon, load_pause_icon, load_stop_icon, load_music_note_icon
 
 
 class TimerWindow(ctk.CTkToplevel):
@@ -147,9 +148,16 @@ class TimerWindow(ctk.CTkToplevel):
         controls_frame.grid(row=2, column=0, pady=10, padx=10, sticky="ew")
         controls_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
+        # Load icons
+        play_icon = load_play_icon(size=20)
+        pause_icon = load_pause_icon(size=20)
+        stop_icon = load_stop_icon(size=20)
+
         self.start_button = ctk.CTkButton(
             controls_frame,
             text="Start",
+            image=play_icon,
+            compound="left",
             command=self.start_timer,
             fg_color="green",
             hover_color="darkgreen"
@@ -159,6 +167,8 @@ class TimerWindow(ctk.CTkToplevel):
         self.pause_button = ctk.CTkButton(
             controls_frame,
             text="Pause",
+            image=pause_icon,
+            compound="left",
             command=self.pause_timer,
             state="disabled"
         )
@@ -167,6 +177,8 @@ class TimerWindow(ctk.CTkToplevel):
         self.stop_button = ctk.CTkButton(
             controls_frame,
             text="Stop",
+            image=stop_icon,
+            compound="left",
             command=self.stop_timer,
             fg_color="red",
             hover_color="darkred",

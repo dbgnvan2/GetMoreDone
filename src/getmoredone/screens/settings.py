@@ -11,6 +11,7 @@ from tkinter import filedialog
 
 from ..app_settings import AppSettings
 from ..obsidian_utils import validate_obsidian_setup
+from ..utils.icon_loader import load_volume_icon
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -356,7 +357,16 @@ class SettingsScreen(ctk.CTkFrame):
         btn_browse.grid(row=1, column=2, padx=5, pady=5)
 
         # Music volume slider
-        ctk.CTkLabel(section, text="Music Volume:").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+        volume_label_frame = ctk.CTkFrame(section, fg_color="transparent")
+        volume_label_frame.grid(row=2, column=0, sticky="w", padx=10, pady=5)
+
+        # Load and display volume icon
+        volume_icon = load_volume_icon(size=18)
+        if volume_icon:
+            icon_label = ctk.CTkLabel(volume_label_frame, text="", image=volume_icon)
+            icon_label.pack(side="left", padx=(0, 5))
+
+        ctk.CTkLabel(volume_label_frame, text="Music Volume:").pack(side="left")
 
         volume_frame = ctk.CTkFrame(section, fg_color="transparent")
         volume_frame.grid(row=2, column=1, columnspan=2, sticky="ew", padx=10, pady=5)
