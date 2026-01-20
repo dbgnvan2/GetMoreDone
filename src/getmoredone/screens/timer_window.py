@@ -931,9 +931,16 @@ class TimerWindow(ctk.CTkToplevel):
     def _start_music(self):
         """Start playing music from the configured folder."""
         try:
+            # Check if music folder is configured
+            if not self.settings.music_folder:
+                print("[INFO] No music folder configured. Go to Settings > Timer & Audio to set up music playback.")
+                return
+
             # Get a random music file
             music_file = self._get_random_music_file()
             if not music_file:
+                print(f"[INFO] No music files found in: {self.settings.music_folder}")
+                print("[INFO] Supported formats: MP3, WAV, OGG, FLAC, M4A, AAC, WMA")
                 return
 
             self.current_music_file = music_file
@@ -947,15 +954,19 @@ class TimerWindow(ctk.CTkToplevel):
                 # Load and play the music file
                 pygame.mixer.music.load(music_file)
                 pygame.mixer.music.play(-1)  # -1 means loop indefinitely
-                print(f"[DEBUG] Playing music: {Path(music_file).name}")
+                print(f"[INFO] Playing music: {Path(music_file).name}")
             except ImportError:
-                print("[DEBUG] pygame not installed - music playback disabled")
-                print("[DEBUG] Install pygame with: pip install pygame")
+                print("[INFO] pygame not installed - music playback disabled")
+                print("[INFO] Install pygame with: pip install pygame")
             except Exception as e:
-                print(f"[DEBUG] Error playing music: {e}")
+                print(f"[ERROR] Error playing music: {e}")
+                import traceback
+                traceback.print_exc()
 
         except Exception as e:
-            print(f"[DEBUG] Error starting music: {e}")
+            print(f"[ERROR] Error starting music: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _stop_music(self):
         """Stop playing music."""
