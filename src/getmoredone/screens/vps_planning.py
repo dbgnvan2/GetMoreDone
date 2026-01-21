@@ -744,14 +744,13 @@ class VPSPlanningScreen(ctk.CTkFrame):
         from .item_editor import ItemEditorDialog
         week_action = self.vps_manager.get_week_action(week_action_id)
         if week_action:
-            dialog = ItemEditorDialog(
+            ItemEditorDialog(
                 self, self.app.db_manager,
                 week_action_id=week_action_id,
                 segment_description_id=week_action['segment_description_id'],
-                vps_manager=self.vps_manager
+                vps_manager=self.vps_manager,
+                on_close_callback=self.refresh
             )
-            self.wait_window(dialog)
-            self.refresh()
 
     def edit_tl_vision(self, vision_id: str):
         """Edit a TL Vision."""
@@ -825,9 +824,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def edit_action_item(self, item_id: str):
         """Edit an Action Item."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.app.db_manager, item_id=item_id, vps_manager=self.vps_manager)
-        self.wait_window(dialog)
-        self.refresh()
+        ItemEditorDialog(self, self.app.db_manager, item_id=item_id, vps_manager=self.vps_manager, on_close_callback=self.refresh)
 
     # ========================================================================
     # DELETE METHODS

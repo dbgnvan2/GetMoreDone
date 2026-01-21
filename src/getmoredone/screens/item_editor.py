@@ -21,7 +21,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, db_manager: 'DatabaseManager', item_id: Optional[str] = None,
                  week_action_id: Optional[str] = None, segment_description_id: Optional[str] = None,
-                 vps_manager: Optional['VPSManager'] = None):
+                 vps_manager: Optional['VPSManager'] = None, on_close_callback=None):
         super().__init__(parent)
 
         self.db_manager = db_manager
@@ -31,6 +31,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.week_action_id = week_action_id
         self.segment_description_id = segment_description_id
         self.week_action_options = {}  # Map display string to week_action_id
+        self.on_close_callback = on_close_callback  # Callback to refresh parent when dialog closes
 
         # Load item if editing
         if item_id:
@@ -57,9 +58,11 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Apply defaults for new items
             self.apply_defaults_to_form()
 
-        # Make dialog modal
+        # Make dialog appear on top of parent (but not modal - allows multiple editors)
         self.transient(parent)
-        self.grab_set()
+
+        # Bind cleanup callback when dialog is closed
+        self.protocol("WM_DELETE_WINDOW", self.on_dialog_close)
 
         # Center on parent window
         self.center_on_parent()
@@ -1269,38 +1272,39 @@ class ItemEditorDialog(ctk.CTkToplevel):
             else:
                 self.db_manager.create_action_item(item, apply_defaults=True)
 
-            self.destroy()
+            self.on_dialog_close()
 
         except Exception as e:
             self.error_label.configure(text=f"Error: {str(e)}")
 
     def save_and_new(self):
         """Save and open a new item editor."""
+        callback = self.on_close_callback  # Save callback before save closes this dialog
         self.save_item()
         if not self.winfo_exists():
-            ItemEditorDialog(self.master, self.db_manager, vps_manager=self.vps_manager)
+            ItemEditorDialog(self.master, self.db_manager, vps_manager=self.vps_manager, on_close_callback=callback)
 
     def duplicate_item(self):
         """Duplicate the current item."""
         if self.item_id:
             new_id = self.db_manager.duplicate_action_item(self.item_id)
-            self.destroy()
+            self.on_dialog_close()
             if new_id:
-                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager)
+                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def create_followup(self):
         """Create a follow-up item linked to the current item."""
         if self.item_id:
             new_id = self.db_manager.create_followup_item(self.item_id)
-            self.destroy()
+            self.on_dialog_close()
             if new_id:
-                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager)
+                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def complete_item(self):
         """Mark item as complete."""
         if self.item_id:
             self.db_manager.complete_action_item(self.item_id)
-            self.destroy()
+            self.on_dialog_close()
 
     def delete_item(self):
         """Delete the item with confirmation."""
@@ -1357,7 +1361,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if dialog.confirmed:
             # Delete the item
             self.db_manager.delete_action_item(self.item_id)
-            self.destroy()
+            self.on_dialog_close()
 
     def update_priority_display(self):
         """Update the priority score display."""
@@ -1457,10 +1461,20 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Final update to apply positioning
         self.update_idletasks()
 
+    def on_dialog_close(self):
+        """Handle dialog close event - call callback and destroy."""
+        if self.on_close_callback:
+            try:
+                self.on_close_callback()
+            except Exception:
+                pass  # Ignore callback errors during close
+        self.destroy()
+
     def view_parent_item(self, parent_id: str):
         """Open the parent item in a new editor dialog."""
+        callback = self.on_close_callback  # Save callback before destroying
         self.destroy()
-        ItemEditorDialog(self.master, self.db_manager, parent_id, vps_manager=self.vps_manager)
+        ItemEditorDialog(self.master, self.db_manager, parent_id, vps_manager=self.vps_manager, on_close_callback=callback)
 
     def create_sub_item(self):
         """Create a new sub-item as a duplicate of this item."""
@@ -1480,10 +1494,11 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self.db_manager.update_action_item(sub_item)
 
         # Close this dialog
+        callback = self.on_close_callback  # Save callback before destroying
         self.destroy()
 
         # Open editor for the new sub-item
-        ItemEditorDialog(self.master, self.db_manager, sub_item_id, vps_manager=self.vps_manager)
+        ItemEditorDialog(self.master, self.db_manager, sub_item_id, vps_manager=self.vps_manager, on_close_callback=callback)
 
     def show_related(self):
         """Show list of related items (parent and children) in a new dialog."""
@@ -1491,7 +1506,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         # Open related items dialog
-        ShowRelatedDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager)
+        ShowRelatedDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def set_parent(self):
         """Open dialog to set/change the parent item."""
@@ -1499,7 +1514,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         # Open set parent dialog
-        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager)
+        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def create_calendar_event(self):
         """Create a Google Calendar event linked to this item."""
@@ -1709,12 +1724,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
 class ShowRelatedDialog(ctk.CTkToplevel):
     """Dialog for showing related items (parent and children)."""
 
-    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_title: str, vps_manager=None):
+    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_title: str, vps_manager=None, on_close_callback=None):
         super().__init__(parent)
         self.db_manager = db_manager
         self.current_item_id = current_item_id
         self.current_title = current_title
         self.vps_manager = vps_manager
+        self.on_close_callback = on_close_callback
 
         self.title(f"Related Items: {current_title}")
         self.geometry("900x700")
@@ -1922,7 +1938,7 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         # Close this dialog
         self.destroy()
         # Open editor for the item
-        ItemEditorDialog(self.master, self.db_manager, item_id, vps_manager=self.vps_manager)
+        ItemEditorDialog(self.master, self.db_manager, item_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
@@ -1952,13 +1968,14 @@ class ShowRelatedDialog(ctk.CTkToplevel):
 class SetParentDialog(ctk.CTkToplevel):
     """Dialog for selecting a parent item."""
 
-    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_item_title: str, vps_manager=None):
+    def __init__(self, parent, db_manager: 'DatabaseManager', current_item_id: str, current_item_title: str, vps_manager=None, on_close_callback=None):
         super().__init__(parent)
         self.db_manager = db_manager
         self.current_item_id = current_item_id
         self.current_item_title = current_item_title
         self.parent_dialog = parent
         self.vps_manager = vps_manager
+        self.on_close_callback = on_close_callback
 
         self.title(f"Set Parent for: {current_item_title}")
         self.geometry("900x600")
@@ -2144,7 +2161,7 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Close and reopen the parent editor to show updated parent info
         self.parent_dialog.destroy()
-        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager)
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def clear_parent(self):
         """Clear the parent (make this a root item)."""
@@ -2159,7 +2176,7 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Close and reopen the parent editor to show updated parent info
         self.parent_dialog.destroy()
-        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager)
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""

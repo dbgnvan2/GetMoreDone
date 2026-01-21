@@ -715,7 +715,7 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Step 7: Present New Action Item Record
             from .item_editor import ItemEditorDialog
-            ItemEditorDialog(parent, db_manager, new_item_id)
+            ItemEditorDialog(parent, db_manager, new_item_id, on_close_callback=on_close_callback)
             print(f"[DEBUG] Step 7: New Action Item Record presented in editor")
             # Step 8: User updates and saves (happens in the editor)
         except Exception as e:

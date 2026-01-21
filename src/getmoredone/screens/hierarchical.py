@@ -254,13 +254,9 @@ class HierarchicalScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager)
-        dialog.wait_window()
-        self.refresh()
+        ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
 
     def create_new_item(self):
         """Open item editor for new item."""
         from .item_editor import ItemEditorDialog
-        dialog = ItemEditorDialog(self, self.db_manager, vps_manager=self.app.vps_manager)
-        dialog.wait_window()
-        self.refresh()
+        ItemEditorDialog(self, self.db_manager, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
