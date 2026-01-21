@@ -71,7 +71,7 @@ class TodayScreen(ctk.CTkFrame):
         # Top 3 toggle button
         self.top3_btn = ctk.CTkButton(
             header_frame,
-            text="Show All",
+            text="Top 3",
             width=100,
             fg_color="blue",
             hover_color="darkblue",
