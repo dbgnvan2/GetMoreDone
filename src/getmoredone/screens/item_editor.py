@@ -196,19 +196,55 @@ class ItemEditorDialog(ctk.CTkToplevel):
         left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
         row_l += 1
 
-        # Dates Section
-        ctk.CTkLabel(
-            left_col,
-            text="Dates",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=row_l, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 10))
+        # Resizable separator between Description and Next Action
+        self.separator_frame = ctk.CTkFrame(left_col, height=5, fg_color="gray40", cursor="sb_v_double_arrow")
+        self.separator_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=2)
+        self.separator_frame.bind("<Button-1>", self.start_resize)
+        self.separator_frame.bind("<B1-Motion>", self.do_resize)
+        self.resizing = False
+        self.resize_start_y = 0
         row_l += 1
 
-        # Start Date
-        ctk.CTkLabel(left_col, text="Start Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        # Planned Minutes (keep in left column for now)
+        ctk.CTkLabel(left_col, text="Planned Minutes:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0", width=320)
+        self.planned_minutes_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        row_l += 1
 
-        start_date_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        start_date_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        # === RIGHT COLUMN with TABS ===
+        row_r = 0
+
+        # Create tabview for right column with fixed height
+        self.tabview = ctk.CTkTabview(right_col, width=380, height=400)
+        self.tabview.grid(row=row_r, column=0, columnspan=2, sticky="new", padx=10, pady=10)
+        row_r += 1
+
+        # Create tabs (Dates tab first as default)
+        self.tab_dates = self.tabview.add("Dates")
+        self.tab_priority = self.tabview.add("Priority")
+        self.tab_organization = self.tabview.add("Organization")
+        self.tab_notes = self.tabview.add("Notes")
+
+        # Configure tab grids - items stick to top, don't expand vertically
+        self.tab_dates.grid_columnconfigure(1, weight=1)
+        self.tab_priority.grid_columnconfigure(1, weight=1)
+        self.tab_organization.grid_columnconfigure(1, weight=1)
+        self.tab_notes.grid_columnconfigure(0, weight=1)
+
+        # Don't let rows expand - this keeps items at the top
+        self.tab_dates.grid_rowconfigure(99, weight=1)  # Empty row at bottom absorbs space
+        self.tab_priority.grid_rowconfigure(99, weight=1)
+        self.tab_organization.grid_rowconfigure(99, weight=1)
+        self.tab_notes.grid_rowconfigure(99, weight=1)
+
+        # === TAB 0: DATES ===
+        tab0_row = 0
+
+        # Start Date
+        ctk.CTkLabel(self.tab_dates, text="Start Date:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+
+        start_date_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
+        start_date_frame.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
 
         self.start_date_entry = ctk.CTkEntry(start_date_frame, placeholder_text="YYYY-MM-DD", width=150)
         self.start_date_entry.pack(side="left", padx=(0, 5))
@@ -230,13 +266,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_start_clear = ctk.CTkButton(start_date_frame, text="Clear", width=50,
                                        command=lambda: self.start_date_entry.delete(0, "end"))
         btn_start_clear.pack(side="left", padx=2)
-        row_l += 1
+        tab0_row += 1
 
         # Due Date
-        ctk.CTkLabel(left_col, text="Due Date:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_dates, text="Due Date:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
 
-        due_date_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        due_date_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        due_date_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
+        due_date_frame.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
 
         self.due_date_entry = ctk.CTkEntry(due_date_frame, placeholder_text="YYYY-MM-DD", width=150)
         self.due_date_entry.pack(side="left", padx=(0, 5))
@@ -258,55 +294,26 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_due_clear = ctk.CTkButton(due_date_frame, text="Clear", width=50,
                                       command=lambda: self.due_date_entry.delete(0, "end"))
         btn_due_clear.pack(side="left", padx=2)
-        row_l += 1
+        tab0_row += 1
 
         # Is Meeting checkbox
-        ctk.CTkLabel(left_col, text="Is Meeting:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_dates, text="Is Meeting:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
         self.is_meeting_var = ctk.BooleanVar(value=False)
         self.is_meeting_checkbox = ctk.CTkCheckBox(
-            left_col,
+            self.tab_dates,
             text="",
             variable=self.is_meeting_var,
             onvalue=True,
             offvalue=False
         )
-        self.is_meeting_checkbox.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
+        self.is_meeting_checkbox.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        tab0_row += 1
 
         # Meeting Start Time (read-only, set when calendar event is created)
-        ctk.CTkLabel(left_col, text="Meeting Time:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.meeting_time_label = ctk.CTkLabel(left_col, text="Not scheduled", anchor="w")
-        self.meeting_time_label.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        # Planned Minutes (keep in left column for now)
-        ctk.CTkLabel(left_col, text="Planned Minutes:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0", width=320)
-        self.planned_minutes_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        # === RIGHT COLUMN with TABS ===
-        row_r = 0
-
-        # Create tabview for right column with fixed height
-        self.tabview = ctk.CTkTabview(right_col, width=380, height=400)
-        self.tabview.grid(row=row_r, column=0, columnspan=2, sticky="new", padx=10, pady=10)
-        row_r += 1
-
-        # Create tabs
-        self.tab_priority = self.tabview.add("Priority")
-        self.tab_organization = self.tabview.add("Organization")
-        self.tab_notes = self.tabview.add("Notes")
-
-        # Configure tab grids - items stick to top, don't expand vertically
-        self.tab_priority.grid_columnconfigure(1, weight=1)
-        self.tab_organization.grid_columnconfigure(1, weight=1)
-        self.tab_notes.grid_columnconfigure(0, weight=1)
-
-        # Don't let rows expand - this keeps items at the top
-        self.tab_priority.grid_rowconfigure(99, weight=1)  # Empty row at bottom absorbs space
-        self.tab_organization.grid_rowconfigure(99, weight=1)
-        self.tab_notes.grid_rowconfigure(99, weight=1)
+        ctk.CTkLabel(self.tab_dates, text="Meeting Time:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+        self.meeting_time_label = ctk.CTkLabel(self.tab_dates, text="Not scheduled", anchor="w")
+        self.meeting_time_label.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        tab0_row += 1
 
         # === TAB 1: PRIORITY FACTORS ===
         tab1_row = 0
@@ -485,7 +492,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             btn_duplicate = ctk.CTkButton(top_row, text="Duplicate", command=self.duplicate_item, width=100)
             btn_duplicate.pack(side="left", padx=5)
 
-            btn_followup = ctk.CTkButton(top_row, text="Create Follow-up", command=self.create_followup, width=120, fg_color="orange", hover_color="darkorange")
+            btn_followup = ctk.CTkButton(top_row, text="Create Follow-up", command=self.create_followup, width=120)
             btn_followup.pack(side="left", padx=5)
 
             btn_complete = ctk.CTkButton(top_row, text="Complete", command=self.complete_item, width=100)
@@ -1367,6 +1374,31 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.priority_label.configure(
             text=f"{score} ({importance}×{urgency}×{size}×{value})"
         )
+
+    def start_resize(self, event):
+        """Start resizing the text fields."""
+        self.resizing = True
+        self.resize_start_y = event.y_root
+
+    def do_resize(self, event):
+        """Handle the resizing of text fields."""
+        if not self.resizing:
+            return
+
+        delta = event.y_root - self.resize_start_y
+        self.resize_start_y = event.y_root
+
+        # Get current heights
+        desc_height = self.description_text.cget("height")
+        next_height = self.next_action_text.cget("height")
+
+        # Calculate new heights
+        new_desc_height = max(50, desc_height + delta)
+        new_next_height = max(50, next_height - delta)
+
+        # Update heights
+        self.description_text.configure(height=new_desc_height)
+        self.next_action_text.configure(height=new_next_height)
 
     def on_resize(self, event):
         """Handle window resize to switch between 2-column and 1-column layout."""
