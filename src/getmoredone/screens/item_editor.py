@@ -185,13 +185,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Description
         ctk.CTkLabel(left_col, text="Description:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
         self.description_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.description_text.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.description_text.grid(row=row_l, column=1, sticky="nsew", padx=10, pady=5)
+        left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
         row_l += 1
 
         # Next Action
         ctk.CTkLabel(left_col, text="Next Action:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
         self.next_action_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.next_action_text.grid(row=row_l, column=1, sticky="ew", padx=10, pady=5)
+        self.next_action_text.grid(row=row_l, column=1, sticky="nsew", padx=10, pady=5)
+        left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
         row_l += 1
 
         # Dates Section
