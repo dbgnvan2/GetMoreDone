@@ -23,7 +23,8 @@ class TodayScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
-        self.columns_expanded = True  # Track column visibility state
+        # Track column visibility state (default: collapsed)
+        self.columns_expanded = False
         self.show_top_3_only = False  # Track Top 3 mode
         self.search_query = ""  # Track search query
 
@@ -62,7 +63,7 @@ class TodayScreen(ctk.CTkFrame):
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
             header_frame,
-            text="Collapse",
+            text="Expand",
             width=100,
             command=self.toggle_columns
         )
@@ -101,7 +102,8 @@ class TodayScreen(ctk.CTkFrame):
 
         # Scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self)
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
+        self.scroll_frame.grid(
+            row=1, column=0, sticky="nsew", padx=20, pady=(0, 20))
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load items
@@ -115,13 +117,15 @@ class TodayScreen(ctk.CTkFrame):
     def toggle_columns(self):
         """Toggle between expanded and collapsed column view."""
         self.columns_expanded = not self.columns_expanded
-        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.expand_collapse_btn.configure(
+            text="Expand" if not self.columns_expanded else "Collapse")
         self.load_items()
 
     def toggle_top3(self):
         """Toggle between showing all items and showing only top 3 by priority."""
         self.show_top_3_only = not self.show_top_3_only
-        self.top3_btn.configure(text="Show All" if self.show_top_3_only else "Top 3")
+        self.top3_btn.configure(
+            text="Show All" if self.show_top_3_only else "Top 3")
         self.load_items()
 
     def refresh(self):
@@ -154,21 +158,25 @@ class TodayScreen(ctk.CTkFrame):
 
             # Separate open and completed items
             open_items = [item for item in items if item.status == "open"]
-            completed_items = [item for item in items if item.status == "completed"]
+            completed_items = [
+                item for item in items if item.status == "completed"]
 
             # Filter to top 3 by priority if toggle is on
             # Items are already sorted by priority_score DESC in the query
             if self.show_top_3_only and len(open_items) > 3:
                 # Sort open items by priority_score descending to ensure top 3
-                open_items_sorted = sorted(open_items, key=lambda x: x.priority_score, reverse=True)
+                open_items_sorted = sorted(
+                    open_items, key=lambda x: x.priority_score, reverse=True)
                 open_items = open_items_sorted[:3]
 
             row = 0
 
             # Open items section
             if open_items:
-                open_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
-                open_header.grid(row=row, column=0, sticky="ew", pady=(10, 0), padx=5)
+                open_header = ctk.CTkFrame(
+                    self.scroll_frame, fg_color="gray25")
+                open_header.grid(row=row, column=0,
+                                 sticky="ew", pady=(10, 0), padx=5)
                 ctk.CTkLabel(
                     open_header,
                     text=f"To Do ({len(open_items)} items)",
@@ -178,13 +186,15 @@ class TodayScreen(ctk.CTkFrame):
 
                 for item in open_items:
                     item_frame = self.create_item_row(item)
-                    item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+                    item_frame.grid(row=row, column=0,
+                                    sticky="ew", pady=2, padx=5)
                     row += 1
 
             # Completed items section
             if completed_items:
                 # Calculate total time for completed items
-                total_minutes = sum(item.planned_minutes for item in completed_items if item.planned_minutes)
+                total_minutes = sum(
+                    item.planned_minutes for item in completed_items if item.planned_minutes)
 
                 # Format time
                 if total_minutes >= 60:
@@ -197,8 +207,10 @@ class TodayScreen(ctk.CTkFrame):
                 else:
                     time_str = f"{total_minutes}m" if total_minutes > 0 else "0m"
 
-                completed_header = ctk.CTkFrame(self.scroll_frame, fg_color="darkgreen")
-                completed_header.grid(row=row, column=0, sticky="ew", pady=(20, 0), padx=5)
+                completed_header = ctk.CTkFrame(
+                    self.scroll_frame, fg_color="darkgreen")
+                completed_header.grid(
+                    row=row, column=0, sticky="ew", pady=(20, 0), padx=5)
                 ctk.CTkLabel(
                     completed_header,
                     text=f"Completed ({len(completed_items)} items | Time: {time_str})",
@@ -209,7 +221,8 @@ class TodayScreen(ctk.CTkFrame):
 
                 for item in completed_items:
                     item_frame = self.create_item_row(item, is_completed=True)
-                    item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+                    item_frame.grid(row=row, column=0,
+                                    sticky="ew", pady=2, padx=5)
                     row += 1
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
@@ -255,7 +268,8 @@ class TodayScreen(ctk.CTkFrame):
             ORDER BY status ASC, COALESCE(start_date, due_date) ASC, priority_score DESC
         """
 
-        rows = self.db_manager.db.conn.execute(query, (today, today)).fetchall()
+        rows = self.db_manager.db.conn.execute(
+            query, (today, today)).fetchall()
         return [self.db_manager._row_to_action_item(row) for row in rows]
 
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:
@@ -369,16 +383,20 @@ class TodayScreen(ctk.CTkFrame):
             factors_frame.grid(row=0, column=6, padx=5, pady=5)
             col = 0
             if item.importance:
-                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             if item.urgency:
-                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             if item.size:
-                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             if item.value:
-                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
 
         # Action buttons (only for open items)
@@ -434,12 +452,14 @@ class TodayScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager, item_id,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
 
     def create_new_item(self):
         """Open item editor for new item."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
 
     def push_item(self, item_id: str):
         """Push item to next day without showing dialog, using weekend-aware logic."""
@@ -458,7 +478,8 @@ class TodayScreen(ctk.CTkFrame):
         if item.start_date:
             try:
                 start_dt = date.fromisoformat(item.start_date)
-                new_start_dt = increment_date(start_dt, 1, settings.include_saturday, settings.include_sunday)
+                new_start_dt = increment_date(
+                    start_dt, 1, settings.include_saturday, settings.include_sunday)
                 new_start = new_start_dt.isoformat()
             except ValueError:
                 pass
@@ -466,11 +487,13 @@ class TodayScreen(ctk.CTkFrame):
         if item.due_date:
             try:
                 due_dt = date.fromisoformat(item.due_date)
-                new_due_dt = increment_date(due_dt, 1, settings.include_saturday, settings.include_sunday)
+                new_due_dt = increment_date(
+                    due_dt, 1, settings.include_saturday, settings.include_sunday)
                 new_due = new_due_dt.isoformat()
             except ValueError:
                 pass
 
         # Push to next day directly (no dialog, no reason)
-        self.db_manager.reschedule_item(item_id, new_start, new_due, reason=None)
+        self.db_manager.reschedule_item(
+            item_id, new_start, new_due, reason=None)
         self.refresh()

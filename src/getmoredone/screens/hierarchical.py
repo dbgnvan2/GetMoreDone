@@ -29,7 +29,8 @@ class HierarchicalScreen(ctk.CTkFrame):
 
         # Create scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.scroll_frame.grid(
+            row=1, column=0, sticky="nsew", padx=10, pady=10)
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load items
@@ -68,7 +69,8 @@ class HierarchicalScreen(ctk.CTkFrame):
         btn_search.grid(row=0, column=2, padx=5, pady=10)
 
         # Status filter
-        ctk.CTkLabel(header, text="Status:").grid(row=0, column=4, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Status:").grid(
+            row=0, column=4, padx=(20, 5), pady=10)
 
         self.status_var = ctk.StringVar(value="open")
         self.status_combo = ctk.CTkComboBox(
@@ -113,12 +115,14 @@ class HierarchicalScreen(ctk.CTkFrame):
                 all_items = self.db_manager.search_items(self.search_query)
                 # Apply status filter to search results
                 if status_filter:
-                    all_items = [item for item in all_items if item.status == status_filter]
+                    all_items = [
+                        item for item in all_items if item.status == status_filter]
                 # For search results, show all matching items (not just roots)
                 root_items = all_items
             else:
                 # Get root items (items with no parent)
-                root_items = self.db_manager.get_root_items(status_filter=status_filter)
+                root_items = self.db_manager.get_root_items(
+                    status_filter=status_filter)
 
             if not root_items:
                 label = ctk.CTkLabel(
@@ -135,7 +139,8 @@ class HierarchicalScreen(ctk.CTkFrame):
                 # For search results, display items in a flat list
                 for item in root_items:
                     item_frame = self.create_item_row(item, 0)
-                    item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+                    item_frame.grid(row=row, column=0,
+                                    sticky="ew", pady=2, padx=5)
                     row += 1
             else:
                 # Display root items and their children recursively
@@ -159,7 +164,8 @@ class HierarchicalScreen(ctk.CTkFrame):
         """
         # Create item row
         item_frame = self.create_item_row(item, indent_level)
-        item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent_level * 30 + 5, 5))
+        item_frame.grid(row=row, column=0, sticky="ew", pady=2,
+                        padx=(indent_level * 30 + 5, 5))
         row += 1
 
         # Get and display children
@@ -171,9 +177,13 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, indent_level: int) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        # RED background for critical items
-        is_critical = (item.importance == 20 or item.urgency == 20)
-        bg_color = "darkred" if is_critical else None
+        # Background colors: grey for completed, red for critical open items
+        if item.status == Status.COMPLETED:
+            bg_color = "gray30"
+        elif item.importance == 20 or item.urgency == 20:
+            bg_color = "darkred"
+        else:
+            bg_color = None
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         frame.grid_columnconfigure(0, weight=1)
 
@@ -195,10 +205,12 @@ class HierarchicalScreen(ctk.CTkFrame):
         title_label = ctk.CTkLabel(
             frame,
             text=info_text,
-            font=ctk.CTkFont(size=12, family="Courier" if indent_level > 0 else None),
+            font=ctk.CTkFont(
+                size=12, family="Courier" if indent_level > 0 else None),
             anchor="w"
         )
-        title_label.grid(row=0, column=0, sticky="w", padx=indent_padding, pady=5)
+        title_label.grid(row=0, column=0, sticky="w",
+                         padx=indent_padding, pady=5)
 
         # Priority score
         score_label = ctk.CTkLabel(
@@ -219,7 +231,8 @@ class HierarchicalScreen(ctk.CTkFrame):
             due_label.grid(row=0, column=2, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
-            ctk.CTkLabel(frame, text="", width=110).grid(row=0, column=2, padx=5, pady=5)
+            ctk.CTkLabel(frame, text="", width=110).grid(
+                row=0, column=2, padx=5, pady=5)
 
         # Child count
         children = self.db_manager.get_children(item.id)
@@ -233,7 +246,8 @@ class HierarchicalScreen(ctk.CTkFrame):
             child_count_label.grid(row=0, column=3, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
-            ctk.CTkLabel(frame, text="", width=70).grid(row=0, column=3, padx=5, pady=5)
+            ctk.CTkLabel(frame, text="", width=70).grid(
+                row=0, column=3, padx=5, pady=5)
 
         # Edit button
         btn_edit = ctk.CTkButton(
@@ -254,9 +268,11 @@ class HierarchicalScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager, item_id,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
 
     def create_new_item(self):
         """Open item editor for new item."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)

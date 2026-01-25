@@ -31,7 +31,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.week_action_id = week_action_id
         self.segment_description_id = segment_description_id
         self.week_action_options = {}  # Map display string to week_action_id
-        self.on_close_callback = on_close_callback  # Callback to refresh parent when dialog closes
+        # Callback to refresh parent when dialog closes
+        self.on_close_callback = on_close_callback
 
         # Load item if editing
         if item_id:
@@ -73,7 +74,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         main_frame.grid_columnconfigure(0, weight=1)  # Left column
-        main_frame.grid_columnconfigure(1, weight=0)  # Right column - fixed width
+        main_frame.grid_columnconfigure(
+            1, weight=0)  # Right column - fixed width
         main_frame.grid_rowconfigure(0, weight=1)
 
         # Left column
@@ -93,8 +95,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         if self.item and self.item.parent_id:
             parent_item = self.db_manager.get_action_item(self.item.parent_id)
             if parent_item:
-                parent_frame = ctk.CTkFrame(left_col, fg_color="gray25", corner_radius=8)
-                parent_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=(5, 10))
+                parent_frame = ctk.CTkFrame(
+                    left_col, fg_color="gray25", corner_radius=8)
+                parent_frame.grid(row=row_l, column=0, columnspan=2,
+                                  sticky="ew", padx=10, pady=(5, 10))
 
                 ctk.CTkLabel(
                     parent_frame,
@@ -143,13 +147,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
         who_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
 
         self.who_var = ctk.StringVar()
-        self.who_entry = ctk.CTkEntry(who_frame, textvariable=self.who_var, width=320)
+        self.who_entry = ctk.CTkEntry(
+            who_frame, textvariable=self.who_var, width=320)
         self.who_entry.pack()
         self.who_entry.bind('<KeyRelease>', self.on_who_search)
         self.who_entry.bind('<Button-1>', self.on_who_click)  # Show on click
         self.who_entry.bind('<Tab>', lambda e: self.hide_contact_suggestions())
-        self.who_entry.bind('<Escape>', lambda e: self.hide_contact_suggestions())
-        self.who_entry.bind('<FocusOut>', lambda e: self.on_who_changed())  # Apply defaults when focus leaves WHO field
+        self.who_entry.bind(
+            '<Escape>', lambda e: self.hide_contact_suggestions())
+        # Apply defaults when focus leaves WHO field
+        self.who_entry.bind('<FocusOut>', lambda e: self.on_who_changed())
 
         # Dropdown for contact suggestions
         self.contact_suggestions_frame = None
@@ -180,28 +187,35 @@ class ItemEditorDialog(ctk.CTkToplevel):
         row_l += 1
 
         # Title
-        ctk.CTkLabel(left_col, text="* Title:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(left_col, text="* Title:").grid(row=row_l,
+                                                     column=0, sticky="w", padx=10, pady=5)
         self.title_entry = ctk.CTkEntry(left_col, width=320)
         self.title_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # Description
-        ctk.CTkLabel(left_col, text="Description:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
+        ctk.CTkLabel(left_col, text="Description:").grid(
+            row=row_l, column=0, sticky="nw", padx=10, pady=5)
         self.description_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.description_text.grid(row=row_l, column=1, sticky="nsew", padx=10, pady=5)
+        self.description_text.grid(
+            row=row_l, column=1, sticky="nsew", padx=10, pady=5)
         left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
         row_l += 1
 
         # Next Action
-        ctk.CTkLabel(left_col, text="Next Action:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=5)
+        ctk.CTkLabel(left_col, text="Next Action:").grid(
+            row=row_l, column=0, sticky="nw", padx=10, pady=5)
         self.next_action_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.next_action_text.grid(row=row_l, column=1, sticky="nsew", padx=10, pady=5)
+        self.next_action_text.grid(
+            row=row_l, column=1, sticky="nsew", padx=10, pady=5)
         left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
         row_l += 1
 
         # Resizable separator between Description and Next Action
-        self.separator_frame = ctk.CTkFrame(left_col, height=5, fg_color="gray40", cursor="sb_v_double_arrow")
-        self.separator_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=2)
+        self.separator_frame = ctk.CTkFrame(
+            left_col, height=5, fg_color="gray40", cursor="sb_v_double_arrow")
+        self.separator_frame.grid(
+            row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=2)
         self.separator_frame.bind("<Button-1>", self.start_resize)
         self.separator_frame.bind("<B1-Motion>", self.do_resize)
         self.resizing = False
@@ -209,9 +223,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
         row_l += 1
 
         # Planned Minutes (keep in left column for now)
-        ctk.CTkLabel(left_col, text="Planned Minutes:").grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.planned_minutes_entry = ctk.CTkEntry(left_col, placeholder_text="0", width=320)
-        self.planned_minutes_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(left_col, text="Planned Minutes:").grid(
+            row=row_l, column=0, sticky="w", padx=10, pady=5)
+        self.planned_minutes_entry = ctk.CTkEntry(
+            left_col, placeholder_text="0", width=320)
+        self.planned_minutes_entry.grid(
+            row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
         # === RIGHT COLUMN with TABS ===
@@ -219,7 +236,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Create tabview for right column with fixed height
         self.tabview = ctk.CTkTabview(right_col, width=380, height=400)
-        self.tabview.grid(row=row_r, column=0, columnspan=2, sticky="new", padx=10, pady=10)
+        self.tabview.grid(row=row_r, column=0, columnspan=2,
+                          sticky="new", padx=10, pady=10)
         row_r += 1
 
         # Create tabs (Dates tab first as default)
@@ -235,7 +253,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.tab_notes.grid_columnconfigure(0, weight=1)
 
         # Don't let rows expand - this keeps items at the top
-        self.tab_dates.grid_rowconfigure(99, weight=1)  # Empty row at bottom absorbs space
+        # Empty row at bottom absorbs space
+        self.tab_dates.grid_rowconfigure(99, weight=1)
         self.tab_priority.grid_rowconfigure(99, weight=1)
         self.tab_organization.grid_rowconfigure(99, weight=1)
         self.tab_notes.grid_rowconfigure(99, weight=1)
@@ -244,15 +263,19 @@ class ItemEditorDialog(ctk.CTkToplevel):
         tab0_row = 0
 
         # Start Date
-        ctk.CTkLabel(self.tab_dates, text="Start Date:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_dates, text="Start Date:").grid(
+            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
 
         start_date_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
-        start_date_frame.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        start_date_frame.grid(row=tab0_row, column=1,
+                              sticky="w", padx=10, pady=5)
 
-        self.start_date_entry = ctk.CTkEntry(start_date_frame, placeholder_text="YYYY-MM-DD", width=150)
+        self.start_date_entry = ctk.CTkEntry(
+            start_date_frame, placeholder_text="YYYY-MM-DD", width=150)
         self.start_date_entry.pack(side="left", padx=(0, 5))
         # Bind to validate due date when start date is manually edited
-        self.start_date_entry.bind("<FocusOut>", lambda e: self.validate_and_adjust_due_date())
+        self.start_date_entry.bind(
+            "<FocusOut>", lambda e: self.validate_and_adjust_due_date())
 
         btn_start_today = ctk.CTkButton(start_date_frame, text="Today", width=50,
                                         command=lambda: self.set_date(self.start_date_entry, 0))
@@ -267,20 +290,24 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_start_plus.pack(side="left", padx=2)
 
         btn_start_clear = ctk.CTkButton(start_date_frame, text="Clear", width=50,
-                                       command=lambda: self.start_date_entry.delete(0, "end"))
+                                        command=lambda: self.start_date_entry.delete(0, "end"))
         btn_start_clear.pack(side="left", padx=2)
         tab0_row += 1
 
         # Due Date
-        ctk.CTkLabel(self.tab_dates, text="Due Date:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_dates, text="Due Date:").grid(
+            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
 
         due_date_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
-        due_date_frame.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        due_date_frame.grid(row=tab0_row, column=1,
+                            sticky="w", padx=10, pady=5)
 
-        self.due_date_entry = ctk.CTkEntry(due_date_frame, placeholder_text="YYYY-MM-DD", width=150)
+        self.due_date_entry = ctk.CTkEntry(
+            due_date_frame, placeholder_text="YYYY-MM-DD", width=150)
         self.due_date_entry.pack(side="left", padx=(0, 5))
         # Bind to validate due date when manually edited
-        self.due_date_entry.bind("<FocusOut>", lambda e: self.validate_due_date_on_edit())
+        self.due_date_entry.bind(
+            "<FocusOut>", lambda e: self.validate_due_date_on_edit())
 
         btn_due_today = ctk.CTkButton(due_date_frame, text="Today", width=50,
                                       command=lambda: self.set_date(self.due_date_entry, 0))
@@ -300,7 +327,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         tab0_row += 1
 
         # Is Meeting checkbox
-        ctk.CTkLabel(self.tab_dates, text="Is Meeting:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_dates, text="Is Meeting:").grid(
+            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
         self.is_meeting_var = ctk.BooleanVar(value=False)
         self.is_meeting_checkbox = ctk.CTkCheckBox(
             self.tab_dates,
@@ -309,65 +337,81 @@ class ItemEditorDialog(ctk.CTkToplevel):
             onvalue=True,
             offvalue=False
         )
-        self.is_meeting_checkbox.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        self.is_meeting_checkbox.grid(
+            row=tab0_row, column=1, sticky="w", padx=10, pady=5)
         tab0_row += 1
 
         # Meeting Start Time (read-only, set when calendar event is created)
-        ctk.CTkLabel(self.tab_dates, text="Meeting Time:").grid(row=tab0_row, column=0, sticky="w", padx=10, pady=5)
-        self.meeting_time_label = ctk.CTkLabel(self.tab_dates, text="Not scheduled", anchor="w")
-        self.meeting_time_label.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_dates, text="Meeting Time:").grid(
+            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+        self.meeting_time_label = ctk.CTkLabel(
+            self.tab_dates, text="Not scheduled", anchor="w")
+        self.meeting_time_label.grid(
+            row=tab0_row, column=1, sticky="w", padx=10, pady=5)
         tab0_row += 1
 
         # === TAB 1: PRIORITY FACTORS ===
         tab1_row = 0
 
         # Importance
-        ctk.CTkLabel(self.tab_priority, text="Importance:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
-        importance_values = [f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
+        ctk.CTkLabel(self.tab_priority, text="Importance:").grid(
+            row=tab1_row, column=0, sticky="w", padx=10, pady=5)
+        importance_values = [
+            f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
         self.importance_var = ctk.StringVar(value="")
         self.importance_combo = ctk.CTkComboBox(
             self.tab_priority, values=importance_values, variable=self.importance_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.importance_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        self.importance_combo.grid(
+            row=tab1_row, column=1, sticky="w", padx=10, pady=5)
         tab1_row += 1
 
         # Urgency
-        ctk.CTkLabel(self.tab_priority, text="Urgency:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
-        urgency_values = [f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
+        ctk.CTkLabel(self.tab_priority, text="Urgency:").grid(
+            row=tab1_row, column=0, sticky="w", padx=10, pady=5)
+        urgency_values = [
+            f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
         self.urgency_var = ctk.StringVar(value="")
         self.urgency_combo = ctk.CTkComboBox(
             self.tab_priority, values=urgency_values, variable=self.urgency_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.urgency_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        self.urgency_combo.grid(row=tab1_row, column=1,
+                                sticky="w", padx=10, pady=5)
         tab1_row += 1
 
         # Effort-Cost (Size internally)
-        ctk.CTkLabel(self.tab_priority, text="Effort-Cost:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_priority, text="Effort-Cost:").grid(row=tab1_row,
+                                                                  column=0, sticky="w", padx=10, pady=5)
         size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
         self.size_var = ctk.StringVar(value="")
         self.size_combo = ctk.CTkComboBox(
             self.tab_priority, values=size_values, variable=self.size_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.size_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        self.size_combo.grid(row=tab1_row, column=1,
+                             sticky="w", padx=10, pady=5)
         tab1_row += 1
 
         # Value
-        ctk.CTkLabel(self.tab_priority, text="Value:").grid(row=tab1_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_priority, text="Value:").grid(
+            row=tab1_row, column=0, sticky="w", padx=10, pady=5)
         value_values = [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
         self.value_var = ctk.StringVar(value="")
         self.value_combo = ctk.CTkComboBox(
             self.tab_priority, values=value_values, variable=self.value_var, width=180,
             command=lambda _: self.update_priority_display()
         )
-        self.value_combo.grid(row=tab1_row, column=1, sticky="w", padx=10, pady=5)
+        self.value_combo.grid(row=tab1_row, column=1,
+                              sticky="w", padx=10, pady=5)
         tab1_row += 1
 
         # Priority Score Display (more compact)
-        score_frame = ctk.CTkFrame(self.tab_priority, fg_color="gray25", corner_radius=8)
-        score_frame.grid(row=tab1_row, column=0, columnspan=2, sticky="ew", padx=10, pady=(15, 5))
+        score_frame = ctk.CTkFrame(
+            self.tab_priority, fg_color="gray25", corner_radius=8)
+        score_frame.grid(row=tab1_row, column=0, columnspan=2,
+                         sticky="ew", padx=10, pady=(15, 5))
 
         ctk.CTkLabel(
             score_frame,
@@ -387,51 +431,64 @@ class ItemEditorDialog(ctk.CTkToplevel):
         tab2_row = 0
 
         # Group
-        ctk.CTkLabel(self.tab_organization, text="Group:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_organization, text="Group:").grid(
+            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         groups = self.db_manager.get_distinct_groups()
         self.group_var = ctk.StringVar(value="")
-        self.group_combo = ctk.CTkComboBox(self.tab_organization, values=groups if groups else [""], variable=self.group_var, width=180)
-        self.group_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        self.group_combo = ctk.CTkComboBox(self.tab_organization, values=groups if groups else [
+                                           ""], variable=self.group_var, width=180)
+        self.group_combo.grid(row=tab2_row, column=1,
+                              sticky="w", padx=10, pady=5)
         tab2_row += 1
 
         # Category
-        ctk.CTkLabel(self.tab_organization, text="Category:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_organization, text="Category:").grid(
+            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         categories = self.db_manager.get_distinct_categories()
         self.category_var = ctk.StringVar(value="")
-        self.category_combo = ctk.CTkComboBox(self.tab_organization, values=categories if categories else [""], variable=self.category_var, width=180)
-        self.category_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        self.category_combo = ctk.CTkComboBox(self.tab_organization, values=categories if categories else [
+                                              ""], variable=self.category_var, width=180)
+        self.category_combo.grid(
+            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
         # Week Action (VPS Integration)
-        ctk.CTkLabel(self.tab_organization, text="Week Action:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_organization, text="Week Action:").grid(
+            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         self.week_action_var = ctk.StringVar(value="")
-        self.week_action_combo = ctk.CTkComboBox(self.tab_organization, values=[""], variable=self.week_action_var, width=250)
-        self.week_action_combo.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        self.week_action_combo = ctk.CTkComboBox(self.tab_organization, values=[
+                                                 ""], variable=self.week_action_var, width=250)
+        self.week_action_combo.grid(
+            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
         # Load week actions if vps_manager is available
         self.load_week_actions()
 
         # Original Due Date (read-only display)
-        ctk.CTkLabel(self.tab_organization, text="Original Due Date:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_organization, text="Original Due Date:").grid(
+            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         self.original_due_date_label = ctk.CTkLabel(
             self.tab_organization,
             text="-",
             anchor="w",
             text_color="gray"
         )
-        self.original_due_date_label.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        self.original_due_date_label.grid(
+            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
         # Completed Date (read-only display)
-        ctk.CTkLabel(self.tab_organization, text="Completed Date:").grid(row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(self.tab_organization, text="Completed Date:").grid(
+            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         self.completed_at_label = ctk.CTkLabel(
             self.tab_organization,
             text="-",
             anchor="w",
             text_color="lightgreen"
         )
-        self.completed_at_label.grid(row=tab2_row, column=1, sticky="w", padx=10, pady=5)
+        self.completed_at_label.grid(
+            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
         # === TAB 3: OBSIDIAN NOTES ===
@@ -439,13 +496,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Notes list frame
         self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=280)
-        self.notes_frame.grid(row=tab3_row, column=0, sticky="new", padx=10, pady=5)
+        self.notes_frame.grid(row=tab3_row, column=0,
+                              sticky="new", padx=10, pady=5)
         self.notes_frame.grid_columnconfigure(0, weight=1)
         tab3_row += 1
 
         # Notes buttons
         notes_btn_frame = ctk.CTkFrame(self.tab_notes, fg_color="transparent")
-        notes_btn_frame.grid(row=tab3_row, column=0, sticky="w", padx=10, pady=5)
+        notes_btn_frame.grid(row=tab3_row, column=0,
+                             sticky="w", padx=10, pady=5)
 
         btn_create_note = ctk.CTkButton(
             notes_btn_frame,
@@ -484,32 +543,44 @@ class ItemEditorDialog(ctk.CTkToplevel):
         top_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
         top_row.pack(fill="x", pady=(0, 5))
 
-        btn_save = ctk.CTkButton(top_row, text="Save", command=self.save_item, width=100)
+        btn_save = ctk.CTkButton(top_row, text="Save",
+                                 command=self.save_item, width=100)
         btn_save.pack(side="left", padx=5)
 
+        btn_save_close = ctk.CTkButton(
+            top_row, text="Save & Close", command=self.save_and_close, width=120)
+        btn_save_close.pack(side="left", padx=5)
+
         if not self.item_id:
-            btn_save_new = ctk.CTkButton(top_row, text="Save + New", command=self.save_and_new, width=100)
+            btn_save_new = ctk.CTkButton(
+                top_row, text="Save + New", command=self.save_and_new, width=100)
             btn_save_new.pack(side="left", padx=5)
 
         if self.item_id:
-            btn_duplicate = ctk.CTkButton(top_row, text="Duplicate", command=self.duplicate_item, width=100)
+            btn_duplicate = ctk.CTkButton(
+                top_row, text="Duplicate", command=self.duplicate_item, width=100)
             btn_duplicate.pack(side="left", padx=5)
 
-            btn_followup = ctk.CTkButton(top_row, text="Create Follow-up", command=self.create_followup, width=120)
+            btn_followup = ctk.CTkButton(
+                top_row, text="Create Follow-up", command=self.create_followup, width=120)
             btn_followup.pack(side="left", padx=5)
 
-            btn_complete = ctk.CTkButton(top_row, text="Complete", command=self.complete_item, width=100)
+            btn_complete = ctk.CTkButton(
+                top_row, text="Complete", command=self.complete_item, width=100)
             btn_complete.pack(side="left", padx=5)
 
         # Calendar button (available for both new and existing items)
-        btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event, width=100, fg_color="purple", hover_color="darkviolet")
+        btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event,
+                                     width=100, fg_color="purple", hover_color="darkviolet")
         btn_calendar.pack(side="left", padx=5)
 
         # Error label
-        self.error_label = ctk.CTkLabel(top_row, text="", text_color="red", wraplength=600)
+        self.error_label = ctk.CTkLabel(
+            top_row, text="", text_color="red", wraplength=600)
         self.error_label.pack(side="left", expand=True, padx=10)
 
-        btn_cancel = ctk.CTkButton(top_row, text="Cancel", command=self.destroy, width=100)
+        btn_cancel = ctk.CTkButton(
+            top_row, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="right", padx=5)
 
         # Delete button (only for existing items)
@@ -529,13 +600,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
             bottom_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
             bottom_row.pack(fill="x")
 
-            btn_create_sub = ctk.CTkButton(bottom_row, text="+ Create Sub-Item", command=self.create_sub_item, width=120)
-            btn_create_sub.pack(side="left", padx=5)
+            btn_create_tasks = ctk.CTkButton(
+                bottom_row, text="+ Create Tasks", command=self.create_sub_item, width=120)
+            btn_create_tasks.pack(side="left", padx=5)
 
-            btn_show_related = ctk.CTkButton(bottom_row, text="Show Related", command=self.show_related, width=110)
+            btn_show_related = ctk.CTkButton(
+                bottom_row, text="Show Related", command=self.show_related, width=110)
             btn_show_related.pack(side="left", padx=5)
 
-            btn_set_parent = ctk.CTkButton(bottom_row, text="Set Parent", command=self.set_parent, width=100)
+            btn_set_parent = ctk.CTkButton(
+                bottom_row, text="Set Parent", command=self.set_parent, width=100)
             btn_set_parent.pack(side="left", padx=5)
 
         # Store references for responsive layout
@@ -546,7 +620,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
     def load_week_actions(self):
         """Load week actions into the dropdown if vps_manager is available."""
         if not self.vps_manager:
-            self.week_action_combo.configure(values=["(VPS Manager not available)"], state="disabled")
+            self.week_action_combo.configure(
+                values=["(VPS Manager not available)"], state="disabled")
             return
 
         try:
@@ -554,7 +629,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             week_actions = self.vps_manager.get_week_actions(active_only=False)
 
             if not week_actions:
-                self.week_action_combo.configure(values=["(No Week Actions available)"])
+                self.week_action_combo.configure(
+                    values=["(No Week Actions available)"])
                 return
 
             # Create display strings: "Week YYYY-MM-DD: Title"
@@ -570,7 +646,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         except Exception as e:
             print(f"Error loading week actions: {e}")
-            self.week_action_combo.configure(values=["(Error loading week actions)"], state="disabled")
+            self.week_action_combo.configure(
+                values=["(Error loading week actions)"], state="disabled")
 
     def load_item_data(self):
         """Load item data into form fields."""
@@ -599,14 +676,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Meeting Start Time (read-only display)
         if self.item.meeting_start_time:
             # Format: show date and time (YYYY-MM-DD HH:MM)
-            meeting_display = self.item.meeting_start_time[:16].replace('T', ' ')
+            meeting_display = self.item.meeting_start_time[:16].replace(
+                'T', ' ')
             self.meeting_time_label.configure(text=meeting_display)
         else:
             self.meeting_time_label.configure(text="Not scheduled")
 
         # Original Due Date (read-only display)
         if self.item.original_due_date:
-            self.original_due_date_label.configure(text=self.item.original_due_date)
+            self.original_due_date_label.configure(
+                text=self.item.original_due_date)
         else:
             self.original_due_date_label.configure(text="-")
 
@@ -650,7 +729,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self.category_var.set(self.item.category)
 
         if self.item.planned_minutes is not None:
-            self.planned_minutes_entry.insert(0, str(self.item.planned_minutes))
+            self.planned_minutes_entry.insert(
+                0, str(self.item.planned_minutes))
 
         # Week Action
         if self.item.week_action_id and self.vps_manager:
@@ -745,7 +825,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             start_text = self.start_date_entry.get().strip()
             if start_text:
                 try:
-                    start_date = datetime.strptime(start_text, "%Y-%m-%d").date()
+                    start_date = datetime.strptime(
+                        start_text, "%Y-%m-%d").date()
                     if target_date < start_date:
                         # Show error and don't change the date
                         self.error_label.configure(text="Due must be >= Start")
@@ -784,14 +865,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 base_date = datetime.now().date()
 
         # Use weekend-aware date increment
-        new_date = increment_date(base_date, days_delta, settings.include_saturday, settings.include_sunday)
+        new_date = increment_date(
+            base_date, days_delta, settings.include_saturday, settings.include_sunday)
 
         # If adjusting due date, validate it won't go below start date
         if entry_widget == self.due_date_entry:
             start_text = self.start_date_entry.get().strip()
             if start_text:
                 try:
-                    start_date = datetime.strptime(start_text, "%Y-%m-%d").date()
+                    start_date = datetime.strptime(
+                        start_text, "%Y-%m-%d").date()
                     if new_date < start_date:
                         # Show error and don't change the date
                         self.error_label.configure(text="Due must be >= Start")
@@ -814,9 +897,11 @@ class ItemEditorDialog(ctk.CTkToplevel):
                     due_base = datetime.strptime(due_text, "%Y-%m-%d").date()
                     # If due was >= old start, maintain the gap by incrementing
                     if due_base >= base_date:
-                        new_due = increment_date(due_base, days_delta, settings.include_saturday, settings.include_sunday)
+                        new_due = increment_date(
+                            due_base, days_delta, settings.include_saturday, settings.include_sunday)
                         self.due_date_entry.delete(0, "end")
-                        self.due_date_entry.insert(0, new_due.strftime("%Y-%m-%d"))
+                        self.due_date_entry.insert(
+                            0, new_due.strftime("%Y-%m-%d"))
                     else:
                         # Due was < start, so adjust it using validation
                         self.validate_and_adjust_due_date()
@@ -1024,7 +1109,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self.show_contact_suggestions(None)
         else:
             # Show filtered contacts if there's text
-            contacts = self.db_manager.search_contacts(current_text, active_only=True)
+            contacts = self.db_manager.search_contacts(
+                current_text, active_only=True)
             if contacts:
                 self.show_contact_suggestions(contacts)
 
@@ -1044,7 +1130,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         # Search contacts
-        contacts = self.db_manager.search_contacts(search_term, active_only=True)
+        contacts = self.db_manager.search_contacts(
+            search_term, active_only=True)
 
         # Show suggestions
         self.show_contact_suggestions(contacts)
@@ -1081,7 +1168,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self,
             fg_color="gray20",
             width=318,
-            height=min(len(contacts[:10]) * 35 + 10, 360)  # Height for up to 10 items
+            # Height for up to 10 items
+            height=min(len(contacts[:10]) * 35 + 10, 360)
         )
         self.contact_suggestions_frame.place(
             x=entry_x,
@@ -1095,7 +1183,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         for idx, contact in enumerate(contacts[:10]):
             btn = ctk.CTkButton(
                 self.contact_suggestions_frame,
-                text=f"{contact.name}" + (f" ({contact.contact_type})" if contact.contact_type else ""),
+                text=f"{contact.name}" +
+                (f" ({contact.contact_type})" if contact.contact_type else ""),
                 anchor="w",
                 fg_color="transparent",
                 hover_color="gray30",
@@ -1117,7 +1206,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Schedule hiding suggestions after a delay."""
         if self.suggestions_hide_job:
             self.after_cancel(self.suggestions_hide_job)
-        self.suggestions_hide_job = self.after(300, self.hide_contact_suggestions)
+        self.suggestions_hide_job = self.after(
+            300, self.hide_contact_suggestions)
 
     def hide_contact_suggestions(self):
         """Hide contact suggestions dropdown."""
@@ -1210,14 +1300,17 @@ class ItemEditorDialog(ctk.CTkToplevel):
             item.who = self.who_var.get().strip()
             item.contact_id = self.selected_contact_id
             item.title = self.title_entry.get().strip()
-            item.description = self.description_text.get("1.0", "end").strip() or None
-            item.next_action = self.next_action_text.get("1.0", "end").strip() or None
+            item.description = self.description_text.get(
+                "1.0", "end").strip() or None
+            item.next_action = self.next_action_text.get(
+                "1.0", "end").strip() or None
             item.start_date = self.start_date_entry.get().strip() or None
             item.due_date = self.due_date_entry.get().strip() or None
             item.is_meeting = self.is_meeting_var.get()
 
             # Priority factors
-            item.importance = self.extract_factor_value(self.importance_var.get())
+            item.importance = self.extract_factor_value(
+                self.importance_var.get())
             item.urgency = self.extract_factor_value(self.urgency_var.get())
             item.size = self.extract_factor_value(self.size_var.get())
             item.value = self.extract_factor_value(self.value_var.get())
@@ -1235,7 +1328,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             week_action_display = self.week_action_var.get().strip()
             if week_action_display and week_action_display != "(None)" and hasattr(self, 'week_action_options'):
                 # User selected a week action from dropdown
-                item.week_action_id = self.week_action_options.get(week_action_display)
+                item.week_action_id = self.week_action_options.get(
+                    week_action_display)
             elif week_action_display == "(None)":
                 # User explicitly selected "(None)" to clear the week action
                 item.week_action_id = None
@@ -1251,10 +1345,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Validate dates: due date must be >= start date
             if item.start_date and item.due_date:
                 try:
-                    start = datetime.strptime(item.start_date, "%Y-%m-%d").date()
+                    start = datetime.strptime(
+                        item.start_date, "%Y-%m-%d").date()
                     due = datetime.strptime(item.due_date, "%Y-%m-%d").date()
                     if due < start:
-                        self.error_label.configure(text="Error: Due date cannot be before Start date")
+                        self.error_label.configure(
+                            text="Error: Due date cannot be before Start date")
                         return
                 except ValueError:
                     # Let the validator handle invalid date formats
@@ -1271,8 +1367,13 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 self.db_manager.update_action_item(item)
             else:
                 self.db_manager.create_action_item(item, apply_defaults=True)
+                self.item_id = item.id  # Update item_id after creating new item
+                self.item = item  # Store the item reference
 
-            self.on_dialog_close()
+            # Clear error message on successful save
+            self.error_label.configure(text="✓ Saved")
+            # Reset the message after 2 seconds
+            self.after(2000, lambda: self.error_label.configure(text=""))
 
         except Exception as e:
             self.error_label.configure(text=f"Error: {str(e)}")
@@ -1281,16 +1382,33 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Save and open a new item editor."""
         callback = self.on_close_callback  # Save callback before save closes this dialog
         self.save_item()
-        if not self.winfo_exists():
-            ItemEditorDialog(self.master, self.db_manager, vps_manager=self.vps_manager, on_close_callback=callback)
+        if self.winfo_exists():
+            # Item was saved successfully (window still exists)
+            self.on_dialog_close()
+            ItemEditorDialog(self.master, self.db_manager,
+                             vps_manager=self.vps_manager, on_close_callback=callback)
+
+    def save_and_close(self):
+        """Save the item and close the dialog."""
+        self.save_item()
+        # Only close if save was successful (no error shown)
+        if self.winfo_exists() and not self.error_label.cget("text").startswith("Error:"):
+            self.on_dialog_close()
 
     def duplicate_item(self):
-        """Duplicate the current item."""
+        """Save current changes, duplicate the saved item, and open it in a new editor."""
         if self.item_id:
-            new_id = self.db_manager.duplicate_action_item(self.item_id)
-            self.on_dialog_close()
-            if new_id:
-                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+            # First save any current changes
+            self.save_item()
+
+            # Check if save was successful (no error)
+            if self.winfo_exists() and not self.error_label.cget("text").startswith("Error:"):
+                # Now duplicate the saved version
+                new_id = self.db_manager.duplicate_action_item(self.item_id)
+                if new_id:
+                    # Open the duplicate in a NEW editor window (don't close current one)
+                    ItemEditorDialog(self.master, self.db_manager, new_id,
+                                     vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def create_followup(self):
         """Create a follow-up item linked to the current item."""
@@ -1298,7 +1416,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             new_id = self.db_manager.create_followup_item(self.item_id)
             self.on_dialog_close()
             if new_id:
-                ItemEditorDialog(self.master, self.db_manager, new_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+                ItemEditorDialog(self.master, self.db_manager, new_id,
+                                 vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def complete_item(self):
         """Mark item as complete."""
@@ -1419,12 +1538,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Switch to single column if window is narrow
         if width < 900:
             # Single column layout
-            self.left_col.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=0, pady=(0, 5))
-            self.right_col.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=0, pady=(5, 0))
+            self.left_col.grid(row=0, column=0, columnspan=2,
+                               sticky="nsew", padx=0, pady=(0, 5))
+            self.right_col.grid(row=1, column=0, columnspan=2,
+                                sticky="nsew", padx=0, pady=(5, 0))
         else:
             # Two column layout
-            self.left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5), pady=0)
-            self.right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
+            self.left_col.grid(
+                row=0, column=0, sticky="nsew", padx=(0, 5), pady=0)
+            self.right_col.grid(
+                row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
@@ -1474,31 +1597,86 @@ class ItemEditorDialog(ctk.CTkToplevel):
         """Open the parent item in a new editor dialog."""
         callback = self.on_close_callback  # Save callback before destroying
         self.destroy()
-        ItemEditorDialog(self.master, self.db_manager, parent_id, vps_manager=self.vps_manager, on_close_callback=callback)
+        ItemEditorDialog(self.master, self.db_manager, parent_id,
+                         vps_manager=self.vps_manager, on_close_callback=callback)
 
     def create_sub_item(self):
-        """Create a new sub-item as a duplicate of this item."""
+        """Create one child task for each line in the Next Action field."""
         if not self.item_id:
             return
 
-        # Duplicate the parent item to create sub-item
-        sub_item_id = self.db_manager.duplicate_action_item(self.item_id)
+        # Get the Next Action text
+        next_action_text = self.next_action_text.get("1.0", "end-1c").strip()
 
-        if not sub_item_id:
+        if not next_action_text:
+            import tkinter.messagebox as messagebox
+            messagebox.showwarning(
+                "No Next Actions",
+                "Please add tasks to the Next Action field (one per line) before creating tasks."
+            )
             return
 
-        # Update the sub-item to set parent_id
-        sub_item = self.db_manager.get_action_item(sub_item_id)
-        if sub_item:
-            sub_item.parent_id = self.item_id
-            self.db_manager.update_action_item(sub_item)
+        # Split into lines and filter out empty lines
+        lines = [line.strip()
+                 for line in next_action_text.split('\n') if line.strip()]
 
-        # Close this dialog
-        callback = self.on_close_callback  # Save callback before destroying
-        self.destroy()
+        if not lines:
+            import tkinter.messagebox as messagebox
+            messagebox.showwarning(
+                "No Next Actions",
+                "Please add tasks to the Next Action field (one per line) before creating tasks."
+            )
+            return
 
-        # Open editor for the new sub-item
-        ItemEditorDialog(self.master, self.db_manager, sub_item_id, vps_manager=self.vps_manager, on_close_callback=callback)
+        # Get the current item
+        parent_item = self.db_manager.get_action_item(self.item_id)
+        if not parent_item:
+            return
+
+        # Create one child item for each line
+        created_count = 0
+        for line in lines:
+            # Create new child item
+            child_item = ActionItem(
+                who=parent_item.who,
+                contact_id=parent_item.contact_id,
+                title=f"{parent_item.title} - {line}",  # Append line as suffix
+                description=line,  # Line contents as description
+                next_action=None,
+                parent_id=self.item_id,  # Set as child of current item
+                start_date=parent_item.start_date,  # Same dates
+                due_date=parent_item.due_date,
+                importance=parent_item.importance,
+                urgency=parent_item.urgency,
+                size=parent_item.size,
+                value=parent_item.value,
+                group=parent_item.group,
+                category=parent_item.category,
+                planned_minutes=parent_item.planned_minutes,
+                week_action_id=parent_item.week_action_id,
+                segment_description_id=parent_item.segment_description_id,
+                is_habit=parent_item.is_habit,
+                status="open"
+            )
+
+            # Save the child item
+            self.db_manager.create_action_item(
+                child_item, apply_defaults=False)
+            created_count += 1
+
+        # Show success message
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo(
+            "Tasks Created",
+            f"Created {created_count} child task(s) from Next Action list."
+        )
+
+        # Refresh the display if there's a callback
+        if self.on_close_callback:
+            try:
+                self.on_close_callback()
+            except Exception:
+                pass
 
     def show_related(self):
         """Show list of related items (parent and children) in a new dialog."""
@@ -1506,7 +1684,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         # Open related items dialog
-        ShowRelatedDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+        ShowRelatedDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item",
+                          vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def set_parent(self):
         """Open dialog to set/change the parent item."""
@@ -1514,7 +1693,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             return
 
         # Open set parent dialog
-        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item", vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+        SetParentDialog(self, self.db_manager, self.item_id, self.item.title if self.item else "Item",
+                        vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def create_calendar_event(self):
         """Create a Google Calendar event linked to this item."""
@@ -1536,7 +1716,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             self.is_meeting_var.set(self.item.is_meeting)
             # Update the meeting time display
             if self.item.meeting_start_time:
-                meeting_display = self.item.meeting_start_time[:16].replace('T', ' ')
+                meeting_display = self.item.meeting_start_time[:16].replace(
+                    'T', ' ')
                 self.meeting_time_label.configure(text=meeting_display)
             else:
                 self.meeting_time_label.configure(text="Not scheduled")
@@ -1575,7 +1756,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Note icon and label
         label_text = note.label or "Untitled Note"
-        ctk.CTkLabel(frame, text=f"📝 {label_text}", anchor="w").pack(side="left", fill="x", expand=True, padx=5)
+        ctk.CTkLabel(frame, text=f"📝 {label_text}", anchor="w").pack(
+            side="left", fill="x", expand=True, padx=5)
 
         # Open button
         btn_open = ctk.CTkButton(
@@ -1614,14 +1796,17 @@ class ItemEditorDialog(ctk.CTkToplevel):
             item.who = self.who_var.get().strip()
             item.contact_id = self.selected_contact_id
             item.title = self.title_entry.get().strip()
-            item.description = self.description_text.get("1.0", "end").strip() or None
-            item.next_action = self.next_action_text.get("1.0", "end").strip() or None
+            item.description = self.description_text.get(
+                "1.0", "end").strip() or None
+            item.next_action = self.next_action_text.get(
+                "1.0", "end").strip() or None
             item.start_date = self.start_date_entry.get().strip() or None
             item.due_date = self.due_date_entry.get().strip() or None
             item.is_meeting = self.is_meeting_var.get()
 
             # Priority factors
-            item.importance = self.extract_factor_value(self.importance_var.get())
+            item.importance = self.extract_factor_value(
+                self.importance_var.get())
             item.urgency = self.extract_factor_value(self.urgency_var.get())
             item.size = self.extract_factor_value(self.size_var.get())
             item.value = self.extract_factor_value(self.value_var.get())
@@ -1637,10 +1822,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Validate dates
             if item.start_date and item.due_date:
                 try:
-                    start = datetime.strptime(item.start_date, "%Y-%m-%d").date()
+                    start = datetime.strptime(
+                        item.start_date, "%Y-%m-%d").date()
                     due = datetime.strptime(item.due_date, "%Y-%m-%d").date()
                     if due < start:
-                        self.error_label.configure(text="Error: Due date cannot be before Start date")
+                        self.error_label.configure(
+                            text="Error: Due date cannot be before Start date")
                         return False
                 except ValueError:
                     pass
@@ -1681,13 +1868,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
         settings = AppSettings.load()
 
         if not settings.obsidian_vault_path:
-            self.error_label.configure(text="Error: Please configure Obsidian vault in Settings first")
+            self.error_label.configure(
+                text="Error: Please configure Obsidian vault in Settings first")
             return
 
         try:
-            CreateNoteDialog(self, self.db_manager, "action_item", self.item_id, self.item.title if self.item else "Item")
+            CreateNoteDialog(self, self.db_manager, "action_item",
+                             self.item_id, self.item.title if self.item else "Item")
         except Exception as e:
-            self.error_label.configure(text=f"Error opening note dialog: {str(e)}")
+            self.error_label.configure(
+                text=f"Error opening note dialog: {str(e)}")
 
     def link_existing_note(self):
         """Open dialog to link an existing note file."""
@@ -1705,7 +1895,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         settings = AppSettings.load()
 
         if not settings.obsidian_vault_path:
-            self.error_label.configure(text="Error: Obsidian vault not configured in Settings")
+            self.error_label.configure(
+                text="Error: Obsidian vault not configured in Settings")
             return
 
         try:
@@ -1769,7 +1960,8 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         btn_frame = ctk.CTkFrame(self)
         btn_frame.pack(fill="x", padx=10, pady=10)
 
-        btn_close = ctk.CTkButton(btn_frame, text="Close", command=self.destroy, width=100)
+        btn_close = ctk.CTkButton(
+            btn_frame, text="Close", command=self.destroy, width=100)
         btn_close.pack(side="right", padx=5)
 
     def refresh(self):
@@ -1785,11 +1977,14 @@ class ShowRelatedDialog(ctk.CTkToplevel):
 
         # Show parent section if exists
         if current_item and current_item.parent_id:
-            parent_item = self.db_manager.get_action_item(current_item.parent_id)
+            parent_item = self.db_manager.get_action_item(
+                current_item.parent_id)
             if parent_item:
                 # Parent section header
-                parent_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
-                parent_header.grid(row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
+                parent_header = ctk.CTkFrame(
+                    self.scroll_frame, fg_color="gray20")
+                parent_header.grid(row=current_row, column=0,
+                                   sticky="ew", pady=(0, 5), padx=5)
                 ctk.CTkLabel(
                     parent_header,
                     text="PARENT ITEM",
@@ -1807,7 +2002,8 @@ class ShowRelatedDialog(ctk.CTkToplevel):
                 current_row += 1
 
                 # Add spacing
-                ctk.CTkLabel(self.scroll_frame, text="").grid(row=current_row, column=0, pady=10)
+                ctk.CTkLabel(self.scroll_frame, text="").grid(
+                    row=current_row, column=0, pady=10)
                 current_row += 1
 
         # Get children
@@ -1816,8 +2012,10 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         # Show children section
         if children:
             # Children section header
-            children_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
-            children_header.grid(row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
+            children_header = ctk.CTkFrame(
+                self.scroll_frame, fg_color="gray20")
+            children_header.grid(row=current_row, column=0,
+                                 sticky="ew", pady=(0, 5), padx=5)
             ctk.CTkLabel(
                 children_header,
                 text="CHILD ITEMS",
@@ -1844,8 +2042,10 @@ class ShowRelatedDialog(ctk.CTkToplevel):
                 ).grid(row=current_row, column=0, pady=20)
             elif current_row > 0:
                 # There is a parent but no children
-                children_header = ctk.CTkFrame(self.scroll_frame, fg_color="gray20")
-                children_header.grid(row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
+                children_header = ctk.CTkFrame(
+                    self.scroll_frame, fg_color="gray20")
+                children_header.grid(
+                    row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
                 ctk.CTkLabel(
                     children_header,
                     text="CHILD ITEMS",
@@ -1938,7 +2138,8 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         # Close this dialog
         self.destroy()
         # Open editor for the item
-        ItemEditorDialog(self.master, self.db_manager, item_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+        ItemEditorDialog(self.master, self.db_manager, item_id,
+                         vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
@@ -2014,7 +2215,8 @@ class SetParentDialog(ctk.CTkToplevel):
         btn_frame = ctk.CTkFrame(self)
         btn_frame.pack(fill="x", padx=10, pady=10)
 
-        btn_close = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_close = ctk.CTkButton(
+            btn_frame, text="Cancel", command=self.destroy, width=100)
         btn_close.pack(side="right", padx=5)
 
     def refresh(self):
@@ -2024,7 +2226,8 @@ class SetParentDialog(ctk.CTkToplevel):
             widget.destroy()
 
         # Get all items
-        all_items = self.db_manager.get_all_items(sort_by="priority_score", sort_desc=True)
+        all_items = self.db_manager.get_all_items(
+            sort_by="priority_score", sort_desc=True)
 
         # Get descendants of current item (to prevent circular references)
         descendants = self.db_manager.get_subtree(self.current_item_id)
@@ -2161,7 +2364,8 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Close and reopen the parent editor to show updated parent info
         self.parent_dialog.destroy()
-        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id,
+                         vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def clear_parent(self):
         """Clear the parent (make this a root item)."""
@@ -2176,7 +2380,8 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Close and reopen the parent editor to show updated parent info
         self.parent_dialog.destroy()
-        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id, vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+        ItemEditorDialog(self.parent_dialog.master, self.db_manager, self.current_item_id,
+                         vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""
@@ -2201,6 +2406,7 @@ class SetParentDialog(ctk.CTkToplevel):
         y = max(0, y)
 
         self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+
 
 class CreateNoteDialog(ctk.CTkToplevel):
     """Dialog for creating a new Obsidian note."""
@@ -2237,11 +2443,13 @@ class CreateNoteDialog(ctk.CTkToplevel):
         # Note title
         ctk.CTkLabel(main_frame, text="Note Title:").pack(pady=(0, 5))
         self.title_var = ctk.StringVar(value=f"{self.entity_title} Notes")
-        self.title_entry = ctk.CTkEntry(main_frame, textvariable=self.title_var, width=400)
+        self.title_entry = ctk.CTkEntry(
+            main_frame, textvariable=self.title_var, width=400)
         self.title_entry.pack(pady=(0, 15))
 
         # Initial content (optional)
-        ctk.CTkLabel(main_frame, text="Initial Content (optional):").pack(pady=(0, 5))
+        ctk.CTkLabel(main_frame, text="Initial Content (optional):").pack(
+            pady=(0, 5))
         self.content_text = ctk.CTkTextbox(main_frame, width=400, height=100)
         self.content_text.pack(pady=(0, 15))
 
@@ -2259,11 +2467,13 @@ class CreateNoteDialog(ctk.CTkToplevel):
         )
         btn_create.pack(side="left", padx=5)
 
-        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_cancel = ctk.CTkButton(
+            btn_frame, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="left", padx=5)
 
         # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=400)
+        self.error_label = ctk.CTkLabel(
+            main_frame, text="", text_color="red", wraplength=400)
         self.error_label.pack(pady=(10, 0))
 
     def create_note(self):
@@ -2283,7 +2493,8 @@ class CreateNoteDialog(ctk.CTkToplevel):
         settings = AppSettings.load()
 
         if not settings.obsidian_vault_path:
-            self.error_label.configure(text="Error: Obsidian vault not configured in Settings")
+            self.error_label.configure(
+                text="Error: Obsidian vault not configured in Settings")
             return
 
         try:
@@ -2393,22 +2604,26 @@ class LinkNoteDialog(ctk.CTkToplevel):
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
         # Search/filter by note title
-        ctk.CTkLabel(main_frame, text="Search Notes:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(0, 5))
+        ctk.CTkLabel(main_frame, text="Search Notes:", font=ctk.CTkFont(
+            size=12, weight="bold")).pack(pady=(0, 5))
 
         self.search_var = ctk.StringVar()
         self.search_var.trace_add('write', lambda *args: self.filter_notes())
         self.search_entry = ctk.CTkEntry(main_frame, textvariable=self.search_var, width=500,
-                                        placeholder_text="Search by title, or use file:name or tag:tagname")
+                                         placeholder_text="Search by title, or use file:name or tag:tagname")
         self.search_entry.pack(pady=(0, 10))
 
         # Display label
-        ctk.CTkLabel(main_frame, text="Display Label (optional):").pack(pady=(0, 5))
+        ctk.CTkLabel(main_frame, text="Display Label (optional):").pack(
+            pady=(0, 5))
         self.label_var = ctk.StringVar()
-        self.label_entry = ctk.CTkEntry(main_frame, textvariable=self.label_var, width=500)
+        self.label_entry = ctk.CTkEntry(
+            main_frame, textvariable=self.label_var, width=500)
         self.label_entry.pack(pady=(0, 15))
 
         # Available notes list
-        ctk.CTkLabel(main_frame, text="Available Notes:", font=ctk.CTkFont(size=12, weight="bold")).pack(pady=(0, 5))
+        ctk.CTkLabel(main_frame, text="Available Notes:", font=ctk.CTkFont(
+            size=12, weight="bold")).pack(pady=(0, 5))
 
         self.notes_frame = ctk.CTkScrollableFrame(main_frame, height=200)
         self.notes_frame.pack(fill="both", expand=True, pady=(0, 15))
@@ -2426,11 +2641,13 @@ class LinkNoteDialog(ctk.CTkToplevel):
         )
         btn_browse.pack(side="left", padx=5)
 
-        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, width=100)
+        btn_cancel = ctk.CTkButton(
+            btn_frame, text="Cancel", command=self.destroy, width=100)
         btn_cancel.pack(side="left", padx=5)
 
         # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=500)
+        self.error_label = ctk.CTkLabel(
+            main_frame, text="", text_color="red", wraplength=500)
         self.error_label.pack(pady=(10, 0))
 
     def load_available_notes(self):
@@ -2442,7 +2659,8 @@ class LinkNoteDialog(ctk.CTkToplevel):
         settings = AppSettings.load()
 
         if not settings.obsidian_vault_path:
-            self.error_label.configure(text="Error: Obsidian vault not configured in Settings")
+            self.error_label.configure(
+                text="Error: Obsidian vault not configured in Settings")
             return
 
         vault_path = Path(settings.obsidian_vault_path)
@@ -2462,18 +2680,23 @@ class LinkNoteDialog(ctk.CTkToplevel):
                 try:
                     content = md_file.read_text(encoding='utf-8')
                     # Look for YAML frontmatter
-                    frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+                    frontmatter_match = re.match(
+                        r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
                     if frontmatter_match:
                         frontmatter = frontmatter_match.group(1)
                         # Extract tags (supports: tags: [tag1, tag2] or tags:\n- tag1\n- tag2)
-                        tags_match = re.search(r'tags:\s*\[(.*?)\]', frontmatter)
+                        tags_match = re.search(
+                            r'tags:\s*\[(.*?)\]', frontmatter)
                         if tags_match:
-                            tags = [t.strip().strip('"\'') for t in tags_match.group(1).split(',')]
+                            tags = [t.strip().strip('"\'')
+                                    for t in tags_match.group(1).split(',')]
                         else:
                             # Look for YAML list format
-                            tags_lines = re.findall(r'^\s*-\s*(.+)$', frontmatter, re.MULTILINE)
+                            tags_lines = re.findall(
+                                r'^\s*-\s*(.+)$', frontmatter, re.MULTILINE)
                             if 'tags:' in frontmatter:
-                                tags = [t.strip() for t in tags_lines if t.strip()]
+                                tags = [t.strip()
+                                        for t in tags_lines if t.strip()]
 
                     # Also look for inline tags (#tag format)
                     inline_tags = re.findall(r'#(\w+)', content)
@@ -2516,16 +2739,18 @@ class LinkNoteDialog(ctk.CTkToplevel):
             if search_lower.startswith("file:"):
                 # Search by filename only
                 query = search_text[5:].strip().lower()
-                filtered = [n for n in self.available_notes if query in n['title'].lower()]
+                filtered = [
+                    n for n in self.available_notes if query in n['title'].lower()]
             elif search_lower.startswith("tag:"):
                 # Search by tags
                 query = search_text[4:].strip().lower()
                 filtered = [n for n in self.available_notes
-                           if any(query in tag.lower() for tag in n.get('tags', []))]
+                            if any(query in tag.lower() for tag in n.get('tags', []))]
             else:
                 # Default: search in title (case-insensitive contains)
                 query = search_text.lower()
-                filtered = [n for n in self.available_notes if query in n['title'].lower()]
+                filtered = [
+                    n for n in self.available_notes if query in n['title'].lower()]
 
         if not filtered:
             ctk.CTkLabel(
@@ -2565,7 +2790,8 @@ class LinkNoteDialog(ctk.CTkToplevel):
 
         # Display tags if present
         if note.get('tags'):
-            tags_text = " ".join([f"#{tag}" for tag in note['tags'][:5]])  # Show first 5 tags
+            # Show first 5 tags
+            tags_text = " ".join([f"#{tag}" for tag in note['tags'][:5]])
             ctk.CTkLabel(
                 info_frame,
                 text=tags_text,

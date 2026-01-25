@@ -21,6 +21,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
         # Track expanded/collapsed state
         self.expanded_nodes = set()
 
+        # Track selected segments for filtering
+        self.selected_segments = set()  # Set of segment IDs to display
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -29,7 +32,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         # Create scrollable frame for tree
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.scroll_frame.grid(
+            row=1, column=0, sticky="nsew", padx=10, pady=10)
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load segments and tree
@@ -50,20 +54,17 @@ class VPSPlanningScreen(ctk.CTkFrame):
         title.grid(row=0, column=0, padx=10, pady=10)
 
         # Segment filter
-        ctk.CTkLabel(header, text="Segment:").grid(row=0, column=2, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Segments:").grid(
+            row=0, column=2, padx=(20, 5), pady=10)
 
-        self.segment_var = ctk.StringVar(value="all")
-        self.segment_combo = ctk.CTkComboBox(
+        # Button to open segment selector
+        self.segment_filter_btn = ctk.CTkButton(
             header,
-            values=["all"],
-            variable=self.segment_var,
-            width=200,
-            command=lambda _: self.refresh()
+            text="Select Segments...",
+            command=self.show_segment_filter_dialog,
+            width=150
         )
-        self.segment_combo.grid(row=0, column=3, padx=5, pady=10)
-
-        # Refresh segments list
-        self.update_segment_filter()
+        self.segment_filter_btn.grid(row=0, column=3, padx=5, pady=10)
 
         # Expand/Collapse All button
         btn_expand = ctk.CTkButton(
@@ -90,11 +91,120 @@ class VPSPlanningScreen(ctk.CTkFrame):
         )
         btn_new.grid(row=0, column=6, padx=10, pady=10)
 
-    def update_segment_filter(self):
-        """Update segment filter dropdown."""
+    def show_segment_filter_dialog(self):
+        """Show dialog to select/deselect segments."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Select Segments to Display")
+        dialog.geometry("400x500")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Title
+        title_label = ctk.CTkLabel(
+            dialog,
+            text="Select which segments to display:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        title_label.pack(pady=20, padx=20)
+
+        # Get all segments
         segments = self.vps_manager.get_all_segments()
-        segment_names = ["all"] + [seg['name'] for seg in segments]
-        self.segment_combo.configure(values=segment_names)
+
+        # If no segments selected yet, select all by default
+        if not self.selected_segments:
+            self.selected_segments = {seg['id'] for seg in segments}
+
+        # Create checkbox for each segment
+        checkbox_vars = {}
+        checkbox_frame = ctk.CTkScrollableFrame(dialog, height=300)
+        checkbox_frame.pack(pady=10, padx=20, fill="both", expand=True)
+
+        for segment in segments:
+            var = ctk.BooleanVar(value=segment['id'] in self.selected_segments)
+            checkbox_vars[segment['id']] = var
+
+            checkbox = ctk.CTkCheckBox(
+                checkbox_frame,
+                text=f"🎯 {segment['name']}",
+                variable=var,
+                font=ctk.CTkFont(size=12)
+            )
+            checkbox.pack(anchor="w", pady=5, padx=10)
+
+        # Buttons frame
+        btn_frame = ctk.CTkFrame(dialog)
+        btn_frame.pack(pady=10, padx=20, fill="x")
+
+        # Select All button
+        def select_all():
+            for var in checkbox_vars.values():
+                var.set(True)
+
+        btn_select_all = ctk.CTkButton(
+            btn_frame,
+            text="Select All",
+            command=select_all,
+            width=100
+        )
+        btn_select_all.pack(side="left", padx=5)
+
+        # Deselect All button
+        def deselect_all():
+            for var in checkbox_vars.values():
+                var.set(False)
+
+        btn_deselect_all = ctk.CTkButton(
+            btn_frame,
+            text="Deselect All",
+            command=deselect_all,
+            width=100
+        )
+        btn_deselect_all.pack(side="left", padx=5)
+
+        # Apply button
+        def apply_filter():
+            self.selected_segments = {
+                seg_id for seg_id, var in checkbox_vars.items() if var.get()
+            }
+            dialog.destroy()
+            self.refresh()
+
+        btn_apply = ctk.CTkButton(
+            btn_frame,
+            text="Apply",
+            command=apply_filter,
+            fg_color="green",
+            width=100
+        )
+        btn_apply.pack(side="right", padx=5)
+
+        # Cancel button
+        btn_cancel = ctk.CTkButton(
+            btn_frame,
+            text="Cancel",
+            command=dialog.destroy,
+            fg_color="gray",
+            width=100
+        )
+        btn_cancel.pack(side="right", padx=5)
+
+    def update_segment_filter(self):
+        """Update segment filter button text to show count."""
+        segments = self.vps_manager.get_all_segments()
+        if not self.selected_segments:
+            # Default to all segments
+            self.selected_segments = {seg['id'] for seg in segments}
+
+        total_segments = len(segments)
+        selected_count = len(self.selected_segments)
+
+        if selected_count == total_segments:
+            self.segment_filter_btn.configure(text="All Segments")
+        elif selected_count == 0:
+            self.segment_filter_btn.configure(text="No Segments")
+        else:
+            self.segment_filter_btn.configure(
+                text=f"{selected_count} of {total_segments} Segments")
 
     def refresh(self):
         """Refresh the planning tree."""
@@ -107,14 +217,19 @@ class VPSPlanningScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
-            # Get selected segment
-            selected_segment = self.segment_var.get()
-
-            # Get all segments or filtered segment
+            # Get all segments
             segments = self.vps_manager.get_all_segments()
 
-            if selected_segment != "all":
-                segments = [seg for seg in segments if seg['name'] == selected_segment]
+            # Initialize selected_segments if empty
+            if not self.selected_segments:
+                self.selected_segments = {seg['id'] for seg in segments}
+
+            # Filter segments by selection
+            segments = [seg for seg in segments if seg['id']
+                        in self.selected_segments]
+
+            # Update the filter button text
+            self.update_segment_filter()
 
             if not segments:
                 label = ctk.CTkLabel(
@@ -143,7 +258,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         # Get TL Visions for this segment
         node_id = f"segment-{segment['id']}"
         if node_id in self.expanded_nodes:
-            tl_visions = self.vps_manager.get_tl_visions(segment_id=segment['id'])
+            tl_visions = self.vps_manager.get_tl_visions(
+                segment_id=segment['id'])
 
             if not tl_visions:
                 # Show "no visions" message
@@ -155,7 +271,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
                     text_color="gray"
                 )
                 empty_label.pack(anchor="w", padx=10, pady=5)
-                empty_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=30)
+                empty_frame.grid(row=row, column=0,
+                                 sticky="ew", pady=2, padx=30)
                 row += 1
             else:
                 for vision in tl_visions:
@@ -166,15 +283,18 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def display_tl_vision_tree(self, vision: Dict[str, Any], row: int, indent: int) -> int:
         """Display a TL Vision and its children."""
         vision_frame = self.create_tl_vision_row(vision, indent)
-        vision_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        vision_frame.grid(row=row, column=0, sticky="ew",
+                          pady=2, padx=(indent * 30 + 5, 5))
         row += 1
 
         node_id = f"tl_vision-{vision['id']}"
         if node_id in self.expanded_nodes:
-            annual_visions = self.vps_manager.get_annual_visions(tl_vision_id=vision['id'])
+            annual_visions = self.vps_manager.get_annual_visions(
+                tl_vision_id=vision['id'])
 
             if not annual_visions:
-                row = self.display_empty_message(row, indent + 1, "No annual visions")
+                row = self.display_empty_message(
+                    row, indent + 1, "No annual visions")
             else:
                 for av in annual_visions:
                     row = self.display_annual_vision_tree(av, row, indent + 1)
@@ -184,15 +304,18 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def display_annual_vision_tree(self, vision: Dict[str, Any], row: int, indent: int) -> int:
         """Display an Annual Vision and its children."""
         vision_frame = self.create_annual_vision_row(vision, indent)
-        vision_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        vision_frame.grid(row=row, column=0, sticky="ew",
+                          pady=2, padx=(indent * 30 + 5, 5))
         row += 1
 
         node_id = f"annual_vision-{vision['id']}"
         if node_id in self.expanded_nodes:
-            annual_plans = self.vps_manager.get_annual_plans(annual_vision_id=vision['id'])
+            annual_plans = self.vps_manager.get_annual_plans(
+                annual_vision_id=vision['id'])
 
             if not annual_plans:
-                row = self.display_empty_message(row, indent + 1, "No annual plans")
+                row = self.display_empty_message(
+                    row, indent + 1, "No annual plans")
             else:
                 for plan in annual_plans:
                     row = self.display_annual_plan_tree(plan, row, indent + 1)
@@ -202,69 +325,84 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def display_annual_plan_tree(self, plan: Dict[str, Any], row: int, indent: int) -> int:
         """Display an Annual Plan and its children."""
         plan_frame = self.create_annual_plan_row(plan, indent)
-        plan_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        plan_frame.grid(row=row, column=0, sticky="ew",
+                        pady=2, padx=(indent * 30 + 5, 5))
         row += 1
 
         node_id = f"annual_plan-{plan['id']}"
         if node_id in self.expanded_nodes:
-            initiatives = self.vps_manager.get_quarter_initiatives(annual_plan_id=plan['id'])
+            initiatives = self.vps_manager.get_quarter_initiatives(
+                annual_plan_id=plan['id'])
 
             if not initiatives:
-                row = self.display_empty_message(row, indent + 1, "No quarter initiatives")
+                row = self.display_empty_message(
+                    row, indent + 1, "No quarter initiatives")
             else:
                 for initiative in initiatives:
-                    row = self.display_quarter_initiative_tree(initiative, row, indent + 1)
+                    row = self.display_quarter_initiative_tree(
+                        initiative, row, indent + 1)
 
         return row
 
     def display_quarter_initiative_tree(self, initiative: Dict[str, Any], row: int, indent: int) -> int:
         """Display a Quarter Initiative and its children."""
         init_frame = self.create_quarter_initiative_row(initiative, indent)
-        init_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        init_frame.grid(row=row, column=0, sticky="ew",
+                        pady=2, padx=(indent * 30 + 5, 5))
         row += 1
 
         node_id = f"quarter_initiative-{initiative['id']}"
         if node_id in self.expanded_nodes:
-            tactics = self.vps_manager.get_month_tactics(quarter_initiative_id=initiative['id'])
+            tactics = self.vps_manager.get_month_tactics(
+                quarter_initiative_id=initiative['id'])
 
             if not tactics:
-                row = self.display_empty_message(row, indent + 1, "No month tactics")
+                row = self.display_empty_message(
+                    row, indent + 1, "No month tactics")
             else:
                 for tactic in tactics:
-                    row = self.display_month_tactic_tree(tactic, row, indent + 1)
+                    row = self.display_month_tactic_tree(
+                        tactic, row, indent + 1)
 
         return row
 
     def display_month_tactic_tree(self, tactic: Dict[str, Any], row: int, indent: int) -> int:
         """Display a Month Tactic and its children."""
         tactic_frame = self.create_month_tactic_row(tactic, indent)
-        tactic_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        tactic_frame.grid(row=row, column=0, sticky="ew",
+                          pady=2, padx=(indent * 30 + 5, 5))
         row += 1
 
         node_id = f"month_tactic-{tactic['id']}"
         if node_id in self.expanded_nodes:
-            actions = self.vps_manager.get_week_actions(month_tactic_id=tactic['id'])
+            actions = self.vps_manager.get_week_actions(
+                month_tactic_id=tactic['id'])
 
             if not actions:
-                row = self.display_empty_message(row, indent + 1, "No week actions")
+                row = self.display_empty_message(
+                    row, indent + 1, "No week actions")
             else:
                 for action in actions:
-                    row = self.display_week_action_tree(action, row, indent + 1)
+                    row = self.display_week_action_tree(
+                        action, row, indent + 1)
 
         return row
 
     def display_week_action_tree(self, action: Dict[str, Any], row: int, indent: int) -> int:
         """Display a Week Action and its linked action items."""
         action_frame = self.create_week_action_row(action, indent)
-        action_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        action_frame.grid(row=row, column=0, sticky="ew",
+                          pady=2, padx=(indent * 30 + 5, 5))
         row += 1
 
         node_id = f"week_action-{action['id']}"
         if node_id in self.expanded_nodes:
-            action_items = self.vps_manager.get_action_items_for_week_action(action['id'])
+            action_items = self.vps_manager.get_action_items_for_week_action(
+                action['id'])
 
             if not action_items:
-                row = self.display_empty_message(row, indent + 1, "No action items")
+                row = self.display_empty_message(
+                    row, indent + 1, "No action items")
             else:
                 for item in action_items:
                     row = self.display_action_item(item, row, indent + 1)
@@ -274,7 +412,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def display_action_item(self, item: Dict[str, Any], row: int, indent: int) -> int:
         """Display an action item (leaf node)."""
         item_frame = self.create_action_item_row(item, indent)
-        item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=(indent * 30 + 5, 5))
+        item_frame.grid(row=row, column=0, sticky="ew",
+                        pady=2, padx=(indent * 30 + 5, 5))
         return row + 1
 
     def display_empty_message(self, row: int, indent: int, message: str) -> int:
@@ -287,7 +426,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             text_color="gray"
         )
         empty_label.pack(anchor="w", padx=10, pady=3)
-        empty_frame.grid(row=row, column=0, sticky="ew", pady=1, padx=(indent * 30 + 5, 5))
+        empty_frame.grid(row=row, column=0, sticky="ew",
+                         pady=1, padx=(indent * 30 + 5, 5))
         return row + 1
 
     # ========================================================================
@@ -340,7 +480,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame.grid_columnconfigure(2, weight=1)
 
         # Indentation
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         # Expand/collapse button
@@ -362,13 +503,16 @@ class VPSPlanningScreen(ctk.CTkFrame):
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
         # Action buttons
-        btn_add = ctk.CTkButton(frame, text="+", width=25, command=lambda: self.add_annual_vision(vision['id']))
+        btn_add = ctk.CTkButton(
+            frame, text="+", width=25, command=lambda: self.add_annual_vision(vision['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_tl_vision(vision['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_tl_vision(vision['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
-        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_tl_vision(vision['id']), fg_color="darkred", hover_color="red")
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_tl_vision(
+            vision['id']), fg_color="darkred", hover_color="red")
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -381,7 +525,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid_columnconfigure(2, weight=1)
 
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         btn_expand = ctk.CTkButton(frame, text="▼" if is_expanded else "▶", width=25,
@@ -389,16 +534,19 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
         label = ctk.CTkLabel(frame, text=f"📆 {vision['year']}: {vision['title'] or 'Untitled'}",
-                            font=ctk.CTkFont(size=12), anchor="w")
+                             font=ctk.CTkFont(size=12), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(frame, text="+", width=25, command=lambda: self.add_annual_plan(vision['id']))
+        btn_add = ctk.CTkButton(
+            frame, text="+", width=25, command=lambda: self.add_annual_plan(vision['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_annual_vision(vision['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_annual_vision(vision['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
-        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_vision(vision['id']), fg_color="darkred", hover_color="red")
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_vision(
+            vision['id']), fg_color="darkred", hover_color="red")
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -411,25 +559,30 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid_columnconfigure(2, weight=1)
 
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         btn_expand = ctk.CTkButton(frame, text="▼" if is_expanded else "▶", width=25,
                                    command=lambda: self.toggle_node(node_id))
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
-        status_emoji = {"not_started": "⚪", "in_progress": "🔵", "completed": "✅", "at_risk": "🔴"}.get(plan['status'], "⚪")
+        status_emoji = {"not_started": "⚪", "in_progress": "🔵",
+                        "completed": "✅", "at_risk": "🔴"}.get(plan['status'], "⚪")
         label = ctk.CTkLabel(frame, text=f"{status_emoji} Plan: {plan['theme'] or 'Untitled'}",
-                            font=ctk.CTkFont(size=12), anchor="w")
+                             font=ctk.CTkFont(size=12), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(frame, text="+", width=25, command=lambda: self.add_quarter_initiative(plan['id']))
+        btn_add = ctk.CTkButton(
+            frame, text="+", width=25, command=lambda: self.add_quarter_initiative(plan['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_annual_plan(plan['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_annual_plan(plan['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
-        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_plan(plan['id']), fg_color="darkred", hover_color="red")
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_plan(
+            plan['id']), fg_color="darkred", hover_color="red")
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -442,7 +595,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid_columnconfigure(2, weight=1)
 
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         btn_expand = ctk.CTkButton(frame, text="▼" if is_expanded else "▶", width=25,
@@ -451,16 +605,19 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         progress = initiative['progress_pct']
         label = ctk.CTkLabel(frame, text=f"📋 Q{initiative['quarter']}: {initiative['title']} ({progress}%)",
-                            font=ctk.CTkFont(size=11), anchor="w")
+                             font=ctk.CTkFont(size=11), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(frame, text="+", width=25, command=lambda: self.add_month_tactic(initiative['id']))
+        btn_add = ctk.CTkButton(
+            frame, text="+", width=25, command=lambda: self.add_month_tactic(initiative['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_quarter_initiative(initiative['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_quarter_initiative(initiative['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
-        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_quarter_initiative(initiative['id']), fg_color="darkred", hover_color="red")
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_quarter_initiative(
+            initiative['id']), fg_color="darkred", hover_color="red")
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -473,26 +630,31 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid_columnconfigure(2, weight=1)
 
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         btn_expand = ctk.CTkButton(frame, text="▼" if is_expanded else "▶", width=25,
                                    command=lambda: self.toggle_node(node_id))
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
-        month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        month_names = ["", "Jan", "Feb", "Mar", "Apr", "May",
+                       "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         month_name = month_names[tactic['month']]
         label = ctk.CTkLabel(frame, text=f"📌 {month_name}: {tactic['priority_focus']} ({tactic['progress_pct']}%)",
-                            font=ctk.CTkFont(size=11), anchor="w")
+                             font=ctk.CTkFont(size=11), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(frame, text="+", width=25, command=lambda: self.add_week_action(tactic['id']))
+        btn_add = ctk.CTkButton(
+            frame, text="+", width=25, command=lambda: self.add_week_action(tactic['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_month_tactic(tactic['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_month_tactic(tactic['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
-        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_month_tactic(tactic['id']), fg_color="darkred", hover_color="red")
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_month_tactic(
+            tactic['id']), fg_color="darkred", hover_color="red")
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -505,7 +667,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid_columnconfigure(2, weight=1)
 
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         btn_expand = ctk.CTkButton(frame, text="▼" if is_expanded else "▶", width=25,
@@ -513,16 +676,19 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
         label = ctk.CTkLabel(frame, text=f"✅ Week {action['week_start_date']}: {action['title']}",
-                            font=ctk.CTkFont(size=10), anchor="w")
+                             font=ctk.CTkFont(size=10), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(frame, text="+ Item", width=40, command=lambda: self.add_action_item(action['id']))
+        btn_add = ctk.CTkButton(frame, text="+ Item", width=40,
+                                command=lambda: self.add_action_item(action['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_week_action(action['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_week_action(action['id']))
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
-        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_week_action(action['id']), fg_color="darkred", hover_color="red")
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_week_action(
+            action['id']), fg_color="darkred", hover_color="red")
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -532,18 +698,21 @@ class VPSPlanningScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame)
         frame.grid_columnconfigure(1, weight=1)
 
-        indent_label = ctk.CTkLabel(frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
         indent_label.grid(row=0, column=0, sticky="w")
 
         status_icon = "✅" if item['status'] == 'completed' else "☐"
         habit_icon = "🔁" if item.get('is_habit') else ""
-        percent = f" ({item.get('percent_complete', 0)}%)" if item.get('is_habit') else ""
+        percent = f" ({item.get('percent_complete', 0)}%)" if item.get(
+            'is_habit') else ""
 
         label = ctk.CTkLabel(frame, text=f"{status_icon} {habit_icon} {item['title']}{percent}",
-                            font=ctk.CTkFont(size=10), anchor="w")
+                             font=ctk.CTkFont(size=10), anchor="w")
         label.grid(row=0, column=1, sticky="w", padx=5, pady=3)
 
-        btn_edit = ctk.CTkButton(frame, text="✎", width=25, command=lambda: self.edit_action_item(item['id']))
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_action_item(item['id']))
         btn_edit.grid(row=0, column=2, padx=2, pady=3)
 
         return frame
@@ -568,34 +737,45 @@ class VPSPlanningScreen(ctk.CTkFrame):
             self.expanded_nodes.add(f"segment-{segment['id']}")
 
             # Expand TL Visions
-            tl_visions = self.vps_manager.get_tl_visions(segment_id=segment['id'])
+            tl_visions = self.vps_manager.get_tl_visions(
+                segment_id=segment['id'])
             for tl_vision in tl_visions:
                 self.expanded_nodes.add(f"tl_vision-{tl_vision['id']}")
 
                 # Expand Annual Visions
-                annual_visions = self.vps_manager.get_annual_visions(tl_vision_id=tl_vision['id'])
+                annual_visions = self.vps_manager.get_annual_visions(
+                    tl_vision_id=tl_vision['id'])
                 for annual_vision in annual_visions:
-                    self.expanded_nodes.add(f"annual_vision-{annual_vision['id']}")
+                    self.expanded_nodes.add(
+                        f"annual_vision-{annual_vision['id']}")
 
                     # Expand Annual Plans
-                    annual_plans = self.vps_manager.get_annual_plans(annual_vision_id=annual_vision['id'])
+                    annual_plans = self.vps_manager.get_annual_plans(
+                        annual_vision_id=annual_vision['id'])
                     for annual_plan in annual_plans:
-                        self.expanded_nodes.add(f"annual_plan-{annual_plan['id']}")
+                        self.expanded_nodes.add(
+                            f"annual_plan-{annual_plan['id']}")
 
                         # Expand Quarter Initiatives
-                        quarter_initiatives = self.vps_manager.get_quarter_initiatives(annual_plan_id=annual_plan['id'])
+                        quarter_initiatives = self.vps_manager.get_quarter_initiatives(
+                            annual_plan_id=annual_plan['id'])
                         for quarter_initiative in quarter_initiatives:
-                            self.expanded_nodes.add(f"quarter_initiative-{quarter_initiative['id']}")
+                            self.expanded_nodes.add(
+                                f"quarter_initiative-{quarter_initiative['id']}")
 
                             # Expand Month Tactics
-                            month_tactics = self.vps_manager.get_month_tactics(quarter_initiative_id=quarter_initiative['id'])
+                            month_tactics = self.vps_manager.get_month_tactics(
+                                quarter_initiative_id=quarter_initiative['id'])
                             for month_tactic in month_tactics:
-                                self.expanded_nodes.add(f"month_tactic-{month_tactic['id']}")
+                                self.expanded_nodes.add(
+                                    f"month_tactic-{month_tactic['id']}")
 
                                 # Expand Week Actions
-                                week_actions = self.vps_manager.get_week_actions(month_tactic_id=month_tactic['id'])
+                                week_actions = self.vps_manager.get_week_actions(
+                                    month_tactic_id=month_tactic['id'])
                                 for week_action in week_actions:
-                                    self.expanded_nodes.add(f"week_action-{week_action['id']}")
+                                    self.expanded_nodes.add(
+                                        f"week_action-{week_action['id']}")
         self.refresh()
 
     def collapse_all(self):
@@ -655,7 +835,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
                 dialog,
                 text=f"🎯 {segment['name']}",
                 fg_color=segment['color_hex'],
-                command=lambda s=segment['id']: self.on_segment_selected(dialog, s),
+                command=lambda s=segment['id']: self.on_segment_selected(
+                    dialog, s),
                 height=40
             )
             btn.pack(pady=5, padx=20, fill="x")
@@ -720,7 +901,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def add_month_tactic(self, quarter_initiative_id: str):
         """Add a Month Tactic to a Quarter Initiative."""
         from .vps_editors import MonthTacticEditorDialog
-        initiative = self.vps_manager.get_quarter_initiative(quarter_initiative_id)
+        initiative = self.vps_manager.get_quarter_initiative(
+            quarter_initiative_id)
         if initiative:
             dialog = MonthTacticEditorDialog(
                 self, self.vps_manager, quarter_initiative_id, initiative['segment_description_id']
@@ -757,7 +939,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         from .vps_editors import TLVisionEditorDialog
         vision = self.vps_manager.get_tl_vision(vision_id)
         if vision:
-            dialog = TLVisionEditorDialog(self, self.vps_manager, vision['segment_description_id'], vision_id)
+            dialog = TLVisionEditorDialog(
+                self, self.vps_manager, vision['segment_description_id'], vision_id)
             self.wait_window(dialog)
             self.refresh()
 
@@ -824,7 +1007,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def edit_action_item(self, item_id: str):
         """Edit an Action Item."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.app.db_manager, item_id=item_id, vps_manager=self.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.app.db_manager, item_id=item_id,
+                         vps_manager=self.vps_manager, on_close_callback=self.refresh)
 
     # ========================================================================
     # DELETE METHODS
@@ -885,7 +1069,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         initiative = self.vps_manager.get_quarter_initiative(initiative_id)
         if initiative:
             if self._confirm_delete("Quarter Initiative", initiative['title']):
-                result = self.vps_manager.delete_quarter_initiative(initiative_id)
+                result = self.vps_manager.delete_quarter_initiative(
+                    initiative_id)
                 if result:
                     self.refresh()
                 else:

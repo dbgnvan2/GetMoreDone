@@ -17,7 +17,8 @@ class CompletedScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
-        self.columns_expanded = True  # Track column visibility state
+        # Track column visibility state (default: collapsed)
+        self.columns_expanded = False
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -27,7 +28,8 @@ class CompletedScreen(ctk.CTkFrame):
 
         # Create scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.scroll_frame.grid(
+            row=1, column=0, sticky="nsew", padx=10, pady=10)
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load items
@@ -48,7 +50,8 @@ class CompletedScreen(ctk.CTkFrame):
         title.grid(row=0, column=0, padx=10, pady=10)
 
         # Days back selector
-        ctk.CTkLabel(header, text="Last").grid(row=0, column=1, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Last").grid(
+            row=0, column=1, padx=(20, 5), pady=10)
 
         self.days_var = ctk.StringVar(value="30")
         self.days_combo = ctk.CTkComboBox(
@@ -60,10 +63,12 @@ class CompletedScreen(ctk.CTkFrame):
         )
         self.days_combo.grid(row=0, column=2, padx=5, pady=10)
 
-        ctk.CTkLabel(header, text="days").grid(row=0, column=3, sticky="w", padx=5, pady=10)
+        ctk.CTkLabel(header, text="days").grid(
+            row=0, column=3, sticky="w", padx=5, pady=10)
 
         # Who filter
-        ctk.CTkLabel(header, text="Who:").grid(row=0, column=4, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Who:").grid(
+            row=0, column=4, padx=(20, 5), pady=10)
 
         who_values = ["All"] + self.db_manager.get_distinct_who_values()
         self.who_var = ctk.StringVar(value="All")
@@ -79,7 +84,7 @@ class CompletedScreen(ctk.CTkFrame):
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
             header,
-            text="Collapse",
+            text="Expand",
             width=100,
             command=self.toggle_columns
         )
@@ -97,7 +102,8 @@ class CompletedScreen(ctk.CTkFrame):
     def toggle_columns(self):
         """Toggle between expanded and collapsed column view."""
         self.columns_expanded = not self.columns_expanded
-        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.expand_collapse_btn.configure(
+            text="Expand" if not self.columns_expanded else "Collapse")
         self.refresh()
 
     def refresh(self):
@@ -120,7 +126,8 @@ class CompletedScreen(ctk.CTkFrame):
 
             # Calculate stats
             count = len(items)
-            total_minutes = sum(item.planned_minutes for item in items if item.planned_minutes)
+            total_minutes = sum(
+                item.planned_minutes for item in items if item.planned_minutes)
 
             # Format total time
             if total_minutes >= 60:
@@ -134,7 +141,8 @@ class CompletedScreen(ctk.CTkFrame):
                 time_str = f"{total_minutes}m" if total_minutes > 0 else "0m"
 
             # Update stats label
-            self.stats_label.configure(text=f"Count: {count} | Time: {time_str}")
+            self.stats_label.configure(
+                text=f"Count: {count} | Time: {time_str}")
 
             if not items:
                 label = ctk.CTkLabel(
@@ -155,7 +163,8 @@ class CompletedScreen(ctk.CTkFrame):
                 item_frame.grid_columnconfigure(1, weight=1)
 
                 # Checkmark
-                ctk.CTkLabel(item_frame, text="✓", width=30).grid(row=0, column=0, padx=5, pady=5)
+                ctk.CTkLabel(item_frame, text="✓", width=30).grid(
+                    row=0, column=0, padx=5, pady=5)
 
                 # Title and info
                 info_text = f"{item.title}"
@@ -190,20 +199,25 @@ class CompletedScreen(ctk.CTkFrame):
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
-                    factors_frame = ctk.CTkFrame(item_frame, fg_color="transparent")
+                    factors_frame = ctk.CTkFrame(
+                        item_frame, fg_color="transparent")
                     factors_frame.grid(row=0, column=4, padx=5, pady=5)
                     factor_col = 0
                     if item.importance:
-                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=factor_col, padx=2)
+                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
                         factor_col += 1
                     if item.urgency:
-                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=factor_col, padx=2)
+                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
                         factor_col += 1
                     if item.size:
-                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=factor_col, padx=2)
+                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
                         factor_col += 1
                     if item.value:
-                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=factor_col, padx=2)
+                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
                         factor_col += 1
                     col_offset = 1
 
@@ -233,7 +247,8 @@ class CompletedScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Edit item details."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager, item_id,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
 
     def uncomplete_item(self, item_id: str):
         """Reopen a completed item."""

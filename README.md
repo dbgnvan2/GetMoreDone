@@ -16,8 +16,9 @@ A comprehensive Python task management application with GUI interface and SQLite
 📈 **Statistics** - Analyze planned vs actual time with insights by effort-cost and category
 🔄 **Reschedule History** - Never lose track of why dates changed
 📆 **Google Calendar Integration** - Create calendar events directly from action items with automatic linking
+� **Visionary Planning System (VPS)** - Strategic long-term planning from 5-year visions down to weekly actions with life segment organization
 🎵 **Music Playback** - Background music during work sessions with volume control and format conversion tools
-✨ **10 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, Plan, Completed, Contacts, Defaults, Stats, Settings
+✨ **11 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, VPS Planning, Plan, Completed, Contacts, Defaults, Stats, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
 🖥️ **Responsive UI** - Two-column layout that adapts to window size, floating timer window
@@ -27,16 +28,19 @@ A comprehensive Python task management application with GUI interface and SQLite
 ### One-Command Startup (Recommended)
 
 **Linux/Mac:**
+
 ```bash
 ./start.sh
 ```
 
 **Windows:**
+
 ```cmd
 start.bat
 ```
 
 The startup script automatically:
+
 - Creates virtual environment (if needed)
 - Activates the environment
 - Installs/updates dependencies
@@ -70,6 +74,7 @@ python run.py
 ```
 
 Or alternatively:
+
 ```bash
 python -m getmoredone
 ```
@@ -131,7 +136,38 @@ GetMoreDone/
 3. Required fields: **Who** (client/person) and **Title**
 4. Optional: Description, dates, priority factors, organization, planned time
 5. Priority score auto-calculates: I × U × S × V
-6. To create a **sub-item**: Edit an existing item and click **"+ Create Sub-Item"**
+
+### Item Editor Buttons
+
+When editing an existing item, you have several action buttons:
+
+- **Save** - Saves changes and keeps the window open (shows "✓ Saved" confirmation)
+- **Save & Close** - Saves changes and closes the window
+- **Save + New** - (New items only) Saves, closes, and opens a blank editor
+- **Duplicate** - Saves current changes, then opens the duplicate in a NEW window
+- **Create Follow-up** - Creates a new item linked to current, with dates +1 day
+- **Create Tasks** - Creates child items from Next Action field (one per line)
+- **Complete** - Marks item as complete and closes
+- **📅 Calendar** - Creates a Google Calendar event
+
+### Creating Child Tasks
+
+To break down a task into sub-tasks:
+
+1. Open an existing item in the editor
+2. Add tasks to the **Next Action** field, one per line. Example:
+   ```
+   Design homepage
+   Write product copy
+   Set up payment system
+   Test checkout flow
+   ```
+3. Click **"+ Create Tasks"** button
+4. Creates one child item for each line with:
+   - Title: "Parent Title - Task text"
+   - Description: The task text
+   - Same dates, priority, and other fields as parent
+   - Parent-child relationship established
 
 ### Deleting Items
 
@@ -181,6 +217,7 @@ GetMoreDone/
 The Action Timer helps you stay focused on tasks with countdown timing, break management, and productivity tracking.
 
 **Starting a Timer:**
+
 1. Click the **"⏱ Timer"** button on any open action item (found in TODAY, Upcoming, or All Items screens)
 2. The timer window opens showing:
    - **Time Block**: Total allocated time (e.g., 30 minutes)
@@ -192,12 +229,23 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 4. Click **Start** to begin the countdown (music starts automatically if configured)
 
 **Timer Controls:**
+
 - **Start**: Begin countdown (required click, doesn't auto-start)
 - **Pause/Resume**: Pause work time (elapsed time continues, work time pauses)
 - **Stop**: End the timer session (shows Finished/Continue buttons)
 - **Close Window**: Same as clicking Stop
 
+**Music Controls (Independent):**
+
+- **🎵 Play**: Start or resume music playback (purple button)
+- **⏸ Pause**: Pause or resume music (purple button, changes to "▶ Resume" when paused)
+- **Independent Operation**: Music controls work separately from timer controls
+  - Pausing the timer does NOT pause the music
+  - You can control music anytime without affecting the timer
+  - Music only stops when you click Stop or close the window
+
 **Visual Indicators:**
+
 - Title bar shows time remaining (e.g., "Task Name - 12:34")
 - When < 10 minutes remaining: Time turns **green** as a warning
 - During break time: Title shows "BREAK" in **blue** with break countdown
@@ -207,6 +255,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 **Completion Options (after Stop):**
 
 **Finished Workflow:**
+
 1. Click **Finished** button
 2. Enter optional completion note describing what you accomplished
 3. Timer saves a work log entry with actual work time (excluding pauses)
@@ -214,6 +263,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 5. Timer window closes
 
 **Continue Workflow** (for ongoing multi-day tasks):
+
 1. Click **Continue** button
 2. Enter optional completion note for today's work
 3. Enter optional next steps note and **select dates** for the continued action:
@@ -230,11 +280,13 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 6. New action opens in editor for review
 
 **Time Tracking:**
+
 - **Work Time**: Actual productive time (excludes pauses), saved to work log
 - **Elapsed Time**: Total wall clock time from start to stop
 - Work logs are viewable in the action item's history
 
 **Break Time:**
+
 - Automatically calculated: Work Time = Time Block - Break Time
 - Default: 30 min block = 25 min work + 5 min break
 - Break countdown starts automatically when work time reaches 00:00
@@ -242,8 +294,11 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - Break time is not optional (but you can ignore it and finish early)
 
 **Music Playback:**
+
+- **Independent Controls**: Separate Play/Pause buttons (purple) for music control
 - **Background Music**: Plays random tracks from your configured music folder during work sessions
-- **Automatic Playback**: Music starts when you click Start and stops when you finish or pause
+- **Manual Control**: Start/pause music anytime without affecting the timer state
+- **Continuous Playback**: Music continues playing even when timer is paused
 - **Track Display**: Currently playing track name shown in status (♫ Track Name)
 - **Volume Control**: Adjustable volume slider in Settings > Timer & Audio (0-100%)
 - **Supported Formats**: MP3, WAV, OGG (best compatibility)
@@ -251,6 +306,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - **Configuration**: Set music folder path in Settings > Timer & Audio
 
 **Audio Alerts:**
+
 - **Break Start Sound**: Plays when work time ends and break begins
 - **Break End Sound**: Plays when break time expires
 - Sounds are **optional** - can be enabled/disabled in Settings
@@ -259,6 +315,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - Cross-platform support (Windows, macOS, Linux)
 
 **Settings:**
+
 - **Default Time Block**: 30 minutes (editable in Settings > Timer & Audio)
 - **Default Break Time**: 5 minutes (editable in Settings > Timer & Audio)
 - **Warning Time**: Green warning appears at < 10 minutes (editable in Settings > Timer & Audio)
@@ -269,6 +326,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - **Music Volume**: Volume slider (0-100%, default 70%)
 
 **Single Timer Policy:**
+
 - Only one timer can run at a time (prevents confusion)
 - Timer must be stopped/completed before starting another
 
@@ -278,19 +336,23 @@ Create Google Calendar events directly from action items with automatic linking 
 
 **Configuration Directory:**
 GetMoreDone stores credentials in your home directory:
+
 ```
 ~/.getmoredone/credentials.json  # OAuth credentials (you provide)
 ~/.getmoredone/token.pickle      # Auth token (auto-generated)
 ```
+
 This keeps credentials secure and shared across all projects.
 
 **Setup (One-Time):**
+
 1. See detailed setup instructions: `docs/google-calendar-setup.md`
 2. Get OAuth credentials from Google Cloud Console
 3. Place `credentials.json` in `~/.getmoredone/`
 4. First use will prompt for authorization in browser
 
 **Creating Calendar Events:**
+
 1. Open an action item in Item Editor
 2. Click **"📅 Calendar"** button (purple)
 3. Fill in event details:
@@ -306,12 +368,14 @@ This keeps credentials secure and shared across all projects.
 6. Action item automatically marked as meeting with scheduled time displayed
 
 **Meeting Tracking:**
+
 - ✅ **"Is Meeting"** checkbox automatically checked when calendar event created
 - 🕒 **"Meeting Time"** field displays the scheduled date/time
 - 📊 Track which action items are meetings vs regular tasks
 - 🔍 Filter and report on meetings separately
 
 **Benefits:**
+
 - 📆 Schedule meetings without leaving GetMoreDone
 - 🔗 Calendar link stored with action item for easy access
 - ⏰ Pre-fills event with action item details
@@ -328,6 +392,7 @@ This keeps credentials secure and shared across all projects.
 If Google login shows a **different project name** than expected (e.g., shows "bowen1rag" instead of "getmoredone"), you have a zombie token from an old project.
 
 **Quick Fix:**
+
 ```bash
 # Delete the old token
 rm ~/.getmoredone/token.pickle
@@ -410,7 +475,40 @@ pytest tests/test_database.py -v
 
 ## Recent Improvements
 
+### VPS Segment Management in Settings (January 2026)
+
+- **New Settings Tab** - "VPS Life Segments" tab for managing all life segments
+- **Full CRUD Operations** - Create, edit, and delete life segments
+- **Visual Color Picker** - Native color picker dialog with hex code input and live preview
+- **Segment Properties**:
+  - Name and description
+  - Color (hex code with visual preview)
+  - Display order (for sorting)
+  - Active/Inactive status toggle
+- **Smart Features**:
+  - Color preview boxes in segment list
+  - Status badges (✓ Active / ○ Inactive)
+  - Enhanced deletion protection:
+    - Reports exact count of linked visions
+    - Shows step-by-step instructions to remove linked records
+    - Prevents accidental data loss
+  - Refresh button to reload segment list
+- **Comprehensive Testing** - 9 new unit tests covering all CRUD operations and edge cases
+
+### VPS (Visionary Planning System) Bug Fixes (January 2026)
+
+- **Fixed New Vision button crash** - Replaced non-existent `CTkMessageBox` with standard `tkinter.messagebox`
+- **Fixed empty year field validation** - Now provides sensible defaults (current year for start, +10 years for end)
+- **Added segment multi-select** - New checkbox dialog to select/deselect multiple life segments for display
+  - "Select Segments..." button shows selection dialog with checkboxes
+  - Select All / Deselect All buttons for convenience
+  - Button displays count of selected segments (e.g., "3 of 5 Segments")
+  - Filtered tree view shows only selected segments
+- All error messages now use proper tkinter messagebox for consistency
+- Comprehensive test coverage added (5 new tests in test_vps_integration.py)
+
 ### Action Timer Module (NEW)
+
 - Floating, resizable countdown timer window with always-on-top behavior
 - Pause/Resume functionality tracking work time vs elapsed time
 - Automatic break time calculation (Time Block - Break = Work Time)
@@ -439,6 +537,7 @@ pytest tests/test_database.py -v
 - Settings for time block (30 min), break (5 min), audio alerts, custom sounds, music folder, and volume
 
 ### Item Deletion (NEW - January 2026)
+
 - Delete button in Item Editor (red button, bottom right)
 - Two-stage confirmation dialog with clear warnings
 - Smart child handling: Children are preserved and become root items (not deleted)
@@ -451,6 +550,7 @@ pytest tests/test_database.py -v
 - Comprehensive test coverage (4 new tests in test_database.py)
 
 ### Google Calendar Integration (NEW - January 2026)
+
 - Create calendar events directly from action items
 - 📅 Calendar button in Item Editor (purple, on button bar)
 - OAuth 2.0 authentication with secure token storage
@@ -475,6 +575,7 @@ pytest tests/test_database.py -v
 - Meeting data stored in action_items table (is_meeting, meeting_start_time)
 
 ### Contact Management
+
 - Full contact/client database with CRUD operations
 - Case-insensitive search across name, email, phone, notes
 - Contact types: Client, Contact, Personal
@@ -482,6 +583,7 @@ pytest tests/test_database.py -v
 - Link action items to contacts via contact_id foreign key
 
 ### Hierarchical Task Structure
+
 - Parent-child relationships with unlimited nesting levels
 - Create sub-items from any existing item with "+ Create Sub-Item" button
   - Sub-items duplicate parent (all fields copied including title, dates, priority, etc.)
@@ -492,6 +594,7 @@ pytest tests/test_database.py -v
 - Auto-populated parent_id field with ON DELETE SET NULL
 
 ### UI Enhancements
+
 - WHO field dropdown with click-outside detection
 - Group and Category columns in Upcoming view
 - Centered dialogs (600×800) above main window
@@ -500,6 +603,7 @@ pytest tests/test_database.py -v
 - Improved time block validation with user-friendly error messages
 
 ### Database Improvements
+
 - Automatic migrations for contact_id and parent_id columns
 - Indexes on contact_id and parent_id for performance
 - Self-referencing foreign key for hierarchical relationships
@@ -516,3 +620,50 @@ Private project - All rights reserved
 ## Support
 
 For issues or questions, create an issue in the repository.
+
+## Testing
+
+### Running Tests
+
+The project includes comprehensive test coverage with 21+ VPS-specific tests:
+
+**Run all tests:**
+
+```bash
+python3 -m pytest tests/ -v
+```
+
+**Run VPS tests only:**
+
+```bash
+python3 -m pytest tests/test_vps_integration.py -v
+```
+
+**Run standalone VPS test:**
+
+```bash
+python3 test_vps_segments.py
+```
+
+### Test Coverage
+
+- **14 Integration Tests** (`tests/test_vps_integration.py`):
+  - 5 bug fix tests (CTkMessageBox, year validation, segment filtering)
+  - 9 segment management tests (CRUD, deletion protection, color validation)
+- **7 Standalone Tests** (`test_vps_segments.py`):
+  - Structure validation
+  - Method existence checks
+  - Enhanced deletion protection verification
+
+- **Additional Tests**:
+  - Database operations
+  - Contact management
+  - Date validation
+  - Timer functionality
+  - Obsidian integration
+
+See [docs/VPS_TESTING_SUMMARY.md](docs/VPS_TESTING_SUMMARY.md) for detailed test documentation.
+
+### Test Results
+
+All tests pass consistently with 100% success rate. Tests use in-memory databases for isolation and run in < 1 second total.

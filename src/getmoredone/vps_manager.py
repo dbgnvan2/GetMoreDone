@@ -23,7 +23,8 @@ class VPSManager:
 
         # Store db_manager for action item operations
         # If not provided, create one using the same db_path
-        self.db_manager = db_manager if db_manager else DatabaseManager(db_path)
+        self.db_manager = db_manager if db_manager else DatabaseManager(
+            db_path)
 
     def close(self):
         """Close database connection."""
@@ -53,7 +54,7 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_segment(self, name: str, description: str, color_hex: str,
-                      order_index: int) -> str:
+                       order_index: int) -> str:
         """Create a new life segment."""
         segment_id = f"seg-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -69,7 +70,8 @@ class VPSManager:
 
     def update_segment(self, segment_id: str, **kwargs) -> bool:
         """Update a segment's fields."""
-        allowed_fields = {'name', 'description', 'color_hex', 'order_index', 'is_active'}
+        allowed_fields = {'name', 'description',
+                          'color_hex', 'order_index', 'is_active'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -119,8 +121,8 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_tl_vision(self, segment_description_id: str, start_year: int,
-                        end_year: int, title: str, vision_statement: str = "",
-                        success_metrics: str = "[]") -> str:
+                         end_year: int, title: str, vision_statement: str = "",
+                         success_metrics: str = "[]") -> str:
         """Create a new TL vision."""
         vision_id = f"tlv-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -139,7 +141,7 @@ class VPSManager:
     def update_tl_vision(self, vision_id: str, **kwargs) -> bool:
         """Update a TL vision's fields."""
         allowed_fields = {'title', 'vision_statement', 'success_metrics',
-                         'review_date', 'is_active', 'start_year', 'end_year'}
+                          'review_date', 'is_active', 'start_year', 'end_year'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -162,8 +164,8 @@ class VPSManager:
     # ========================================================================
 
     def get_annual_visions(self, tl_vision_id: Optional[str] = None,
-                          year: Optional[int] = None,
-                          active_only: bool = True) -> List[Dict[str, Any]]:
+                           year: Optional[int] = None,
+                           active_only: bool = True) -> List[Dict[str, Any]]:
         """Get annual visions, optionally filtered."""
         query = "SELECT * FROM annual_visions WHERE 1=1"
         params = []
@@ -194,8 +196,8 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_annual_vision(self, tl_vision_id: str, segment_description_id: str,
-                           year: int, title: str, vision_statement: str = "",
-                           key_priorities: str = "[]") -> str:
+                             year: int, title: str, vision_statement: str = "",
+                             key_priorities: str = "[]") -> str:
         """Create a new annual vision."""
         vision_id = f"av-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -213,7 +215,8 @@ class VPSManager:
 
     def update_annual_vision(self, vision_id: str, **kwargs) -> bool:
         """Update an annual vision's fields."""
-        allowed_fields = {'title', 'vision_statement', 'key_priorities', 'is_active', 'year'}
+        allowed_fields = {'title', 'vision_statement',
+                          'key_priorities', 'is_active', 'year'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -236,8 +239,8 @@ class VPSManager:
     # ========================================================================
 
     def get_annual_plans(self, annual_vision_id: Optional[str] = None,
-                        year: Optional[int] = None,
-                        active_only: bool = True) -> List[Dict[str, Any]]:
+                         year: Optional[int] = None,
+                         active_only: bool = True) -> List[Dict[str, Any]]:
         """Get annual plans, optionally filtered."""
         query = "SELECT * FROM annual_plans WHERE 1=1"
         params = []
@@ -268,8 +271,8 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_annual_plan(self, annual_vision_id: str, segment_description_id: str,
-                          year: int, theme: str, objective: str = "",
-                          description: str = "") -> str:
+                           year: int, theme: str, objective: str = "",
+                           description: str = "") -> str:
         """Create a new annual plan."""
         plan_id = f"ap-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -288,7 +291,7 @@ class VPSManager:
     def update_annual_plan(self, plan_id: str, **kwargs) -> bool:
         """Update an annual plan's fields."""
         allowed_fields = {'theme', 'objective', 'description', 'status',
-                         'target_date', 'is_active', 'year'}
+                          'target_date', 'is_active', 'year'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -311,9 +314,9 @@ class VPSManager:
     # ========================================================================
 
     def get_quarter_initiatives(self, annual_plan_id: Optional[str] = None,
-                               quarter: Optional[int] = None,
-                               year: Optional[int] = None,
-                               active_only: bool = True) -> List[Dict[str, Any]]:
+                                quarter: Optional[int] = None,
+                                year: Optional[int] = None,
+                                active_only: bool = True) -> List[Dict[str, Any]]:
         """Get quarter initiatives, optionally filtered."""
         query = "SELECT * FROM quarter_initiatives WHERE 1=1"
         params = []
@@ -348,9 +351,9 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_quarter_initiative(self, annual_plan_id: str, segment_description_id: str,
-                                 quarter: int, year: int, title: str,
-                                 outcome_statement: str = "",
-                                 tracking_measures: str = "[]") -> str:
+                                  quarter: int, year: int, title: str,
+                                  outcome_statement: str = "",
+                                  tracking_measures: str = "[]") -> str:
         """Create a new quarter initiative."""
         initiative_id = f"qi-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -370,7 +373,7 @@ class VPSManager:
     def update_quarter_initiative(self, initiative_id: str, **kwargs) -> bool:
         """Update a quarter initiative's fields."""
         allowed_fields = {'title', 'outcome_statement', 'tracking_measures',
-                         'status', 'progress_pct', 'is_active', 'quarter', 'year'}
+                          'status', 'progress_pct', 'is_active', 'quarter', 'year'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -393,9 +396,9 @@ class VPSManager:
     # ========================================================================
 
     def get_month_tactics(self, quarter_initiative_id: Optional[str] = None,
-                         month: Optional[int] = None,
-                         year: Optional[int] = None,
-                         active_only: bool = True) -> List[Dict[str, Any]]:
+                          month: Optional[int] = None,
+                          year: Optional[int] = None,
+                          active_only: bool = True) -> List[Dict[str, Any]]:
         """Get month tactics, optionally filtered."""
         query = "SELECT * FROM month_tactics WHERE 1=1"
         params = []
@@ -430,8 +433,8 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_month_tactic(self, quarter_initiative_id: str, segment_description_id: str,
-                           month: int, year: int, priority_focus: str,
-                           description: str = "") -> str:
+                            month: int, year: int, priority_focus: str,
+                            description: str = "") -> str:
         """Create a new month tactic."""
         tactic_id = f"mt-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -451,7 +454,7 @@ class VPSManager:
     def update_month_tactic(self, tactic_id: str, **kwargs) -> bool:
         """Update a month tactic's fields."""
         allowed_fields = {'priority_focus', 'description', 'status',
-                         'progress_pct', 'is_active', 'month', 'year'}
+                          'progress_pct', 'is_active', 'month', 'year'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -474,8 +477,8 @@ class VPSManager:
     # ========================================================================
 
     def get_week_actions(self, month_tactic_id: Optional[str] = None,
-                        week_start_date: Optional[str] = None,
-                        active_only: bool = True) -> List[Dict[str, Any]]:
+                         week_start_date: Optional[str] = None,
+                         active_only: bool = True) -> List[Dict[str, Any]]:
         """Get week actions, optionally filtered."""
         query = "SELECT * FROM week_actions WHERE 1=1"
         params = []
@@ -506,12 +509,12 @@ class VPSManager:
         return dict(row) if row else None
 
     def create_week_action(self, month_tactic_id: str, segment_description_id: str,
-                          week_start_date: str, week_end_date: str, title: str,
-                          description: str = "", outcome_expected: str = "",
-                          step_1: str = "", step_2: str = "", step_3: str = "",
-                          step_4: str = "", step_5: str = "",
-                          key_result_1: str = "", key_result_2: str = "", key_result_3: str = "",
-                          key_result_4: str = "", key_result_5: str = "") -> str:
+                           week_start_date: str, week_end_date: str, title: str,
+                           description: str = "", outcome_expected: str = "",
+                           step_1: str = "", step_2: str = "", step_3: str = "",
+                           step_4: str = "", step_5: str = "",
+                           key_result_1: str = "", key_result_2: str = "", key_result_3: str = "",
+                           key_result_4: str = "", key_result_5: str = "") -> str:
         """Create a new week action."""
         action_id = f"wa-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -534,9 +537,9 @@ class VPSManager:
     def update_week_action(self, action_id: str, **kwargs) -> bool:
         """Update a week action's fields."""
         allowed_fields = {'title', 'description', 'outcome_expected', 'status',
-                         'order_index', 'is_active', 'week_start_date', 'week_end_date',
-                         'step_1', 'step_2', 'step_3', 'step_4', 'step_5',
-                         'key_result_1', 'key_result_2', 'key_result_3', 'key_result_4', 'key_result_5'}
+                          'order_index', 'is_active', 'week_start_date', 'week_end_date',
+                          'step_1', 'step_2', 'step_3', 'step_4', 'step_5',
+                          'key_result_1', 'key_result_2', 'key_result_3', 'key_result_4', 'key_result_5'}
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if not updates:
@@ -591,15 +594,18 @@ class VPSManager:
             step_field = f'step_{i}'
             key_result_field = f'key_result_{i}'
 
-            step_value = week_action.get(step_field, '').strip() if week_action.get(step_field) else ''
-            key_result_value = week_action.get(key_result_field, '').strip() if week_action.get(key_result_field) else ''
+            step_value = week_action.get(step_field, '').strip(
+            ) if week_action.get(step_field) else ''
+            key_result_value = week_action.get(key_result_field, '').strip(
+            ) if week_action.get(key_result_field) else ''
 
             # Only create Action Item if Step is non-blank AND doesn't already have an item
             if step_value and i not in existing_step_numbers:
                 # Calculate start date (week_start + day_offset)
                 from datetime import datetime
                 start_dt = datetime.fromisoformat(week_start_date)
-                item_start_date = (start_dt + timedelta(days=day_offset)).date().isoformat()
+                item_start_date = (
+                    start_dt + timedelta(days=day_offset)).date().isoformat()
 
                 # Build description from Step and Key Result
                 description = f"Step {i}: {step_value}"
@@ -609,7 +615,8 @@ class VPSManager:
                 # Create Action Item using db_manager
                 action_item = ActionItem(
                     who="",  # Will be filled by system defaults
-                    title=step_value[:100],  # Use step as title (limit to reasonable length)
+                    # Use step as title (limit to reasonable length)
+                    title=step_value[:100],
                     description=description,
                     start_date=item_start_date,
                     week_action_id=week_action_id,
@@ -617,7 +624,8 @@ class VPSManager:
                 )
 
                 # Create the item (apply_defaults=True will use system defaults)
-                item_id = self.db_manager.create_action_item(action_item, apply_defaults=True)
+                item_id = self.db_manager.create_action_item(
+                    action_item, apply_defaults=True)
                 created_item_ids.append(item_id)
 
                 # Increment day offset for next action item
@@ -630,8 +638,8 @@ class VPSManager:
     # ========================================================================
 
     def link_action_item_to_week_action(self, action_item_id: str,
-                                       week_action_id: str,
-                                       segment_description_id: str) -> bool:
+                                        week_action_id: str,
+                                        segment_description_id: str) -> bool:
         """Link an action item to a week action."""
         self.db.conn.execute("""
             UPDATE action_items
@@ -725,7 +733,7 @@ class VPSManager:
         return count
 
     def toggle_habit_day(self, action_item_id: str, tracking_date: str,
-                        is_completed: bool, notes: str = "") -> bool:
+                         is_completed: bool, notes: str = "") -> bool:
         """Toggle habit completion for a specific day."""
         self.db.conn.execute("""
             UPDATE habit_tracking
@@ -827,35 +835,40 @@ class VPSManager:
         if entity_type == 'week_action':
             week_action = self.get_week_action(entity_id)
             if week_action:
-                breadcrumb.insert(0, {'type': 'week_action', 'data': week_action})
+                breadcrumb.insert(
+                    0, {'type': 'week_action', 'data': week_action})
                 entity_type = 'month_tactic'
                 entity_id = week_action['month_tactic_id']
 
         if entity_type == 'month_tactic':
             month_tactic = self.get_month_tactic(entity_id)
             if month_tactic:
-                breadcrumb.insert(0, {'type': 'month_tactic', 'data': month_tactic})
+                breadcrumb.insert(
+                    0, {'type': 'month_tactic', 'data': month_tactic})
                 entity_type = 'quarter_initiative'
                 entity_id = month_tactic['quarter_initiative_id']
 
         if entity_type == 'quarter_initiative':
             quarter_initiative = self.get_quarter_initiative(entity_id)
             if quarter_initiative:
-                breadcrumb.insert(0, {'type': 'quarter_initiative', 'data': quarter_initiative})
+                breadcrumb.insert(
+                    0, {'type': 'quarter_initiative', 'data': quarter_initiative})
                 entity_type = 'annual_plan'
                 entity_id = quarter_initiative['annual_plan_id']
 
         if entity_type == 'annual_plan':
             annual_plan = self.get_annual_plan(entity_id)
             if annual_plan:
-                breadcrumb.insert(0, {'type': 'annual_plan', 'data': annual_plan})
+                breadcrumb.insert(
+                    0, {'type': 'annual_plan', 'data': annual_plan})
                 entity_type = 'annual_vision'
                 entity_id = annual_plan['annual_vision_id']
 
         if entity_type == 'annual_vision':
             annual_vision = self.get_annual_vision(entity_id)
             if annual_vision:
-                breadcrumb.insert(0, {'type': 'annual_vision', 'data': annual_vision})
+                breadcrumb.insert(
+                    0, {'type': 'annual_vision', 'data': annual_vision})
                 entity_type = 'tl_vision'
                 entity_id = annual_vision['tl_vision_id']
 
@@ -978,18 +991,26 @@ class VPSManager:
         self.db.conn.commit()
         return True
 
-    def delete_segment(self, segment_id: str) -> bool:
+    def delete_segment(self, segment_id: str) -> tuple[bool, int]:
         """
         Delete a Segment if it has no child records.
-        Returns True if deleted, False if children exist.
+        Returns (success: bool, vision_count: int).
+        - (True, 0) if deleted successfully
+        - (False, N) if deletion failed due to N linked visions
         """
-        # Check for TL visions
-        if self._has_children('tl_visions', 'segment_description_id', segment_id):
-            return False
+        # Check for TL visions and count them
+        cursor = self.db.conn.execute(
+            "SELECT COUNT(*) FROM tl_visions WHERE segment_description_id = ?",
+            (segment_id,)
+        )
+        vision_count = cursor.fetchone()[0]
+
+        if vision_count > 0:
+            return False, vision_count
 
         self.db.conn.execute(
             "DELETE FROM segment_descriptions WHERE id = ?",
             (segment_id,)
         )
         self.db.conn.commit()
-        return True
+        return True, 0

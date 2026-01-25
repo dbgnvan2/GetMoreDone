@@ -1,16 +1,19 @@
 # Action Timer Module - Functional Requirements
 
 ## Overview
+
 The Action Timer Module provides a popup countdown timer to guide users through completing action items with time blocking, break management, and completion workflows.
 
 ---
 
 ## FR-AT-001: Popup Timer Display
+
 **User Story**: As a user I want to see a pop up count down timer screen to guide me to complete work.
 
 **Description**: Display a popup timer window showing countdown and action details.
 
 **Requirements**:
+
 - Display action item title prominently
 - Show three time values:
   - **Time Block**: Total allocated time (e.g., 30 minutes)
@@ -21,6 +24,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - Timer updates every second
 
 **Acceptance Criteria**:
+
 - Timer window appears on demand when user starts a time block
 - All three time values are clearly labeled and visible
 - Countdown shows MM:SS format
@@ -29,17 +33,20 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-002: Next Steps Display
+
 **User Story**: I want to be reminded of the next steps so I can get started easier.
 
 **Description**: Display next steps/notes from the action item to help user get started.
 
 **Requirements**:
+
 - Show "Next Steps:" section in timer window
 - Display the action item's description or notes field
 - Text should be readable but not dominate the timer display
 - Support multi-line text display
 
 **Acceptance Criteria**:
+
 - Next steps text is visible in timer window
 - Text wraps appropriately within window bounds
 - Empty next steps shows placeholder text or empty section
@@ -47,11 +54,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-003: Pause and Resume Timer
+
 **User Story**: As a user I want to pause my timer and then restart the timer and keep track of the time worked versus the total elapsed time from start to stop.
 
 **Description**: Allow pausing and resuming timer while tracking both work time and total elapsed time.
 
 **Requirements**:
+
 - **Start** button initiates countdown
 - **Pause** button:
   - Stops countdown
@@ -64,6 +73,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - **Stop** button ends the time block completely
 
 **Acceptance Criteria**:
+
 - Pause/Resume can be used multiple times in one session
 - Work time only increments when timer is actively running
 - Elapsed time continues even when paused
@@ -72,11 +82,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-004: Complete Time Block and Action
+
 **User Story**: As a user I want to complete the time block, add a Completion Note to the Action, and complete the Action.
 
 **Description**: Provide "Finished" workflow to complete both time block and action item.
 
 **Requirements**:
+
 - **Finished** button available when timer is stopped
 - Clicking Finished:
   1. Shows "Completion Note" dialog
@@ -88,6 +100,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - User can cancel to return to timer without completing
 
 **Acceptance Criteria**:
+
 - Finished workflow saves WorkLog entry
 - Action item status changes to "completed"
 - Completion note is appended to action item notes/description
@@ -97,11 +110,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-005: Continue Action to Next Day
+
 **User Story**: As a user I want to be able to Continue an Action Item by completing the Next Action I'm working and Create a new Next Action that is a duplicate of the current one, but for the next day.
 
 **Description**: Provide "Continue" workflow for ongoing actions that span multiple days.
 
 **Requirements**:
+
 - **Continue** button available when timer is stopped
 - Clicking Continue:
   1. Shows "Completion Note" dialog for current work
@@ -119,6 +134,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - Both dialogs are optional but must be presented
 
 **Acceptance Criteria**:
+
 - Current action marked completed with work log
 - New action created for next day
 - New action opens in editor for review
@@ -129,11 +145,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-006: Default Break Time
+
 **User Story**: As user I want default break time e.g. 5 minutes at the end of the Time Block (subtracted from the Time Block). A 30 minute time block is 25 minutes + 5 minute Break time.
 
 **Description**: Automatically allocate break time at end of work time.
 
 **Requirements**:
+
 - Default break time = 5 minutes (configurable in settings)
 - Break time is **subtracted** from total time block
 - Calculation: Work Time = Time Block - Break Time
@@ -145,6 +163,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
   - Wrap/Break: Break duration (5)
 
 **Acceptance Criteria**:
+
 - Break time automatically calculated from time block
 - Work timer counts down before break starts
 - Break timer starts automatically when work time reaches zero
@@ -154,11 +173,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-007: Resizable Floating Window
+
 **User Story**: As a user I want to have the Action Timer as a resizable floating window with the Time remaining in the title bar.
 
 **Description**: Timer appears as floating, always-on-top, resizable window.
 
 **Requirements**:
+
 - Timer window is a separate floating window
 - Window properties:
   - Always on top of other application windows
@@ -171,6 +192,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - Window can be moved anywhere on screen
 
 **Acceptance Criteria**:
+
 - Timer window stays on top during use
 - User can resize window and size persists
 - Time remaining visible in window title bar
@@ -180,11 +202,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-008: Green Title Bar Warning
+
 **User Story**: As a user I want the title bar to be green when Time remaining is < 10 minutes.
 
 **Description**: Change title bar color to green as visual warning when approaching deadline.
 
 **Requirements**:
+
 - Default title bar color: System default or application theme
 - When time remaining < 10 minutes (during work time):
   - Title bar background changes to **green**
@@ -193,6 +217,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - Green color persists until timer stops or time expires
 
 **Acceptance Criteria**:
+
 - Title bar turns green at 9:59 remaining
 - Color change is immediately visible
 - Text remains readable on green background
@@ -201,12 +226,47 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 
 ---
 
+## FR-AT-009: Independent Music Controls
+
+**User Story**: As a user I want separate controls to play and pause music that are independent from the timer Start/Pause/Stop buttons.
+
+**Description**: Provide separate music playback controls that operate independently from timer controls.
+
+**Requirements**:
+
+- Separate music control section with:
+  - **Play button** (🎵 ▶ Play) - Starts or resumes music
+  - **Pause button** (⏸ Pause) - Pauses/resumes music
+- Music controls are **independent** from timer controls:
+  - Pausing the timer does NOT pause the music
+  - Resuming the timer does NOT affect music state
+  - Stopping the timer stops the music
+- Button states:
+  - Play button disabled when music is playing
+  - Pause button enabled when music is playing
+  - Pause button changes to "▶ Resume" when music is paused
+- Visual distinction: Purple color theme for music buttons
+- Position: Between timer controls and status label
+
+**Acceptance Criteria**:
+
+- Music Play button starts music from configured folder
+- Music Pause button pauses/resumes music independently
+- Timer pause does not affect music playback
+- Button states update correctly based on music status
+- Music continues playing when timer is paused
+- Music stops when timer is stopped
+
+---
+
 ## FR-AT-009: Break Time Title Bar
+
 **User Story**: As a user I want the title Bar to show "BREAK" and time remaining in time block when time remaining is <= Break Time.
 
 **Description**: Display "BREAK" indicator in title bar during break period.
 
 **Requirements**:
+
 - When work time reaches 00:00, break time begins
 - Title bar changes to show:
   - Format: "[Action Title] - BREAK [MM:SS remaining]"
@@ -216,6 +276,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - "BREAK" text prominently displayed in title
 
 **Acceptance Criteria**:
+
 - Title changes to BREAK format when work time expires
 - Break countdown starts at break duration
 - BREAK indicator clearly visible in title bar
@@ -225,11 +286,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-010: Time Block Initialization
+
 **Supporting Requirement**: How timer is started from action items.
 
 **Description**: Launch timer from action item with pre-populated data.
 
 **Requirements**:
+
 - Add "Start Timer" button to action item screens:
   - Today screen
   - Upcoming screen
@@ -244,6 +307,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - If `planned_minutes` is null/empty, prompt for time block duration
 
 **Acceptance Criteria**:
+
 - Timer can be launched from any action item view
 - Planned minutes used as default time block
 - User prompted if no planned time set
@@ -253,11 +317,13 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ---
 
 ## FR-AT-011: Work Log Persistence
+
 **Supporting Requirement**: How timer data is saved.
 
 **Description**: Save all timer activity to WorkLog table.
 
 **Requirements**:
+
 - Create WorkLog entry when timer stops containing:
   - `item_id`: Action item ID
   - `started_at`: Timestamp when Start first clicked (ISO format)
@@ -270,6 +336,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - Work logs viewable in action item history
 
 **Acceptance Criteria**:
+
 - Every timer session creates a WorkLog entry
 - All timestamps use local timezone (not UTC)
 - Work time accurately reflects active (non-paused) time
@@ -281,6 +348,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 ## Data Flow
 
 ### Finished Flow:
+
 ```
 Timer Running → Stop → Finished Button →
   Completion Note Dialog →
@@ -291,6 +359,7 @@ Timer Running → Stop → Finished Button →
 ```
 
 ### Continue Flow:
+
 ```
 Timer Running → Stop → Continue Button →
   Completion Note Dialog →
@@ -360,10 +429,12 @@ class AppSettings:
 ## Database Schema Changes
 
 No schema changes needed. Uses existing:
+
 - `ActionItem` table (existing)
 - `WorkLog` table (existing in models.py)
 
 WorkLog schema (already defined):
+
 ```python
 @dataclass
 class WorkLog:
@@ -412,11 +483,13 @@ class WorkLog:
 ## Implemented Enhancements (January 2026)
 
 ### FR-ENH-01: TODAY Screen New Item Button
+
 **Status**: ✅ Implemented
 
 **Description**: Added "+ New Item" button to TODAY screen for quick action creation.
 
 **Implementation**:
+
 - Green button positioned in header between title and Refresh
 - Opens item editor dialog
 - Location: `src/getmoredone/screens/today.py`
@@ -424,11 +497,13 @@ class WorkLog:
 ---
 
 ### FR-ENH-02: Continue Workflow Date Selection
+
 **Status**: ✅ Implemented
 
 **Description**: Enhanced Continue workflow with custom date selection for the next action.
 
 **Implementation**:
+
 - Created `NextStepsDialog` class with date pickers
 - Users can set Start and Due dates for continued action
 - Quick buttons: "Today" and "+1 day"
@@ -442,6 +517,7 @@ class WorkLog:
 - Location: `src/getmoredone/screens/timer_window.py`
 
 **Changes to Continue Flow**:
+
 ```python
 # Old: Fixed tomorrow
 new_item.start_date = tomorrow
@@ -455,11 +531,13 @@ new_item.due_date = next_steps_result['due_date']
 ---
 
 ### FR-ENH-03: Audio Alerts for Break Times
+
 **Status**: ✅ Implemented
 
 **Description**: Plays sounds when break starts and ends.
 
 **Implementation**:
+
 - Added audio settings to AppSettings:
   - `enable_break_sounds` (bool, default True)
   - `break_start_sound` (optional WAV path)
@@ -478,11 +556,13 @@ new_item.due_date = next_steps_result['due_date']
 ---
 
 ### FR-ENH-04: Time Display Color
+
 **Status**: ✅ Already Correct
 
 **Description**: Time displays white normally, green when < 10 minutes.
 
 **Current Behavior**:
+
 ```python
 if self.work_seconds_remaining < self.settings.timer_warning_minutes * 60:
     color = "green"  # Warning color
@@ -525,6 +605,7 @@ No changes needed - already implemented as requested.
 ## Priority / Phases
 
 **Phase 1 (MVP)**:
+
 - FR-AT-001: Popup Timer Display
 - FR-AT-003: Pause and Resume
 - FR-AT-006: Default Break Time
@@ -532,11 +613,13 @@ No changes needed - already implemented as requested.
 - FR-AT-011: Work Log Persistence
 
 **Phase 2**:
+
 - FR-AT-004: Complete Time Block (Finished flow)
 - FR-AT-007: Resizable Floating Window
 - FR-AT-002: Next Steps Display
 
 **Phase 3**:
+
 - FR-AT-005: Continue Action (duplicate for next day)
 - FR-AT-008: Green Title Bar Warning
 - FR-AT-009: Break Time Title Bar

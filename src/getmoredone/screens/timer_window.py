@@ -53,6 +53,7 @@ class TimerWindow(ctk.CTkToplevel):
         self.music_player = None
         self.current_music_file = None
         self.current_track_name = None
+        self.music_is_playing = False
 
         # Window setup
         self.setup_window()
@@ -64,7 +65,8 @@ class TimerWindow(ctk.CTkToplevel):
 
     def setup_window(self):
         """Configure window properties."""
-        self.title(f"{self.item.title} - {self.format_time(self.work_seconds_remaining)}")
+        self.title(
+            f"{self.item.title} - {self.format_time(self.work_seconds_remaining)}")
 
         # Set size from settings
         width = self.settings.timer_window_width
@@ -72,7 +74,8 @@ class TimerWindow(ctk.CTkToplevel):
 
         # Set position if saved, otherwise center
         if self.settings.timer_window_x and self.settings.timer_window_y:
-            self.geometry(f"{width}x{height}+{self.settings.timer_window_x}+{self.settings.timer_window_y}")
+            self.geometry(
+                f"{width}x{height}+{self.settings.timer_window_x}+{self.settings.timer_window_y}")
         else:
             # Center on screen
             screen_width = self.winfo_screenwidth()
@@ -97,7 +100,7 @@ class TimerWindow(ctk.CTkToplevel):
         # Main container
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        main_frame.grid_rowconfigure(6, weight=1)  # Next steps section expands
+        main_frame.grid_rowconfigure(7, weight=1)  # Next steps section expands
         main_frame.grid_columnconfigure(0, weight=1)
 
         # Action title
@@ -107,7 +110,8 @@ class TimerWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=18, weight="bold"),
             wraplength=400
         )
-        self.title_label.grid(row=0, column=0, pady=(10, 20), padx=10, sticky="ew")
+        self.title_label.grid(row=0, column=0, pady=(
+            10, 20), padx=10, sticky="ew")
 
         # Time display frame
         time_frame = ctk.CTkFrame(main_frame)
@@ -121,7 +125,8 @@ class TimerWindow(ctk.CTkToplevel):
         self.time_block_value = ctk.CTkEntry(time_frame, width=60)
         self.time_block_value.insert(0, str(self.time_block_minutes))
         self.time_block_value.grid(row=0, column=1, padx=5, pady=3, sticky="w")
-        ctk.CTkLabel(time_frame, text="min").grid(row=0, column=2, padx=5, pady=3, sticky="w")
+        ctk.CTkLabel(time_frame, text="min").grid(
+            row=0, column=2, padx=5, pady=3, sticky="w")
 
         # Time To Finish (countdown)
         ctk.CTkLabel(time_frame, text="Time To Finish:", font=ctk.CTkFont(size=12)).grid(
@@ -133,7 +138,8 @@ class TimerWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color="green"
         )
-        self.time_remaining_label.grid(row=1, column=1, columnspan=2, padx=5, pady=3, sticky="w")
+        self.time_remaining_label.grid(
+            row=1, column=1, columnspan=2, padx=5, pady=3, sticky="w")
 
         # Wrap/Break
         ctk.CTkLabel(time_frame, text="Wrap/Break:", font=ctk.CTkFont(size=12)).grid(
@@ -175,6 +181,41 @@ class TimerWindow(ctk.CTkToplevel):
         )
         self.stop_button.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
 
+        # Music controls (separate row)
+        music_frame = ctk.CTkFrame(main_frame)
+        music_frame.grid(row=3, column=0, pady=10, padx=10, sticky="ew")
+        music_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        # Music label
+        ctk.CTkLabel(
+            music_frame,
+            text="🎵 Music:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        # Music play button
+        self.music_play_button = ctk.CTkButton(
+            music_frame,
+            text="▶ Play",
+            command=self.play_music,
+            fg_color="purple",
+            hover_color="darkviolet",
+            width=80
+        )
+        self.music_play_button.grid(row=0, column=1, padx=5, pady=5)
+
+        # Music pause button
+        self.music_pause_button = ctk.CTkButton(
+            music_frame,
+            text="⏸ Pause",
+            command=self.pause_music,
+            fg_color="purple",
+            hover_color="darkviolet",
+            width=80,
+            state="disabled"
+        )
+        self.music_pause_button.grid(row=0, column=2, padx=5, pady=5)
+
         # Status label
         self.status_label = ctk.CTkLabel(
             main_frame,
@@ -182,11 +223,12 @@ class TimerWindow(ctk.CTkToplevel):
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )
-        self.status_label.grid(row=3, column=0, pady=5, padx=10)
+        self.status_label.grid(row=4, column=0, pady=5, padx=10)
 
         # Completion controls (hidden until stopped)
         self.completion_frame = ctk.CTkFrame(main_frame)
-        self.completion_frame.grid(row=4, column=0, pady=10, padx=10, sticky="ew")
+        self.completion_frame.grid(
+            row=5, column=0, pady=10, padx=10, sticky="ew")
         self.completion_frame.grid_columnconfigure((0, 1), weight=1)
         self.completion_frame.grid_remove()  # Hidden initially
 
@@ -210,7 +252,8 @@ class TimerWindow(ctk.CTkToplevel):
 
         # Next Steps section
         next_steps_header = ctk.CTkFrame(main_frame, fg_color="transparent")
-        next_steps_header.grid(row=5, column=0, pady=(20, 5), padx=10, sticky="ew")
+        next_steps_header.grid(
+            row=6, column=0, pady=(20, 5), padx=10, sticky="ew")
         next_steps_header.grid_columnconfigure(0, weight=1)
 
         next_steps_label = ctk.CTkLabel(
@@ -247,7 +290,8 @@ class TimerWindow(ctk.CTkToplevel):
             height=100,
             wrap="word"
         )
-        self.next_steps_text.grid(row=6, column=0, pady=5, padx=10, sticky="nsew")
+        self.next_steps_text.grid(
+            row=7, column=0, pady=5, padx=10, sticky="nsew")
 
         # Populate next steps (keep editable, don't disable)
         description = self.item.description or ""
@@ -273,7 +317,8 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Visual feedback - briefly change button color
             self.save_notes_button.configure(text="✓ Saved")
-            self.after(2000, lambda: self.save_notes_button.configure(text="Save Notes"))
+            self.after(2000, lambda: self.save_notes_button.configure(
+                text="Save Notes"))
         except Exception as e:
             print(f"[ERROR] Failed to save notes: {e}")
             import traceback
@@ -288,7 +333,8 @@ class TimerWindow(ctk.CTkToplevel):
             self.next_steps_text.delete("1.0", "end")
             description = self.item.description or ""
             self.next_steps_text.insert("1.0", description)
-            print(f"[DEBUG] Notes refreshed in TimerWindow for item: {self.item.id}")
+            print(
+                f"[DEBUG] Notes refreshed in TimerWindow for item: {self.item.id}")
         except Exception as e:
             print(f"[ERROR] Failed to refresh notes in TimerWindow: {e}")
 
@@ -308,14 +354,17 @@ class TimerWindow(ctk.CTkToplevel):
             self.db_manager.update_action_item(self.item)
 
             # Open the floating window and keep reference
-            self.next_action_window = NextActionWindow(self, self.db_manager, self.item, self)
-            print(f"[DEBUG] Next Action Window opened for item: {self.item.id}")
+            self.next_action_window = NextActionWindow(
+                self, self.db_manager, self.item, self)
+            print(
+                f"[DEBUG] Next Action Window opened for item: {self.item.id}")
         except Exception as e:
             print(f"[ERROR] Failed to open Next Action Window: {e}")
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to open Next Action Window: {e}")
+            messagebox.showerror(
+                "Error", f"Failed to open Next Action Window: {e}")
 
     def format_time(self, seconds: int) -> str:
         """Format seconds as MM:SS."""
@@ -363,8 +412,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.pause_button.configure(text="Resume")
             self._update_status_label("Paused", "orange")
 
-            # Pause music
-            self._pause_music()
+            # Music continues independently - user controls it separately
 
             # Cancel timer updates
             if self.update_timer_id:
@@ -377,7 +425,8 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Calculate pause duration and add to total elapsed (but not work time)
             if self.pause_timestamp:
-                pause_duration = (self.resume_timestamp - self.pause_timestamp).total_seconds()
+                pause_duration = (self.resume_timestamp -
+                                  self.pause_timestamp).total_seconds()
                 # Note: pause duration is already excluded from work time in tick()
 
             self.timer_state = "running" if self.work_seconds_remaining > 0 else "in_break"
@@ -386,8 +435,7 @@ class TimerWindow(ctk.CTkToplevel):
             status_color = "green" if self.timer_state == "running" else "blue"
             self._update_status_label(status_text, status_color)
 
-            # Resume music
-            self._resume_music()
+            # Music continues independently - user controls it separately
 
             self.last_tick_time = datetime.now()
             self.tick()
@@ -431,7 +479,8 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Update total elapsed time
             if self.start_timestamp:
-                self.total_seconds_elapsed = int((now - self.start_timestamp).total_seconds())
+                self.total_seconds_elapsed = int(
+                    (now - self.start_timestamp).total_seconds())
 
         self.last_tick_time = now
 
@@ -444,7 +493,8 @@ class TimerWindow(ctk.CTkToplevel):
                 self.work_seconds_remaining = 0
                 self.timer_state = "in_break"
                 self._update_status_label("⏰ BREAK TIME! ⏰", "yellow")
-                self.status_label.configure(font=ctk.CTkFont(size=14, weight="bold"))
+                self.status_label.configure(
+                    font=ctk.CTkFont(size=14, weight="bold"))
                 self.update_title_bar()
                 # Play break start sound
                 self.play_sound(is_break_start=True)
@@ -458,7 +508,8 @@ class TimerWindow(ctk.CTkToplevel):
                 # Break finished, auto-stop
                 self.break_seconds_remaining = 0
                 self._update_status_label("⏰ BREAK OVER! ⏰", "red")
-                self.status_label.configure(font=ctk.CTkFont(size=14, weight="bold"))
+                self.status_label.configure(
+                    font=ctk.CTkFont(size=14, weight="bold"))
                 # Play break end sound
                 self.play_sound(is_break_start=False)
                 # Flash the window
@@ -484,7 +535,7 @@ class TimerWindow(ctk.CTkToplevel):
             if self.work_seconds_remaining < self.settings.timer_warning_minutes * 60:
                 color = "green"
             else:
-                color="white"
+                color = "white"
 
             self.time_remaining_label.configure(
                 text=self.format_time(self.work_seconds_remaining),
@@ -531,7 +582,8 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Check if window still exists after dialog (user might have closed it)
             if not self.winfo_exists():
-                print("[DEBUG] Window was closed while dialog was open, completing action anyway")
+                print(
+                    "[DEBUG] Window was closed while dialog was open, completing action anyway")
                 # Still save the work log and complete the item even if window is gone
                 completion_note = dialog.result
                 self.save_work_log(completion_note)
@@ -564,7 +616,8 @@ class TimerWindow(ctk.CTkToplevel):
             # Show error to user - only if window still exists
             try:
                 import tkinter.messagebox as messagebox
-                messagebox.showerror("Error", f"Failed to complete action: {e}")
+                messagebox.showerror(
+                    "Error", f"Failed to complete action: {e}")
             except:
                 # Window might be destroyed, just log the error
                 print(f"[ERROR] Could not show error dialog: {e}")
@@ -610,7 +663,8 @@ class TimerWindow(ctk.CTkToplevel):
             # Check if window still exists after dialog
             window_exists = self.winfo_exists()
             if not window_exists:
-                print("[DEBUG] Window was closed during completion dialog, continuing workflow anyway")
+                print(
+                    "[DEBUG] Window was closed during completion dialog, continuing workflow anyway")
 
             # Step 3: Duplicate Current Action Item Record
             print(f"[DEBUG] Step 3: Duplicating Current Action Item")
@@ -622,11 +676,13 @@ class TimerWindow(ctk.CTkToplevel):
             if item.parent_id:
                 # Current item is a child, so new item should use the same parent
                 new_parent_id = item.parent_id
-                print(f"[DEBUG] Current item has parent {item.parent_id}, new item will share this parent")
+                print(
+                    f"[DEBUG] Current item has parent {item.parent_id}, new item will share this parent")
             else:
                 # Current item has no parent, so new item becomes child of current
                 new_parent_id = item.id
-                print(f"[DEBUG] Current item has no parent, new item will be child of current item")
+                print(
+                    f"[DEBUG] Current item has no parent, new item will be child of current item")
 
             new_item = ActionItem(
                 who=item.who,
@@ -646,7 +702,8 @@ class TimerWindow(ctk.CTkToplevel):
                 status="open"
             )
             db_manager.create_action_item(new_item)
-            print(f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
+            print(
+                f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
             # Step 4: Save Current Action Item as completed (with work log)
             if start_timestamp:
@@ -687,16 +744,21 @@ class TimerWindow(ctk.CTkToplevel):
             else:
                 # User cancelled - use default next day dates
                 settings = AppSettings.load()
-                current_start = date.fromisoformat(item.start_date) if item.start_date else date.today()
-                current_due = date.fromisoformat(item.due_date) if item.due_date else date.today()
+                current_start = date.fromisoformat(
+                    item.start_date) if item.start_date else date.today()
+                current_due = date.fromisoformat(
+                    item.due_date) if item.due_date else date.today()
 
-                new_start = increment_date(current_start, 1, settings.include_saturday, settings.include_sunday)
-                new_due = increment_date(current_due, 1, settings.include_saturday, settings.include_sunday)
+                new_start = increment_date(
+                    current_start, 1, settings.include_saturday, settings.include_sunday)
+                new_due = increment_date(
+                    current_due, 1, settings.include_saturday, settings.include_sunday)
 
                 new_item.start_date = new_start.isoformat()
                 new_item.due_date = new_due.isoformat()
                 db_manager.update_action_item(new_item)
-                print(f"[DEBUG] Next Action cancelled - using default next day dates")
+                print(
+                    f"[DEBUG] Next Action cancelled - using default next day dates")
 
             new_item_id = new_item.id
 
@@ -711,11 +773,13 @@ class TimerWindow(ctk.CTkToplevel):
                 # Window already destroyed, just call the callback
                 if on_close_callback:
                     on_close_callback()
-                print(f"[DEBUG] Timer window closed (was already destroyed during dialog)")
+                print(
+                    f"[DEBUG] Timer window closed (was already destroyed during dialog)")
 
             # Step 7: Present New Action Item Record
             from .item_editor import ItemEditorDialog
-            ItemEditorDialog(parent, db_manager, new_item_id, on_close_callback=on_close_callback)
+            ItemEditorDialog(parent, db_manager, new_item_id,
+                             on_close_callback=on_close_callback)
             print(f"[DEBUG] Step 7: New Action Item Record presented in editor")
             # Step 8: User updates and saves (happens in the editor)
         except Exception as e:
@@ -725,7 +789,8 @@ class TimerWindow(ctk.CTkToplevel):
             # Show error to user - only if window still exists
             try:
                 import tkinter.messagebox as messagebox
-                messagebox.showerror("Error", f"Failed to continue action: {e}")
+                messagebox.showerror(
+                    "Error", f"Failed to continue action: {e}")
             except:
                 # Window might be destroyed, just log the error
                 print(f"[ERROR] Could not show error dialog: {e}")
@@ -775,7 +840,8 @@ class TimerWindow(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             # Ignore errors during destruction (e.g., customtkinter scaling tracker race condition)
-            print(f"[DEBUG] Window destruction completed with minor error (safe to ignore): {e}")
+            print(
+                f"[DEBUG] Window destruction completed with minor error (safe to ignore): {e}")
 
     def save_window_settings(self):
         """Save window position and size to settings."""
@@ -792,7 +858,8 @@ class TimerWindow(ctk.CTkToplevel):
             self.settings.save()
         except Exception as e:
             # If window was destroyed during save, log but don't fail
-            print(f"[DEBUG] Could not save window settings (window may be destroyed): {e}")
+            print(
+                f"[DEBUG] Could not save window settings (window may be destroyed): {e}")
 
     def play_sound(self, is_break_start: bool):
         """Play sound for break start or break end."""
@@ -824,7 +891,8 @@ class TimerWindow(ctk.CTkToplevel):
             if sys.platform == "win32":
                 # Windows
                 import winsound
-                winsound.PlaySound(file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+                winsound.PlaySound(
+                    file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
             elif sys.platform == "darwin":
                 # macOS
                 os.system(f'afplay "{file_path}" &')
@@ -876,7 +944,8 @@ class TimerWindow(ctk.CTkToplevel):
         if "BREAK" in text.upper():
             self.status_label.configure(text=display_text, text_color=color)
         else:
-            self.status_label.configure(text=display_text, text_color=color, font=ctk.CTkFont(size=11))
+            self.status_label.configure(
+                text=display_text, text_color=color, font=ctk.CTkFont(size=11))
 
     def _update_status_with_track(self):
         """Update the current status to include track information."""
@@ -909,12 +978,14 @@ class TimerWindow(ctk.CTkToplevel):
                 # Try paplay first (PulseAudio)
                 result = os.system('which paplay > /dev/null 2>&1')
                 if result == 0:
-                    os.system('paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null &')
+                    os.system(
+                        'paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null &')
                 else:
                     # Try aplay (ALSA)
                     result = os.system('which aplay > /dev/null 2>&1')
                     if result == 0:
-                        os.system('aplay /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null &')
+                        os.system(
+                            'aplay /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null &')
                     else:
                         # Try beep command
                         result = os.system('which beep > /dev/null 2>&1')
@@ -957,13 +1028,15 @@ class TimerWindow(ctk.CTkToplevel):
             return None
 
         # Prefer well-supported formats
-        preferred_files = [f for f in music_files if f.suffix.lower() in preferred_formats]
+        preferred_files = [
+            f for f in music_files if f.suffix.lower() in preferred_formats]
         if preferred_files:
             return str(random.choice(preferred_files))
 
         # Fall back to any file, but warn
         selected = random.choice(music_files)
-        print(f"[WARNING] Selected {selected.suffix} file - this format may not play correctly")
+        print(
+            f"[WARNING] Selected {selected.suffix} file - this format may not play correctly")
         print(f"[WARNING] For best results, use MP3, WAV, or OGG files")
         return str(selected)
 
@@ -972,13 +1045,15 @@ class TimerWindow(ctk.CTkToplevel):
         try:
             # Check if music folder is configured
             if not self.settings.music_folder:
-                print("[INFO] No music folder configured. Go to Settings > Timer & Audio to set up music playback.")
+                print(
+                    "[INFO] No music folder configured. Go to Settings > Timer & Audio to set up music playback.")
                 return
 
             # Get a random music file
             music_file = self._get_random_music_file()
             if not music_file:
-                print(f"[INFO] No music files found in: {self.settings.music_folder}")
+                print(
+                    f"[INFO] No music files found in: {self.settings.music_folder}")
                 print("[INFO] Supported formats: MP3, WAV, OGG, FLAC, M4A, AAC, WMA")
                 return
 
@@ -991,7 +1066,8 @@ class TimerWindow(ctk.CTkToplevel):
                     # Initialize with better compatibility settings
                     # frequency=44100, size=-16, channels=2, buffer=512
                     pygame.mixer.init(44100, -16, 2, 512)
-                    print(f"[DEBUG] Pygame mixer initialized: {pygame.mixer.get_init()}")
+                    print(
+                        f"[DEBUG] Pygame mixer initialized: {pygame.mixer.get_init()}")
 
                 # Load and play the music file
                 file_ext = Path(music_file).suffix.lower()
@@ -1010,10 +1086,13 @@ class TimerWindow(ctk.CTkToplevel):
                 time.sleep(0.1)
 
                 if not pygame.mixer.music.get_busy():
-                    print(f"[ERROR] Music file loaded but won't play: {file_ext} format may not be supported")
+                    print(
+                        f"[ERROR] Music file loaded but won't play: {file_ext} format may not be supported")
                     print(f"[ERROR] File: {Path(music_file).name}")
-                    print(f"[INFO] SOLUTION: Convert your music to MP3, WAV, or OGG format")
-                    print(f"[INFO] M4A/AAC files often don't work with pygame on macOS")
+                    print(
+                        f"[INFO] SOLUTION: Convert your music to MP3, WAV, or OGG format")
+                    print(
+                        f"[INFO] M4A/AAC files often don't work with pygame on macOS")
                     self.current_track_name = None
                     return
 
@@ -1023,20 +1102,31 @@ class TimerWindow(ctk.CTkToplevel):
                 print(f"[INFO] ✓ Playing music: {self.current_track_name}")
                 print(f"[INFO] Volume: {volume:.0%}")
 
+                # Update music state and button states
+                self.music_is_playing = True
+                self.music_play_button.configure(state="disabled")
+                self.music_pause_button.configure(
+                    state="normal", text="⏸ Pause")
+
                 if file_ext in ['.m4a', '.aac', '.wma', '.flac']:
-                    print(f"[INFO] Note: {file_ext} format may have playback issues")
-                    print(f"[INFO] If you hear clicks/silence, convert to MP3 or WAV")
+                    print(
+                        f"[INFO] Note: {file_ext} format may have playback issues")
+                    print(
+                        f"[INFO] If you hear clicks/silence, convert to MP3 or WAV")
             except ImportError:
                 print("[INFO] pygame not installed - music playback disabled")
                 print("[INFO] Install pygame with: pip install pygame")
             except Exception as e:
                 print(f"[ERROR] Error playing music: {e}")
-                print(f"[ERROR] File: {Path(music_file).name if music_file else 'unknown'}")
+                print(
+                    f"[ERROR] File: {Path(music_file).name if music_file else 'unknown'}")
                 if 'music_file' in locals():
                     file_ext = Path(music_file).suffix.lower()
                     if file_ext in ['.m4a', '.aac', '.wma']:
-                        print(f"[ERROR] {file_ext} format is not well-supported by pygame")
-                        print(f"[INFO] Convert to MP3, WAV, or OGG for reliable playback")
+                        print(
+                            f"[ERROR] {file_ext} format is not well-supported by pygame")
+                        print(
+                            f"[INFO] Convert to MP3, WAV, or OGG for reliable playback")
                 import traceback
                 traceback.print_exc()
 
@@ -1052,6 +1142,11 @@ class TimerWindow(ctk.CTkToplevel):
             if pygame.mixer.get_init():
                 pygame.mixer.music.stop()
                 self.current_track_name = None
+                self.music_is_playing = False
+                # Update button states
+                self.music_play_button.configure(state="normal")
+                self.music_pause_button.configure(
+                    state="disabled", text="⏸ Pause")
                 print("[DEBUG] Music stopped")
         except ImportError:
             pass  # pygame not installed
@@ -1082,6 +1177,46 @@ class TimerWindow(ctk.CTkToplevel):
         except Exception as e:
             print(f"[DEBUG] Error resuming music: {e}")
 
+    def play_music(self):
+        """Public method to play music - triggered by Play button."""
+        if not self.music_is_playing:
+            # Start fresh music
+            self._start_music()
+            self.music_is_playing = True
+            # Update button states
+            self.music_play_button.configure(state="disabled")
+            self.music_pause_button.configure(state="normal", text="⏸ Pause")
+            print("[INFO] Music play button pressed - music started")
+        else:
+            # Resume paused music
+            self._resume_music()
+            # Update button states
+            self.music_play_button.configure(state="disabled")
+            self.music_pause_button.configure(state="normal", text="⏸ Pause")
+            print("[INFO] Music play button pressed - music resumed")
+
+    def pause_music(self):
+        """Public method to pause/resume music - triggered by Pause button."""
+        try:
+            import pygame
+            if pygame.mixer.get_init() and self.music_is_playing:
+                if pygame.mixer.music.get_busy():
+                    # Music is playing, pause it
+                    self._pause_music()
+                    self.music_pause_button.configure(text="▶ Resume")
+                    self.music_play_button.configure(state="normal")
+                    print("[INFO] Music pause button pressed - music paused")
+                else:
+                    # Music is paused, resume it
+                    self._resume_music()
+                    self.music_pause_button.configure(text="⏸ Pause")
+                    self.music_play_button.configure(state="disabled")
+                    print("[INFO] Music pause button pressed - music resumed")
+        except ImportError:
+            print("[INFO] pygame not installed - music control disabled")
+        except Exception as e:
+            print(f"[ERROR] Error controlling music: {e}")
+
 
 class CompletionNoteDialog(ctk.CTkToplevel):
     """Simple dialog for entering completion notes."""
@@ -1094,7 +1229,8 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         self.title(title)
         self.geometry("400x250")
         self.transient(parent)
-        self.attributes('-topmost', True)  # Appear above always-on-top timer window
+        # Appear above always-on-top timer window
+        self.attributes('-topmost', True)
         self.grab_set()
 
         # Center on parent if it still exists
@@ -1109,7 +1245,8 @@ class CompletionNoteDialog(ctk.CTkToplevel):
             print(f"[DEBUG] Could not center dialog on parent: {e}")
 
         # Widgets
-        label = ctk.CTkLabel(self, text=title, font=ctk.CTkFont(size=14, weight="bold"))
+        label = ctk.CTkLabel(
+            self, text=title, font=ctk.CTkFont(size=14, weight="bold"))
         label.pack(pady=10, padx=10)
 
         self.textbox = ctk.CTkTextbox(self, height=120)
@@ -1268,7 +1405,8 @@ class NextActionWindow(ctk.CTkToplevel):
 
             # Visual feedback - briefly change button color
             self.save_button.configure(text="✓ Saved")
-            self.after(2000, lambda: self.save_button.configure(text="Save Notes"))
+            self.after(2000, lambda: self.save_button.configure(
+                text="Save Notes"))
         except Exception as e:
             print(f"[ERROR] Failed to save notes: {e}")
             import traceback
@@ -1283,7 +1421,8 @@ class NextActionWindow(ctk.CTkToplevel):
             self.notes_text.delete("1.0", "end")
             description = self.item.description or ""
             self.notes_text.insert("1.0", description)
-            print(f"[DEBUG] Notes refreshed in NextActionWindow for item: {self.item.id}")
+            print(
+                f"[DEBUG] Notes refreshed in NextActionWindow for item: {self.item.id}")
         except Exception as e:
             print(f"[ERROR] Failed to refresh notes in NextActionWindow: {e}")
 
@@ -1317,7 +1456,8 @@ class NextStepsDialog(ctk.CTkToplevel):
         self.title("Next Steps Note")
         self.geometry("450x400")
         self.transient(parent)
-        self.attributes('-topmost', True)  # Appear above always-on-top timer window
+        # Appear above always-on-top timer window
+        self.attributes('-topmost', True)
         self.grab_set()
 
         # Center on parent if it still exists
@@ -1336,7 +1476,8 @@ class NextStepsDialog(ctk.CTkToplevel):
         main_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Title label
-        label = ctk.CTkLabel(main_frame, text="Next Steps Note", font=ctk.CTkFont(size=14, weight="bold"))
+        label = ctk.CTkLabel(main_frame, text="Next Steps Note",
+                             font=ctk.CTkFont(size=14, weight="bold"))
         label.pack(pady=(5, 10), padx=10)
 
         # Note textbox
@@ -1354,7 +1495,8 @@ class NextStepsDialog(ctk.CTkToplevel):
         tomorrow = (date.today() + timedelta(days=1)).isoformat()
 
         # Start Date
-        ctk.CTkLabel(date_frame, text="Start Date:", width=80).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(date_frame, text="Start Date:", width=80).grid(
+            row=0, column=0, padx=5, pady=5, sticky="w")
         self.start_date_entry = ctk.CTkEntry(date_frame, width=120)
         self.start_date_entry.insert(0, tomorrow)
         self.start_date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
@@ -1362,11 +1504,14 @@ class NextStepsDialog(ctk.CTkToplevel):
         # Start date quick buttons
         btn_frame_start = ctk.CTkFrame(date_frame)
         btn_frame_start.grid(row=0, column=2, padx=5, pady=5)
-        ctk.CTkButton(btn_frame_start, text="Today", width=60, command=lambda: self.set_date(self.start_date_entry, 0)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame_start, text="+1", width=50, command=lambda: self.adjust_date(self.start_date_entry, 1)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_start, text="Today", width=60, command=lambda: self.set_date(
+            self.start_date_entry, 0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_start, text="+1", width=50, command=lambda: self.adjust_date(
+            self.start_date_entry, 1)).pack(side="left", padx=2)
 
         # Due Date
-        ctk.CTkLabel(date_frame, text="Due Date:", width=80).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(date_frame, text="Due Date:", width=80).grid(
+            row=1, column=0, padx=5, pady=5, sticky="w")
         self.due_date_entry = ctk.CTkEntry(date_frame, width=120)
         self.due_date_entry.insert(0, tomorrow)
         self.due_date_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
@@ -1374,8 +1519,10 @@ class NextStepsDialog(ctk.CTkToplevel):
         # Due date quick buttons
         btn_frame_due = ctk.CTkFrame(date_frame)
         btn_frame_due.grid(row=1, column=2, padx=5, pady=5)
-        ctk.CTkButton(btn_frame_due, text="Today", width=60, command=lambda: self.set_date(self.due_date_entry, 0)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame_due, text="+1", width=50, command=lambda: self.adjust_date(self.due_date_entry, 1)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_due, text="Today", width=60, command=lambda: self.set_date(
+            self.due_date_entry, 0)).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_due, text="+1", width=50, command=lambda: self.adjust_date(
+            self.due_date_entry, 1)).pack(side="left", padx=2)
 
         # Error label
         self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red")
@@ -1402,7 +1549,8 @@ class NextStepsDialog(ctk.CTkToplevel):
     def set_date(self, entry: ctk.CTkEntry, days_offset: int):
         """Set date to today + offset using weekend-aware logic."""
         settings = AppSettings.load()
-        new_date = increment_date(date.today(), days_offset, settings.include_saturday, settings.include_sunday)
+        new_date = increment_date(
+            date.today(), days_offset, settings.include_saturday, settings.include_sunday)
         entry.delete(0, "end")
         entry.insert(0, new_date.isoformat())
 
@@ -1418,7 +1566,8 @@ class NextStepsDialog(ctk.CTkToplevel):
 
         try:
             current_date = datetime.strptime(current, "%Y-%m-%d").date()
-            new_date = increment_date(current_date, days, settings.include_saturday, settings.include_sunday)
+            new_date = increment_date(
+                current_date, days, settings.include_saturday, settings.include_sunday)
             entry.delete(0, "end")
             entry.insert(0, new_date.isoformat())
         except ValueError:
@@ -1442,11 +1591,13 @@ class NextStepsDialog(ctk.CTkToplevel):
             due = datetime.strptime(due_date, "%Y-%m-%d").date()
 
             if due < start:
-                self.error_label.configure(text="Due date must be >= Start date")
+                self.error_label.configure(
+                    text="Due date must be >= Start date")
                 return
 
         except ValueError:
-            self.error_label.configure(text="Invalid date format (use YYYY-MM-DD)")
+            self.error_label.configure(
+                text="Invalid date format (use YYYY-MM-DD)")
             return
 
         self.result = {

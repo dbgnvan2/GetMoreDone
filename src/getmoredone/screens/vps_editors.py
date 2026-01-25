@@ -5,6 +5,7 @@ VPS entity editor dialogs for creating and editing strategic planning items.
 import customtkinter as ctk
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
+from tkinter import messagebox
 
 from ..widgets.date_picker import DatePickerButton
 
@@ -71,8 +72,10 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Start Year:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.start_year_entry = ctk.CTkEntry(main_frame, placeholder_text="2025")
-        self.start_year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.start_year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="2025")
+        self.start_year_entry.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # End Year
@@ -80,14 +83,16 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.end_year_entry = ctk.CTkEntry(main_frame, placeholder_text="2030")
-        self.end_year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.end_year_entry.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Title
         ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.title_entry = ctk.CTkEntry(main_frame, placeholder_text="My 5-Year Vision")
+        self.title_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="My 5-Year Vision")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
@@ -96,7 +101,8 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
         self.vision_statement_text = ctk.CTkTextbox(main_frame, height=150)
-        self.vision_statement_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.vision_statement_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Success Metrics
@@ -108,19 +114,23 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
         )
         row += 1
         self.metrics_text = ctk.CTkTextbox(main_frame, height=100)
-        self.metrics_text.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.metrics_text.grid(
+            row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_vision)
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_vision)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_vision_data(self):
@@ -133,7 +143,8 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
         if self.vision['title']:
             self.title_entry.insert(0, self.vision['title'])
         if self.vision['vision_statement']:
-            self.vision_statement_text.insert("1.0", self.vision['vision_statement'])
+            self.vision_statement_text.insert(
+                "1.0", self.vision['vision_statement'])
         if self.vision['success_metrics']:
             # Parse JSON array and display one per line
             import json
@@ -145,33 +156,52 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
 
     def save_vision(self):
         """Validate and save the vision."""
-        # Get values
-        try:
-            start_year = int(self.start_year_entry.get().strip())
-            end_year = int(self.end_year_entry.get().strip())
-        except ValueError:
-            ctk.CTkMessageBox(
-                title="Validation Error",
-                message="Start and End years must be valid integers",
-                icon="cancel"
-            )
-            return
+        # Get values with defaults
+        current_year = datetime.now().year
+        start_year_str = self.start_year_entry.get().strip()
+        end_year_str = self.end_year_entry.get().strip()
+
+        # Provide defaults if empty
+        if not start_year_str:
+            start_year = current_year
+        else:
+            try:
+                start_year = int(start_year_str)
+            except ValueError:
+                messagebox.showerror(
+                    "Validation Error",
+                    "Start year must be a valid integer"
+                )
+                return
+
+        if not end_year_str:
+            end_year = start_year + 10  # Default 10-year vision
+        else:
+            try:
+                end_year = int(end_year_str)
+            except ValueError:
+                messagebox.showerror(
+                    "Validation Error",
+                    "End year must be a valid integer"
+                )
+                return
 
         if end_year <= start_year:
-            ctk.CTkMessageBox(
-                title="Validation Error",
-                message="End year must be greater than start year",
-                icon="cancel"
+            messagebox.showerror(
+                "Validation Error",
+                "End year must be greater than start year"
             )
             return
 
         title = self.title_entry.get().strip()
-        vision_statement = self.vision_statement_text.get("1.0", "end-1c").strip()
+        vision_statement = self.vision_statement_text.get(
+            "1.0", "end-1c").strip()
 
         # Parse metrics (one per line)
         import json
         metrics_text = self.metrics_text.get("1.0", "end-1c").strip()
-        metrics = [line.strip() for line in metrics_text.split("\n") if line.strip()]
+        metrics = [line.strip()
+                   for line in metrics_text.split("\n") if line.strip()]
         metrics_json = json.dumps(metrics)
 
         # Save or update
@@ -201,10 +231,9 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
             self.destroy()
 
         except Exception as e:
-            ctk.CTkMessageBox(
-                title="Error",
-                message=f"Failed to save vision: {str(e)}",
-                icon="cancel"
+            messagebox.showerror(
+                "Error",
+                f"Failed to save vision: {str(e)}"
             )
 
 
@@ -269,7 +298,8 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         current_year = datetime.now().year
-        self.year_entry = ctk.CTkEntry(main_frame, placeholder_text=str(current_year))
+        self.year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text=str(current_year))
         self.year_entry.insert(0, str(current_year))
         self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
@@ -278,7 +308,8 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.title_entry = ctk.CTkEntry(main_frame, placeholder_text="Initiative name")
+        self.title_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="Initiative name")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
@@ -297,7 +328,8 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         self.status_var = ctk.StringVar(value="not_started")
         self.status_combo = ctk.CTkComboBox(
             main_frame,
-            values=["not_started", "in_progress", "at_risk", "completed", "on_hold", "cancelled"],
+            values=["not_started", "in_progress", "at_risk",
+                    "completed", "on_hold", "cancelled"],
             variable=self.status_var
         )
         self.status_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
@@ -305,14 +337,17 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
 
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_initiative)
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_initiative)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_initiative_data(self):
@@ -326,7 +361,8 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         if self.initiative['title']:
             self.title_entry.insert(0, self.initiative['title'])
         if self.initiative['outcome_statement']:
-            self.outcome_text.insert("1.0", self.initiative['outcome_statement'])
+            self.outcome_text.insert(
+                "1.0", self.initiative['outcome_statement'])
         if self.initiative['status']:
             self.status_var.set(self.initiative['status'])
 
@@ -438,7 +474,8 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         current_year = datetime.now().year
-        self.year_entry = ctk.CTkEntry(main_frame, placeholder_text=str(current_year))
+        self.year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text=str(current_year))
         self.year_entry.insert(0, str(current_year))
         self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
@@ -447,7 +484,8 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.title_entry = ctk.CTkEntry(main_frame, placeholder_text="My Annual Vision for 2026")
+        self.title_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="My Annual Vision for 2026")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
@@ -456,7 +494,8 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
         self.vision_statement_text = ctk.CTkTextbox(main_frame, height=150)
-        self.vision_statement_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.vision_statement_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Key Priorities
@@ -468,19 +507,23 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
         )
         row += 1
         self.priorities_text = ctk.CTkTextbox(main_frame, height=100)
-        self.priorities_text.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        self.priorities_text.grid(
+            row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_vision)
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_vision)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_vision_data(self):
@@ -493,7 +536,8 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
         if self.vision['title']:
             self.title_entry.insert(0, self.vision['title'])
         if self.vision['vision_statement']:
-            self.vision_statement_text.insert("1.0", self.vision['vision_statement'])
+            self.vision_statement_text.insert(
+                "1.0", self.vision['vision_statement'])
         if self.vision['key_priorities']:
             # Parse JSON array and display one per line
             import json
@@ -515,12 +559,14 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
         if not title:
             return
 
-        vision_statement = self.vision_statement_text.get("1.0", "end-1c").strip()
+        vision_statement = self.vision_statement_text.get(
+            "1.0", "end-1c").strip()
 
         # Parse priorities (one per line)
         import json
         priorities_text = self.priorities_text.get("1.0", "end-1c").strip()
-        priorities = [line.strip() for line in priorities_text.split("\n") if line.strip()]
+        priorities = [line.strip()
+                      for line in priorities_text.split("\n") if line.strip()]
         priorities_json = json.dumps(priorities)
 
         # Save or update
@@ -614,7 +660,8 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         current_year = datetime.now().year
-        self.year_entry = ctk.CTkEntry(main_frame, placeholder_text=str(current_year))
+        self.year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text=str(current_year))
         self.year_entry.insert(0, str(current_year))
         self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
@@ -623,7 +670,8 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Theme:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.theme_entry = ctk.CTkEntry(main_frame, placeholder_text="Year's guiding theme")
+        self.theme_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="Year's guiding theme")
         self.theme_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
@@ -632,7 +680,8 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
         self.objective_text = ctk.CTkTextbox(main_frame, height=120)
-        self.objective_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.objective_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Full Description
@@ -640,19 +689,23 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
         self.description_text = ctk.CTkTextbox(main_frame, height=120)
-        self.description_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.description_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_plan)
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_plan)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_plan_data(self):
@@ -671,23 +724,25 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
 
     def save_plan(self):
         """Validate and save the plan."""
-        # Get values
-        try:
-            year = int(self.year_entry.get().strip())
-        except ValueError:
-            ctk.CTkMessageBox(
-                title="Validation Error",
-                message="Year must be a valid integer",
-                icon="cancel"
-            )
-            return
+        # Get values with defaults
+        year_str = self.year_entry.get().strip()
+        if not year_str:
+            year = datetime.now().year
+        else:
+            try:
+                year = int(year_str)
+            except ValueError:
+                messagebox.showerror(
+                    "Validation Error",
+                    "Year must be a valid integer"
+                )
+                return
 
         theme = self.theme_entry.get().strip()
         if not theme:
-            ctk.CTkMessageBox(
-                title="Validation Error",
-                message="Theme is required",
-                icon="cancel"
+            messagebox.showerror(
+                "Validation Error",
+                "Theme is required"
             )
             return
 
@@ -720,10 +775,9 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             self.destroy()
 
         except Exception as e:
-            ctk.CTkMessageBox(
-                title="Error",
-                message=f"Error saving annual plan: {e}",
-                icon="cancel"
+            messagebox.showerror(
+                "Error",
+                f"Error saving annual plan: {e}"
             )
 
 
@@ -777,7 +831,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         self.month_var = ctk.StringVar(value=str(datetime.now().month))
         self.month_combo = ctk.CTkComboBox(
             main_frame,
-            values=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"],
+            values=["1", "2", "3", "4", "5", "6",
+                    "7", "8", "9", "10", "11", "12"],
             variable=self.month_var
         )
         self.month_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
@@ -788,7 +843,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         current_year = datetime.now().year
-        self.year_entry = ctk.CTkEntry(main_frame, placeholder_text=str(current_year))
+        self.year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text=str(current_year))
         self.year_entry.insert(0, str(current_year))
         self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
@@ -797,7 +853,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Priority Focus:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.focus_entry = ctk.CTkEntry(main_frame, placeholder_text="Main focus for the month")
+        self.focus_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="Main focus for the month")
         self.focus_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
@@ -806,19 +863,23 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
         self.description_text = ctk.CTkTextbox(main_frame, height=200)
-        self.description_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.description_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_tactic)
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_tactic)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_tactic_data(self):
@@ -926,7 +987,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.week_start_picker = DatePickerButton(main_frame)
-        self.week_start_picker.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.week_start_picker.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Week End Date
@@ -934,14 +996,16 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.week_end_picker = DatePickerButton(main_frame)
-        self.week_end_picker.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.week_end_picker.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Title
         ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
-        self.title_entry = ctk.CTkEntry(main_frame, placeholder_text="Week action title")
+        self.title_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="Week action title")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
@@ -950,7 +1014,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
         self.description_text = ctk.CTkTextbox(main_frame, height=100)
-        self.description_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.description_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
         # Expected Outcome
@@ -963,7 +1028,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
 
         # Add separator
         separator = ctk.CTkFrame(main_frame, height=2, fg_color="gray")
-        separator.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        separator.grid(row=row, column=0, columnspan=2,
+                       sticky="ew", padx=10, pady=10)
         row += 1
 
         # Step and Key Result fields
@@ -975,7 +1041,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             ctk.CTkLabel(main_frame, text=f"Step {i}:", font=ctk.CTkFont(weight="bold")).grid(
                 row=row, column=0, sticky="w", padx=10, pady=5
             )
-            step_entry = ctk.CTkEntry(main_frame, placeholder_text=f"Step {i} (50 chars max)")
+            step_entry = ctk.CTkEntry(
+                main_frame, placeholder_text=f"Step {i} (50 chars max)")
             step_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
             self.step_entries.append(step_entry)
             row += 1
@@ -984,21 +1051,26 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             ctk.CTkLabel(main_frame, text=f"Key Result {i}:", font=ctk.CTkFont(weight="bold")).grid(
                 row=row, column=0, sticky="w", padx=10, pady=5
             )
-            key_result_entry = ctk.CTkEntry(main_frame, placeholder_text=f"Key Result {i} (50 chars max)")
-            key_result_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+            key_result_entry = ctk.CTkEntry(
+                main_frame, placeholder_text=f"Key Result {i} (50 chars max)")
+            key_result_entry.grid(
+                row=row, column=1, sticky="ew", padx=10, pady=5)
             self.key_result_entries.append(key_result_entry)
             row += 1
 
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
-        button_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
 
-        btn_save = ctk.CTkButton(button_frame, text="Save", command=self.save_action)
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_action)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_cancel = ctk.CTkButton(button_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
     def load_action_data(self):
@@ -1064,7 +1136,8 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                     **key_results
                 )
                 # Auto-create Action Items from non-blank Steps (idempotent - won't create duplicates)
-                self.vps_manager.auto_create_action_items_from_steps(self.action_id)
+                self.vps_manager.auto_create_action_items_from_steps(
+                    self.action_id)
             else:
                 # Create new
                 action_id = self.vps_manager.create_week_action(
