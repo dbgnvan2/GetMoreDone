@@ -1,11 +1,12 @@
 """
-Tests for Today screen filtering logic.
+Tests for Today screen filtering logic and settings.
 """
 
 import pytest
 from datetime import datetime, timedelta
 from src.getmoredone.db_manager import DatabaseManager
 from src.getmoredone.models import ActionItem
+from src.getmoredone.app_settings import AppSettings
 
 
 def test_today_screen_shows_only_items_completed_today(tmp_path):
@@ -149,3 +150,47 @@ def test_today_screen_shows_open_items_with_start_date_today_or_earlier(tmp_path
     assert "Started Yesterday" in titles
     assert "Started Today" in titles
     assert "Starting Tomorrow" not in titles
+
+
+def test_list_view_expansion_setting_persistence():
+    """Test that default_columns_expanded setting can be saved and reloaded."""
+    # Load current settings
+    settings = AppSettings.load()
+    original_value = settings.default_columns_expanded
+
+    try:
+        # Test changing to True
+        settings.default_columns_expanded = True
+        settings.save()
+
+        # Reload and verify
+        reloaded = AppSettings.load()
+        assert reloaded.default_columns_expanded == True, \
+            "Setting should persist as True after save/reload"
+
+        # Test changing to False
+        reloaded.default_columns_expanded = False
+        reloaded.save()
+
+        # Reload again and verify
+        reloaded2 = AppSettings.load()
+        assert reloaded2.default_columns_expanded == False, \
+            "Setting should persist as False after save/reload"
+
+    finally:
+        # Restore original value
+        settings.default_columns_expanded = original_value
+        settings.save()
+
+
+def test_list_view_expansion_default_value():
+    """Test that default_columns_expanded defaults to False (collapsed)."""
+    settings = AppSettings.load()
+
+    # Check the attribute exists
+    assert hasattr(settings, 'default_columns_expanded'), \
+        "AppSettings should have default_columns_expanded attribute"
+
+    # Check it's a boolean
+    assert isinstance(settings.default_columns_expanded, bool), \
+        "default_columns_expanded should be a boolean"

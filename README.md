@@ -549,6 +549,28 @@ pytest tests/test_database.py -v
   - Child items preserved (parent_id set to NULL)
 - Comprehensive test coverage (4 new tests in test_database.py)
 
+### List View Display Settings (NEW - January 2026)
+
+**Default Collapsed/Expanded State** - Control how list views display on startup
+
+- **Settings Location**: Settings > Date Increment Settings
+- **Checkbox**: "Start list views expanded (Today, Upcoming, All Items)"
+- **Default**: Unchecked (collapsed) - Shows minimal columns for faster scanning
+- **Expanded**: Checked - Shows all columns (Next Action, Description, Group, Category, etc.)
+- **Persistence**: Setting saved in `data/settings.json` and persists across app restarts
+- **Affected Screens**: Today, Upcoming, and All Items screens
+- **Toggle Anytime**: Each screen has Expand/Collapse button for manual override
+- **Benefits of Collapsed View**:
+  - Less visual clutter
+  - Faster item scanning
+  - More items visible at once
+  - Essential columns only (Who, Title, Dates, Priority)
+- **When to Use Expanded View**:
+  - Need to see Next Action without opening items
+  - Reviewing Group/Category organization
+  - Checking detailed descriptions
+  - Planning work with full context visible
+
 ### Google Calendar Integration (NEW - January 2026)
 
 - Create calendar events directly from action items
@@ -661,6 +683,11 @@ python3 test_vps_segments.py
   - Date validation
   - Timer functionality
   - Obsidian integration
+  - **Today screen tests** (`tests/test_today_screen.py`):
+    - Item filtering logic
+    - Completed items display
+    - List view expansion setting persistence
+    - Default collapsed/expanded state
 
 See [docs/VPS_TESTING_SUMMARY.md](docs/VPS_TESTING_SUMMARY.md) for detailed test documentation.
 

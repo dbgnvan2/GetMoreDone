@@ -6,6 +6,7 @@ import customtkinter as ctk
 from typing import TYPE_CHECKING
 
 from ..models import Status
+from ..app_settings import AppSettings
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -19,8 +20,9 @@ class AllItemsScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
-        # Track column visibility state (default: collapsed)
-        self.columns_expanded = False
+        self.settings = AppSettings.load()
+        # Track column visibility state (use setting)
+        self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
 
         self.grid_columnconfigure(0, weight=1)
@@ -100,7 +102,7 @@ class AllItemsScreen(ctk.CTkFrame):
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
             header,
-            text="Expand",
+            text="Collapse" if self.columns_expanded else "Expand",
             width=100,
             command=self.toggle_columns
         )

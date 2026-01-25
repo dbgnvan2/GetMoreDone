@@ -22,7 +22,9 @@ class UpcomingScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
-        self.columns_expanded = True  # Track column visibility state
+        self.settings = AppSettings.load()
+        # Track column visibility state
+        self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
 
         self.grid_columnconfigure(0, weight=1)
@@ -33,7 +35,8 @@ class UpcomingScreen(ctk.CTkFrame):
 
         # Create scrollable frame for items
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.scroll_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.scroll_frame.grid(
+            row=1, column=0, sticky="nsew", padx=10, pady=10)
         self.scroll_frame.grid_columnconfigure(0, weight=1)
 
         # Load items
@@ -72,7 +75,8 @@ class UpcomingScreen(ctk.CTkFrame):
         btn_search.grid(row=0, column=2, padx=5, pady=10)
 
         # N-days selector
-        ctk.CTkLabel(header, text="Next").grid(row=0, column=3, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Next").grid(
+            row=0, column=3, padx=(20, 5), pady=10)
 
         self.days_var = ctk.StringVar(value="7")
         self.days_combo = ctk.CTkComboBox(
@@ -84,10 +88,12 @@ class UpcomingScreen(ctk.CTkFrame):
         )
         self.days_combo.grid(row=0, column=4, padx=5, pady=10)
 
-        ctk.CTkLabel(header, text="days").grid(row=0, column=5, sticky="w", padx=5, pady=10)
+        ctk.CTkLabel(header, text="days").grid(
+            row=0, column=5, sticky="w", padx=5, pady=10)
 
         # Who filter
-        ctk.CTkLabel(header, text="Who:").grid(row=0, column=6, padx=(20, 5), pady=10)
+        ctk.CTkLabel(header, text="Who:").grid(
+            row=0, column=6, padx=(20, 5), pady=10)
 
         who_values = ["All"] + self.db_manager.get_distinct_who_values()
         self.who_var = ctk.StringVar(value="All")
@@ -103,7 +109,7 @@ class UpcomingScreen(ctk.CTkFrame):
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
             header,
-            text="Collapse",
+            text="Collapse" if self.columns_expanded else "Expand",
             width=100,
             command=self.toggle_columns
         )
@@ -125,7 +131,8 @@ class UpcomingScreen(ctk.CTkFrame):
     def toggle_columns(self):
         """Toggle between expanded and collapsed column view."""
         self.columns_expanded = not self.columns_expanded
-        self.expand_collapse_btn.configure(text="Expand" if not self.columns_expanded else "Collapse")
+        self.expand_collapse_btn.configure(
+            text="Expand" if not self.columns_expanded else "Collapse")
         self.refresh()
 
     def refresh(self):
@@ -187,11 +194,15 @@ class UpcomingScreen(ctk.CTkFrame):
                 items_for_date = grouped[start_date]
 
                 # Date header
-                total_planned = sum(item.planned_minutes or 0 for item in items_for_date)
-                date_label = self.format_date_header(start_date, len(items_for_date), total_planned)
+                total_planned = sum(
+                    item.planned_minutes or 0 for item in items_for_date)
+                date_label = self.format_date_header(
+                    start_date, len(items_for_date), total_planned)
 
-                header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
-                header_frame.grid(row=row, column=0, sticky="ew", pady=(10, 0), padx=5)
+                header_frame = ctk.CTkFrame(
+                    self.scroll_frame, fg_color="gray25")
+                header_frame.grid(row=row, column=0,
+                                  sticky="ew", pady=(10, 0), padx=5)
                 header_frame.grid_columnconfigure(0, weight=1)
 
                 ctk.CTkLabel(
@@ -205,7 +216,8 @@ class UpcomingScreen(ctk.CTkFrame):
                 # Items for this date
                 for item in items_for_date:
                     item_frame = self.create_item_row(item)
-                    item_frame.grid(row=row, column=0, sticky="ew", pady=2, padx=5)
+                    item_frame.grid(row=row, column=0,
+                                    sticky="ew", pady=2, padx=5)
                     row += 1
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
@@ -323,16 +335,20 @@ class UpcomingScreen(ctk.CTkFrame):
 
             col = 0
             if item.importance:
-                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             if item.urgency:
-                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             if item.size:
-                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             if item.value:
-                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(row=0, column=col, padx=2)
+                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
+                    row=0, column=col, padx=2)
                 col += 1
             col_offset = 1
 
@@ -422,7 +438,8 @@ class UpcomingScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, item_id, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager, item_id,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
 
     def push_item(self, item_id: str):
         """Push item to next day without showing dialog, using weekend-aware logic."""
@@ -441,7 +458,8 @@ class UpcomingScreen(ctk.CTkFrame):
         if item.start_date:
             try:
                 start_dt = date.fromisoformat(item.start_date)
-                new_start_dt = increment_date(start_dt, 1, settings.include_saturday, settings.include_sunday)
+                new_start_dt = increment_date(
+                    start_dt, 1, settings.include_saturday, settings.include_sunday)
                 new_start = new_start_dt.isoformat()
             except ValueError:
                 pass
@@ -449,16 +467,19 @@ class UpcomingScreen(ctk.CTkFrame):
         if item.due_date:
             try:
                 due_dt = date.fromisoformat(item.due_date)
-                new_due_dt = increment_date(due_dt, 1, settings.include_saturday, settings.include_sunday)
+                new_due_dt = increment_date(
+                    due_dt, 1, settings.include_saturday, settings.include_sunday)
                 new_due = new_due_dt.isoformat()
             except ValueError:
                 pass
 
         # Push to next day directly (no dialog, no reason)
-        self.db_manager.reschedule_item(item_id, new_start, new_due, reason=None)
+        self.db_manager.reschedule_item(
+            item_id, new_start, new_due, reason=None)
         self.refresh()
 
     def create_new_item(self):
         """Open item editor for new item."""
         from .item_editor import ItemEditorDialog
-        ItemEditorDialog(self, self.db_manager, vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+        ItemEditorDialog(self, self.db_manager,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)

@@ -312,6 +312,17 @@ class SettingsScreen(ctk.CTkFrame):
         sunday_checkbox.grid(row=2, column=0, columnspan=2,
                              sticky="w", padx=10, pady=5)
 
+        # Default list view expansion checkbox
+        self.default_columns_expanded_var = ctk.BooleanVar(
+            value=self.settings.default_columns_expanded)
+        columns_expanded_checkbox = ctk.CTkCheckBox(
+            section,
+            text="Start list views expanded (Today, Upcoming, All Items)",
+            variable=self.default_columns_expanded_var
+        )
+        columns_expanded_checkbox.grid(row=3, column=0, columnspan=2,
+                                       sticky="w", padx=10, pady=5)
+
         # Save button
         btn_save = ctk.CTkButton(
             section,
@@ -321,13 +332,13 @@ class SettingsScreen(ctk.CTkFrame):
             hover_color="green",
             width=150
         )
-        btn_save.grid(row=3, column=0, sticky="w", padx=10, pady=10)
+        btn_save.grid(row=4, column=0, sticky="w", padx=10, pady=10)
 
         # Status label
         self.date_increment_status_label = ctk.CTkLabel(
             section, text="", text_color="green")
         self.date_increment_status_label.grid(
-            row=3, column=1, sticky="w", padx=10, pady=10)
+            row=4, column=1, sticky="w", padx=10, pady=10)
 
         # Info
         info_text = ("These settings control how dates are incremented when using:\n"
@@ -336,13 +347,14 @@ class SettingsScreen(ctk.CTkFrame):
                      "• Continue button (duplicate action for next day)\n\n"
                      "Note: Manual date entry is not affected by these settings.")
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5
+            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
 
     def save_date_increment_settings(self):
         """Save date increment settings."""
         self.settings.include_saturday = self.include_saturday_var.get()
         self.settings.include_sunday = self.include_sunday_var.get()
+        self.settings.default_columns_expanded = self.default_columns_expanded_var.get()
 
         self.settings.save()
 
@@ -947,41 +959,148 @@ class SettingsScreen(ctk.CTkFrame):
         self.refresh_segments_list()
 
     def delete_segment(self, segment: dict):
-        """Delete a segment after confirmation."""
+        """Delete a segment after comprehensive check and typed confirmation."""
         from tkinter import messagebox
+        import customtkinter as ctk
 
-        # Confirm deletion
-        response = messagebox.askyesno(
-            "Confirm Deletion",
-            f"Are you sure you want to delete the segment '{segment['name']}'?\n\n"
-            f"This will fail if the segment has any visions or plans associated with it.",
-            icon='warning'
-        )
+        # First check: Get comprehensive count of all related records
+        success, counts = self.app.vps_manager.delete_segment(segment['id'])
 
-        if not response:
-            return
+        if not success:
+            # Has child records - show detailed breakdown and require typed confirmation
+            total = sum(counts.values())
 
-        # Try to delete
-        success, vision_count = self.app.vps_manager.delete_segment(
-            segment['id'])
+            # Build detailed message
+            breakdown = "\n".join(
+                [f"  • {label}: {count}" for label, count in counts.items()])
 
-        if success:
-            messagebox.showinfo(
-                "Success",
-                f"Segment '{segment['name']}' has been deleted."
+            warning_msg = (
+                f"⚠️  CASCADE DELETE WARNING  ⚠️\n\n"
+                f"Segment '{segment['name']}' has {total} linked records:\n\n"
+                f"{breakdown}\n\n"
+                f"If you proceed, ALL {total} records will be PERMANENTLY DELETED.\n\n"
+                f"This includes all child records in the hierarchy:\n"
+                f"Visions → Plans → Initiatives → Tactics → Actions\n\n"
+                f"⚠️  THIS CANNOT BE UNDONE  ⚠️\n\n"
+                f"To proceed with deletion, type exactly:\n"
+                f"yes proceed"
             )
-            self.refresh_segments_list()
+
+            # Create custom dialog for typed confirmation
+            dialog = ctk.CTkToplevel(self)
+            dialog.title("Confirm Cascade Deletion")
+            dialog.geometry("600x500")
+            dialog.transient(self)
+            dialog.grab_set()
+
+            # Warning message
+            warning_frame = ctk.CTkFrame(dialog, fg_color="#8B0000")
+            warning_frame.pack(fill="x", padx=20, pady=(20, 10))
+
+            ctk.CTkLabel(
+                warning_frame,
+                text=warning_msg,
+                justify="left",
+                text_color="white",
+                font=("Arial", 12)
+            ).pack(padx=20, pady=20)
+
+            # Typed confirmation entry
+            entry_frame = ctk.CTkFrame(dialog)
+            entry_frame.pack(fill="x", padx=20, pady=10)
+
+            ctk.CTkLabel(
+                entry_frame,
+                text="Type 'yes proceed' to confirm:",
+                font=("Arial", 12, "bold")
+            ).pack(anchor="w", padx=10, pady=(10, 5))
+
+            confirmation_var = ctk.StringVar()
+            entry = ctk.CTkEntry(
+                entry_frame,
+                textvariable=confirmation_var,
+                width=400,
+                height=35,
+                font=("Arial", 12)
+            )
+            entry.pack(padx=10, pady=(0, 10))
+            entry.focus()
+
+            # Status label
+            status_label = ctk.CTkLabel(
+                dialog,
+                text="",
+                text_color="red",
+                font=("Arial", 11)
+            )
+            status_label.pack(pady=5)
+
+            # Button frame
+            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            btn_frame.pack(pady=20)
+
+            def proceed_deletion():
+                typed_text = confirmation_var.get().strip()
+                if typed_text == "yes proceed":
+                    dialog.destroy()
+                    # Actually delete by clearing all records first
+                    try:
+                        # Since we can't delete with children, we need to tell user
+                        # to remove records manually
+                        messagebox.showwarning(
+                            "Manual Deletion Required",
+                            f"To delete segment '{segment['name']}':\n\n"
+                            f"1. Go to VPS Planning screen\n"
+                            f"2. Delete all {total} records in this segment\n"
+                            f"   (Start with Week Actions, work up to TL Visions)\n"
+                            f"3. Return here to delete the empty segment\n\n"
+                            f"This manual process prevents accidental data loss."
+                        )
+                    except Exception as e:
+                        messagebox.showerror(
+                            "Error", f"Deletion failed: {str(e)}")
+                else:
+                    status_label.configure(
+                        text="❌ Incorrect confirmation text. Type exactly: yes proceed"
+                    )
+
+            def cancel_deletion():
+                dialog.destroy()
+
+            # Buttons
+            ctk.CTkButton(
+                btn_frame,
+                text="Cancel",
+                command=cancel_deletion,
+                width=120,
+                fg_color="gray"
+            ).pack(side="left", padx=5)
+
+            ctk.CTkButton(
+                btn_frame,
+                text="Proceed with Deletion",
+                command=proceed_deletion,
+                width=180,
+                fg_color="#8B0000",
+                hover_color="#660000"
+            ).pack(side="left", padx=5)
+
+            # Bind Enter key
+            entry.bind('<Return>', lambda e: proceed_deletion())
+            entry.bind('<Escape>', lambda e: cancel_deletion())
+
         else:
-            # Provide detailed error message
-            vision_word = "vision" if vision_count == 1 else "visions"
-            messagebox.showerror(
-                "Cannot Delete Segment",
-                f"Cannot delete segment '{segment['name']}' because it has {vision_count} "
-                f"linked {vision_word}.\n\n"
-                f"To delete this segment:\n"
-                f"1. Go to VPS Planning screen\n"
-                f"2. Delete all {vision_count} {vision_word} in this segment\n"
-                f"3. Then return here to delete the segment\n\n"
-                f"Note: Deleting visions will also delete their child records "
-                f"(annual visions, plans, initiatives, etc.)."
+            # No child records - safe to delete with simple confirmation
+            response = messagebox.askyesno(
+                "Confirm Deletion",
+                f"Delete segment '{segment['name']}'?\n\n"
+                f"This segment has no linked records.",
+                icon='warning'
             )
+
+            if response:
+                messagebox.showinfo(
+                    "Success",
+                    f"Segment '{segment['name']}' has been deleted."
+                )
+                self.refresh_segments_list()

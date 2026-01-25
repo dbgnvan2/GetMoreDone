@@ -15,7 +15,8 @@ class AppSettings:
 
     obsidian_vault_path: Optional[str] = None
     obsidian_notes_subfolder: str = "GetMoreDone"
-    completion_icon: str = "✓"  # Default green checkmark, can be customized to image path or emoji
+    # Default green checkmark, can be customized to image path or emoji
+    completion_icon: str = "✓"
 
     # Timer settings
     default_time_block_minutes: int = 30
@@ -36,12 +37,19 @@ class AppSettings:
     enable_break_sounds: bool = True
     break_start_sound: Optional[str] = None  # Path to WAV file for break start
     break_end_sound: Optional[str] = None    # Path to WAV file for break end
-    music_folder: Optional[str] = None       # Path to folder containing music files for timer
+    # Path to folder containing music files for timer
+    music_folder: Optional[str] = None
     music_volume: float = 0.7                # Music volume (0.0 to 1.0)
 
     # Date increment settings
-    include_saturday: bool = True  # Include Saturday in date calculations (push, +/-)
-    include_sunday: bool = True    # Include Sunday in date calculations (push, +/-)
+    # Include Saturday in date calculations (push, +/-)
+    include_saturday: bool = True
+    # Include Sunday in date calculations (push, +/-)
+    include_sunday: bool = True
+
+    # List view settings
+    # Default state for list views (Today, Upcoming, All Items)
+    default_columns_expanded: bool = False
 
     @classmethod
     def get_settings_path(cls) -> Path:

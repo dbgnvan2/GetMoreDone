@@ -991,26 +991,55 @@ class VPSManager:
         self.db.conn.commit()
         return True
 
-    def delete_segment(self, segment_id: str) -> tuple[bool, int]:
+    def delete_segment(self, segment_id: str) -> tuple[bool, dict]:
         """
         Delete a Segment if it has no child records.
-        Returns (success: bool, vision_count: int).
-        - (True, 0) if deleted successfully
-        - (False, N) if deletion failed due to N linked visions
+        Returns (success: bool, counts: dict).
+        - (True, {}) if deleted successfully
+        - (False, {table: count, ...}) if deletion failed due to linked records
+
+        Checks ALL VPS tables to prevent silent data loss via cascade deletion.
         """
-        # Check for TL visions and count them
+        # Check ALL VPS tables for related records
+        counts = {}
+
+        tables = [
+            ('tl_visions', 'TL Visions'),
+            ('annual_visions', 'Annual Visions'),
+            ('annual_plans', 'Annual Plans'),
+            ('quarter_initiatives', 'Quarter Initiatives'),
+            ('month_tactics', 'Month Tactics'),
+            ('week_actions', 'Week Actions'),
+        ]
+
+        total = 0
+        for table, label in tables:
+            cursor = self.db.conn.execute(
+                f"SELECT COUNT(*) FROM {table} WHERE segment_description_id = ?",
+                (segment_id,)
+            )
+            count = cursor.fetchone()[0]
+            if count > 0:
+                counts[label] = count
+                total += count
+
+        # Also check action_items
         cursor = self.db.conn.execute(
-            "SELECT COUNT(*) FROM tl_visions WHERE segment_description_id = ?",
+            "SELECT COUNT(*) FROM action_items WHERE segment_description_id = ?",
             (segment_id,)
         )
-        vision_count = cursor.fetchone()[0]
+        action_count = cursor.fetchone()[0]
+        if action_count > 0:
+            counts['Action Items'] = action_count
+            total += action_count
 
-        if vision_count > 0:
-            return False, vision_count
+        if total > 0:
+            return False, counts
 
+        # Safe to delete - no child records found
         self.db.conn.execute(
             "DELETE FROM segment_descriptions WHERE id = ?",
             (segment_id,)
         )
         self.db.conn.commit()
-        return True, 0
+        return True, {}

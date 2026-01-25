@@ -23,8 +23,8 @@ class TodayScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
-        # Track column visibility state (default: collapsed)
-        self.columns_expanded = False
+        # Track column visibility state (use setting)
+        self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
         self.search_query = ""  # Track search query
 
@@ -63,7 +63,7 @@ class TodayScreen(ctk.CTkFrame):
         # Expand/Collapse button
         self.expand_collapse_btn = ctk.CTkButton(
             header_frame,
-            text="Expand",
+            text="Collapse" if self.columns_expanded else "Expand",
             width=100,
             command=self.toggle_columns
         )

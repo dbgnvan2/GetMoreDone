@@ -1535,15 +1535,15 @@ class TestVPSSegmentManagement:
         assert vps_manager.get_segment(segment_id) is not None
 
         # Delete it
-        success, vision_count = vps_manager.delete_segment(segment_id)
+        success, counts = vps_manager.delete_segment(segment_id)
         assert success is True
-        assert vision_count == 0
+        assert counts == {}  # Empty dict when no children
 
         # Verify it's gone
         assert vps_manager.get_segment(segment_id) is None
 
     def test_delete_segment_with_children_fails(self, vps_manager):
-        """Test that deleting a segment with visions fails and returns count."""
+        """Test that deleting a segment with visions fails and returns counts."""
         # Create segment
         segment_id = vps_manager.create_segment(
             name="Segment with Children",
@@ -1562,9 +1562,10 @@ class TestVPSSegmentManagement:
         )
 
         # Try to delete segment (should fail)
-        success, vision_count = vps_manager.delete_segment(segment_id)
+        success, counts = vps_manager.delete_segment(segment_id)
         assert success is False
-        assert vision_count == 1  # Should report 1 linked vision
+        assert 'TL Visions' in counts  # Should report linked visions
+        assert counts['TL Visions'] == 1  # Should report 1 linked vision
 
         # Verify segment still exists
         assert vps_manager.get_segment(segment_id) is not None
@@ -1644,29 +1645,58 @@ class TestVPSSegmentManagement:
             assert segment['color_hex'] == color
 
     def test_delete_segment_reports_multiple_linked_visions(self, vps_manager):
-        """Test that deletion reports correct count when multiple visions exist."""
+        """Test comprehensive deletion checking across multiple tables."""
         # Create segment
         segment_id = vps_manager.create_segment(
-            name="Segment with Multiple Visions",
-            description="Has 3 visions",
+            name="Segment with Multiple Records",
+            description="Has records at multiple levels",
             color_hex="#FF00FF",
             order_index=1
         )
 
-        # Create 3 visions in this segment
+        # Create 3 TL visions
+        tl_vision_ids = []
         for i in range(3):
-            vps_manager.create_tl_vision(
+            tl_id = vps_manager.create_tl_vision(
                 segment_description_id=segment_id,
                 start_year=2026,
                 end_year=2031,
                 title=f"Vision {i+1}",
                 vision_statement=f"Vision statement {i+1}"
             )
+            tl_vision_ids.append(tl_id)
 
-        # Try to delete segment (should fail with count of 3)
-        success, vision_count = vps_manager.delete_segment(segment_id)
+        # Create an annual vision under first TL vision
+        annual_vision_id = vps_manager.create_annual_vision(
+            tl_vision_id=tl_vision_ids[0],
+            segment_description_id=segment_id,
+            year=2026,
+            title="Annual Vision"
+        )
+
+        # Create an annual plan under annual vision
+        annual_plan_id = vps_manager.create_annual_plan(
+            annual_vision_id=annual_vision_id,
+            segment_description_id=segment_id,
+            year=2026,
+            theme="Annual Plan"
+        )
+
+        # Try to delete segment (should fail with comprehensive counts)
+        success, counts = vps_manager.delete_segment(segment_id)
         assert success is False
-        assert vision_count == 3  # Should report 3 linked visions
+
+        # Verify comprehensive checking
+        assert 'TL Visions' in counts
+        assert counts['TL Visions'] == 3
+        assert 'Annual Visions' in counts
+        assert counts['Annual Visions'] == 1
+        assert 'Annual Plans' in counts
+        assert counts['Annual Plans'] == 1
+
+        # Verify total count
+        total = sum(counts.values())
+        assert total == 5  # 3 TL + 1 Annual Vision + 1 Annual Plan
 
         # Verify segment still exists
         assert vps_manager.get_segment(segment_id) is not None
