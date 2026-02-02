@@ -6,6 +6,8 @@ Handles SQLite schema creation and connection management.
 import sqlite3
 from pathlib import Path
 from typing import Optional
+
+from .paths import resolve_db_path
 from .vps_schema import VPSSchema
 
 
@@ -19,10 +21,7 @@ class Database:
         Args:
             db_path: Path to SQLite database file. If None, uses default data/getmoredone.db
         """
-        if db_path is None:
-            db_path = Path(__file__).parent.parent.parent / "data" / "getmoredone.db"
-        else:
-            db_path = Path(db_path)
+        db_path = resolve_db_path(db_path)
 
         # Ensure data directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)

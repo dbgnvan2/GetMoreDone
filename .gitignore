@@ -25,3 +25,7 @@ data/
 
 # Ignore specific duplicate/temp files
 .gitignore copy
+
+# PyInstaller
+/build/
+/dist/

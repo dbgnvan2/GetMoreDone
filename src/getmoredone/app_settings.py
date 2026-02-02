@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, asdict
 
+from .paths import default_settings_path
+
 
 @dataclass
 class AppSettings:
@@ -53,8 +55,8 @@ class AppSettings:
 
     @classmethod
     def get_settings_path(cls) -> Path:
-        """Get the path to the settings file."""
-        return Path(__file__).parent.parent.parent / "data" / "settings.json"
+        """Get the path to the settings file (user-writable)."""
+        return default_settings_path()
 
     @classmethod
     def load(cls) -> 'AppSettings':

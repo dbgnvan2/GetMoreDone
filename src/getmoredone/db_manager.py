@@ -24,7 +24,13 @@ class DatabaseManager:
     }
 
     def __init__(self, db_path: Optional[str] = None):
-        """Initialize database manager."""
+        """Initialize database manager.
+
+        DB selection priority:
+        1) explicit `db_path`
+        2) env var GETMOREDONE_DB
+        3) default per-OS app data dir
+        """
         self.db = Database(db_path)
         self.db.connect()
         self.db.initialize_schema()

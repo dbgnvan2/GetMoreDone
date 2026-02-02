@@ -17,6 +17,9 @@ REM Install/update requirements
 echo 📥 Installing requirements...
 pip install -q -r requirements.txt
 
-REM Run the application
+REM Default dev DB to repo-local data\getmoredone.db unless overridden
+if "%GETMOREDONE_DB%"=="" set GETMOREDONE_DB=%cd%\data\getmoredone.db
+
 echo ✅ Launching GetMoreDone...
+echo    DB: %GETMOREDONE_DB%
 python run.py

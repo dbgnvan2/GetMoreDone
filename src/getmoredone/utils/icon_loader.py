@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 import io
 
+from ..paths import resource_root
+
 if TYPE_CHECKING:
     import customtkinter as ctk
 
@@ -21,9 +23,8 @@ except ImportError:
     ctk = None
 
 
-# Get the project root directory (where assets folder is located)
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-ICONS_DIR = PROJECT_ROOT / "assets" / "icons"
+# Resource root directory (repo root when running from source, PyInstaller bundle root when frozen)
+ICONS_DIR = resource_root() / "assets" / "icons"
 
 
 class IconLoader:
