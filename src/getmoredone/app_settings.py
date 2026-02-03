@@ -57,7 +57,7 @@ class AppSettings:
     gmail_import_enabled: bool = True
     gmail_import_trigger_label: str = "GMD"
     gmail_import_moved_label: str = "GMD/moved"
-    gmail_import_interval_seconds: int = 60
+    gmail_import_interval_seconds: int = 300
 
     @classmethod
     def get_settings_path(cls) -> Path:

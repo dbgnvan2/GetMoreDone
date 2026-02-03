@@ -942,7 +942,18 @@ class SettingsScreen(ctk.CTkFrame):
             self.settings.gmail_import_interval_seconds = interval
 
             self.settings.save()
-            self.gmail_status_label.configure(text="Saved.", text_color="green")
+
+            # Apply to launchd (prod) so interval changes take effect automatically
+            try:
+                repo_root = Path(__file__).resolve().parents[3]
+                updater = repo_root / "tools" / "update_launchd_importer.py"
+                python_exe = repo_root / "venv" / "bin" / "python"
+                if updater.exists() and python_exe.exists():
+                    subprocess.run([str(python_exe), str(updater), "--reload", "prod"], check=False)
+            except Exception:
+                pass
+
+            self.gmail_status_label.configure(text="Saved (launchd updated).", text_color="green")
         except Exception as e:
             self.gmail_status_label.configure(text=f"Save failed: {e}", text_color="red")
 
