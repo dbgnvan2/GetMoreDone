@@ -48,7 +48,7 @@ write_plist() {
   </dict>
 
   <key>StartInterval</key>
-  <integer>60</integer>
+  <integer>300</integer>
 
   <key>RunAtLoad</key>
   <true/>
@@ -76,7 +76,7 @@ EOF
   </array>
 
   <key>StartInterval</key>
-  <integer>60</integer>
+  <integer>300</integer>
 
   <key>RunAtLoad</key>
   <true/>

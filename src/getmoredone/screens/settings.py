@@ -4,6 +4,8 @@ Settings screen - application settings and database management.
 
 import customtkinter as ctk
 import shutil
+import subprocess
+import threading
 from pathlib import Path
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -78,7 +80,12 @@ class SettingsScreen(ctk.CTkFrame):
         org_tab.grid_columnconfigure(0, weight=1)
         self.create_organizational_factors_section(org_tab)
 
-        # Tab 5: VPS Life Segments
+        # Tab 5: Email Import
+        email_tab = self.tabview.add("Email Import")
+        email_tab.grid_columnconfigure(0, weight=1)
+        self.create_email_import_section(email_tab)
+
+        # Tab 6: VPS Life Segments
         vps_tab = self.tabview.add("VPS Life Segments")
         vps_tab.grid_columnconfigure(0, weight=1)
         self.create_vps_segments_section(vps_tab)
@@ -840,6 +847,164 @@ class SettingsScreen(ctk.CTkFrame):
                 text=f"Demo data failed: {str(e)}",
                 text_color="red",
             )
+
+    def create_email_import_section(self, parent=None):
+        """Create Email Import settings section (Gmail label → Action Items)."""
+        if parent is None:
+            parent = self
+
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Title
+        ctk.CTkLabel(
+            section,
+            text="Email Import (Gmail)",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
+
+        info = (
+            "Move/label an email into the Trigger Label (e.g. GMD) and GetMoreDone will create an Action Item.\n"
+            "After import, the email is moved by removing the trigger label and applying the Processed Label (e.g. GMD/moved).\n\n"
+            "This uses the Gmail account you authorized on this computer (OAuth token in ~/.getmoredone/)."
+        )
+        ctk.CTkLabel(section, text=info, justify="left", text_color="gray", wraplength=700).grid(
+            row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10)
+        )
+
+        # Enabled toggle
+        self.gmail_enabled_var = ctk.BooleanVar(value=bool(getattr(self.settings, "gmail_import_enabled", True)))
+        ctk.CTkCheckBox(
+            section,
+            text="Enable Gmail import",
+            variable=self.gmail_enabled_var,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+
+        # Trigger label
+        ctk.CTkLabel(section, text="Trigger Label:").grid(row=3, column=0, sticky="w", padx=10, pady=5)
+        self.gmail_trigger_var = ctk.StringVar(value=getattr(self.settings, "gmail_import_trigger_label", "GMD"))
+        ctk.CTkEntry(section, textvariable=self.gmail_trigger_var, width=260).grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
+        # Processed label
+        ctk.CTkLabel(section, text="Processed Label:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
+        self.gmail_moved_var = ctk.StringVar(value=getattr(self.settings, "gmail_import_moved_label", "GMD/moved"))
+        ctk.CTkEntry(section, textvariable=self.gmail_moved_var, width=260).grid(row=4, column=1, sticky="w", padx=10, pady=5)
+
+        # Interval
+        ctk.CTkLabel(section, text="Poll Interval (sec):").grid(row=5, column=0, sticky="w", padx=10, pady=5)
+        self.gmail_interval_var = ctk.StringVar(value=str(getattr(self.settings, "gmail_import_interval_seconds", 60)))
+        ctk.CTkEntry(section, textvariable=self.gmail_interval_var, width=120).grid(row=5, column=1, sticky="w", padx=10, pady=5)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(section, fg_color="transparent")
+        btn_frame.grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=10)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Save Email Import Settings",
+            command=self.save_email_import_settings,
+            fg_color="darkgreen",
+            hover_color="green",
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Run Import Now",
+            command=self.run_email_import_now,
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
+            text="Open Logs",
+            command=self.open_email_import_logs,
+            fg_color="#444444",
+            hover_color="#555555",
+        ).pack(side="left", padx=5)
+
+        # Status label
+        self.gmail_status_label = ctk.CTkLabel(section, text="", wraplength=700)
+        self.gmail_status_label.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+
+    def save_email_import_settings(self):
+        """Save Email Import settings into settings.json."""
+        try:
+            self.settings.gmail_import_enabled = bool(self.gmail_enabled_var.get())
+            self.settings.gmail_import_trigger_label = self.gmail_trigger_var.get().strip() or "GMD"
+            self.settings.gmail_import_moved_label = self.gmail_moved_var.get().strip() or "GMD/moved"
+
+            try:
+                interval = int(self.gmail_interval_var.get().strip() or "60")
+            except Exception:
+                interval = 60
+            if interval < 15:
+                interval = 15
+            self.settings.gmail_import_interval_seconds = interval
+
+            self.settings.save()
+
+            # Apply to launchd (prod) so interval changes take effect automatically
+            try:
+                repo_root = Path(__file__).resolve().parents[3]
+                updater = repo_root / "tools" / "update_launchd_importer.py"
+                python_exe = repo_root / "venv" / "bin" / "python"
+                if updater.exists() and python_exe.exists():
+                    subprocess.run([str(python_exe), str(updater), "--reload", "prod"], check=False)
+            except Exception:
+                pass
+
+            self.gmail_status_label.configure(text="Saved (launchd updated).", text_color="green")
+        except Exception as e:
+            self.gmail_status_label.configure(text=f"Save failed: {e}", text_color="red")
+
+    def run_email_import_now(self):
+        """Run the Gmail importer immediately (in a background thread)."""
+        from tkinter import messagebox
+
+        # Save current UI values first
+        self.save_email_import_settings()
+
+        if not bool(self.gmail_enabled_var.get()):
+            self.gmail_status_label.configure(text="Importer is disabled (enable it first).", text_color="gray")
+            return
+
+        def work():
+            try:
+                from ..gmail_importer import GmailImportConfig, import_labeled_emails
+
+                cfg = GmailImportConfig(
+                    trigger_label_name=self.settings.gmail_import_trigger_label,
+                    moved_label_name=self.settings.gmail_import_moved_label,
+                    who_value="Email",
+                    group_value="EMAIL",
+                    start_offset_days=0,
+                    due_offset_days=1,
+                )
+                n = import_labeled_emails(db_path=self.db_manager.db.db_path, cfg=cfg, dry_run=False)
+                self.gmail_status_label.after(0, lambda: self.gmail_status_label.configure(
+                    text=f"Imported {n} email(s) from {cfg.trigger_label_name}.",
+                    text_color=("green" if n else "gray"),
+                ))
+            except Exception as e:
+                self.gmail_status_label.after(0, lambda: self.gmail_status_label.configure(
+                    text=f"Import failed: {e}",
+                    text_color="red",
+                ))
+
+        self.gmail_status_label.configure(text="Running import…", text_color="gray")
+        threading.Thread(target=work, daemon=True).start()
+
+    def open_email_import_logs(self):
+        """Open the launchd log files for the importer (best-effort)."""
+        # These are the log paths used by our launchd plists.
+        out_log = "/tmp/getmoredone-gmailimport-com.getmoredone.gmailimport.prod.out.log"
+        err_log = "/tmp/getmoredone-gmailimport-com.getmoredone.gmailimport.prod.err.log"
+        try:
+            subprocess.run(["open", out_log], check=False)
+            subprocess.run(["open", err_log], check=False)
+            self.gmail_status_label.configure(text="Opened logs.", text_color="gray")
+        except Exception as e:
+            self.gmail_status_label.configure(text=f"Could not open logs: {e}", text_color="red")
 
     def create_vps_segments_section(self, parent=None):
         """Create VPS Life Segments management section."""
