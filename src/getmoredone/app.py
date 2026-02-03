@@ -226,10 +226,21 @@ class GetMoreDoneApp(ctk.CTk):
 
     def show_settings(self):
         """Show Settings screen."""
-        from .screens.settings import SettingsScreen
-        self.clear_content()
-        self.current_screen = SettingsScreen(self.content_frame, self.db_manager, self)
-        self.current_screen.grid(row=0, column=0, sticky="nsew")
+        try:
+            from .screens.settings import SettingsScreen
+            self.clear_content()
+            self.current_screen = SettingsScreen(self.content_frame, self.db_manager, self)
+            self.current_screen.grid(row=0, column=0, sticky="nsew")
+        except Exception as e:
+            # In packaged apps, import/GUI errors may only go to stderr; show a dialog too.
+            import traceback
+            from tkinter import messagebox
+
+            traceback.print_exc()
+            messagebox.showerror(
+                "Settings Error",
+                f"Could not open Settings.\n\n{e}\n\nDetails were printed to the console/log.",
+            )
 
     def refresh_current_screen(self):
         """Refresh the current screen (useful after edits)."""
