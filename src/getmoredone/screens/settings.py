@@ -1,0 +1,1147 @@
+"""
+Settings screen - application settings and database management.
+"""
+
+import customtkinter as ctk
+import shutil
+from pathlib import Path
+from datetime import datetime
+from typing import TYPE_CHECKING
+from tkinter import filedialog
+
+from ..app_settings import AppSettings
+from ..obsidian_utils import validate_obsidian_setup
+from ..utils.icon_loader import load_volume_icon
+
+if TYPE_CHECKING:
+    from ..db_manager import DatabaseManager
+    from ..app import GetMoreDoneApp
+
+
+class SettingsScreen(ctk.CTkFrame):
+    """Screen for application settings."""
+
+    def __init__(self, parent, db_manager: 'DatabaseManager', app: 'GetMoreDoneApp'):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.app = app
+
+        # Load app settings
+        self.settings = AppSettings.load()
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Create header
+        self.create_header()
+
+        # Create tabbed interface
+        self.create_tabs()
+
+    def create_header(self):
+        """Create header."""
+        header = ctk.CTkFrame(self)
+        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+
+        title = ctk.CTkLabel(
+            header,
+            text="Settings",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title.pack(side="left", padx=10, pady=10)
+
+    def create_tabs(self):
+        """Create tabbed interface for settings."""
+        # Create tabview
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+        # Tab 1: Database Management (Database + Obsidian)
+        db_tab = self.tabview.add("Database Management")
+        db_tab.grid_columnconfigure(0, weight=1)
+        self.create_database_section(db_tab)
+        self.create_obsidian_section(db_tab)
+
+        # Tab 2: Appearance (Appearance + Date Settings)
+        appearance_tab = self.tabview.add("Appearance")
+        appearance_tab.grid_columnconfigure(0, weight=1)
+        self.create_appearance_section(appearance_tab)
+        self.create_date_increment_section(appearance_tab)
+
+        # Tab 3: Timer & Audio
+        timer_tab = self.tabview.add("Timer & Audio")
+        timer_tab.grid_columnconfigure(0, weight=1)
+        self.create_timer_audio_section(timer_tab)
+
+        # Tab 4: Organizational Factors
+        org_tab = self.tabview.add("Organizational Factors")
+        org_tab.grid_columnconfigure(0, weight=1)
+        self.create_organizational_factors_section(org_tab)
+
+        # Tab 5: VPS Life Segments
+        vps_tab = self.tabview.add("VPS Life Segments")
+        vps_tab.grid_columnconfigure(0, weight=1)
+        self.create_vps_segments_section(vps_tab)
+
+    def create_database_section(self, parent=None):
+        """Create database management section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Database Management",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 15))
+
+        # Database path
+        ctk.CTkLabel(section, text="Database Path:").grid(
+            row=1, column=0, sticky="w", padx=10, pady=5)
+        db_path_label = ctk.CTkLabel(
+            section, text=self.db_manager.db.db_path, anchor="w")
+        db_path_label.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+        # Backup button
+        btn_backup = ctk.CTkButton(
+            section,
+            text="Backup Database",
+            command=self.backup_database
+        )
+        btn_backup.grid(row=2, column=0, sticky="w", padx=10, pady=10)
+
+        # Load demo data button
+        btn_demo = ctk.CTkButton(
+            section,
+            text="Load Demo Data",
+            command=self.load_demo_data,
+            fg_color="#444444",
+            hover_color="#555555",
+        )
+        btn_demo.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+
+        # Status label
+        self.db_status_label = ctk.CTkLabel(
+            section, text="", text_color="green")
+        self.db_status_label.grid(
+            row=3, column=1, sticky="w", padx=10, pady=10)
+
+        # Info
+        info_text = (
+            "Backups are saved in the data/ directory with timestamps.\n"
+            "Database file: getmoredone.db\n\n"
+            "Demo Data: adds a small set of sample items to the CURRENT database (no deletion)."
+        )
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray").grid(
+            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        )
+
+    def create_obsidian_section(self, parent=None):
+        """Create Obsidian integration section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Obsidian Integration",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(10, 15))
+
+        # Vault path
+        ctk.CTkLabel(section, text="Vault Path:").grid(
+            row=1, column=0, sticky="w", padx=10, pady=5)
+
+        self.vault_path_var = ctk.StringVar(
+            value=self.settings.obsidian_vault_path or "")
+        vault_path_entry = ctk.CTkEntry(
+            section, textvariable=self.vault_path_var, width=300)
+        vault_path_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+        btn_browse = ctk.CTkButton(
+            section,
+            text="Browse",
+            width=80,
+            command=self.browse_vault_path
+        )
+        btn_browse.grid(row=1, column=2, padx=5, pady=5)
+
+        # Notes subfolder
+        ctk.CTkLabel(section, text="Notes Subfolder:").grid(
+            row=2, column=0, sticky="w", padx=10, pady=5)
+
+        self.subfolder_var = ctk.StringVar(
+            value=self.settings.obsidian_notes_subfolder)
+        subfolder_entry = ctk.CTkEntry(
+            section, textvariable=self.subfolder_var, width=200)
+        subfolder_entry.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+
+        # Save and test buttons
+        btn_frame = ctk.CTkFrame(section, fg_color="transparent")
+        btn_frame.grid(row=3, column=0, columnspan=2,
+                       sticky="w", padx=10, pady=10)
+
+        btn_save = ctk.CTkButton(
+            btn_frame,
+            text="Save Settings",
+            command=self.save_obsidian_settings,
+            fg_color="darkgreen",
+            hover_color="green"
+        )
+        btn_save.pack(side="left", padx=5)
+
+        btn_test = ctk.CTkButton(
+            btn_frame,
+            text="Test Connection",
+            command=self.test_obsidian_connection
+        )
+        btn_test.pack(side="left", padx=5)
+
+        # Status label
+        self.obsidian_status_label = ctk.CTkLabel(
+            section, text="", wraplength=500)
+        self.obsidian_status_label.grid(
+            row=3, column=2, sticky="w", padx=10, pady=10)
+
+        # Info
+        info_text = ("Configure your Obsidian vault to link notes to Action Items and Contacts.\n"
+                     "Notes will be saved to: {vault_path}/{subfolder}/\n"
+                     "The vault must have a .obsidian folder (be a valid Obsidian vault).")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
+        )
+
+    def browse_vault_path(self):
+        """Open folder browser for vault path."""
+        path = filedialog.askdirectory(title="Select Obsidian Vault Folder")
+        if path:
+            self.vault_path_var.set(path)
+
+    def save_obsidian_settings(self):
+        """Save Obsidian settings."""
+        self.settings.obsidian_vault_path = self.vault_path_var.get().strip() or None
+        self.settings.obsidian_notes_subfolder = self.subfolder_var.get().strip() or "GetMoreDone"
+
+        self.settings.save()
+
+        self.obsidian_status_label.configure(
+            text="✓ Settings saved",
+            text_color="green"
+        )
+
+    def test_obsidian_connection(self):
+        """Test Obsidian vault connection."""
+        vault_path = self.vault_path_var.get().strip()
+        subfolder = self.subfolder_var.get().strip() or "GetMoreDone"
+
+        if not vault_path:
+            self.obsidian_status_label.configure(
+                text="❌ Please enter a vault path",
+                text_color="red"
+            )
+            return
+
+        is_valid, message = validate_obsidian_setup(vault_path, subfolder)
+
+        if is_valid:
+            self.obsidian_status_label.configure(
+                text=f"✓ {message}",
+                text_color="green"
+            )
+        else:
+            self.obsidian_status_label.configure(
+                text=f"❌ {message}",
+                text_color="red"
+            )
+
+    def create_appearance_section(self, parent=None):
+        """Create appearance settings section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Appearance",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 15))
+
+        # Theme
+        ctk.CTkLabel(section, text="Theme:").grid(
+            row=1, column=0, sticky="w", padx=10, pady=5)
+
+        theme_var = ctk.StringVar(value="dark")
+        theme_combo = ctk.CTkComboBox(
+            section,
+            values=["dark", "light", "system"],
+            variable=theme_var,
+            width=150,
+            command=lambda choice: ctk.set_appearance_mode(choice)
+        )
+        theme_combo.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+    def create_date_increment_section(self, parent=None):
+        """Create date increment settings section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Date Increment Settings",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 15))
+
+        # Include Saturday checkbox
+        self.include_saturday_var = ctk.BooleanVar(
+            value=self.settings.include_saturday)
+        saturday_checkbox = ctk.CTkCheckBox(
+            section,
+            text="Include Saturday in date calculations (push, +/- buttons)",
+            variable=self.include_saturday_var
+        )
+        saturday_checkbox.grid(
+            row=1, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+        # Include Sunday checkbox
+        self.include_sunday_var = ctk.BooleanVar(
+            value=self.settings.include_sunday)
+        sunday_checkbox = ctk.CTkCheckBox(
+            section,
+            text="Include Sunday in date calculations (push, +/- buttons)",
+            variable=self.include_sunday_var
+        )
+        sunday_checkbox.grid(row=2, column=0, columnspan=2,
+                             sticky="w", padx=10, pady=5)
+
+        # Default list view expansion checkbox
+        self.default_columns_expanded_var = ctk.BooleanVar(
+            value=self.settings.default_columns_expanded)
+        columns_expanded_checkbox = ctk.CTkCheckBox(
+            section,
+            text="Start list views expanded (Today, Upcoming, All Items)",
+            variable=self.default_columns_expanded_var
+        )
+        columns_expanded_checkbox.grid(row=3, column=0, columnspan=2,
+                                       sticky="w", padx=10, pady=5)
+
+        # Save button
+        btn_save = ctk.CTkButton(
+            section,
+            text="Save Settings",
+            command=self.save_date_increment_settings,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=150
+        )
+        btn_save.grid(row=4, column=0, sticky="w", padx=10, pady=10)
+
+        # Status label
+        self.date_increment_status_label = ctk.CTkLabel(
+            section, text="", text_color="green")
+        self.date_increment_status_label.grid(
+            row=4, column=1, sticky="w", padx=10, pady=10)
+
+        # Info
+        info_text = ("These settings control how dates are incremented when using:\n"
+                     "• Push button (move item to next day)\n"
+                     "• +/- buttons in date fields\n"
+                     "• Continue button (duplicate action for next day)\n\n"
+                     "Note: Manual date entry is not affected by these settings.")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        )
+
+    def save_date_increment_settings(self):
+        """Save date increment settings."""
+        self.settings.include_saturday = self.include_saturday_var.get()
+        self.settings.include_sunday = self.include_sunday_var.get()
+        self.settings.default_columns_expanded = self.default_columns_expanded_var.get()
+
+        self.settings.save()
+
+        self.date_increment_status_label.configure(
+            text="✓ Settings saved",
+            text_color="green"
+        )
+
+    def create_timer_audio_section(self, parent=None):
+        """Create timer and audio settings section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Timer Music",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(10, 15))
+
+        # Music folder path
+        ctk.CTkLabel(section, text="Music Folder:").grid(
+            row=1, column=0, sticky="w", padx=10, pady=5)
+
+        self.music_folder_var = ctk.StringVar(
+            value=self.settings.music_folder or "")
+        music_folder_entry = ctk.CTkEntry(
+            section, textvariable=self.music_folder_var, width=300)
+        music_folder_entry.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+        btn_browse = ctk.CTkButton(
+            section,
+            text="Browse",
+            width=80,
+            command=self.browse_music_folder
+        )
+        btn_browse.grid(row=1, column=2, padx=5, pady=5)
+
+        # Music volume slider
+        volume_label_frame = ctk.CTkFrame(section, fg_color="transparent")
+        volume_label_frame.grid(row=2, column=0, sticky="w", padx=10, pady=5)
+
+        # Load and display volume icon
+        volume_icon = load_volume_icon(size=18)
+        if volume_icon:
+            icon_label = ctk.CTkLabel(
+                volume_label_frame, text="", image=volume_icon)
+            icon_label.pack(side="left", padx=(0, 5))
+
+        ctk.CTkLabel(volume_label_frame,
+                     text="Music Volume:").pack(side="left")
+
+        volume_frame = ctk.CTkFrame(section, fg_color="transparent")
+        volume_frame.grid(row=2, column=1, columnspan=2,
+                          sticky="ew", padx=10, pady=5)
+
+        self.music_volume_var = ctk.DoubleVar(value=self.settings.music_volume)
+        self.music_volume_slider = ctk.CTkSlider(
+            volume_frame,
+            from_=0.0,
+            to=1.0,
+            variable=self.music_volume_var,
+            width=200,
+            command=self.update_volume_label
+        )
+        self.music_volume_slider.pack(side="left", padx=(0, 10))
+
+        self.volume_label = ctk.CTkLabel(
+            volume_frame, text=f"{int(self.settings.music_volume * 100)}%", width=40)
+        self.volume_label.pack(side="left")
+
+        # Save button
+        btn_save = ctk.CTkButton(
+            section,
+            text="Save Settings",
+            command=self.save_timer_audio_settings,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=150
+        )
+        btn_save.grid(row=3, column=0, sticky="w", padx=10, pady=10)
+
+        # Status label
+        self.timer_audio_status_label = ctk.CTkLabel(
+            section, text="", text_color="green")
+        self.timer_audio_status_label.grid(
+            row=3, column=1, sticky="w", padx=10, pady=10)
+
+        # Info
+        info_text = ("Select a folder containing music files (MP3, WAV, OGG, FLAC, M4A).\n"
+                     "When you start a timer, a random music file from this folder will play.\n"
+                     "Adjust volume to control music playback loudness (70% recommended).")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
+        )
+
+    def browse_music_folder(self):
+        """Open folder browser for music folder."""
+        path = filedialog.askdirectory(title="Select Music Folder")
+        if path:
+            self.music_folder_var.set(path)
+
+    def update_volume_label(self, value):
+        """Update volume label when slider changes."""
+        percentage = int(float(value) * 100)
+        self.volume_label.configure(text=f"{percentage}%")
+
+    def save_timer_audio_settings(self):
+        """Save timer and audio settings."""
+        self.settings.music_folder = self.music_folder_var.get().strip() or None
+        self.settings.music_volume = self.music_volume_var.get()
+        self.settings.save()
+
+        self.timer_audio_status_label.configure(
+            text=f"✓ Settings saved (Volume: {int(self.settings.music_volume * 100)}%)",
+            text_color="green"
+        )
+
+    def create_organizational_factors_section(self, parent=None):
+        """Create organizational factors management section."""
+        if parent is None:
+            parent = self
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(0, weight=1)
+
+        # Section title
+        ctk.CTkLabel(
+            section,
+            text="Organizational Factors",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 15))
+
+        # Info
+        info_text = ("Manage the values for Group and Category fields.\n"
+                     "Edit values to rename them across all items, or delete values with replacement.")
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=1, column=0, sticky="w", padx=10, pady=5
+        )
+
+        # Create tabs for Groups and Categories
+        tabview = ctk.CTkTabview(section)
+        tabview.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
+
+        # Groups tab
+        groups_tab = tabview.add("Groups")
+        self.create_factor_editor(groups_tab, "group")
+
+        # Categories tab
+        categories_tab = tabview.add("Categories")
+        self.create_factor_editor(categories_tab, "category")
+
+    def create_factor_editor(self, parent, factor_type: str):
+        """Create editor for a specific organizational factor."""
+        parent.grid_columnconfigure(0, weight=1)
+
+        # Scrollable frame for list
+        scroll = ctk.CTkScrollableFrame(parent, height=300)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        scroll.grid_columnconfigure(1, weight=1)
+
+        # Get current values
+        if factor_type == "group":
+            values = self.db_manager.get_distinct_groups()
+        else:
+            values = self.db_manager.get_distinct_categories()
+
+        # Display each value with edit/delete buttons
+        for idx, value in enumerate(values):
+            # Value label
+            value_label = ctk.CTkLabel(scroll, text=value, anchor="w")
+            value_label.grid(row=idx, column=0, sticky="w", padx=10, pady=5)
+
+            # Edit button
+            btn_edit = ctk.CTkButton(
+                scroll,
+                text="Rename",
+                width=80,
+                command=lambda v=value, ft=factor_type: self.edit_factor_value(
+                    v, ft)
+            )
+            btn_edit.grid(row=idx, column=1, padx=5, pady=5)
+
+            # Delete button
+            btn_delete = ctk.CTkButton(
+                scroll,
+                text="Delete",
+                width=80,
+                fg_color="darkred",
+                hover_color="red",
+                command=lambda v=value, ft=factor_type: self.delete_factor_value(
+                    v, ft)
+            )
+            btn_delete.grid(row=idx, column=2, padx=5, pady=5)
+
+        # Add refresh button
+        btn_refresh = ctk.CTkButton(
+            parent,
+            text="Refresh List",
+            command=lambda: self.refresh_organizational_factors()
+        )
+        btn_refresh.grid(row=1, column=0, padx=10, pady=5)
+
+    def edit_factor_value(self, old_value: str, factor_type: str):
+        """Edit (rename) an organizational factor value."""
+        # Create dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Rename {factor_type.capitalize()}")
+        dialog.geometry("500x250")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        # Content
+        ctk.CTkLabel(
+            dialog,
+            text=f"Rename {factor_type.capitalize()}: {old_value}",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(padx=20, pady=(20, 10))
+
+        ctk.CTkLabel(dialog, text="New value:").pack(padx=20, pady=5)
+        new_value_var = ctk.StringVar(value=old_value)
+        entry = ctk.CTkEntry(dialog, textvariable=new_value_var, width=300)
+        entry.pack(padx=20, pady=5)
+
+        # Global replace option
+        replace_var = ctk.BooleanVar(value=True)
+        checkbox = ctk.CTkCheckBox(
+            dialog,
+            text="Replace this value in all existing items",
+            variable=replace_var
+        )
+        checkbox.pack(padx=20, pady=10)
+
+        # Status label
+        status_label = ctk.CTkLabel(dialog, text="")
+        status_label.pack(padx=20, pady=5)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(padx=20, pady=10)
+
+        def save():
+            new_value = new_value_var.get().strip()
+            if not new_value:
+                status_label.configure(
+                    text="Please enter a value", text_color="red")
+                return
+
+            if new_value == old_value:
+                dialog.destroy()
+                return
+
+            try:
+                if replace_var.get():
+                    # Global replace
+                    self.db_manager.update_organizational_factor(
+                        factor_type, old_value, new_value
+                    )
+                    status_label.configure(
+                        text=f"✓ Replaced in all items",
+                        text_color="green"
+                    )
+                else:
+                    status_label.configure(
+                        text="Value not replaced (option unchecked)",
+                        text_color="orange"
+                    )
+
+                # Close dialog after a brief delay
+                dialog.after(1000, dialog.destroy)
+                # Refresh the organizational factors section
+                self.refresh_organizational_factors()
+
+            except Exception as e:
+                status_label.configure(
+                    text=f"Error: {str(e)}", text_color="red")
+
+        ctk.CTkButton(btn_frame, text="Save", command=save).pack(
+            side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel",
+                      command=dialog.destroy).pack(side="left", padx=5)
+
+    def delete_factor_value(self, value: str, factor_type: str):
+        """Delete an organizational factor value."""
+        # Create dialog
+        dialog = ctk.CTkToplevel(self)
+        dialog.title(f"Delete {factor_type.capitalize()}")
+        dialog.geometry("500x300")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+
+        # Content
+        ctk.CTkLabel(
+            dialog,
+            text=f"Delete {factor_type.capitalize()}: {value}",
+            font=ctk.CTkFont(size=14, weight="bold")
+        ).pack(padx=20, pady=(20, 10))
+
+        ctk.CTkLabel(
+            dialog,
+            text="What should happen to items with this value?",
+            wraplength=450
+        ).pack(padx=20, pady=5)
+
+        # Replacement options
+        action_var = ctk.StringVar(value="clear")
+
+        ctk.CTkRadioButton(
+            dialog,
+            text="Clear the value (set to empty)",
+            variable=action_var,
+            value="clear"
+        ).pack(padx=20, pady=5)
+
+        replace_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        replace_frame.pack(padx=20, pady=5)
+
+        ctk.CTkRadioButton(
+            replace_frame,
+            text="Replace with:",
+            variable=action_var,
+            value="replace"
+        ).pack(side="left", padx=5)
+
+        # Get other values for replacement
+        if factor_type == "group":
+            other_values = [
+                v for v in self.db_manager.get_distinct_groups() if v != value]
+        else:
+            other_values = [
+                v for v in self.db_manager.get_distinct_categories() if v != value]
+
+        replacement_var = ctk.StringVar(
+            value=other_values[0] if other_values else "")
+        replacement_combo = ctk.CTkComboBox(
+            replace_frame,
+            values=other_values if other_values else [""],
+            variable=replacement_var,
+            width=200
+        )
+        replacement_combo.pack(side="left", padx=5)
+
+        # Status label
+        status_label = ctk.CTkLabel(dialog, text="")
+        status_label.pack(padx=20, pady=5)
+
+        # Buttons
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(padx=20, pady=10)
+
+        def delete():
+            try:
+                if action_var.get() == "clear":
+                    # Remove the value (set to NULL)
+                    self.db_manager.delete_organizational_factor(
+                        factor_type, value, None
+                    )
+                    status_label.configure(
+                        text=f"✓ Deleted (cleared in all items)",
+                        text_color="green"
+                    )
+                else:
+                    # Replace with another value
+                    replacement = replacement_var.get().strip()
+                    if not replacement:
+                        status_label.configure(
+                            text="Please select a replacement value", text_color="red")
+                        return
+
+                    self.db_manager.delete_organizational_factor(
+                        factor_type, value, replacement
+                    )
+                    status_label.configure(
+                        text=f"✓ Deleted (replaced with '{replacement}')",
+                        text_color="green"
+                    )
+
+                # Close dialog after a brief delay
+                dialog.after(1000, dialog.destroy)
+                # Refresh the organizational factors section
+                self.refresh_organizational_factors()
+
+            except Exception as e:
+                status_label.configure(
+                    text=f"Error: {str(e)}", text_color="red")
+
+        ctk.CTkButton(btn_frame, text="Delete", fg_color="darkred",
+                      hover_color="red", command=delete).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel",
+                      command=dialog.destroy).pack(side="left", padx=5)
+
+    def refresh_organizational_factors(self):
+        """Refresh the organizational factors section."""
+        # Get the Organizational Factors tab
+        org_tab = self.tabview.tab("Organizational Factors")
+
+        # Destroy all children in the tab
+        for child in org_tab.winfo_children():
+            child.destroy()
+
+        # Recreate the section
+        self.create_organizational_factors_section(org_tab)
+
+    def backup_database(self):
+        """Backup the database file."""
+        try:
+            db_path = Path(self.db_manager.db.db_path)
+            if not db_path.exists():
+                self.db_status_label.configure(
+                    text="Database file not found", text_color="red")
+                return
+
+            # Create backup filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = db_path.parent / f"getmoredone_backup_{timestamp}.db"
+
+            # Copy database file
+            shutil.copy2(db_path, backup_path)
+
+            self.db_status_label.configure(
+                text=f"Backup created: {backup_path.name}",
+                text_color="green"
+            )
+
+        except Exception as e:
+            self.db_status_label.configure(
+                text=f"Backup failed: {str(e)}",
+                text_color="red"
+            )
+
+    def load_demo_data(self):
+        """Insert demo data into the CURRENT database (safe additive)."""
+        from tkinter import messagebox
+        try:
+            response = messagebox.askyesno(
+                "Load Demo Data",
+                "This will ADD a small set of sample Action Items to your current database.\n\n"
+                "It will NOT delete any existing items.\n\n"
+                "Continue?",
+                icon='warning'
+            )
+            if not response:
+                return
+
+            from ..demo_data import load_demo_data
+            created = load_demo_data(db_path=self.db_manager.db.db_path)
+
+            self.db_status_label.configure(
+                text=f"Demo data added ({created} items)",
+                text_color="green",
+            )
+
+        except Exception as e:
+            self.db_status_label.configure(
+                text=f"Demo data failed: {str(e)}",
+                text_color="red",
+            )
+
+    def create_vps_segments_section(self, parent=None):
+        """Create VPS Life Segments management section."""
+        if parent is None:
+            parent = self
+
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        section.grid_columnconfigure(0, weight=1)
+        section.grid_rowconfigure(2, weight=1)
+
+        # Section title
+        title_frame = ctk.CTkFrame(section)
+        title_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        title_frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            title_frame,
+            text="VPS Life Segments",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(side="left", padx=10)
+
+        ctk.CTkLabel(
+            title_frame,
+            text="Manage your life segments for Visionary Planning System",
+            font=ctk.CTkFont(size=11),
+            text_color="gray"
+        ).pack(side="left", padx=10)
+
+        # Buttons frame
+        buttons_frame = ctk.CTkFrame(section)
+        buttons_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+
+        ctk.CTkButton(
+            buttons_frame,
+            text="+ New Segment",
+            command=self.create_new_segment,
+            fg_color="green",
+            width=150
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            buttons_frame,
+            text="↻ Refresh",
+            command=self.refresh_segments_list,
+            width=100
+        ).pack(side="left", padx=5)
+
+        # Segments list (scrollable)
+        self.segments_scroll_frame = ctk.CTkScrollableFrame(
+            section, label_text="")
+        self.segments_scroll_frame.grid(
+            row=2, column=0, sticky="nsew", padx=10, pady=10)
+        self.segments_scroll_frame.grid_columnconfigure(0, weight=1)
+
+        # Load segments
+        self.refresh_segments_list()
+
+    def refresh_segments_list(self):
+        """Refresh the segments list display."""
+        # Clear current widgets
+        for widget in self.segments_scroll_frame.winfo_children():
+            widget.destroy()
+
+        # Get all segments (including inactive)
+        segments = self.app.vps_manager.get_all_segments(active_only=False)
+
+        if not segments:
+            label = ctk.CTkLabel(
+                self.segments_scroll_frame,
+                text="No life segments defined. Click '+ New Segment' to create one.",
+                font=ctk.CTkFont(size=12),
+                text_color="gray"
+            )
+            label.grid(row=0, column=0, pady=20)
+            return
+
+        # Display each segment
+        for idx, segment in enumerate(segments):
+            self.create_segment_row(segment, idx)
+
+    def create_segment_row(self, segment: dict, row: int):
+        """Create a row displaying a segment with edit/delete buttons."""
+        frame = ctk.CTkFrame(self.segments_scroll_frame)
+        frame.grid(row=row, column=0, sticky="ew", pady=5, padx=5)
+        frame.grid_columnconfigure(2, weight=1)
+
+        # Color indicator
+        color_frame = ctk.CTkFrame(
+            frame, width=40, height=40, fg_color=segment['color_hex'])
+        color_frame.grid(row=0, column=0, rowspan=2, padx=10, pady=5)
+        color_frame.grid_propagate(False)
+
+        # Segment name
+        name_label = ctk.CTkLabel(
+            frame,
+            text=f"🎯 {segment['name']}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
+        )
+        name_label.grid(row=0, column=1, columnspan=2,
+                        sticky="w", padx=10, pady=(5, 0))
+
+        # Segment description
+        desc_label = ctk.CTkLabel(
+            frame,
+            text=segment['description'] or "No description",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+            anchor="w"
+        )
+        desc_label.grid(row=1, column=1, columnspan=2,
+                        sticky="w", padx=10, pady=(0, 5))
+
+        # Status badge
+        status_text = "✓ Active" if segment['is_active'] else "○ Inactive"
+        status_color = "green" if segment['is_active'] else "gray"
+        status_label = ctk.CTkLabel(
+            frame,
+            text=status_text,
+            font=ctk.CTkFont(size=10),
+            text_color=status_color
+        )
+        status_label.grid(row=0, column=3, padx=5, pady=5)
+
+        # Edit button
+        edit_btn = ctk.CTkButton(
+            frame,
+            text="✎ Edit",
+            command=lambda s=segment: self.edit_segment(s),
+            width=80
+        )
+        edit_btn.grid(row=0, column=4, rowspan=2, padx=5, pady=5)
+
+        # Delete button
+        delete_btn = ctk.CTkButton(
+            frame,
+            text="🗑 Delete",
+            command=lambda s=segment: self.delete_segment(s),
+            fg_color="darkred",
+            hover_color="red",
+            width=80
+        )
+        delete_btn.grid(row=0, column=5, rowspan=2, padx=5, pady=5)
+
+    def create_new_segment(self):
+        """Open dialog to create a new segment."""
+        from .vps_segment_editor import VPSSegmentEditorDialog
+        dialog = VPSSegmentEditorDialog(self, self.app.vps_manager)
+        self.wait_window(dialog)
+        self.refresh_segments_list()
+
+    def edit_segment(self, segment: dict):
+        """Open dialog to edit a segment."""
+        from .vps_segment_editor import VPSSegmentEditorDialog
+        dialog = VPSSegmentEditorDialog(self, self.app.vps_manager, segment)
+        self.wait_window(dialog)
+        self.refresh_segments_list()
+
+    def delete_segment(self, segment: dict):
+        """Delete a segment after comprehensive check and typed confirmation."""
+        from tkinter import messagebox
+        import customtkinter as ctk
+
+        # First check: Get comprehensive count of all related records
+        success, counts = self.app.vps_manager.delete_segment(segment['id'])
+
+        if not success:
+            # Has child records - show detailed breakdown and require typed confirmation
+            total = sum(counts.values())
+
+            # Build detailed message
+            breakdown = "\n".join(
+                [f"  • {label}: {count}" for label, count in counts.items()])
+
+            warning_msg = (
+                f"⚠️  CASCADE DELETE WARNING  ⚠️\n\n"
+                f"Segment '{segment['name']}' has {total} linked records:\n\n"
+                f"{breakdown}\n\n"
+                f"If you proceed, ALL {total} records will be PERMANENTLY DELETED.\n\n"
+                f"This includes all child records in the hierarchy:\n"
+                f"Visions → Plans → Initiatives → Tactics → Actions\n\n"
+                f"⚠️  THIS CANNOT BE UNDONE  ⚠️\n\n"
+                f"To proceed with deletion, type exactly:\n"
+                f"yes proceed"
+            )
+
+            # Create custom dialog for typed confirmation
+            dialog = ctk.CTkToplevel(self)
+            dialog.title("Confirm Cascade Deletion")
+            dialog.geometry("600x500")
+            dialog.transient(self)
+            dialog.grab_set()
+
+            # Warning message
+            warning_frame = ctk.CTkFrame(dialog, fg_color="#8B0000")
+            warning_frame.pack(fill="x", padx=20, pady=(20, 10))
+
+            ctk.CTkLabel(
+                warning_frame,
+                text=warning_msg,
+                justify="left",
+                text_color="white",
+                font=("Arial", 12)
+            ).pack(padx=20, pady=20)
+
+            # Typed confirmation entry
+            entry_frame = ctk.CTkFrame(dialog)
+            entry_frame.pack(fill="x", padx=20, pady=10)
+
+            ctk.CTkLabel(
+                entry_frame,
+                text="Type 'yes proceed' to confirm:",
+                font=("Arial", 12, "bold")
+            ).pack(anchor="w", padx=10, pady=(10, 5))
+
+            confirmation_var = ctk.StringVar()
+            entry = ctk.CTkEntry(
+                entry_frame,
+                textvariable=confirmation_var,
+                width=400,
+                height=35,
+                font=("Arial", 12)
+            )
+            entry.pack(padx=10, pady=(0, 10))
+            entry.focus()
+
+            # Status label
+            status_label = ctk.CTkLabel(
+                dialog,
+                text="",
+                text_color="red",
+                font=("Arial", 11)
+            )
+            status_label.pack(pady=5)
+
+            # Button frame
+            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            btn_frame.pack(pady=20)
+
+            def proceed_deletion():
+                typed_text = confirmation_var.get().strip()
+                if typed_text == "yes proceed":
+                    dialog.destroy()
+                    # Actually delete by clearing all records first
+                    try:
+                        # Since we can't delete with children, we need to tell user
+                        # to remove records manually
+                        messagebox.showwarning(
+                            "Manual Deletion Required",
+                            f"To delete segment '{segment['name']}':\n\n"
+                            f"1. Go to VPS Planning screen\n"
+                            f"2. Delete all {total} records in this segment\n"
+                            f"   (Start with Week Actions, work up to TL Visions)\n"
+                            f"3. Return here to delete the empty segment\n\n"
+                            f"This manual process prevents accidental data loss."
+                        )
+                    except Exception as e:
+                        messagebox.showerror(
+                            "Error", f"Deletion failed: {str(e)}")
+                else:
+                    status_label.configure(
+                        text="❌ Incorrect confirmation text. Type exactly: yes proceed"
+                    )
+
+            def cancel_deletion():
+                dialog.destroy()
+
+            # Buttons
+            ctk.CTkButton(
+                btn_frame,
+                text="Cancel",
+                command=cancel_deletion,
+                width=120,
+                fg_color="gray"
+            ).pack(side="left", padx=5)
+
+            ctk.CTkButton(
+                btn_frame,
+                text="Proceed with Deletion",
+                command=proceed_deletion,
+                width=180,
+                fg_color="#8B0000",
+                hover_color="#660000"
+            ).pack(side="left", padx=5)
+
+            # Bind Enter key
+            entry.bind('<Return>', lambda e: proceed_deletion())
+            entry.bind('<Escape>', lambda e: cancel_deletion())
+
+        else:
+            # No child records - safe to delete with simple confirmation
+            response = messagebox.askyesno(
+                "Confirm Deletion",
+                f"Delete segment '{segment['name']}'?\n\n"
+                f"This segment has no linked records.",
+                icon='warning'
+            )
+
+            if response:
+                messagebox.showinfo(
+                    "Success",
+                    f"Segment '{segment['name']}' has been deleted."
+                )
+                self.refresh_segments_list()

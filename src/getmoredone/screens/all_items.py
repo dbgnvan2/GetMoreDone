@@ -1,0 +1,359 @@
+"""
+All Items screen - table view of all action items.
+"""
+
+import customtkinter as ctk
+from typing import TYPE_CHECKING
+
+from ..models import Status
+from ..app_settings import AppSettings
+
+if TYPE_CHECKING:
+    from ..db_manager import DatabaseManager
+    from ..app import GetMoreDoneApp
+
+
+class AllItemsScreen(ctk.CTkFrame):
+    """Screen showing all items in a table format."""
+
+    def __init__(self, parent, db_manager: 'DatabaseManager', app: 'GetMoreDoneApp'):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.app = app
+        self.settings = AppSettings.load()
+        # Track column visibility state (use setting)
+        self.columns_expanded = self.settings.default_columns_expanded
+        self.search_query = ""  # Track search query
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Create header
+        self.create_header()
+
+        # Create scrollable frame for items
+        self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="")
+        self.scroll_frame.grid(
+            row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.scroll_frame.grid_columnconfigure(0, weight=1)
+
+        # Load items
+        self.refresh()
+
+    def create_header(self):
+        """Create header with filters and controls."""
+        header = ctk.CTkFrame(self)
+        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        header.grid_columnconfigure(7, weight=1)
+
+        # Title
+        title = ctk.CTkLabel(
+            header,
+            text="All Items",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title.grid(row=0, column=0, padx=10, pady=10)
+
+        # Search entry
+        self.search_entry = ctk.CTkEntry(
+            header,
+            placeholder_text="Search title, description, next action...",
+            width=200
+        )
+        self.search_entry.grid(row=0, column=1, padx=5, pady=10)
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        # Search button
+        btn_search = ctk.CTkButton(
+            header,
+            text="Search",
+            width=80,
+            command=self.perform_search
+        )
+        btn_search.grid(row=0, column=2, padx=5, pady=10)
+
+        # Status filter
+        ctk.CTkLabel(header, text="Status:").grid(
+            row=0, column=3, padx=(20, 5), pady=10)
+        self.status_var = ctk.StringVar(value="open")
+        self.status_combo = ctk.CTkComboBox(
+            header,
+            values=["open", "completed", "canceled", "all"],
+            variable=self.status_var,
+            width=120,
+            command=lambda _: self.refresh()
+        )
+        self.status_combo.grid(row=0, column=4, padx=5, pady=10)
+
+        # Who filter
+        ctk.CTkLabel(header, text="Who:").grid(
+            row=0, column=5, padx=(20, 5), pady=10)
+        who_values = ["All"] + self.db_manager.get_distinct_who_values()
+        self.who_var = ctk.StringVar(value="All")
+        self.who_combo = ctk.CTkComboBox(
+            header,
+            values=who_values,
+            variable=self.who_var,
+            width=150,
+            command=lambda _: self.refresh()
+        )
+        self.who_combo.grid(row=0, column=6, padx=5, pady=10)
+
+        # Expand/Collapse button
+        self.expand_collapse_btn = ctk.CTkButton(
+            header,
+            text="Collapse" if self.columns_expanded else "Expand",
+            width=100,
+            command=self.toggle_columns
+        )
+        self.expand_collapse_btn.grid(row=0, column=8, padx=5, pady=10)
+
+        # New Item button
+        btn_new = ctk.CTkButton(
+            header,
+            text="+ New Item",
+            command=self.create_new_item
+        )
+        btn_new.grid(row=0, column=9, padx=10, pady=10)
+
+    def perform_search(self):
+        """Perform search and update the view."""
+        self.search_query = self.search_entry.get().strip()
+        self.refresh()
+
+    def toggle_columns(self):
+        """Toggle between expanded and collapsed column view."""
+        self.columns_expanded = not self.columns_expanded
+        self.expand_collapse_btn.configure(
+            text="Expand" if not self.columns_expanded else "Collapse")
+        self.refresh()
+
+    def refresh(self):
+        """Refresh the list of items."""
+        # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
+        grid_info = self.scroll_frame.grid_info()
+        self.scroll_frame.grid_remove()
+
+        try:
+            # Clear current items
+            for widget in self.scroll_frame.winfo_children():
+                widget.destroy()
+
+            # Get filters
+            status_filter = None if self.status_var.get() == "all" else self.status_var.get()
+            who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+
+            # Get items (use search if query exists, otherwise get all)
+            if self.search_query:
+                items = self.db_manager.search_items(self.search_query)
+                # Apply filters to search results
+                if status_filter:
+                    items = [
+                        item for item in items if item.status == status_filter]
+                if who_filter:
+                    items = [item for item in items if item.who == who_filter]
+            else:
+                items = self.db_manager.get_all_items(
+                    status_filter=status_filter,
+                    who_filter=who_filter,
+                    sort_by="start_date",
+                    sort_desc=False
+                )
+
+            if not items:
+                label = ctk.CTkLabel(
+                    self.scroll_frame,
+                    text="No items found",
+                    font=ctk.CTkFont(size=14)
+                )
+                label.grid(row=0, column=0, pady=20)
+                return
+
+            # Create table header
+            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+            header_frame.grid(row=0, column=0, sticky="ew",
+                              pady=(0, 5), padx=5)
+            header_frame.grid_columnconfigure(1, weight=1)
+
+            headers = ["✓", "Title", "Who", "Start", "Due",
+                       "Priority", "Est. Time", "Status", "Actions"]
+            col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0]
+
+            for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
+                header_frame.grid_columnconfigure(col, weight=weight)
+                ctk.CTkLabel(
+                    header_frame,
+                    text=header_text,
+                    font=ctk.CTkFont(weight="bold")
+                ).grid(row=0, column=col, padx=5, pady=5, sticky="w")
+
+            # Create item rows
+            for idx, item in enumerate(items, start=1):
+                # Background colors: grey for completed, red for critical open items
+                if item.status == Status.COMPLETED:
+                    bg_color = "gray30"
+                elif item.importance == 20 or item.urgency == 20:
+                    bg_color = "darkred"
+                else:
+                    bg_color = None
+                item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+                item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
+                item_frame.grid_columnconfigure(1, weight=1)
+
+                # Checkbox
+                if item.status == Status.OPEN:
+                    var = ctk.BooleanVar(value=False)
+                    checkbox = ctk.CTkCheckBox(
+                        item_frame,
+                        text="",
+                        variable=var,
+                        width=30,
+                        command=lambda i=item.id: self.complete_item(i)
+                    )
+                    checkbox.grid(row=0, column=0, padx=5, pady=5)
+                else:
+                    ctk.CTkLabel(item_frame, text="✓").grid(
+                        row=0, column=0, padx=5, pady=5)
+
+                # Title
+                ctk.CTkLabel(
+                    item_frame,
+                    text=item.title,
+                    anchor="w"
+                ).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+                # Who
+                ctk.CTkLabel(item_frame, text=item.who, width=100).grid(
+                    row=0, column=2, padx=5, pady=5)
+
+                # Start date
+                start_text = item.start_date or "-"
+                if item.start_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(item.start_date)
+                        start_text = dt.strftime("%m/%d")
+                    except:
+                        pass
+                ctk.CTkLabel(
+                    item_frame,
+                    text=start_text,
+                    width=60,
+                    text_color="lightblue"
+                ).grid(row=0, column=3, padx=5, pady=5)
+
+                # Due date
+                due_text = item.due_date or "-"
+                if item.due_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(item.due_date)
+                        due_text = dt.strftime("%m/%d")
+                    except:
+                        pass
+                ctk.CTkLabel(
+                    item_frame,
+                    text=due_text,
+                    width=60,
+                    text_color="orange"
+                ).grid(row=0, column=4, padx=5, pady=5)
+
+                # Priority
+                ctk.CTkLabel(
+                    item_frame,
+                    text=str(item.priority_score),
+                    width=80
+                ).grid(row=0, column=5, padx=5, pady=5)
+
+                # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
+                time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
+                ctk.CTkLabel(
+                    item_frame,
+                    text=time_text,
+                    width=60,
+                    text_color="lightyellow"
+                ).grid(row=0, column=6, padx=5, pady=5)
+
+                # Factor chips (I, U, E, V) - only shown when expanded
+                col_offset = 0
+                if self.columns_expanded:
+                    factors_frame = ctk.CTkFrame(
+                        item_frame, fg_color="transparent")
+                    factors_frame.grid(row=0, column=7, padx=5, pady=5)
+                    factor_col = 0
+                    if item.importance:
+                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    if item.urgency:
+                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    if item.size:
+                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    if item.value:
+                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
+                            row=0, column=factor_col, padx=2)
+                        factor_col += 1
+                    col_offset = 1
+
+                # Status
+                ctk.CTkLabel(item_frame, text=item.status, width=80).grid(
+                    row=0, column=7+col_offset, padx=5, pady=5)
+
+                # Action buttons
+                col = 8 + col_offset
+                # Timer button (only for open items)
+                if item.status == Status.OPEN:
+                    btn_timer = ctk.CTkButton(
+                        item_frame,
+                        text="⏱ Timer",
+                        width=70,
+                        fg_color="darkgreen",
+                        hover_color="green",
+                        command=lambda i=item.id: self.start_timer(i)
+                    )
+                    btn_timer.grid(row=0, column=col, padx=2, pady=5)
+                    col += 1
+
+                # Edit button
+                btn_edit = ctk.CTkButton(
+                    item_frame,
+                    text="Edit",
+                    width=60,
+                    command=lambda i=item.id: self.edit_item(i)
+                )
+                btn_edit.grid(row=0, column=col, padx=2, pady=5)
+        finally:
+            # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
+            self.scroll_frame.grid(**grid_info)
+
+    def complete_item(self, item_id: str):
+        """Mark item as complete."""
+        self.db_manager.complete_action_item(item_id)
+        self.refresh()
+
+    def start_timer(self, item_id: str):
+        """Start timer for an action item."""
+        # Get the action item
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+
+        # Open timer window
+        from .timer_window import TimerWindow
+        timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
+
+    def edit_item(self, item_id: str):
+        """Open item editor."""
+        from .item_editor import ItemEditorDialog
+        ItemEditorDialog(self, self.db_manager, item_id,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+
+    def create_new_item(self):
+        """Open item editor for new item."""
+        from .item_editor import ItemEditorDialog
+        ItemEditorDialog(self, self.db_manager,
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)

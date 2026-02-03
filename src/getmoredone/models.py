@@ -1,0 +1,229 @@
+"""
+Data models for GetMoreDone application.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Optional
+from uuid import uuid4
+
+
+@dataclass
+class Contact:
+    """Represents a contact/client."""
+
+    name: str
+    contact_type: str = "Contact"  # Client, Contact, or Personal
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    notes: Optional[str] = None
+    is_active: bool = True
+    id: Optional[int] = None  # None for new contacts, set by DB
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class ActionItem:
+    """Represents a trackable action item."""
+
+    who: str
+    title: str
+    description: Optional[str] = None
+    next_action: Optional[str] = None
+    contact_id: Optional[int] = None  # References contacts.id
+    parent_id: Optional[str] = None  # References action_items.id for hierarchical relationships
+    start_date: Optional[str] = None
+    due_date: Optional[str] = None
+    original_due_date: Optional[str] = None  # First due date value, set once
+    is_meeting: bool = False
+    meeting_start_time: Optional[str] = None  # ISO datetime for when meeting is scheduled
+    importance: Optional[int] = None
+    urgency: Optional[int] = None
+    size: Optional[int] = None
+    value: Optional[int] = None
+    priority_score: int = 0
+    group: Optional[str] = None
+    category: Optional[str] = None
+    planned_minutes: Optional[int] = None
+    status: str = "open"
+    completed_at: Optional[str] = None
+    week_action_id: Optional[str] = None  # References week_actions.id for VPS integration
+    segment_description_id: Optional[str] = None  # References segment_descriptions.id for VPS integration
+    is_habit: bool = False  # VPS: Indicates if this is a habit item
+    percent_complete: int = 0  # VPS: Completion percentage (0-100)
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def calculate_priority_score(self) -> int:
+        """
+        Calculate priority score as product of all factors.
+        Returns 0 if any factor is 0 or None.
+        """
+        factors = [
+            self.importance or 0,
+            self.urgency or 0,
+            self.size or 0,
+            self.value or 0
+        ]
+
+        if any(f == 0 for f in factors):
+            return 0
+
+        score = 1
+        for f in factors:
+            score *= f
+        return score
+
+    def update_priority_score(self):
+        """Update the priority_score field based on current factors."""
+        self.priority_score = self.calculate_priority_score()
+
+    def validate_and_adjust_dates(self):
+        """
+        Validate and adjust dates according to business rules:
+        1. Due date must be >= start date
+        2. If due date is blank or < start date, set it to start date
+        3. Set original_due_date if this is the first time due_date has a value
+        """
+        # If we have a start date and due date
+        if self.start_date and self.due_date:
+            # Ensure due date is not before start date
+            if self.due_date < self.start_date:
+                self.due_date = self.start_date
+
+        # If we have a start date but no due date, set due to start
+        elif self.start_date and not self.due_date:
+            self.due_date = self.start_date
+
+        # Set original_due_date if it's None and we have a due_date
+        if self.original_due_date is None and self.due_date:
+            self.original_due_date = self.due_date
+
+
+@dataclass
+class ItemLink:
+    """Represents a link/attachment on an action item."""
+
+    item_id: str
+    url: str
+    label: Optional[str] = None
+    link_type: str = "url"  # "url", "file", "obsidian_note"
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class ContactLink:
+    """Represents a link/attachment on a contact."""
+
+    contact_id: int
+    url: str
+    label: Optional[str] = None
+    link_type: str = "url"  # "url", "file", "obsidian_note"
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class Defaults:
+    """Represents default values for action item fields."""
+
+    scope_type: str  # "system", "who", or "contact"
+    scope_key: Optional[str] = None  # None for system, who value for who-scope
+    contact_id: Optional[int] = None  # References contacts.id for contact-scope defaults
+    who: Optional[str] = None
+    importance: Optional[int] = None
+    urgency: Optional[int] = None
+    size: Optional[int] = None
+    value: Optional[int] = None
+    group: Optional[str] = None
+    category: Optional[str] = None
+    planned_minutes: Optional[int] = None
+    start_offset_days: Optional[int] = None
+    due_offset_days: Optional[int] = None
+
+
+@dataclass
+class RescheduleHistory:
+    """Represents a reschedule event for an action item."""
+
+    item_id: str
+    from_start: Optional[str] = None
+    from_due: Optional[str] = None
+    to_start: Optional[str] = None
+    to_due: Optional[str] = None
+    reason: Optional[str] = None
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class TimeBlock:
+    """Represents a planned time block."""
+
+    block_date: str  # YYYY-MM-DD
+    start_time: str  # HH:MM
+    end_time: str  # HH:MM
+    planned_minutes: int
+    item_id: Optional[str] = None
+    label: Optional[str] = None
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class WorkLog:
+    """Represents actual work performed on an action item."""
+
+    item_id: str
+    started_at: str  # ISO datetime
+    minutes: int
+    ended_at: Optional[str] = None  # ISO datetime
+    note: Optional[str] = None
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+# Priority factor constants
+class PriorityFactors:
+    """Constants for priority factor values."""
+
+    IMPORTANCE = {
+        "Critical": 20,
+        "High": 10,
+        "Medium": 5,
+        "Low": 1
+    }
+
+    URGENCY = {
+        "Critical": 20,
+        "High": 10,
+        "Medium": 5,
+        "Low": 1
+    }
+
+    SIZE = {
+        "XL": 16,
+        "L": 8,
+        "M": 4,
+        "S": 2
+    }
+
+    VALUE = {
+        "XL": 16,
+        "L": 8,
+        "M": 4,
+        "S": 2
+    }
+
+
+# Status constants
+class Status:
+    """Valid status values for action items."""
+
+    OPEN = "open"
+    COMPLETED = "completed"
+    CANCELED = "canceled"

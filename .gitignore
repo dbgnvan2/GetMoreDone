@@ -1,0 +1,31 @@
+venv/
+audio/
+__pycache/
+.DS_Store
+./audio/
+./venv/
+
+
+# Security and Data
+.env
+*.log
+*.sqlite
+# Ignore folders anywhere in the directory tree
+**/__pycache__/
+venv/
+audio/
+data/
+
+# Ignore specific file types anywhere
+*.py[cod]
+*$py.class
+*.db
+*.json
+.DS_Store
+
+# Ignore specific duplicate/temp files
+.gitignore copy
+
+# PyInstaller
+/build/
+/dist/

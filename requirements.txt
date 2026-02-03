@@ -1,0 +1,32 @@
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# GUI Libraries (uncomment the one you want to use)
+# Option 1: CustomTkinter (modern themed tkinter)
+customtkinter>=5.2.0
+tkcalendar>=1.6.1  # Calendar date picker widget
+pygame>=2.5.0  # Audio playback for timer music
+
+# Option 2: PyQt6 (more powerful, professional)
+# PyQt6>=6.6.0
+# PyQt6-sip>=13.6.0
+
+# Option 3: Kivy (cross-platform, touch-friendly)
+# kivy>=2.2.0
+
+# Database
+# SQLite is built into Python, no additional package needed
+
+# Utilities
+python-dotenv>=1.0.0
+platformdirs>=4.0.0  # Correct per-OS user data dirs (DB/settings) + PyInstaller-friendly
+Pillow>=10.0.0  # Image handling for icons
+cairosvg>=2.7.0  # SVG to PNG conversion for icon rendering
+
+# Google Calendar Integration
+google-auth>=2.25.0
+google-auth-oauthlib>=1.2.0
+google-auth-httplib2>=0.2.0
+google-api-python-client>=2.110.0
+tzlocal>=5.0.0  # Automatic timezone detection for calendar events
