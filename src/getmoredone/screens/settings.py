@@ -113,17 +113,30 @@ class SettingsScreen(ctk.CTkFrame):
         )
         btn_backup.grid(row=2, column=0, sticky="w", padx=10, pady=10)
 
+        # Load demo data button
+        btn_demo = ctk.CTkButton(
+            section,
+            text="Load Demo Data",
+            command=self.load_demo_data,
+            fg_color="#444444",
+            hover_color="#555555",
+        )
+        btn_demo.grid(row=2, column=1, sticky="w", padx=10, pady=10)
+
         # Status label
         self.db_status_label = ctk.CTkLabel(
             section, text="", text_color="green")
         self.db_status_label.grid(
-            row=2, column=1, sticky="w", padx=10, pady=10)
+            row=3, column=1, sticky="w", padx=10, pady=10)
 
         # Info
-        info_text = ("Backups are saved in the data/ directory with timestamps.\n"
-                     "Database file: getmoredone.db")
+        info_text = (
+            "Backups are saved in the data/ directory with timestamps.\n"
+            "Database file: getmoredone.db\n\n"
+            "Demo Data: adds a small set of sample items to the CURRENT database (no deletion)."
+        )
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray").grid(
-            row=3, column=0, columnspan=2, sticky="w", padx=10, pady=5
+            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
 
     def create_obsidian_section(self, parent=None):
@@ -798,6 +811,34 @@ class SettingsScreen(ctk.CTkFrame):
             self.db_status_label.configure(
                 text=f"Backup failed: {str(e)}",
                 text_color="red"
+            )
+
+    def load_demo_data(self):
+        """Insert demo data into the CURRENT database (safe additive)."""
+        from tkinter import messagebox
+        try:
+            response = messagebox.askyesno(
+                "Load Demo Data",
+                "This will ADD a small set of sample Action Items to your current database.\n\n"
+                "It will NOT delete any existing items.\n\n"
+                "Continue?",
+                icon='warning'
+            )
+            if not response:
+                return
+
+            from ..demo_data import load_demo_data
+            created = load_demo_data(db_path=self.db_manager.db.db_path)
+
+            self.db_status_label.configure(
+                text=f"Demo data added ({created} items)",
+                text_color="green",
+            )
+
+        except Exception as e:
+            self.db_status_label.configure(
+                text=f"Demo data failed: {str(e)}",
+                text_color="red",
             )
 
     def create_vps_segments_section(self, parent=None):
