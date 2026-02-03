@@ -53,6 +53,12 @@ class AppSettings:
     # Default state for list views (Today, Upcoming, All Items)
     default_columns_expanded: bool = False
 
+    # Email → Action Items (Gmail importer)
+    gmail_import_enabled: bool = True
+    gmail_import_trigger_label: str = "GMD"
+    gmail_import_moved_label: str = "GMD/moved"
+    gmail_import_interval_seconds: int = 60
+
     @classmethod
     def get_settings_path(cls) -> Path:
         """Get the path to the settings file (user-writable)."""
