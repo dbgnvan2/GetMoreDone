@@ -2,6 +2,8 @@
 
 A comprehensive Python task management application with GUI interface and SQLite database. Built to help you prioritize tasks, track time, and improve productivity through data-driven insights.
 
+User guide: `docs/User_Guide.md`
+
 ## Features
 
 ✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Effort-Cost × Value
@@ -16,9 +18,9 @@ A comprehensive Python task management application with GUI interface and SQLite
 📈 **Statistics** - Analyze planned vs actual time with insights by effort-cost and category
 🔄 **Reschedule History** - Never lose track of why dates changed
 📆 **Google Calendar Integration** - Create calendar events directly from action items with automatic linking
-� **Visionary Planning System (VPS)** - Strategic long-term planning from 5-year visions down to weekly actions with life segment organization
+🧭 **Visionary Planning System (VPS)** - Strategic long-term planning from 5-year visions down to weekly actions with life segment organization
 🎵 **Music Playback** - Background music during work sessions with volume control and format conversion tools
-✨ **11 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, VPS Planning, Plan, Completed, Contacts, Defaults, Stats, Settings
+✨ **12 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, VPS Planning, Plan, Drag Schedule, Completed, Contacts, Defaults, Stats, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
 🖥️ **Responsive UI** - Two-column layout that adapts to window size, floating timer window

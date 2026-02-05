@@ -16,6 +16,15 @@ Main project documentation including:
 - Recent improvements (VPS, Timer, Contacts, etc.)
 - **NEW: Testing section** with test commands and coverage
 
+### docs/User_Guide.md (NEW)
+
+Current end-user documentation including:
+
+- Screen-by-screen walkthrough
+- What/why for buttons and controls
+- Item Editor, Timer, Calendar, and Settings details
+- Drag Schedule usage
+
 ### GetMoreDone_MasterSpec_SQLite_v1.md (19KB)
 
 Complete specification including:

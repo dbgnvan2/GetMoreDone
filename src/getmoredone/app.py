@@ -56,7 +56,7 @@ class GetMoreDoneApp(ctk.CTk):
         """Create navigation sidebar."""
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(10, weight=1)
+        self.sidebar.grid_rowconfigure(13, weight=1)
 
         # Logo/title
         self.logo_label = ctk.CTkLabel(
@@ -113,40 +113,47 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_plan.grid(row=6, column=0, padx=20, pady=10)
 
+        self.btn_drag_schedule = ctk.CTkButton(
+            self.sidebar,
+            text="Drag Schedule",
+            command=self.show_drag_schedule
+        )
+        self.btn_drag_schedule.grid(row=7, column=0, padx=20, pady=10)
+
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
             command=self.show_completed
         )
-        self.btn_completed.grid(row=7, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=8, column=0, padx=20, pady=10)
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
             text="Contacts",
             command=self.show_contacts
         )
-        self.btn_contacts.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_contacts.grid(row=9, column=0, padx=20, pady=10)
 
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
             command=self.show_defaults
         )
-        self.btn_defaults.grid(row=9, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=10, column=0, padx=20, pady=10)
 
         self.btn_stats = ctk.CTkButton(
             self.sidebar,
             text="Stats",
             command=self.show_stats
         )
-        self.btn_stats.grid(row=10, column=0, padx=20, pady=10)
+        self.btn_stats.grid(row=11, column=0, padx=20, pady=10)
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
             text="Settings",
             command=self.show_settings
         )
-        self.btn_settings.grid(row=11, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=12, column=0, padx=20, pady=10)
 
     def clear_content(self):
         """Clear current screen from content area."""
@@ -194,6 +201,13 @@ class GetMoreDoneApp(ctk.CTk):
         from .screens.plan import PlanScreen
         self.clear_content()
         self.current_screen = PlanScreen(self.content_frame, self.db_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_drag_schedule(self):
+        """Show Drag Schedule screen."""
+        from .screens.drag_schedule import DragScheduleScreen
+        self.clear_content()
+        self.current_screen = DragScheduleScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_completed(self):
