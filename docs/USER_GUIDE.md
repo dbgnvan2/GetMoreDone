@@ -1,542 +1,403 @@
-# GetMoreDone — User Guide
+# GetMoreDone User Guide
 
-This guide explains *how to use* GetMoreDone (GMD): what each screen does, how task hierarchy and linking work, and what each major button does.
+Note: The current user documentation is in `docs/User_Guide.md`. This file is kept for historical reference and may be out of date.
 
-> Scope: end-user workflow and UI behavior inferred from the app’s README and the GUI code in `src/getmoredone/screens/*.py`.
+This guide explains what each screen, button, and workflow does, and why you might use it. It is aligned to the current UI and screen code in `src/getmoredone/screens`.
+
+Last updated: 2026-02-05
 
 ---
 
 ## 1) What GetMoreDone is for
 
-GetMoreDone is a desktop task manager designed for **prioritization + execution**:
+GetMoreDone is a desktop task manager focused on prioritization and execution.
 
-- **One place for your action items** (tasks / next actions / reminders)
-- **A consistent priority score** (Importance × Urgency × Effort-Cost × Value)
-- **Planning & follow-through** (Today / Upcoming / planning time blocks)
-- **Time tracking** (planned minutes vs logged minutes via the Timer)
-- **Linking & context**
-  - link tasks to **Contacts** (clients/people)
-  - attach **links** (e.g., Obsidian notes, Google Calendar events)
-- **Hierarchy**
-  - create parent → child tasks (unlimited depth)
-- **VPS (Visionary Planning System)**
-  - organize life planning from long-term visions down to weekly actions, grouped by life segments
+- What: A single place to capture action items, assign priorities, and schedule work.
+- Why: It helps you decide what to do next, track progress, and keep long-term planning connected to daily execution.
 
 ---
 
 ## 2) Core concepts
 
 ### Action Items (tasks)
-An **Action Item** is the central record you work with. Typical fields:
+- What: The central record you work with. Required fields: `Who` and `Title`.
+- Why: A consistent structure makes filtering, scheduling, and prioritization reliable.
 
-- **Who** (required): the person/client/context; can be linked to a Contact
-- **Title** (required)
-- **Description** (optional): your main notes field (what/why/context). This is where long text (e.g. an email body) should go.
-- **Next Action** (optional): a short, action-focused scratchpad (often one task per line). You can generate child tasks from it using **+ Create Tasks**.
-- **Dates**
-  - **Start Date** (optional)
-  - **Due Date** (optional)
-  - business rule: due date should not be earlier than start date
-- **Planned Minutes** (optional)
-- **Priority factors**: Importance, Urgency, Effort-Cost (size), Value
-- **Organization**: Group, Category
-- **Meeting tracking**
-  - **Is Meeting** flag
-  - **Meeting Time** (set automatically when creating a Google Calendar event)
+### Priority score
+- What: Calculated as Importance x Urgency x Effort-Cost (Size) x Value.
+- Why: A single number makes it easy to rank items and focus on the highest impact work.
 
-### Contacts
-Contacts are used for autocomplete and linking in the **Who** field.
+### Dates
+- What: Each item can have a Start Date and a Due Date.
+- Why: Start dates help with scheduling; due dates help with deadlines.
+- Rule: Due date is never earlier than start date.
 
-- contact types are typically things like Client / Contact / Personal
-- Contacts appear in the Who autocomplete; selecting a contact stores a `contact_id` on the item
+### Planned minutes
+- What: Your estimate for how long the item should take.
+- Why: Powers time blocks, timer defaults, and planned vs actual stats.
+
+### Status
+- What: Items can be `open`, `completed`, or `canceled`.
+- Why: Status controls what shows up on Today/Upcoming views and what counts toward stats.
+
+### Contacts and Who
+- What: Contacts are people/clients. The item `Who` field can link to a contact.
+- Why: You can filter by Who and keep consistent naming across items.
 
 ### Links (Item Links)
-Items can store “links/attachments” as `ItemLink` records.
-
-- Examples:
-  - `obsidian_note`: a note file in your Obsidian vault
-  - `google_calendar`: a Google Calendar event link
-  - `url` (generic)
-
-Even if a link is created by a workflow (e.g., Calendar), it’s still stored as an item link.
+- What: Attachments/URLs tied to an item (e.g., Obsidian notes, Google Calendar events).
+- Why: Keeps the context for a task inside the task.
 
 ### Hierarchy (parent/child tasks)
-Any action item can be the **parent** of other action items.
+- What: Any item can have child items.
+- Why: Useful for breaking large work into smaller next actions.
 
-- child items store `parent_id = <parent item id>`
-- nesting is unlimited (grandparent → parent → child → …)
-- if a parent is deleted, children are preserved and become root items (parent_id cleared)
-
----
-
-## 3) Screen-by-screen tour
-
-### TODAY
-Shows items relevant to “today”, split into:
-
-- **To Do** (open)
-- **Completed** (completed today)
-
-Common controls:
-
-- **Search**: searches title/description/next action, then filters to Today’s scope
-- **Expand/Collapse**: show more/less columns on each row
-- **Top 3**: toggle showing only the top 3 open items by priority score
-- **+ New Item**: open the Item Editor for a new item
-- **Refresh**: reload items
-
-Row actions (open items):
-
-- **⏱ Timer**: start a focused timer session on the item
-- **Edit**: open Item Editor
-- **Push**: move the item forward by 1 day (weekend-aware based on settings)
-
-### Upcoming
-Shows open items due within the next N days, grouped by date.
-
-Controls:
-
-- **Search**
-- **Next N days** selector (1/3/7/14/30)
-- **Who** filter
-- **Expand/Collapse**
-- **+ New Item**
-
-Row actions (open items):
-
-- **⏱ Timer**
-- **Edit**
-- **Push** (weekend-aware)
-
-### All Items
-Table-style list of items.
-
-Controls:
-
-- **Search**
-- **Status** filter (open/completed/canceled/all)
-- **Who** filter
-- **Expand/Collapse**
-- **+ New Item**
-
-Row actions depend on status; open items typically show:
-
-- **⏱ Timer**
-- **Edit**
-
-### Hierarchical
-Tree-style view of parent/child relationships.
-
-Controls:
-
-- **Search**
-- **Status** filter (open/completed/all)
-- **+ New Item**
-
-Behavior:
-
-- without search: shows **root items** and recursively displays children with indentation
-- with search: shows a flat list of matches
-
-### Plan
-Time-block planning screen (visual planner).
-
-- intended to plan your day by time blocks and assign items to blocks
-
-### Completed
-Review completed work (typically by date range), including summary stats.
-
-### Contacts
-Contact list screen.
-
-- search by name/email/etc
-- **+ New Contact** creates a contact
-- click a contact row to edit
-
-### Defaults
-Configure default values used when creating items.
-
-- supports **System Defaults** (global) and **Who-specific** defaults
-- includes date offsets (Start/Due offsets in days from “today”)
-
-### Stats
-Statistics and insights (planned vs actual time, accuracy, etc.).
-
-### Settings
-Application settings. Tabs include:
-
-- **Database Management** (backup + Obsidian)
-- **Appearance** (UI + date increment behavior)
-- **Timer & Audio**
-- **Organizational Factors** (groups/categories management)
-- **VPS Life Segments** (segment CRUD)
-
-### VPS Planning
-The Visionary Planning System screen.
-
-- filter which life segments are shown
-- expand/collapse all
-- create new top-level vision
-- expand each level of the VPS hierarchy
-- add/edit/delete at each level
+### VPS (Visionary Planning System)
+- What: A planning hierarchy from long-term vision down to weekly actions, grouped by life segment.
+- Why: Connects long-term goals to day-to-day tasks.
 
 ---
 
-## 4) Linking: Contacts, Item Links, and Google Calendar
-
-### 4.1 Linking items to Contacts (the Who field)
-In the Item Editor, the **Who** field supports autocomplete against Contacts.
-
-- When you pick a contact, the item stores both:
-  - the display name in **Who**
-  - the contact’s internal id as `contact_id`
-
-Why it matters:
-
-- you can filter lists by Who
-- you can keep consistent naming (autocomplete prevents variants)
-
-### 4.2 Item Links (general mechanism)
-Item Links are attachments/URLs associated with an item.
-
-- each link has:
-  - `url`
-  - optional `label`
-  - `link_type` (e.g., `obsidian_note`, `google_calendar`)
-
-### 4.3 Obsidian note links
-In the Item Editor **Notes** tab you can:
-
-- **+ Create Note**: create a new Obsidian note for the item
-- **+ Link Note**: link an existing Obsidian note
-- each linked note appears in the list with:
-  - **Open** (opens the note)
-  - **×** (removes the link)
-
-> Note: Obsidian linking requires configuring your vault path in **Settings → Database Management → Obsidian Integration**.
-
-### 4.4 Google Calendar links
-From the Item Editor you can create a Google Calendar event:
-
-- click **📅 Calendar**
-- fill out date/time/duration/attendees
-- click **Create Calendar Event**
-
-What happens:
-
-- a Calendar event is created via Google Calendar API
-- the event’s `htmlLink` is stored as an `ItemLink` with `link_type="google_calendar"`
-- the item is updated:
-  - **Is Meeting** becomes true
-  - **Meeting Time** is stored
-- the event opens in your browser
-
----
-
-## 5) Hierarchy: parents, children, and “related” items
-
-### 5.1 Creating child tasks from Next Action
-In the Item Editor (existing items), **+ Create Tasks** creates *one child item per line* in the **Next Action** field.
-
-Example:
-
-```
-Draft proposal
-Send to client
-Schedule review call
-```
-
-Result:
-
-- three new child items are created
-- each child inherits key fields from the parent (Who/contact, dates, priority, group/category, planned minutes, etc.)
-- each child’s title is `"<Parent Title> - <line text>"`
-
-### 5.2 Setting or changing a parent
-In the Item Editor, **Set Parent** opens a dialog to select another item as the parent.
-
-### 5.3 Viewing related items
-In the Item Editor, **Show Related** opens a dialog showing parent and children for navigation.
-
-### 5.4 Sub-item indicator
-If an item is a sub-item (has a parent), the Item Editor shows a banner: “Sub-item of: …” plus a **View Parent** button.
-
----
-
-## 6) Key dialogs and buttons (button-by-button)
-
-### 6.1 Item Editor (Create/Edit Action Item)
-**Where you’ll see it:**
-
-- **+ New Item** buttons
-- **Edit** on list rows
-
-#### Main fields (left column)
-- **Who** (required)
-  - autocomplete + dropdown suggestions
-  - **+** button adds a new contact inline
-- **Title** (required)
-- **Description** (optional)
-- **Next Action** (optional; multi-line)
-- **Planned Minutes** (optional)
-
-#### Tabs (right column)
-
-**Dates tab**
-- **Start Date** entry + quick buttons:
-  - **Today** (set to today)
-  - **-1** / **+1** (adjust)
-  - **Clear**
-- **Due Date** entry + quick buttons (same)
-- **Is Meeting** checkbox
-- **Meeting Time** display (read-only; set by Calendar creation)
-
-**Priority tab**
-- Set Importance / Urgency / Effort-Cost / Value (used to compute priority score)
-
-**Organization tab**
-- **Group**
-- **Category**
-- **Status / Completed Date** (completed date is display-only)
-
-**Notes tab (Obsidian links)**
-- **+ Create Note**
-- **+ Link Note**
-- List of linked notes:
-  - **Open**
-  - **×** (unlink)
-
-#### Buttons (bottom)
-
-Top row:
-- **Save**: saves changes and keeps the editor open
-- **Save & Close**: saves and closes the editor
-- **Save + New** (new items only): saves, closes, then opens a fresh new editor
-- **Duplicate** (existing items only): creates a duplicate item and opens it
-- **Create Follow-up** (existing items only): creates a follow-up item (typically tomorrow) linked to the original workflow
-- **Complete** (existing items only): marks item completed
-- **📅 Calendar**: open the Calendar dialog and link a Google Calendar event
-- **Cancel**: close without saving new changes
-- **Delete** (existing items only): deletes the item (children are preserved; you’ll be warned if children exist)
-
-Second row (existing items only):
-- **+ Create Tasks**: create one child task per line of the Next Action field
-- **Show Related**: open related-items dialog (parent/children)
-- **Set Parent**: open set-parent dialog
-
----
-
-### 6.2 Today / Upcoming / All Items list controls
-
-#### Header controls
-- **Search**: searches text fields; press Enter in the search box or click Search
-- **Expand/Collapse**: toggles condensed vs expanded row detail
-- **Filters** (Upcoming / All Items): choose date range / who / status
-- **Top 3** (Today only): toggle between all open items and top 3 by priority score
-- **+ New Item**: opens Item Editor
-- **Refresh** (Today): reloads
-
-#### Row buttons (common)
-- **⏱ Timer**: opens the Timer window for that item
-- **Edit**: opens Item Editor
-- **Push** (Today/Upcoming): moves start/due dates forward (weekend-aware)
-
----
-
-### 6.3 Timer window (Action Timer)
-**Purpose:** run a focused work block, optionally with music, then complete or continue the task.
-
-Top section:
-- **Time Block** (minutes): the total block length
-- **Time To Finish**: countdown of work portion
-- **Wrap/Break**: break minutes
-
-Timer controls:
-- **Start**: begins the timer
-- **Pause** / **Resume**: pauses or resumes countdown
-- **Stop**: stops the session and reveals completion actions
-
-Music controls:
-- **▶ Play**: start music playback
-- **⏸ Pause** / **▶ Resume**: pause/resume music playback
-
-Completion actions (appear after Stop):
-- **Finished**: complete the item and log work
-- **Continue**: complete current item, then create a continued item with new dates and next steps
-
-Notes section:
-- **Pop Out**: open notes in a separate window
-- **Save Notes**: saves edits back to the item’s description
-
----
-
-### 6.4 Calendar dialog (Create Calendar Event)
-Fields:
-
-- **Event Title** (pre-filled from item title)
-- **Date (YYYY-MM-DD)** with quick buttons:
-  - **Today**
-  - **+1** (weekend-aware)
-- **Start Time**
-  - hour, minute, AM/PM
-- **Duration** (minutes)
-- **Description** (optional; prefilled from item description)
-- **Location** (optional)
-- **Attendees** (optional; comma-separated emails)
-
-Buttons:
-
-- **Create Calendar Event**: creates the event, links it to the item, marks the item as a meeting, opens event in browser
-- **Cancel**: closes dialog
-
----
-
-### 6.5 Defaults screen
-Use Defaults to pre-fill new items.
-
-Controls:
-
-- **Defaults For**:
-  - **System Defaults** (global)
-  - **Who-specific** (defaults for a given Who)
-
-Editable defaults:
-
-- **Default Who**
-- Priority factors: Importance, Urgency, Effort-Cost, Value
-- Organization: Group, Category
-- Planned Minutes
-- **Date Offsets**: Start Date Offset, Due Date Offset (days from today)
-
-Buttons:
-
-- **Save Defaults**: store changes
-- **Clear Form**: reset inputs
-
----
-
-### 6.6 Settings
-
-#### Database Management tab
-- **Backup Database**: creates a timestamped `.db` backup next to your current database file
-- **Load Demo Data**: adds a small set of sample items to the *current* database (does not delete anything)
-
-#### Obsidian Integration (within Database Management)
-- **Vault Path**: where your Obsidian vault lives
-- **Browse**: file chooser
-- **Notes Subfolder**: optional subfolder for created notes
-- **Save Settings** / **Test** (if present): saves and verifies configuration
-
-#### Appearance tab
-- theme/appearance options (varies by build)
-- **Date Increment Settings** (weekend behavior)
-  - include/exclude Saturday/Sunday for +1 logic
-  - “Start list views expanded (Today, Upcoming, All Items)” (default column state)
-
-#### Timer & Audio tab
-- default time block minutes
-- break minutes
-- warning threshold
-- enable/disable sounds
-- choose sound files
-- music folder + volume
-
-#### Organizational Factors tab
-Manage reusable lists:
-
-- **Groups**
-- **Categories**
-
-#### VPS Life Segments tab
-See section 6.7.
-
----
-
-### 6.7 VPS Life Segments (Settings → VPS Life Segments)
+## 3) Screen-by-screen guide (What + Why)
+
+### Today
+- What: Shows items scheduled for today, split into open and completed today.
+- Why: A focused daily view of what matters right now.
 
 Header controls:
+- **Search** — What: Searches title, description, and next action within Today scope. Why: Quickly find an item.
+- **Expand/Collapse** — What: Toggles extra columns and priority factor chips. Why: Show or hide detail to reduce noise.
+- **Top 3** — What: Shows only the top 3 open items by priority. Why: Focus on the highest priority work.
+- **+ New Item** — What: Opens the Item Editor for a new task. Why: Capture work quickly.
+- **Refresh** — What: Reloads the list. Why: Pull in updates after edits.
 
-- **+ New Segment**: create a segment
-- **↻ Refresh**: reload the list
+Row controls (open items):
+- **Complete checkbox** — What: Marks item completed. Why: Clear finished work and log progress.
+- **Timer** — What: Opens the focused timer window. Why: Work in a time block and log actual time.
+- **Edit** — What: Opens the Item Editor. Why: Adjust details or add context.
+- **Push** — What: Moves start/due dates forward by 1 day using weekend settings. Why: Reschedule quickly.
 
-Each segment row shows:
+### Upcoming
+- What: Shows open items due within the next N days, grouped by date.
+- Why: Plan and look ahead without losing overdue items.
 
-- color swatch
-- name and description
-- status badge (✓ Active / ○ Inactive)
-- **✎ Edit**
-- **🗑 Delete**
+Header controls:
+- **Search** — What: Searches title, description, next action. Why: Find items fast.
+- **Next N days** — What: Sets the lookahead window. Why: Match planning horizon.
+- **Who** — What: Filters by Who. Why: Focus on a client or context.
+- **Expand/Collapse** — What: Toggles extra columns and priority factor chips. Why: Show or hide detail.
+- **+ New Item** — What: Opens the Item Editor. Why: Capture a new upcoming task.
 
-Deletion behavior:
+Row controls (open items):
+- **Timer** — What: Starts the timer window. Why: Execute the task in a focused block.
+- **Edit** — What: Opens the Item Editor. Why: Update scheduling or details.
+- **Push** — What: Moves start/due forward by 1 day (weekend-aware). Why: Reschedule quickly.
 
-- if the segment has linked VPS records, deletion is blocked and you’ll see a detailed warning with instructions to delete child records first
+### All Items
+- What: A table view of all items, with filters.
+- Why: Full visibility across open, completed, and canceled items.
 
-#### VPS Segment Editor dialog (New/Edit Segment)
+Header controls:
+- **Search** — What: Searches title, description, next action. Why: Locate items quickly.
+- **Status** — What: Filters by open/completed/canceled/all. Why: Narrow the list to the state you need.
+- **Who** — What: Filters by Who. Why: Focus on a person or client.
+- **Expand/Collapse** — What: Toggles extra columns and priority factor chips. Why: Show or hide detail.
+- **+ New Item** — What: Opens the Item Editor. Why: Add a new item.
+
+Row controls:
+- **Complete checkbox** — What: Marks an open item completed. Why: Clear finished work.
+- **Timer** — What: Starts a timer for open items. Why: Track actual work time.
+- **Edit** — What: Opens the Item Editor. Why: Modify item details.
+
+### Hierarchical
+- What: Tree view of parent/child relationships.
+- Why: Visualize complex tasks and their sub-items.
+
+Header controls:
+- **Search** — What: Searches items. Why: Find a node quickly.
+- **Status** — What: Filters by open/completed/all. Why: Reduce tree noise.
+- **+ New Item** — What: Creates a new item. Why: Add tasks from the hierarchy view.
+
+Behavior:
+- Without search: shows roots and children indented.
+- With search: shows a flat list of matching items.
+
+### Drag Schedule
+- What: A drag-and-drop rescheduling view. Left column shows Next Items; right column shows date boxes.
+- Why: Quickly drag tasks onto a specific date and reschedule in one move.
+
+Header controls:
+- **Next N days** — What: Sets how many date boxes to show. Why: Adjust your planning horizon.
+- **Who** — What: Filters the left list by Who. Why: Focus on one client or context.
+
+Main area:
+- **Next Items list (left)** — What: Open items with no dates plus upcoming items in the selected window. Why: A short list of items worth scheduling.
+- **Date boxes (right)** — What: Drop targets for dates. Why: Reschedule by drag-and-drop.
+
+Drag behavior:
+- What: Drag an item title onto a date box.
+- Why: Sets both Start Date and Due Date to the drop date in one action.
+
+### Plan (Time Blocks)
+- What: A time block planning view with a backlog of open items and a day plan.
+- Why: Translate tasks into a concrete daily schedule.
+
+Backlog panel:
+- **Open Items list** — What: Top open items by priority. Why: Pick the best tasks to schedule.
+
+Day planner:
+- **Date** — What: The date for time blocks. Why: Plan the right day.
+- **Load** — What: Loads time blocks for the selected date. Why: Refresh or switch dates.
+- **+ Add Block** — What: Opens the Add Time Block dialog. Why: Create a block of focused time.
+
+Time blocks list:
+- **Delete** — What: Removes a time block. Why: Adjust your plan.
+
+Add Time Block dialog:
+- **Start Time / End Time** — What: Time range for the block. Why: Define the schedule.
+- **Label** — What: Optional label for the block. Why: Add a note or task name.
+- **Save** — What: Creates the block. Why: Commit the plan.
+
+### Completed
+- What: Shows completed items over the last N days.
+- Why: Review progress and time spent.
+
+Header controls:
+- **Last N days** — What: Sets the lookback window. Why: Focus on a recent period.
+- **Who** — What: Filter by Who. Why: Review work for a client or context.
+- **Expand/Collapse** — What: Toggles priority factor chips. Why: Show or hide detail.
+- **Stats label** — What: Shows count and total planned minutes. Why: Quick summary.
+
+Row controls:
+- **Edit** — What: Opens the Item Editor. Why: Review or adjust completed items.
+- **Reopen** — What: Changes status back to open. Why: Restore work that was completed by mistake.
+
+### Contacts
+- What: Manage your contacts (people/clients).
+- Why: Cleaner Who values and faster filtering.
+
+Header controls:
+- **Search** — What: Searches name/email/phone. Why: Find contacts quickly.
+- **+ New Contact** — What: Opens the contact editor. Why: Add a new contact.
+
+Row behavior:
+- **Click a contact** — What: Opens the contact editor. Why: Update details.
+
+### Defaults
+- What: Set default values for new items, system-wide or per Who.
+- Why: Reduce repetitive data entry and standardize priority factors.
+
+Controls:
+- **Defaults For** — What: System Defaults or Who-specific defaults. Why: Apply defaults globally or per client.
+- **Priority Factors** — What: Importance, Urgency, Effort-Cost, Value. Why: Auto-populate priority for new items.
+- **Organization** — What: Default Group and Category. Why: Keep items organized.
+- **Planned Minutes** — What: Default time estimate. Why: Set a typical duration.
+- **Date Offsets** — What: Start/Due offsets in days from today. Why: Auto-schedule new items.
+- **Save Defaults** — What: Stores the defaults. Why: Make them apply to new items.
+- **Clear Form** — What: Resets inputs. Why: Start over.
+
+### Stats
+- What: Planned vs actual time statistics for items that used the Timer.
+- Why: Improve estimation accuracy and understand time usage.
+
+Controls:
+- **Refresh** — What: Reloads stats. Why: Update after new work logs.
+
+### Settings
+- What: Application configuration and data management.
+- Why: Control behavior, integrations, and maintenance.
+
+Tabs and controls:
+
+Database Management:
+- **Database Path** — What: Shows the current DB file. Why: Know where your data lives.
+- **Backup Database** — What: Creates a timestamped backup. Why: Protect against loss.
+- **Load Demo Data** — What: Adds sample items to the current DB. Why: See how the app works.
+
+Obsidian Integration:
+- **Vault Path** — What: Path to your Obsidian vault. Why: Enable note linking.
+- **Notes Subfolder** — What: Subfolder for notes. Why: Keep GMD notes organized.
+- **Save Settings** — What: Stores vault settings. Why: Persist configuration.
+- **Test Connection** — What: Validates vault path and subfolder. Why: Confirm setup is correct.
+
+Appearance:
+- **Theme** — What: Dark/light/system. Why: Choose a comfortable look.
+
+Date Increment Settings:
+- **Include Saturday** — What: Weekend-aware push and +/- logic. Why: Control scheduling on weekends.
+- **Include Sunday** — What: Same as above. Why: Adjust weekend behavior.
+- **Start list views expanded** — What: Default expanded/collapsed state for Today/Upcoming/All Items. Why: Match your preference.
+- **Save Settings** — What: Saves date increment preferences. Why: Apply behavior consistently.
+
+Timer & Audio:
+- **Music Folder** — What: Folder of audio files used during the timer. Why: Automatically play focus music.
+- **Browse** — What: Opens a folder picker. Why: Choose the music folder.
+- **Music Volume** — What: Slider for playback volume. Why: Adjust sound level.
+- **Save Settings** — What: Saves audio settings. Why: Keep them persistent.
+
+Organizational Factors:
+- **Groups tab** — What: Manage Group values used on items. Why: Keep grouping consistent.
+- **Categories tab** — What: Manage Category values used on items. Why: Keep categorization consistent.
+- **Rename** — What: Renames a value across items (optional). Why: Fix naming without manual edits.
+- **Delete** — What: Removes a value, with optional replacement. Why: Clean up unused values.
+- **Refresh List** — What: Reloads values. Why: See recent changes.
+
+Email Import (Gmail):
+- **Enable Gmail import** — What: Turns the importer on or off. Why: Pause imports without changing config.
+- **Trigger Label** — What: Gmail label to scan for new items. Why: Control which emails become tasks.
+- **Processed Label** — What: Label applied after import. Why: Prevent duplicate imports.
+- **Poll Interval** — What: Seconds between import checks. Why: Control frequency.
+- **Save Email Import Settings** — What: Stores config. Why: Persist your choices.
+- **Run Import Now** — What: Runs the importer immediately. Why: Pull in emails on demand.
+- **Open Logs** — What: Opens importer logs. Why: Debug or confirm imports.
+- **Gmail account** — What: Uses the Gmail account authorized on this machine. Why: Keeps imports tied to the correct inbox.
+
+VPS Life Segments:
+- **+ New Segment** — What: Creates a new life segment. Why: Organize VPS plans by life area.
+- **Refresh** — What: Reloads the list. Why: See recent changes.
+- **Edit** — What: Modify segment details. Why: Keep segments accurate.
+- **Delete** — What: Deletes a segment if no linked VPS records exist. Why: Clean up unused segments.
+- **Deletion protection** — What: If linked VPS records exist, deletion is blocked and you are guided to remove child records first. Why: Prevent accidental data loss.
+
+### VPS Planning
+- What: The Visionary Planning System hierarchy.
+- Why: Turn long-term vision into concrete actions.
+
+Common controls:
+- **Expand All / Collapse** — What: Opens or collapses all nodes. Why: Fast navigation.
+- **Segment filter** — What: Filter by VPS segment. Why: Focus on a life area.
+- **Add buttons** — What: Create new TL Vision, Annual Vision, Annual Plan, Quarter Initiative, Month Tactic, Week Action. Why: Build the planning tree.
+- **Edit** — What: Modify a plan node. Why: Keep planning current.
+- **Delete** — What: Remove a node (with safety checks). Why: Clean up or reorganize.
+
+---
+
+## 4) Item Editor (What + Why)
+
+The Item Editor is where you create and edit Action Items. It appears from **+ New Item** and **Edit** buttons.
+
+Main fields:
+- **Who** — What: Person/client/context. Why: Filter and group items by owner.
+- **Title** — What: Task name. Why: The primary label everywhere in the app.
+- **Description** — What: Longer notes. Why: Store context or details.
+- **Next Action** — What: Short, action-focused notes, often one per line. Why: Break a task into next steps.
+- **Planned Minutes** — What: Time estimate. Why: Better scheduling and stats.
+
+Tabs:
+
+Dates:
+- **Start Date** — What: When work should start. Why: Schedule intentionally.
+- **Due Date** — What: Deadline. Why: Keep commitments visible.
+- **Today / -1 / +1 / Clear** — What: Quick date controls. Why: Fast scheduling.
+- **Is Meeting** — What: Meeting flag. Why: Track meeting tasks and calendar links.
+- **Meeting Time** — What: Auto-filled from Calendar events. Why: Keep meeting time visible.
+
+Priority:
+- **Importance, Urgency, Effort-Cost, Value** — What: Priority factors. Why: Compute priority score and compare items.
+
+Organization:
+- **Group, Category** — What: Organizational labels. Why: Filter and report by area.
+- **Status / Completed Date** — What: Item state. Why: Control workflow and visibility.
+
+Notes:
+- **+ Create Note** — What: Creates an Obsidian note for the item. Why: Keep longer notes linked.
+- **+ Link Note** — What: Links an existing Obsidian note. Why: Connect existing context.
+- **Open** — What: Opens a linked note. Why: Jump to details quickly.
+- **Remove (X)** — What: Unlinks the note. Why: Clean up attachments.
+
+Buttons (top row):
+- **Save** — What: Saves changes, keeps editor open. Why: Iterate without reopening.
+- **Save & Close** — What: Saves and closes. Why: Finish editing quickly.
+- **Save + New** — What: Saves and opens a new item. Why: Rapid entry of multiple tasks.
+- **Duplicate** — What: Creates a copy of the item. Why: Repeat similar tasks.
+- **Create Follow-up** — What: Creates a follow-up item. Why: Continue work without losing history.
+- **Complete** — What: Marks the item completed. Why: Track progress.
+- **Calendar** — What: Opens Calendar dialog. Why: Schedule a meeting and link it.
+- **Cancel** — What: Closes without saving. Why: Discard changes.
+- **Delete** — What: Deletes the item (children are preserved). Why: Remove obsolete tasks.
+
+Buttons (second row):
+- **+ Create Tasks** — What: Creates one child item per line in Next Action. Why: Quickly split work.
+- **Show Related** — What: Shows parent and children. Why: Navigate the hierarchy.
+- **Set Parent** — What: Assigns a parent item. Why: Organize tasks into a tree.
+
+---
+
+## 5) Timer window (What + Why)
+
+The Timer supports focused work sessions and time tracking.
+
+Controls:
+- **Time Block** — What: Total minutes for the session. Why: Set a time boundary.
+- **Time To Finish** — What: Countdown of work time. Why: Keep pace.
+- **Wrap/Break** — What: Break duration. Why: Account for wrap-up time.
+- **Start** — What: Starts the timer. Why: Begin the session.
+- **Pause / Resume** — What: Pause or resume the countdown. Why: Handle interruptions.
+- **Stop** — What: Stops the timer and shows completion actions. Why: End the session cleanly.
+
+Music controls:
+- **Play** — What: Starts music from your configured folder. Why: Focus support.
+- **Pause** — What: Pauses music. Why: Quiet when needed.
+
+Completion actions:
+- **Finished** — What: Completes the item and logs work. Why: Close the loop on finished work.
+- **Continue** — What: Completes current item, creates a new one, and prompts for next steps and dates. Why: Continue work into the next day without losing history.
+
+Notes:
+- **Pop Out** — What: Opens the notes in a separate window. Why: More space to write.
+- **Save Notes** — What: Saves edits to the item description. Why: Keep notes synced.
+
+---
+
+## 6) Calendar dialog (What + Why)
+
+The Calendar dialog schedules a Google Calendar event and links it to an item.
+
 Fields:
-
-- **Name***: segment name (required)
-- **Description**: optional details
-- **Color***: hex color (required)
-  - color preview swatch
-  - editable hex code
-  - **🎨 Pick Color** opens a color picker
-- **Display Order**: controls sorting order
-- **Active (visible in VPS Planning)**: toggle whether it shows in VPS Planning
+- **Event Title** — What: Calendar event title. Why: Clear meeting name.
+- **Date** — What: Meeting date with Today and +1 buttons. Why: Quick scheduling.
+- **Start Time** — What: Hour/minute/AM-PM. Why: Exact start time.
+- **Duration** — What: Minutes. Why: Accurate calendar blocks.
+- **Description** — What: Event details. Why: Add context.
+- **Location** — What: Meeting location. Why: Keep logistics visible.
+- **Attendees** — What: Comma-separated emails. Why: Invite participants.
 
 Buttons:
-
-- **Save**: validate and save the segment
-- **Cancel**: close without saving
-
----
-
-## 7) Tips and common workflows
-
-### Create an item quickly
-- TODAY → **+ New Item** → enter **Who** and **Title** → **Save & Close**
-
-### Break a big item into child tasks
-- Open item → add one task per line in **Next Action** → **+ Create Tasks**
-
-### Convert an action into a meeting
-- Open item → **📅 Calendar** → create event → item becomes **Is Meeting** with **Meeting Time** stored
-
-### Stay focused
-- From a list row → **⏱ Timer** → work → **Finished** or **Continue**
+- **Create Calendar Event** — What: Creates the event and links it to the item. Why: Keep tasks and calendar connected.
+- **Cancel** — What: Closes dialog without changes. Why: Back out safely.
 
 ---
 
-## 8) Data location, demo data, and backups
+## 7) Common workflows (Why you would use them)
 
-### Production (normal install)
-For normal use, GetMoreDone stores your data in your user profile:
-
-- **macOS:** `~/Library/Application Support/GetMoreDone/getmoredone.db`
-- **Windows:** `%APPDATA%\GetMoreDone\getmoredone.db`
-
-### Development (repo)
-When running from the repo, you can keep a separate dev database by setting:
-
-- `GETMOREDONE_DB=/path/to/your/dev/getmoredone.db`
-
-(The repo `start.sh` defaults this to `./data/getmoredone.db` so your dev data stays separate.)
-
-### Demo data
-For new installs or for people you share the app with:
-
-- Go to **Settings → Database Management → Load Demo Data**
-- This will **ADD** a small set of sample Action Items to the *current* database.
-- It does **not** delete or overwrite your existing items.
-
-### Backups
-Use **Settings → Database Management → Backup Database** to create a timestamped `.db` backup next to your current database file.
+- **Daily focus**: Today screen + Top 3 to focus on the highest priority items.
+- **Weekly planning**: Upcoming and Drag Schedule to place tasks on dates.
+- **Time blocking**: Plan screen to translate tasks into a daily schedule.
+- **Meetings**: Item Editor + Calendar dialog to schedule and link meetings.
+- **Hierarchy**: Next Action + Create Tasks to break down large projects.
+- **Review**: Completed and Stats to review progress and time accuracy.
 
 ---
 
-## Appendix A — Glossary
+## 8) Data location and backups
 
-- **Who**: the person/client/context the item is for
-- **Planned minutes**: your estimate for how long the task should take
-- **Work log**: a record created by the Timer when you finish/continue
-- **Item link**: a stored URL/reference tied to an item (Obsidian note, Google Calendar event, etc.)
-- **VPS Segment**: a “life area” bucket for your VPS planning tree
+Default locations:
+- macOS: `~/Library/Application Support/GetMoreDone/getmoredone.db`
+- Windows: `%APPDATA%\GetMoreDone\getmoredone.db`
+
+Development mode:
+- Set `GETMOREDONE_DB=/path/to/your/dev/getmoredone.db`
+- `start.sh` defaults to `./data/getmoredone.db`
+
+Backups:
+- Use **Settings → Database Management → Backup Database** to create a timestamped backup next to your current DB file.
+
+---
+
+## Appendix: Glossary
+
+- **Who**: Person/client/context the item is for.
+- **Planned minutes**: Your estimated duration for the task.
+- **Work log**: A record created by the Timer when you finish or continue.
+- **Item link**: A stored URL/reference tied to an item (Obsidian note, Google Calendar event, etc.).
+- **VPS Segment**: A life area bucket for VPS planning.
