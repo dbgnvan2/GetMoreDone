@@ -635,7 +635,7 @@ pytest tests/test_database.py -v
 
 ## Specification
 
-See `GetMoreDone_MasterSpec_SQLite_v1.md` for complete requirements and design decisions.
+See `GetMoreDone_MasterSpec_SQLite_v1.md` for complete requirements and design decisions. Timer requirements are consolidated there.
 
 ## License
 

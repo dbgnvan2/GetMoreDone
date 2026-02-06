@@ -87,15 +87,9 @@ Summary of documentation and test updates:
 
 ## Feature-Specific Documentation
 
-### docs/action-timer-requirements.md (19KB)
+### Requirements (Consolidated)
 
-Action Timer module requirements:
-
-- Timer window specifications
-- Music playback features
-- Workflow diagrams
-- User stories
-- Technical requirements
+All requirements are now maintained in `GetMoreDone_MasterSpec_SQLite_v1.md`. The timer-specific requirements document is retained only for archival reference.
 
 ### docs/google-calendar-setup.md (8.7KB)
 

@@ -46,8 +46,18 @@ class DefaultsScreen(ctk.CTkFrame):
 
     def create_form(self):
         """Create form area."""
-        scroll = ctk.CTkScrollableFrame(self)
-        scroll.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+        self.general_tab = self.tabview.add("General")
+        self.date_tab = self.tabview.add("Date Offsets")
+
+        self.create_general_tab()
+        self.create_date_offsets_tab()
+
+    def create_general_tab(self):
+        scroll = ctk.CTkScrollableFrame(self.general_tab)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         scroll.grid_columnconfigure(1, weight=1)
 
         row = 0
@@ -183,12 +193,34 @@ class DefaultsScreen(ctk.CTkFrame):
         self.planned_minutes_entry.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
 
+        # Buttons
+        btn_frame = ctk.CTkFrame(scroll)
+        btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
+        row += 1
+
+        btn_save = ctk.CTkButton(btn_frame, text="Save Defaults", command=self.save_defaults)
+        btn_save.pack(side="left", padx=5)
+
+        btn_clear = ctk.CTkButton(btn_frame, text="Clear Form", command=self.clear_form)
+        btn_clear.pack(side="left", padx=5)
+
+        # Status label
+        self.status_label = ctk.CTkLabel(scroll, text="", text_color="green")
+        self.status_label.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+
+    def create_date_offsets_tab(self):
+        scroll = ctk.CTkScrollableFrame(self.date_tab)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        scroll.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
         # Date Offsets Section
         ctk.CTkLabel(
             scroll,
             text="Date Offsets (Days from Today)",
             font=ctk.CTkFont(size=14, weight="bold")
-        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(15, 5))
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 5))
         row += 1
 
         # Start Date Offset
@@ -209,20 +241,14 @@ class DefaultsScreen(ctk.CTkFrame):
         ctk.CTkLabel(due_offset_frame, text="(0=today, 1=tomorrow, etc.)", font=ctk.CTkFont(size=10)).pack(side="left", padx=5)
         row += 1
 
-        # Buttons
         btn_frame = ctk.CTkFrame(scroll)
         btn_frame.grid(row=row, column=0, columnspan=2, sticky="ew", padx=10, pady=(20, 10))
         row += 1
 
-        btn_save = ctk.CTkButton(btn_frame, text="Save Defaults", command=self.save_defaults)
-        btn_save.pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Save Date Offsets", command=self.save_defaults).pack(side="left", padx=5)
 
-        btn_clear = ctk.CTkButton(btn_frame, text="Clear Form", command=self.clear_form)
-        btn_clear.pack(side="left", padx=5)
-
-        # Status label
-        self.status_label = ctk.CTkLabel(scroll, text="", text_color="green")
-        self.status_label.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        self.date_status_label = ctk.CTkLabel(scroll, text="", text_color="green")
+        self.date_status_label.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
 
     def on_scope_change(self):
         """Handle scope change."""
@@ -281,6 +307,7 @@ class DefaultsScreen(ctk.CTkFrame):
 
         if defaults.due_offset_days is not None:
             self.due_offset_entry.insert(0, str(defaults.due_offset_days))
+        # Future date options moved to Settings
 
     def load_system_defaults(self):
         """Load system defaults initially."""
@@ -298,7 +325,14 @@ class DefaultsScreen(ctk.CTkFrame):
         self.planned_minutes_entry.delete(0, "end")
         self.start_offset_entry.delete(0, "end")
         self.due_offset_entry.delete(0, "end")
+        # Future date options are managed in Settings
         self.status_label.configure(text="")
+        if hasattr(self, "date_status_label"):
+            self.date_status_label.configure(text="")
+
+    def load_system_future_offsets(self):
+        # Future date options are managed in Settings
+        return
 
     def extract_factor_value(self, text: str) -> Optional[int]:
         """Extract numeric value from factor string."""
@@ -339,8 +373,12 @@ class DefaultsScreen(ctk.CTkFrame):
 
             self.db_manager.save_defaults(defaults)
             self.status_label.configure(text="Defaults saved successfully!")
+            if hasattr(self, "date_status_label"):
+                self.date_status_label.configure(text="Date offsets saved successfully!")
             # Refresh form to show saved values
             self.load_defaults()
 
         except Exception as e:
             self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
+            if hasattr(self, "date_status_label"):
+                self.date_status_label.configure(text=f"Error: {str(e)}", text_color="red")

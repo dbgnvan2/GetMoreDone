@@ -70,22 +70,27 @@ class SettingsScreen(ctk.CTkFrame):
         self.create_appearance_section(appearance_tab)
         self.create_date_increment_section(appearance_tab)
 
-        # Tab 3: Timer & Audio
+        # Tab 3: Future Dates
+        future_tab = self.tabview.add("Future Dates")
+        future_tab.grid_columnconfigure(0, weight=1)
+        self.create_future_date_options_section(future_tab)
+
+        # Tab 4: Timer & Audio
         timer_tab = self.tabview.add("Timer & Audio")
         timer_tab.grid_columnconfigure(0, weight=1)
         self.create_timer_audio_section(timer_tab)
 
-        # Tab 4: Organizational Factors
+        # Tab 5: Organizational Factors
         org_tab = self.tabview.add("Organizational Factors")
         org_tab.grid_columnconfigure(0, weight=1)
         self.create_organizational_factors_section(org_tab)
 
-        # Tab 5: Email Import
+        # Tab 6: Email Import
         email_tab = self.tabview.add("Email Import")
         email_tab.grid_columnconfigure(0, weight=1)
         self.create_email_import_section(email_tab)
 
-        # Tab 6: VPS Life Segments
+        # Tab 7: VPS Life Segments
         vps_tab = self.tabview.add("VPS Life Segments")
         vps_tab.grid_columnconfigure(0, weight=1)
         self.create_vps_segments_section(vps_tab)
@@ -375,11 +380,41 @@ class SettingsScreen(ctk.CTkFrame):
         self.settings.include_saturday = self.include_saturday_var.get()
         self.settings.include_sunday = self.include_sunday_var.get()
         self.settings.default_columns_expanded = self.default_columns_expanded_var.get()
-
         self.settings.save()
 
         self.date_increment_status_label.configure(
             text="✓ Settings saved",
+            text_color="green"
+        )
+
+    def _parse_positive_int(self, value: str, default: int) -> int:
+        try:
+            parsed = int(str(value).strip())
+            return parsed if parsed > 0 else default
+        except Exception:
+            return default
+
+    def _parse_int(self, value: str, default: int) -> int:
+        try:
+            return int(str(value).strip())
+        except Exception:
+            return default
+
+    def save_future_date_options(self):
+        """Save Future Date Options settings."""
+        self.settings.mid_term_offset_days = self._parse_positive_int(
+            self.future_near_var.get(), default=self.settings.mid_term_offset_days)
+        self.settings.long_term_offset_days = self._parse_positive_int(
+            self.future_long_var.get(), default=self.settings.long_term_offset_days)
+        self.settings.next_month_offset_days = self._parse_int(
+            self.future_next_month_var.get(), default=self.settings.next_month_offset_days)
+        self.settings.next_quarter_offset_days = self._parse_int(
+            self.future_next_quarter_var.get(), default=self.settings.next_quarter_offset_days)
+
+        self.settings.save()
+
+        self.future_date_status_label.configure(
+            text="✓ Future date options saved",
             text_color="green"
         )
 
@@ -925,6 +960,66 @@ class SettingsScreen(ctk.CTkFrame):
         # Status label
         self.gmail_status_label = ctk.CTkLabel(section, text="", wraplength=700)
         self.gmail_status_label.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+
+    def create_future_date_options_section(self, parent=None):
+        """Create Future Date Options section (Drag Schedule)."""
+        if parent is None:
+            parent = self
+
+        section = ctk.CTkFrame(parent)
+        section.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            section,
+            text="Future Date Options (Drag Schedule)",
+            font=ctk.CTkFont(size=16, weight="bold")
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 10))
+
+        ctk.CTkLabel(section, text="Near Term (days from today):").grid(
+            row=1, column=0, sticky="w", padx=10, pady=5)
+        self.future_near_var = ctk.StringVar(value=str(self.settings.mid_term_offset_days))
+        ctk.CTkEntry(section, textvariable=self.future_near_var, width=120).grid(
+            row=1, column=1, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(section, text="Long Term (days from today):").grid(
+            row=2, column=0, sticky="w", padx=10, pady=5)
+        self.future_long_var = ctk.StringVar(value=str(self.settings.long_term_offset_days))
+        ctk.CTkEntry(section, textvariable=self.future_long_var, width=120).grid(
+            row=2, column=1, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(section, text="1st Next Month Offset (days from 1st):").grid(
+            row=3, column=0, sticky="w", padx=10, pady=5)
+        self.future_next_month_var = ctk.StringVar(value=str(getattr(self.settings, "next_month_offset_days", 0)))
+        ctk.CTkEntry(section, textvariable=self.future_next_month_var, width=120).grid(
+            row=3, column=1, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(section, text="1st Next Quarter Offset (days from 1st):").grid(
+            row=4, column=0, sticky="w", padx=10, pady=5)
+        self.future_next_quarter_var = ctk.StringVar(value=str(getattr(self.settings, "next_quarter_offset_days", 0)))
+        ctk.CTkEntry(section, textvariable=self.future_next_quarter_var, width=120).grid(
+            row=4, column=1, sticky="w", padx=10, pady=5)
+
+        btn_save = ctk.CTkButton(
+            section,
+            text="Save Future Date Options",
+            command=self.save_future_date_options,
+            fg_color="darkgreen",
+            hover_color="green",
+            width=220
+        )
+        btn_save.grid(row=5, column=0, sticky="w", padx=10, pady=10)
+
+        self.future_date_status_label = ctk.CTkLabel(section, text="", text_color="green")
+        self.future_date_status_label.grid(row=5, column=1, sticky="w", padx=10, pady=10)
+
+        info_text = (
+            "Near/Long term are offsets from today.\n"
+            "Next Month/Quarter offsets are applied to the 1st of next month/quarter."
+        )
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=6, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        )
 
     def save_email_import_settings(self):
         """Save Email Import settings into settings.json."""

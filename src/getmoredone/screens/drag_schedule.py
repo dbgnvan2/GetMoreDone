@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 
 from ..models import ActionItem
+from ..app_settings import AppSettings
+from ..date_utils import future_date_targets
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -20,10 +22,13 @@ class DragScheduleScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
+        self.settings = AppSettings.load()
 
         self.drag_label = None
         self.drag_item: Optional[ActionItem] = None
         self.drag_hover_frame = None
+        self.drag_hover_base_color = None
+        self.date_box_colors = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -127,6 +132,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             widget.destroy()
 
         self.date_boxes = []
+        self.date_box_colors = {}
 
         items = self.load_items()
         if not items:
@@ -211,6 +217,47 @@ class DragScheduleScreen(ctk.CTkFrame):
             label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
+            self.date_box_colors[frame] = "gray20"
+
+        # Future date options (bottom)
+        options_start_row = n_days + 1
+
+        mid_days = max(1, int(self.settings.mid_term_offset_days))
+        long_days = max(1, int(self.settings.long_term_offset_days))
+        next_month_offset = int(self.settings.next_month_offset_days)
+        next_quarter_offset = int(self.settings.next_quarter_offset_days)
+
+        near_date, long_date_obj, next_month_obj, next_quarter_obj = future_date_targets(
+            today, mid_days, long_days, next_month_offset, next_quarter_offset
+        )
+        mid_date = near_date.strftime("%Y-%m-%d")
+        long_date = long_date_obj.strftime("%Y-%m-%d")
+        next_month_date = next_month_obj.strftime("%Y-%m-%d")
+        next_quarter_date = next_quarter_obj.strftime("%Y-%m-%d")
+
+        future_options = [
+            ("Near Term", f"+{mid_days} days\n{mid_date}", mid_date, "#FFD54F"),
+            ("Long Term", f"+{long_days} days\n{long_date}", long_date, "#FFCDD2"),
+            ("1st Next Month", next_month_date, next_month_date, "#FFF9C4"),
+            ("1st Next Quarter", next_quarter_date, next_quarter_date, "#FFE0B2"),
+        ]
+        future_options.sort(key=lambda option: option[2])
+
+        for idx, (title, subtitle, date_str, color) in enumerate(future_options):
+            frame = ctk.CTkFrame(self.dates_frame, height=70, fg_color=color)
+            frame.grid(row=options_start_row + idx, column=0, sticky="ew", padx=6, pady=6)
+            frame.grid_columnconfigure(0, weight=1)
+
+            label = ctk.CTkLabel(
+                frame,
+                text=f"{title}\n{subtitle}",
+                justify="center",
+                text_color="black"
+            )
+            label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+
+            self.date_boxes.append({"frame": frame, "date": date_str})
+            self.date_box_colors[frame] = color
 
     def bind_drag_handlers(self, widget, item: ActionItem):
         widget.bind("<ButtonPress-1>", lambda e: self.start_drag(e, item))
@@ -310,8 +357,10 @@ class DragScheduleScreen(ctk.CTkFrame):
         if hovered:
             hovered.configure(fg_color="gray35")
             self.drag_hover_frame = hovered
+            self.drag_hover_base_color = self.date_box_colors.get(hovered, "gray20")
 
     def clear_hover_target(self):
         if self.drag_hover_frame:
-            self.drag_hover_frame.configure(fg_color="gray20")
+            self.drag_hover_frame.configure(fg_color=self.drag_hover_base_color or "gray20")
             self.drag_hover_frame = None
+            self.drag_hover_base_color = None
