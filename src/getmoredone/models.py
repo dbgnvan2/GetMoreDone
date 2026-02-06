@@ -143,6 +143,10 @@ class Defaults:
     planned_minutes: Optional[int] = None
     start_offset_days: Optional[int] = None
     due_offset_days: Optional[int] = None
+    near_term_offset_days: Optional[int] = None
+    long_term_offset_days: Optional[int] = None
+    next_month_offset_days: Optional[int] = None
+    next_quarter_offset_days: Optional[int] = None
 
 
 @dataclass

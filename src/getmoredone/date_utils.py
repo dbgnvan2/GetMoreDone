@@ -3,7 +3,7 @@ Date utility functions for weekend-aware date calculations.
 """
 
 from datetime import date, timedelta
-from typing import Optional
+from typing import Optional, Tuple
 
 
 def increment_date(start_date: date, days: int, include_saturday: bool = True, include_sunday: bool = True) -> date:
@@ -97,3 +97,36 @@ def get_next_business_day(from_date: date, include_saturday: bool = True, includ
         The next business day
     """
     return increment_date(from_date, 1, include_saturday, include_sunday)
+
+
+def first_of_next_month(today_date: date) -> date:
+    year = today_date.year + (1 if today_date.month == 12 else 0)
+    month = 1 if today_date.month == 12 else today_date.month + 1
+    return date(year, month, 1)
+
+
+def first_of_next_quarter(today_date: date) -> date:
+    current_quarter = (today_date.month - 1) // 3 + 1
+    next_quarter = current_quarter + 1
+    year = today_date.year
+    if next_quarter == 5:
+        next_quarter = 1
+        year += 1
+    month = (next_quarter - 1) * 3 + 1
+    return date(year, month, 1)
+
+
+def future_date_targets(
+    today_date: date,
+    near_term_days: int,
+    long_term_days: int,
+    next_month_offset_days: int,
+    next_quarter_offset_days: int,
+) -> Tuple[date, date, date, date]:
+    near_term_days = max(1, int(near_term_days))
+    long_term_days = max(1, int(long_term_days))
+    near_date = today_date + timedelta(days=near_term_days)
+    long_date = today_date + timedelta(days=long_term_days)
+    month_date = first_of_next_month(today_date) + timedelta(days=int(next_month_offset_days))
+    quarter_date = first_of_next_quarter(today_date) + timedelta(days=int(next_quarter_offset_days))
+    return near_date, long_date, month_date, quarter_date

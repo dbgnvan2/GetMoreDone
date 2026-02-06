@@ -119,6 +119,8 @@
 - [Confirmed] FR-034 Default precedence: Who defaults > system defaults. fileciteturn2file1L44-L47
 - [Confirmed] FR-035 User can view/edit defaults. fileciteturn2file1L47-L47
 - [Confirmed] FR-037 If Who changes during creation/edit, re-apply Who defaults ONLY to fields not explicitly set. fileciteturn2file4L23-L23
+- [Confirmed] FR-038 Future Date Options are system-wide: Near Term (days from today), Long Term (days from today), 1st Next Month (offset from first), 1st Next Quarter (offset from first).
+
 
 ### 7.6 Validation
 - [Confirmed] FR-040 Validate due_date is not earlier than start_date when both present. fileciteturn2file3L12-L16

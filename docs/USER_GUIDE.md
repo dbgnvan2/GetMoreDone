@@ -1,7 +1,5 @@
 # GetMoreDone User Guide
 
-Note: The current user documentation is in `docs/User_Guide.md`. This file is kept for historical reference and may be out of date.
-
 This guide explains what each screen, button, and workflow does, and why you might use it. It is aligned to the current UI and screen code in `src/getmoredone/screens`.
 
 Last updated: 2026-02-05
@@ -133,6 +131,7 @@ Header controls:
 Main area:
 - **Next Items list (left)** — What: Open items with no dates plus upcoming items in the selected window. Why: A short list of items worth scheduling.
 - **Date boxes (right)** — What: Drop targets for dates. Why: Reschedule by drag-and-drop.
+- **Future options (bottom)** — What: Mid Term, Long Term, 1st Next Month, 1st Next Quarter boxes. Why: Fast scheduling to common future anchors.
 
 Drag behavior:
 - What: Drag an item title onto a date box.
@@ -192,7 +191,7 @@ Controls:
 - **Priority Factors** — What: Importance, Urgency, Effort-Cost, Value. Why: Auto-populate priority for new items.
 - **Organization** — What: Default Group and Category. Why: Keep items organized.
 - **Planned Minutes** — What: Default time estimate. Why: Set a typical duration.
-- **Date Offsets** — What: Start/Due offsets in days from today. Why: Auto-schedule new items.
+- **Date Offsets tab** — What: Start/Due offsets. Why: Centralize scheduling defaults.
 - **Save Defaults** — What: Stores the defaults. Why: Make them apply to new items.
 - **Clear Form** — What: Resets inputs. Why: Start over.
 
@@ -227,6 +226,7 @@ Date Increment Settings:
 - **Include Saturday** — What: Weekend-aware push and +/- logic. Why: Control scheduling on weekends.
 - **Include Sunday** — What: Same as above. Why: Adjust weekend behavior.
 - **Start list views expanded** — What: Default expanded/collapsed state for Today/Upcoming/All Items. Why: Match your preference.
+- **Future Date Options** — What: Mid Term and Long Term day offsets for Drag Schedule. Why: Customize long-range targets without manual date picking.
 - **Save Settings** — What: Saves date increment preferences. Why: Apply behavior consistently.
 
 Timer & Audio:
@@ -258,6 +258,10 @@ VPS Life Segments:
 - **Edit** — What: Modify segment details. Why: Keep segments accurate.
 - **Delete** — What: Deletes a segment if no linked VPS records exist. Why: Clean up unused segments.
 - **Deletion protection** — What: If linked VPS records exist, deletion is blocked and you are guided to remove child records first. Why: Prevent accidental data loss.
+
+Future Date Options:
+- **Near Term / Long Term** — What: Offsets from today. Why: Quick scheduling targets for Drag Schedule.
+- **1st Next Month / 1st Next Quarter** — What: Offsets from the 1st of next month/quarter. Why: Align with month/quarter starts.
 
 ### VPS Planning
 - What: The Visionary Planning System hierarchy.

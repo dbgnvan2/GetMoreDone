@@ -1,5 +1,7 @@
 # Action Timer Module - Functional Requirements
 
+Note: This document has been consolidated into `GetMoreDone_MasterSpec_SQLite_v1.md` and is kept for historical reference. Please update the master spec going forward.
+
 ## Overview
 
 The Action Timer Module provides a popup countdown timer to guide users through completing action items with time blocking, break management, and completion workflows.

@@ -140,6 +140,10 @@ class Database:
 
                 start_offset_days INTEGER,
                 due_offset_days   INTEGER,
+                near_term_offset_days INTEGER,
+                long_term_offset_days INTEGER,
+                next_month_offset_days INTEGER,
+                next_quarter_offset_days INTEGER,
 
                 PRIMARY KEY (scope_type, scope_key)
             )
@@ -280,6 +284,28 @@ class Database:
             conn.execute("""
                 ALTER TABLE defaults
                 ADD COLUMN who TEXT
+            """)
+
+        # Add future date option columns to defaults
+        if 'near_term_offset_days' not in columns:
+            conn.execute("""
+                ALTER TABLE defaults
+                ADD COLUMN near_term_offset_days INTEGER
+            """)
+        if 'long_term_offset_days' not in columns:
+            conn.execute("""
+                ALTER TABLE defaults
+                ADD COLUMN long_term_offset_days INTEGER
+            """)
+        if 'next_month_offset_days' not in columns:
+            conn.execute("""
+                ALTER TABLE defaults
+                ADD COLUMN next_month_offset_days INTEGER
+            """)
+        if 'next_quarter_offset_days' not in columns:
+            conn.execute("""
+                ALTER TABLE defaults
+                ADD COLUMN next_quarter_offset_days INTEGER
             """)
 
         # Check if link_type column exists in item_links

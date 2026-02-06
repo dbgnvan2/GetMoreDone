@@ -544,13 +544,16 @@ class DatabaseManager:
         self.db.conn.execute("""
             INSERT INTO defaults (
                 scope_type, scope_key, contact_id, who, importance, urgency, size, value,
-                "group", category, planned_minutes, start_offset_days, due_offset_days
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                "group", category, planned_minutes, start_offset_days, due_offset_days,
+                near_term_offset_days, long_term_offset_days, next_month_offset_days, next_quarter_offset_days
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             defaults.scope_type, defaults.scope_key, defaults.contact_id, defaults.who,
             defaults.importance, defaults.urgency, defaults.size, defaults.value,
             defaults.group, defaults.category, defaults.planned_minutes,
-            defaults.start_offset_days, defaults.due_offset_days
+            defaults.start_offset_days, defaults.due_offset_days,
+            defaults.near_term_offset_days, defaults.long_term_offset_days,
+            defaults.next_month_offset_days, defaults.next_quarter_offset_days
         ))
         self.db.conn.commit()
 
@@ -1079,6 +1082,22 @@ class DatabaseManager:
             who = row["who"]
         except (KeyError, IndexError):
             who = None
+        try:
+            near_term_offset_days = row["near_term_offset_days"]
+        except (KeyError, IndexError):
+            near_term_offset_days = None
+        try:
+            long_term_offset_days = row["long_term_offset_days"]
+        except (KeyError, IndexError):
+            long_term_offset_days = None
+        try:
+            next_month_offset_days = row["next_month_offset_days"]
+        except (KeyError, IndexError):
+            next_month_offset_days = None
+        try:
+            next_quarter_offset_days = row["next_quarter_offset_days"]
+        except (KeyError, IndexError):
+            next_quarter_offset_days = None
 
         return Defaults(
             scope_type=row["scope_type"],
@@ -1093,7 +1112,11 @@ class DatabaseManager:
             category=row["category"],
             planned_minutes=row["planned_minutes"],
             start_offset_days=row["start_offset_days"],
-            due_offset_days=row["due_offset_days"]
+            due_offset_days=row["due_offset_days"],
+            near_term_offset_days=near_term_offset_days,
+            long_term_offset_days=long_term_offset_days,
+            next_month_offset_days=next_month_offset_days,
+            next_quarter_offset_days=next_quarter_offset_days
         )
 
     def _row_to_item_link(self, row: sqlite3.Row) -> ItemLink:
