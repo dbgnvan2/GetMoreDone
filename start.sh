@@ -9,16 +9,21 @@ if [ ! -d "venv" ]; then
     python3 -m venv venv
 fi
 
-# Activate virtual environment
-echo "🔧 Activating virtual environment..."
-source venv/bin/activate
+# Use venv interpreter directly (avoids system Python/pip issues)
+VENV_PY="$(pwd)/venv/bin/python"
+if [ ! -x "$VENV_PY" ]; then
+    echo "❌ Virtual environment Python not found at $VENV_PY"
+    echo "   Delete ./venv and re-run ./start.sh"
+    exit 1
+fi
+echo "🔧 Using virtual environment: $VENV_PY"
 
 # Install/update requirements (skip test deps for startup)
 echo "📥 Installing runtime requirements..."
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$(pwd)/.pip-cache}"
 RUNTIME_REQ="$(mktemp /tmp/getmoredone-req.XXXXXX)"
 grep -v -E '^\s*#|^\s*$|^pytest\b|^pytest-cov\b' requirements.txt > "$RUNTIME_REQ"
-python -m pip install -q -r "$RUNTIME_REQ"
+"$VENV_PY" -m pip install -q -r "$RUNTIME_REQ"
 PIP_STATUS=$?
 rm -f "$RUNTIME_REQ"
 if [ $PIP_STATUS -ne 0 ]; then
@@ -32,11 +37,11 @@ echo "🧹 Clearing Python cache..."
 find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 find . -name "*.pyc" -delete 2>/dev/null
 
-# Default dev DB to repo-local data/getmoredone.db unless overridden
+# Default to production DB path unless overridden
 if [ -z "${GETMOREDONE_DB:-}" ]; then
-    export GETMOREDONE_DB="$(pwd)/data/getmoredone.db"
+    export GETMOREDONE_DB="${HOME}/Library/Application Support/GetMoreDone/getmoredone.db"
 fi
 
 echo "✅ Launching GetMoreDone..."
 echo "   DB: ${GETMOREDONE_DB}"
-python3 run.py
+"$VENV_PY" run.py
