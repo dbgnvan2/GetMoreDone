@@ -3,10 +3,13 @@ Main application window for GetMoreDone.
 """
 
 import customtkinter as ctk
+import os
+import sys
 from datetime import datetime
 from typing import Optional
 
 from .db_manager import DatabaseManager
+from .paths import app_data_dir_path
 from .vps_manager import VPSManager
 
 
@@ -20,7 +23,8 @@ class GetMoreDoneApp(ctk.CTk):
         today = datetime.now()
         day_of_week = today.strftime("%A")
         date_str = today.strftime("%B %d, %Y")
-        self.title(f"GetMoreDone - {day_of_week}, {date_str}")
+        mode_tag = "[PROD]" if getattr(sys, "frozen", False) else "[DEV]"
+        self.title(f"GetMoreDone {mode_tag} - {day_of_week}, {date_str}")
         self.geometry("1200x700")
 
         # Set theme
@@ -268,11 +272,72 @@ class GetMoreDoneApp(ctk.CTk):
         self.destroy()
 
 
+def acquire_single_instance_lock() -> Optional[int]:
+    """Acquire app-wide lock; return file descriptor if successful, else None."""
+    lock_path = app_data_dir_path() / "app.lock"
+
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    except OSError:
+        return None
+
+    try:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (ImportError, OSError):
+        os.close(fd)
+        return None
+
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, str(os.getpid()).encode("utf-8"))
+    except OSError:
+        # Keep lock even if PID write fails
+        pass
+
+    return fd
+
+
+def release_single_instance_lock(lock_fd: Optional[int]):
+    """Release app-wide lock file descriptor."""
+    if lock_fd is None:
+        return
+
+    try:
+        import fcntl
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    except (ImportError, OSError):
+        pass
+
+    try:
+        os.close(lock_fd)
+    except OSError:
+        pass
+
+
 def main():
     """Application entry point."""
+    lock_fd = acquire_single_instance_lock()
+    if lock_fd is None:
+        from tkinter import Tk, messagebox
+
+        root = Tk()
+        root.withdraw()
+        messagebox.showwarning(
+            "GetMoreDone Already Running",
+            "Another GetMoreDone instance is already open.\n\n"
+            "Please close the other app window before launching this one."
+        )
+        root.destroy()
+        return
+
     app = GetMoreDoneApp()
+    app._single_instance_lock_fd = lock_fd
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
-    app.mainloop()
+    try:
+        app.mainloop()
+    finally:
+        release_single_instance_lock(lock_fd)
 
 
 if __name__ == "__main__":

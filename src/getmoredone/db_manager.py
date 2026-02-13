@@ -407,7 +407,7 @@ class DatabaseManager:
         params = [n_days]
 
         if who_filter:
-            query += " AND who = ?"
+            query += " AND LOWER(TRIM(COALESCE(who, ''))) = LOWER(TRIM(?))"
             params.append(who_filter)
 
         query += " ORDER BY COALESCE(start_date, due_date) ASC, priority_score DESC, created_at ASC"
@@ -450,7 +450,7 @@ class DatabaseManager:
             params.append(status_filter)
 
         if who_filter:
-            query += " AND who = ?"
+            query += " AND LOWER(TRIM(COALESCE(who, ''))) = LOWER(TRIM(?))"
             params.append(who_filter)
 
         if group_filter:
@@ -481,7 +481,7 @@ class DatabaseManager:
         params = [days_back]
 
         if who_filter:
-            query += " AND who = ?"
+            query += " AND LOWER(TRIM(COALESCE(who, ''))) = LOWER(TRIM(?))"
             params.append(who_filter)
 
         query += " ORDER BY completed_at DESC"
@@ -490,14 +490,14 @@ class DatabaseManager:
         return [self._row_to_action_item(row) for row in rows]
 
     def search_items(self, search_text: str) -> List[ActionItem]:
-        """Search items by title, description, or next_action."""
+        """Search items by title, description, next_action, or who."""
         query = """
             SELECT * FROM action_items
-            WHERE title LIKE ? OR description LIKE ? OR next_action LIKE ?
+            WHERE title LIKE ? OR description LIKE ? OR next_action LIKE ? OR who LIKE ?
             ORDER BY priority_score DESC
         """
         pattern = f"%{search_text}%"
-        rows = self.db.conn.execute(query, (pattern, pattern, pattern)).fetchall()
+        rows = self.db.conn.execute(query, (pattern, pattern, pattern, pattern)).fetchall()
         return [self._row_to_action_item(row) for row in rows]
 
     # ==================== DEFAULTS ====================

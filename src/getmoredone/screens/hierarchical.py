@@ -5,7 +5,7 @@ Hierarchical screen - shows items in parent-child tree view.
 import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, List
 
-from ..models import ActionItem
+from ..models import ActionItem, Status
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager

@@ -149,6 +149,18 @@ class UpcomingScreen(ctk.CTkFrame):
             # Get filters
             n_days = int(self.days_var.get())
             who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+            who_filter_norm = who_filter.strip().lower() if who_filter else None
+
+            # Keep Who dropdown up-to-date with newest values.
+            current_who = self.who_var.get()
+            who_values = ["All"] + self.db_manager.get_distinct_who_values()
+            self.who_combo.configure(values=who_values)
+            if current_who in who_values:
+                self.who_var.set(current_who)
+            else:
+                self.who_var.set("All")
+                who_filter = None
+                who_filter_norm = None
 
             # Get items (use search if query exists, otherwise get upcoming)
             if self.search_query:
@@ -165,7 +177,8 @@ class UpcomingScreen(ctk.CTkFrame):
                     item_date = item.start_date or item.due_date
                     if item_date and item_date <= end_date.isoformat():
                         # Apply who filter
-                        if who_filter is None or item.who == who_filter:
+                        item_who_norm = (item.who or "").strip().lower()
+                        if who_filter_norm is None or item_who_norm == who_filter_norm:
                             filtered_items.append(item)
                 items = filtered_items
             else:
@@ -417,7 +430,7 @@ class UpcomingScreen(ctk.CTkFrame):
 
             return header
         except Exception:
-            return f"{due_date} ({count} items)"
+            return f"{start_date} ({count} items)"
 
     def complete_item(self, item_id: str):
         """Mark item as complete."""

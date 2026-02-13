@@ -931,9 +931,14 @@ class SettingsScreen(ctk.CTkFrame):
         self.gmail_interval_var = ctk.StringVar(value=str(getattr(self.settings, "gmail_import_interval_seconds", 60)))
         ctk.CTkEntry(section, textvariable=self.gmail_interval_var, width=120).grid(row=5, column=1, sticky="w", padx=10, pady=5)
 
+        # Calendar import lookahead
+        ctk.CTkLabel(section, text="Calendar Days to check:").grid(row=6, column=0, sticky="w", padx=10, pady=5)
+        self.calendar_days_var = ctk.StringVar(value=str(getattr(self.settings, "calendar_import_days_ahead", 14)))
+        ctk.CTkEntry(section, textvariable=self.calendar_days_var, width=120).grid(row=6, column=1, sticky="w", padx=10, pady=5)
+
         # Buttons
         btn_frame = ctk.CTkFrame(section, fg_color="transparent")
-        btn_frame.grid(row=6, column=0, columnspan=2, sticky="w", padx=10, pady=10)
+        btn_frame.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=10)
 
         ctk.CTkButton(
             btn_frame,
@@ -951,6 +956,12 @@ class SettingsScreen(ctk.CTkFrame):
 
         ctk.CTkButton(
             btn_frame,
+            text="Run Calendar Import Now",
+            command=self.run_calendar_import_now,
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
             text="Open Logs",
             command=self.open_email_import_logs,
             fg_color="#444444",
@@ -959,7 +970,10 @@ class SettingsScreen(ctk.CTkFrame):
 
         # Status label
         self.gmail_status_label = ctk.CTkLabel(section, text="", wraplength=700)
-        self.gmail_status_label.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+        self.gmail_status_label.grid(row=8, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
+
+        self.calendar_status_label = ctk.CTkLabel(section, text="", wraplength=700)
+        self.calendar_status_label.grid(row=9, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
 
     def create_future_date_options_section(self, parent=None):
         """Create Future Date Options section (Drag Schedule)."""
@@ -1036,6 +1050,16 @@ class SettingsScreen(ctk.CTkFrame):
                 interval = 15
             self.settings.gmail_import_interval_seconds = interval
 
+            try:
+                calendar_days = int(self.calendar_days_var.get().strip() or "14")
+            except Exception:
+                calendar_days = 14
+            if calendar_days < 1:
+                calendar_days = 1
+            if calendar_days > 365:
+                calendar_days = 365
+            self.settings.calendar_import_days_ahead = calendar_days
+
             self.settings.save()
 
             # Apply to launchd (prod) so interval changes take effect automatically
@@ -1100,6 +1124,51 @@ class SettingsScreen(ctk.CTkFrame):
             self.gmail_status_label.configure(text="Opened logs.", text_color="gray")
         except Exception as e:
             self.gmail_status_label.configure(text=f"Could not open logs: {e}", text_color="red")
+
+    def run_calendar_import_now(self):
+        """Run Google Calendar importer immediately (in a background thread)."""
+        # Save current UI values first (including calendar lookahead days)
+        self.save_email_import_settings()
+
+        def work():
+            try:
+                from ..calendar_importer import CalendarImportConfig, import_upcoming_calendar_events
+
+                cfg = CalendarImportConfig(
+                    calendar_id="primary",
+                    days_ahead=max(1, int(getattr(self.settings, "calendar_import_days_ahead", 14))),
+                    who_value="Calendar",
+                    group_value="CALENDAR",
+                    include_all_day=True,
+                )
+                stats = import_upcoming_calendar_events(
+                    db_path=self.db_manager.db.db_path,
+                    cfg=cfg,
+                    dry_run=False,
+                )
+
+                msg = (
+                    f"Calendar import complete: seen={stats['events_seen']}, "
+                    f"created={stats['created']}, "
+                    f"updated_existing={stats.get('updated_existing', 0)}, "
+                    f"skipped_existing={stats['skipped_existing']}, "
+                    f"skipped_all_day={stats['skipped_all_day']}"
+                )
+                color = "green" if (stats["created"] > 0 or stats.get("updated_existing", 0) > 0) else "gray"
+                self.calendar_status_label.after(
+                    0, lambda: self.calendar_status_label.configure(text=msg, text_color=color)
+                )
+            except Exception as e:
+                self.calendar_status_label.after(
+                    0,
+                    lambda: self.calendar_status_label.configure(
+                        text=f"Calendar import failed: {e}",
+                        text_color="red",
+                    ),
+                )
+
+        self.calendar_status_label.configure(text="Running calendar import…", text_color="gray")
+        threading.Thread(target=work, daemon=True).start()
 
     def create_vps_segments_section(self, parent=None):
         """Create VPS Life Segments management section."""

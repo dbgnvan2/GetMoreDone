@@ -199,25 +199,7 @@ class DragScheduleScreen(ctk.CTkFrame):
     def build_date_boxes(self):
         n_days = int(self.days_var.get())
         today = datetime.now().date()
-
-        for i in range(n_days):
-            day = today + timedelta(days=i)
-            date_str = day.strftime("%Y-%m-%d")
-            label_text = f"{day.strftime('%a')}\n{day.strftime('%b %d, %Y')}"
-
-            frame = ctk.CTkFrame(self.dates_frame, height=70, fg_color="gray20")
-            frame.grid(row=i, column=0, sticky="ew", padx=6, pady=6)
-            frame.grid_columnconfigure(0, weight=1)
-
-            label = ctk.CTkLabel(
-                frame,
-                text=label_text,
-                justify="center"
-            )
-            label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
-
-            self.date_boxes.append({"frame": frame, "date": date_str})
-            self.date_box_colors[frame] = "gray20"
+        who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
         # Future date options (bottom)
         options_start_row = n_days + 1
@@ -235,6 +217,11 @@ class DragScheduleScreen(ctk.CTkFrame):
         next_month_date = next_month_obj.strftime("%Y-%m-%d")
         next_quarter_date = next_quarter_obj.strftime("%Y-%m-%d")
 
+        day_dates = [
+            (today + timedelta(days=i)).strftime("%Y-%m-%d")
+            for i in range(n_days)
+        ]
+
         future_options = [
             ("Near Term", f"+{mid_days} days\n{mid_date}", mid_date, "#FFD54F"),
             ("Long Term", f"+{long_days} days\n{long_date}", long_date, "#FFCDD2"),
@@ -242,6 +229,33 @@ class DragScheduleScreen(ctk.CTkFrame):
             ("1st Next Quarter", next_quarter_date, next_quarter_date, "#FFE0B2"),
         ]
         future_options.sort(key=lambda option: option[2])
+
+        date_stats = self.build_date_stats(day_dates, who_filter)
+
+        for i, date_str in enumerate(day_dates):
+            day = datetime.strptime(date_str, "%Y-%m-%d").date()
+            count, total_minutes = date_stats.get(date_str, (0, 0))
+            label_text = (
+                f"{day.strftime('%a')}\n"
+                f"{day.strftime('%b %d, %Y')}\n"
+                f"{self.format_day_stats_text(count, total_minutes)}"
+            )
+            color = self.color_for_day_stats(count, total_minutes)
+
+            frame = ctk.CTkFrame(self.dates_frame, height=86, fg_color=color)
+            frame.grid(row=i, column=0, sticky="ew", padx=6, pady=6)
+            frame.grid_columnconfigure(0, weight=1)
+
+            label = ctk.CTkLabel(
+                frame,
+                text=label_text,
+                justify="center",
+                text_color="#0B3D91"
+            )
+            label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+
+            self.date_boxes.append({"frame": frame, "date": date_str})
+            self.date_box_colors[frame] = color
 
         for idx, (title, subtitle, date_str, color) in enumerate(future_options):
             frame = ctk.CTkFrame(self.dates_frame, height=70, fg_color=color)
@@ -252,12 +266,105 @@ class DragScheduleScreen(ctk.CTkFrame):
                 frame,
                 text=f"{title}\n{subtitle}",
                 justify="center",
-                text_color="black"
+                text_color="#0B3D91"
             )
             label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
+
+    def build_date_stats(self, target_dates, who_filter: Optional[str]):
+        """Build per-day count and planned-minute totals for visible date boxes."""
+        target_set = set(target_dates)
+        date_stats = {}
+
+        items = self.db_manager.get_all_items(
+            status_filter="open",
+            who_filter=who_filter,
+            sort_by="start_date",
+            sort_desc=False
+        )
+
+        for item in items:
+            scheduled_date = item.start_date or item.due_date
+            if not scheduled_date:
+                continue
+
+            if scheduled_date not in target_set:
+                continue
+
+            day_key = scheduled_date
+            count, total_minutes = date_stats.get(day_key, (0, 0))
+            date_stats[day_key] = (
+                count + 1,
+                total_minutes + (item.planned_minutes or 0)
+            )
+
+        return date_stats
+
+    def format_day_stats_text(self, count: int, total_minutes: int) -> str:
+        item_label = "item" if count == 1 else "items"
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        return f"{count} {item_label} • {hours}h {minutes}m"
+
+    def color_for_day_stats(self, count: int, total_minutes: int) -> str:
+        """
+        Color ramp sequence:
+        green (<2h / equivalent load) -> light orange -> darker orange ->
+        light pink -> darker pink -> reddish
+        based on 12 items or 6 hours (360 min), whichever is higher.
+        """
+        count_ratio = min(max(count / 12.0, 0.0), 1.0)
+        time_ratio = min(max(total_minutes / 360.0, 0.0), 1.0)
+        intensity = max(count_ratio, time_ratio)
+
+        # Keep all low-load days green until one-third of max load
+        # (equivalent to <2h out of 6h, or <4 items out of 12).
+        if intensity < (1.0 / 3.0):
+            return "#6BCB77"
+
+        # After green zone, transition from orange -> pink -> red.
+        post_green_t = (intensity - (1.0 / 3.0)) / (2.0 / 3.0)
+        palette = [
+            "#FFD8A8",  # light orange
+            "#FFB347",  # darker orange
+            "#FF9BC2",  # light pink
+            "#FF5A8A",  # darker pink
+            "#E5243B",  # reddish
+        ]
+        return self.interpolate_palette(palette, post_green_t)
+
+    def interpolate_palette(self, colors, t: float) -> str:
+        """Interpolate across a palette of 2+ colors."""
+        t = min(max(t, 0.0), 1.0)
+        if len(colors) < 2:
+            return colors[0] if colors else "#DFF8D8"
+        if t == 1.0:
+            return colors[-1]
+
+        segments = len(colors) - 1
+        pos = t * segments
+        left_idx = int(pos)
+        right_idx = min(left_idx + 1, len(colors) - 1)
+        local_t = pos - left_idx
+        return self.interpolate_hex_color(colors[left_idx], colors[right_idx], local_t)
+
+    def interpolate_hex_color(self, start_hex: str, end_hex: str, t: float) -> str:
+        """Linearly interpolate between two hex colors."""
+        t = min(max(t, 0.0), 1.0)
+
+        s = start_hex.lstrip("#")
+        e = end_hex.lstrip("#")
+
+        sr, sg, sb = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+        er, eg, eb = int(e[0:2], 16), int(e[2:4], 16), int(e[4:6], 16)
+
+        r = round(sr + (er - sr) * t)
+        g = round(sg + (eg - sg) * t)
+        b = round(sb + (eb - sb) * t)
+
+        return f"#{r:02X}{g:02X}{b:02X}"
 
     def bind_drag_handlers(self, widget, item: ActionItem):
         widget.bind("<ButtonPress-1>", lambda e: self.start_drag(e, item))

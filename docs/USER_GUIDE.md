@@ -191,7 +191,7 @@ Controls:
 - **Priority Factors** — What: Importance, Urgency, Effort-Cost, Value. Why: Auto-populate priority for new items.
 - **Organization** — What: Default Group and Category. Why: Keep items organized.
 - **Planned Minutes** — What: Default time estimate. Why: Set a typical duration.
-- **Date Offsets tab** — What: Start/Due offsets. Why: Centralize scheduling defaults.
+- **Date Offsets section** — What: Start/Due offsets. Why: Centralize scheduling defaults.
 - **Save Defaults** — What: Stores the defaults. Why: Make them apply to new items.
 - **Clear Form** — What: Resets inputs. Why: Start over.
 
