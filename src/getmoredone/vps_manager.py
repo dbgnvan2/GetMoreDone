@@ -4,7 +4,7 @@ Provides CRUD operations for all VPS entities.
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
 
@@ -331,7 +331,7 @@ class VPSManager:
         if active_only:
             query += " AND is_active = 1"
 
-        query += " ORDER BY title"
+        query += " ORDER BY year DESC, created_at ASC"
 
         cursor = self.db.conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
@@ -347,8 +347,9 @@ class VPSManager:
 
     def create_annual_initiative(self, annual_plan_id: str, segment_description_id: str,
                                  year: int, title: str, description: str = "",
-                                 outcome_statement: str = "") -> str:
-        """Create a new annual initiative and auto-create 1 QI + 1 MT + 4 WTs beneath it."""
+                                 outcome_statement: str = "",
+                                 auto_create_chain: bool = True) -> str:
+        """Create a new annual initiative."""
         initiative_id = f"ai-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
 
@@ -362,131 +363,73 @@ class VPSManager:
 
         self.db.conn.commit()
 
+        if auto_create_chain:
+            self._auto_create_initial_chain_for_annual_initiative(initiative_id)
+
         return initiative_id
 
-    def _auto_create_initiative_chain(self, initiative_id: str, annual_plan_id: str,
-                                      segment_description_id: str, year: int, title: str):
-        """Auto-create 1 QI + 1 MT + 4 WTs when an Annual Initiative is created."""
-        from datetime import date, timedelta
-
-        # --- Quarter Initiative (Q1) ---
-        qi_title = f"{title} Q1"
-        qi_id = self.create_quarter_initiative(
-            annual_plan_id=annual_plan_id,
-            annual_initiative_id=initiative_id,
-            segment_description_id=segment_description_id,
-            quarter=1,
-            year=year,
-            title=qi_title
-        )
-
-        # --- Month Tactic (M1 = January) ---
-        mt_title = f"{title} M1"
-        mt_id = self.create_month_tactic(
-            quarter_initiative_id=qi_id,
-            segment_description_id=segment_description_id,
-            month=1,
-            year=year,
-            priority_focus=mt_title
-        )
-
-        # --- 4 Weekly Tactics (first 4 Mondays of January) ---
-        # Find the first Monday on or after Jan 1 of the year
-        jan1 = date(year, 1, 1)
-        days_to_monday = (7 - jan1.weekday()) % 7  # days until next Monday (0 if already Monday)
-        first_monday = jan1 + timedelta(days=days_to_monday)
-
-        for week_num in range(1, 5):
-            week_start = first_monday + timedelta(weeks=week_num - 1)
-            week_end = week_start + timedelta(days=6)
-            wt_title = f"{title} W{week_num}"
-            self.create_week_action(
-                month_tactic_id=mt_id,
-                segment_description_id=segment_description_id,
-                week_start_date=week_start.isoformat(),
-                week_end_date=week_end.isoformat(),
-                title=wt_title
-            )
-
-    def create_next_quarter_chain(self, annual_initiative_id: str) -> Optional[str]:
-        """Create the next quarter's full record chain (QI + 3 MTs + 4 WAs each).
-
-        - If no QIs exist: uses the current date's quarter.
-        - If QIs exist: uses the quarter after the latest one.
-        - Cycling: Q1→Q2→Q3→Q4→Q1 (year increments on Q4→Q1).
-
-        Returns the new Quarter Initiative ID, or None on error.
+    def _auto_create_initial_chain_for_annual_initiative(self, annual_initiative_id: str) -> Dict[str, Any]:
         """
-        from datetime import date, timedelta
+        Auto-create 1 quarter, 1 month, and 4 weeks for a new annual initiative.
 
-        ai = self.get_annual_initiative(annual_initiative_id)
-        if not ai:
-            return None
+        Naming format:
+        - {AI title} Q1
+        - {AI title} M1
+        - {AI title} W1..W4
+        """
+        annual_initiative = self.get_annual_initiative(annual_initiative_id)
+        if not annual_initiative:
+            return {}
 
-        existing_qis = self.get_quarter_initiatives(
-            annual_initiative_id=annual_initiative_id, active_only=False)
+        title_prefix = (annual_initiative.get("title") or "").strip() or "Annual Initiative"
+        year = int(annual_initiative["year"])
+        segment_id = annual_initiative["segment_description_id"]
 
-        if not existing_qis:
-            today = date.today()
-            month = today.month
-            if month <= 3:
-                next_quarter = 1
-            elif month <= 6:
-                next_quarter = 2
-            elif month <= 9:
-                next_quarter = 3
-            else:
-                next_quarter = 4
-            next_year = today.year
-        else:
-            sorted_qis = sorted(existing_qis, key=lambda x: (x['year'], x['quarter']), reverse=True)
-            latest = sorted_qis[0]
-            if latest['quarter'] == 4:
-                next_quarter = 1
-                next_year = latest['year'] + 1
-            else:
-                next_quarter = latest['quarter'] + 1
-                next_year = latest['year']
-
-        q_start_month = {1: 1, 2: 4, 3: 7, 4: 10}[next_quarter]
-        qi_title = f"{ai['title']} Q{next_quarter}"
-        qi_id = self.create_quarter_initiative(
-            annual_plan_id=ai['annual_plan_id'],
+        quarter = 1
+        quarter_id = self.create_quarter_initiative(
             annual_initiative_id=annual_initiative_id,
-            segment_description_id=ai['segment_description_id'],
-            quarter=next_quarter,
-            year=next_year,
-            title=qi_title
+            segment_description_id=segment_id,
+            quarter=quarter,
+            year=year,
+            title=f"{title_prefix} Q{quarter}",
         )
 
-        for month_offset in range(3):
-            month = q_start_month + month_offset
-            mt_title = f"{ai['title']} Q{next_quarter} M{month}"
-            mt_id = self.create_month_tactic(
-                quarter_initiative_id=qi_id,
-                segment_description_id=ai['segment_description_id'],
-                month=month,
-                year=next_year,
-                priority_focus=mt_title
+        month_num = 1
+        month_id = self.create_month_tactic(
+            quarter_initiative_id=quarter_id,
+            segment_description_id=segment_id,
+            month=month_num,
+            year=year,
+            priority_focus=f"{title_prefix} M{month_num}",
+            description="",
+        )
+
+        month_start = date(year, month_num, 1)
+        week_start = month_start - timedelta(days=month_start.weekday())
+        if week_start < month_start:
+            week_start += timedelta(days=7)
+
+        week_ids: List[str] = []
+        for idx in range(4):
+            ws = week_start + timedelta(days=idx * 7)
+            we = ws + timedelta(days=6)
+            week_id = self.create_week_action(
+                month_tactic_id=month_id,
+                segment_description_id=segment_id,
+                week_start_date=ws.isoformat(),
+                week_end_date=we.isoformat(),
+                title=f"{title_prefix} W{idx + 1}",
+                description="",
+                outcome_expected="",
             )
+            week_ids.append(week_id)
 
-            month_start = date(next_year, month, 1)
-            days_to_monday = (7 - month_start.weekday()) % 7
-            first_monday = month_start + timedelta(days=days_to_monday)
-
-            for week_num in range(1, 5):
-                week_start = first_monday + timedelta(weeks=week_num - 1)
-                week_end = week_start + timedelta(days=6)
-                wt_title = f"{ai['title']} Q{next_quarter} M{month} W{week_num}"
-                self.create_week_action(
-                    month_tactic_id=mt_id,
-                    segment_description_id=ai['segment_description_id'],
-                    week_start_date=week_start.isoformat(),
-                    week_end_date=week_end.isoformat(),
-                    title=wt_title
-                )
-
-        return qi_id
+        return {
+            "annual_initiative_id": annual_initiative_id,
+            "quarter_initiative_id": quarter_id,
+            "month_tactic_id": month_id,
+            "week_action_ids": week_ids,
+        }
 
     def update_annual_initiative(self, initiative_id: str, **kwargs) -> bool:
         """Update an annual initiative's fields."""
@@ -509,27 +452,12 @@ class VPSManager:
         self.db.conn.commit()
         return True
 
-    def delete_annual_initiative(self, initiative_id: str) -> bool:
-        """
-        Delete an Annual Initiative if it has no child Quarter Initiatives.
-        Returns True if deleted, False if children exist.
-        """
-        if self._has_children('quarter_initiatives', 'annual_initiative_id', initiative_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM annual_initiatives WHERE id = ?",
-            (initiative_id,)
-        )
-        self.db.conn.commit()
-        return True
-
     # ========================================================================
     # QUARTER_INITIATIVES
     # ========================================================================
 
-    def get_quarter_initiatives(self, annual_plan_id: Optional[str] = None,
-                                annual_initiative_id: Optional[str] = None,
+    def get_quarter_initiatives(self, annual_initiative_id: Optional[str] = None,
+                                annual_plan_id: Optional[str] = None,
                                 quarter: Optional[int] = None,
                                 year: Optional[int] = None,
                                 active_only: bool = True) -> List[Dict[str, Any]]:
@@ -569,14 +497,25 @@ class VPSManager:
         row = cursor.fetchone()
         return dict(row) if row else None
 
-    def create_quarter_initiative(self, annual_plan_id: str, segment_description_id: str,
+    def create_quarter_initiative(self, segment_description_id: str,
                                   quarter: int, year: int, title: str,
+                                  annual_initiative_id: Optional[str] = None,
+                                  annual_plan_id: Optional[str] = None,
                                   outcome_statement: str = "",
-                                  tracking_measures: str = "[]",
-                                  annual_initiative_id: Optional[str] = None) -> str:
+                                  tracking_measures: str = "[]") -> str:
         """Create a new quarter initiative."""
         initiative_id = f"qi-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
+
+        if not annual_initiative_id:
+            raise ValueError(
+                "annual_initiative_id is required. Quarter initiatives must be linked to an annual initiative."
+            )
+
+        annual_initiative = self.get_annual_initiative(annual_initiative_id)
+        if not annual_initiative:
+            raise ValueError("Annual initiative not found")
+        annual_plan_id = annual_initiative['annual_plan_id']
 
         self.db.conn.execute("""
             INSERT INTO quarter_initiatives
@@ -584,8 +523,8 @@ class VPSManager:
              outcome_statement, tracking_measures, status, progress_pct, is_active,
              created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_started', 0, 1, ?, ?)
-        """, (initiative_id, annual_plan_id, annual_initiative_id, segment_description_id,
-              quarter, year, title, outcome_statement, tracking_measures, now, now))
+        """, (initiative_id, annual_plan_id, annual_initiative_id, segment_description_id, quarter, year,
+              title, outcome_statement, tracking_measures, now, now))
 
         self.db.conn.commit()
         return initiative_id
@@ -881,6 +820,35 @@ class VPSManager:
 
         return [dict(row) for row in cursor.fetchall()]
 
+    def create_action_items_for_week_action(self, week_action_id: str, titles: List[str]) -> List[str]:
+        """Create up to 5 Action Items linked to a week action."""
+        from .models import ActionItem
+
+        week_action = self.get_week_action(week_action_id)
+        if not week_action:
+            return []
+
+        clean_titles = [t.strip() for t in titles if t and t.strip()][:5]
+        if not clean_titles:
+            return []
+
+        created_ids: List[str] = []
+        base_start = datetime.fromisoformat(week_action["week_start_date"]).date()
+
+        for idx, title in enumerate(clean_titles):
+            start_date = (base_start + timedelta(days=idx)).isoformat()
+            item = ActionItem(
+                who="",
+                title=title[:100],
+                description=None,
+                start_date=start_date,
+                week_action_id=week_action_id,
+                segment_description_id=week_action["segment_description_id"],
+            )
+            created_ids.append(self.db_manager.create_action_item(item, apply_defaults=True))
+
+        return created_ids
+
     def get_action_item(self, action_item_id: str) -> Optional[Dict[str, Any]]:
         """Get a single action item by ID."""
         cursor = self.db.conn.execute("""
@@ -1024,24 +992,29 @@ class VPSManager:
                 )
 
                 for annual_plan in annual_vision['annual_plans']:
-                    annual_plan['quarter_initiatives'] = self.get_quarter_initiatives(
+                    annual_plan['annual_initiatives'] = self.get_annual_initiatives(
                         annual_plan_id=annual_plan['id']
                     )
 
-                    for quarter_initiative in annual_plan['quarter_initiatives']:
-                        quarter_initiative['month_tactics'] = self.get_month_tactics(
-                            quarter_initiative_id=quarter_initiative['id']
+                    for annual_initiative in annual_plan['annual_initiatives']:
+                        annual_initiative['quarter_initiatives'] = self.get_quarter_initiatives(
+                            annual_initiative_id=annual_initiative['id']
                         )
 
-                        for month_tactic in quarter_initiative['month_tactics']:
-                            month_tactic['week_actions'] = self.get_week_actions(
-                                month_tactic_id=month_tactic['id']
+                        for quarter_initiative in annual_initiative['quarter_initiatives']:
+                            quarter_initiative['month_tactics'] = self.get_month_tactics(
+                                quarter_initiative_id=quarter_initiative['id']
                             )
 
-                            for week_action in month_tactic['week_actions']:
-                                week_action['action_items'] = self.get_action_items_for_week_action(
-                                    week_action['id']
+                            for month_tactic in quarter_initiative['month_tactics']:
+                                month_tactic['week_actions'] = self.get_week_actions(
+                                    month_tactic_id=month_tactic['id']
                                 )
+
+                                for week_action in month_tactic['week_actions']:
+                                    week_action['action_items'] = self.get_action_items_for_week_action(
+                                        week_action['id']
+                                    )
 
         return {
             'segment': segment,
@@ -1073,8 +1046,20 @@ class VPSManager:
             if quarter_initiative:
                 breadcrumb.insert(
                     0, {'type': 'quarter_initiative', 'data': quarter_initiative})
+                if quarter_initiative.get('annual_initiative_id'):
+                    entity_type = 'annual_initiative'
+                    entity_id = quarter_initiative['annual_initiative_id']
+                else:
+                    entity_type = 'annual_plan'
+                    entity_id = quarter_initiative['annual_plan_id']
+
+        if entity_type == 'annual_initiative':
+            annual_initiative = self.get_annual_initiative(entity_id)
+            if annual_initiative:
+                breadcrumb.insert(
+                    0, {'type': 'annual_initiative', 'data': annual_initiative})
                 entity_type = 'annual_plan'
-                entity_id = quarter_initiative['annual_plan_id']
+                entity_id = annual_initiative['annual_plan_id']
 
         if entity_type == 'annual_plan':
             annual_plan = self.get_annual_plan(entity_id)
@@ -1155,6 +1140,7 @@ class VPSManager:
         # Check for annual initiatives
         if self._has_children('annual_initiatives', 'annual_plan_id', plan_id):
             return False
+
         # Check for quarter initiatives
         if self._has_children('quarter_initiatives', 'annual_plan_id', plan_id):
             return False
@@ -1162,6 +1148,21 @@ class VPSManager:
         self.db.conn.execute(
             "DELETE FROM annual_plans WHERE id = ?",
             (plan_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_annual_initiative(self, initiative_id: str) -> bool:
+        """
+        Delete an Annual Initiative if it has no child records.
+        Returns True if deleted, False if children exist.
+        """
+        if self._has_children('quarter_initiatives', 'annual_initiative_id', initiative_id):
+            return False
+
+        self.db.conn.execute(
+            "DELETE FROM annual_initiatives WHERE id = ?",
+            (initiative_id,)
         )
         self.db.conn.commit()
         return True

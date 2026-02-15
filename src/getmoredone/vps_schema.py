@@ -95,7 +95,7 @@ class VPSSchema:
         """)
 
         # ========================================================================
-        # ANNUAL_INITIATIVE (Annual focus initiatives under a plan)
+        # ANNUAL_INITIATIVE (Annual outcomes under an Annual Plan)
         # ========================================================================
         conn.execute("""
             CREATE TABLE IF NOT EXISTS annual_initiatives (
@@ -121,6 +121,7 @@ class VPSSchema:
             CREATE TABLE IF NOT EXISTS quarter_initiatives (
                 id                   TEXT PRIMARY KEY,
                 annual_plan_id       TEXT NOT NULL REFERENCES annual_plans(id) ON DELETE CASCADE,
+                annual_initiative_id TEXT REFERENCES annual_initiatives(id) ON DELETE CASCADE,
                 segment_description_id TEXT NOT NULL REFERENCES segment_descriptions(id) ON DELETE CASCADE,
                 quarter              INTEGER NOT NULL CHECK(quarter BETWEEN 1 AND 4),
                 year                 INTEGER NOT NULL,
@@ -187,14 +188,14 @@ class VPSSchema:
         """)
 
         # ========================================================================
-        # EXTEND QUARTER_INITIATIVES to link to Annual Initiatives
-        # ========================================================================
-        VPSSchema._extend_quarter_initiatives(conn)
-
-        # ========================================================================
         # EXTEND ACTION_ITEMS for VPS Integration
         # ========================================================================
         VPSSchema._extend_action_items(conn)
+
+        # ========================================================================
+        # EXTEND QUARTER_INITIATIVES for annual initiative linkage
+        # ========================================================================
+        VPSSchema._extend_quarter_initiatives(conn)
 
         # ========================================================================
         # EXTEND WEEK_ACTIONS for Step/Key Result fields
@@ -229,18 +230,6 @@ class VPSSchema:
         conn.commit()
 
     @staticmethod
-    def _extend_quarter_initiatives(conn: sqlite3.Connection):
-        """Add annual_initiative_id FK to quarter_initiatives if not already present."""
-        cursor = conn.execute("PRAGMA table_info(quarter_initiatives)")
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if 'annual_initiative_id' not in columns:
-            conn.execute("""
-                ALTER TABLE quarter_initiatives
-                ADD COLUMN annual_initiative_id TEXT REFERENCES annual_initiatives(id) ON DELETE CASCADE
-            """)
-
-    @staticmethod
     def _extend_action_items(conn: sqlite3.Connection):
         """Add VPS-related columns to existing action_items table."""
         # Check which columns already exist
@@ -269,6 +258,18 @@ class VPSSchema:
             conn.execute("""
                 ALTER TABLE action_items
                 ADD COLUMN segment_description_id TEXT REFERENCES segment_descriptions(id) ON DELETE SET NULL
+            """)
+
+    @staticmethod
+    def _extend_quarter_initiatives(conn: sqlite3.Connection):
+        """Add annual initiative linkage to existing quarter_initiatives tables."""
+        cursor = conn.execute("PRAGMA table_info(quarter_initiatives)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'annual_initiative_id' not in columns:
+            conn.execute("""
+                ALTER TABLE quarter_initiatives
+                ADD COLUMN annual_initiative_id TEXT REFERENCES annual_initiatives(id) ON DELETE CASCADE
             """)
 
     @staticmethod
@@ -358,8 +359,8 @@ class VPSSchema:
             ON annual_initiatives(segment_description_id)
         """)
         conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_annual_initiatives_status
-            ON annual_initiatives(status)
+            CREATE INDEX IF NOT EXISTS idx_annual_initiatives_year
+            ON annual_initiatives(year)
         """)
 
         # Quarter Initiatives
@@ -368,7 +369,7 @@ class VPSSchema:
             ON quarter_initiatives(annual_plan_id)
         """)
         conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_quarter_initiatives_ai_parent
+            CREATE INDEX IF NOT EXISTS idx_quarter_initiatives_annual_initiative
             ON quarter_initiatives(annual_initiative_id)
         """)
         conn.execute("""

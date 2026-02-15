@@ -630,20 +630,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
             if not week_actions:
                 self.week_action_combo.configure(
-                    values=["(No Weekly Tactics available)"])
+                    values=["(No Week Actions available)"])
                 return
 
-            # Create display strings: "W{iso_week} YYYY-MM-DD: Title"
-            from datetime import datetime as _dt
+            # Create display strings: "Weekly Tactic YYYY-MM-DD: Title"
             self.week_action_options = {}  # Map display string to week_action_id
-            display_values = ["(None)"]  # Allow clearing the weekly tactic
+            display_values = ["(None)"]  # Allow clearing the week action
 
             for wa in week_actions:
-                try:
-                    week_n = _dt.fromisoformat(wa['week_start_date']).isocalendar()[1]
-                except (ValueError, KeyError):
-                    week_n = "?"
-                display = f"W{week_n} {wa['week_start_date']}: {wa['title']}"
+                display = f"Weekly Tactic {wa['week_start_date']}: {wa['title']}"
                 display_values.append(display)
                 self.week_action_options[display] = wa['id']
 

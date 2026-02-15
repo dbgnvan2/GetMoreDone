@@ -341,6 +341,7 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                           sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid_columnconfigure(2, weight=1)
 
         btn_save = ctk.CTkButton(
             button_frame, text="Save", command=self.save_initiative)
@@ -395,12 +396,14 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                     status=status
                 )
             else:
-                # Resolve the annual_plan_id from the annual_initiative
-                ai = self.vps_manager.get_annual_initiative(self.annual_initiative_id)
-                annual_plan_id = ai['annual_plan_id'] if ai else None
-                # Create new QI linked to the Annual Initiative
+                # Create new
+                annual_initiative = self.vps_manager.get_annual_initiative(
+                    self.annual_initiative_id)
+                if not annual_initiative:
+                    messagebox.showerror(
+                        "Error", "Annual Initiative not found.")
+                    return
                 self.vps_manager.create_quarter_initiative(
-                    annual_plan_id=annual_plan_id,
                     annual_initiative_id=self.annual_initiative_id,
                     segment_description_id=self.segment_id,
                     quarter=quarter,
@@ -798,7 +801,6 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
         self.initiative_id = initiative_id
         self.initiative = None
 
-        # Load initiative if editing
         if initiative_id:
             self.initiative = vps_manager.get_annual_initiative(initiative_id)
             self.title("Edit Annual Initiative")
@@ -809,14 +811,11 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Create form
         self.create_form()
 
-        # Load data if editing
         if self.initiative:
             self.load_initiative_data()
 
-        # Make dialog modal
         self.transient(parent)
         self.grab_set()
 
@@ -828,21 +827,6 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
 
         row = 0
 
-        # Segment display (read-only)
-        segment = self.vps_manager.get_segment(self.segment_id)
-        if segment:
-            ctk.CTkLabel(main_frame, text="Life Segment:", font=ctk.CTkFont(weight="bold")).grid(
-                row=row, column=0, sticky="w", padx=10, pady=5
-            )
-            ctk.CTkLabel(
-                main_frame,
-                text=segment['name'],
-                fg_color=segment['color_hex'],
-                corner_radius=5
-            ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
-            row += 1
-
-        # Year
         ctk.CTkLabel(main_frame, text="Year:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
@@ -853,56 +837,42 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
         self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
-        # Title
         ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.title_entry = ctk.CTkEntry(
-            main_frame, placeholder_text="Initiative title")
+            main_frame, placeholder_text="Annual initiative title")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
-        # Outcome Statement
-        ctk.CTkLabel(main_frame, text="Outcome:", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(main_frame, text="Outcome Statement:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
-        self.outcome_text = ctk.CTkTextbox(main_frame, height=100)
+        self.outcome_text = ctk.CTkTextbox(main_frame, height=120)
         self.outcome_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
-        # Description
         ctk.CTkLabel(main_frame, text="Description:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
-        self.description_text = ctk.CTkTextbox(main_frame, height=100)
+        self.description_text = ctk.CTkTextbox(main_frame, height=120)
         self.description_text.grid(
             row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
-        # Status (only shown when editing)
-        if self.initiative_id:
-            ctk.CTkLabel(main_frame, text="Status:", font=ctk.CTkFont(weight="bold")).grid(
-                row=row, column=0, sticky="w", padx=10, pady=5
-            )
-            self.status_var = ctk.StringVar(value="not_started")
-            self.status_menu = ctk.CTkOptionMenu(
-                main_frame,
-                variable=self.status_var,
-                values=["not_started", "in_progress", "at_risk", "completed", "on_hold", "cancelled"]
-            )
-            self.status_menu.grid(row=row, column=1, sticky="w", padx=10, pady=5)
-            row += 1
+        ctk.CTkLabel(main_frame, text="Status:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=5
+        )
+        self.status_var = ctk.StringVar(value="not_started")
+        self.status_combo = ctk.CTkComboBox(
+            main_frame,
+            values=["not_started", "in_progress", "at_risk",
+                    "completed", "on_hold", "cancelled"],
+            variable=self.status_var
+        )
+        self.status_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
 
-            ctk.CTkLabel(main_frame, text="Progress %:", font=ctk.CTkFont(weight="bold")).grid(
-                row=row, column=0, sticky="w", padx=10, pady=5
-            )
-            self.progress_entry = ctk.CTkEntry(
-                main_frame, placeholder_text="0-100")
-            self.progress_entry.insert(0, "0")
-            self.progress_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
-            row += 1
-
-        # Buttons
         button_frame = ctk.CTkFrame(main_frame)
         button_frame.grid(row=row, column=0, columnspan=2,
                           sticky="ew", padx=10, pady=10)
@@ -924,28 +894,22 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
 
         self.year_entry.delete(0, "end")
         self.year_entry.insert(0, str(self.initiative['year']))
-        self.title_entry.insert(0, self.initiative['title'])
+        if self.initiative.get('title'):
+            self.title_entry.insert(0, self.initiative['title'])
         if self.initiative.get('outcome_statement'):
             self.outcome_text.insert("1.0", self.initiative['outcome_statement'])
         if self.initiative.get('description'):
             self.description_text.insert("1.0", self.initiative['description'])
-        if hasattr(self, 'status_var'):
-            self.status_var.set(self.initiative.get('status', 'not_started'))
-        if hasattr(self, 'progress_entry'):
-            self.progress_entry.delete(0, "end")
-            self.progress_entry.insert(0, str(self.initiative.get('progress_pct', 0)))
+        if self.initiative.get('status'):
+            self.status_var.set(self.initiative['status'])
 
     def save_initiative(self):
-        """Validate and save the initiative."""
-        year_str = self.year_entry.get().strip()
-        if not year_str:
-            year = datetime.now().year
-        else:
-            try:
-                year = int(year_str)
-            except ValueError:
-                messagebox.showerror("Validation Error", "Year must be a valid integer")
-                return
+        """Validate and save the annual initiative."""
+        try:
+            year = int(self.year_entry.get().strip())
+        except ValueError:
+            messagebox.showerror("Validation Error", "Year must be a valid integer")
+            return
 
         title = self.title_entry.get().strip()
         if not title:
@@ -954,26 +918,17 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
 
         outcome_statement = self.outcome_text.get("1.0", "end-1c").strip()
         description = self.description_text.get("1.0", "end-1c").strip()
+        status = self.status_var.get()
 
         try:
             if self.initiative_id:
-                status = self.status_var.get() if hasattr(self, 'status_var') else 'not_started'
-                try:
-                    progress_pct = int(self.progress_entry.get().strip()) if hasattr(self, 'progress_entry') else 0
-                    if not (0 <= progress_pct <= 100):
-                        raise ValueError
-                except ValueError:
-                    messagebox.showerror("Validation Error", "Progress must be 0-100")
-                    return
-
                 self.vps_manager.update_annual_initiative(
                     self.initiative_id,
                     year=year,
                     title=title,
                     outcome_statement=outcome_statement,
                     description=description,
-                    status=status,
-                    progress_pct=progress_pct
+                    status=status
                 )
             else:
                 self.vps_manager.create_annual_initiative(
@@ -986,9 +941,8 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
                 )
 
             self.destroy()
-
         except Exception as e:
-            messagebox.showerror("Error", f"Error saving annual initiative: {e}")
+            messagebox.showerror("Error", f"Failed to save annual initiative: {e}")
 
 
 class MonthTacticEditorDialog(ctk.CTkToplevel):
@@ -1169,7 +1123,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         else:
             self.title("New Week Action")
 
-        self.geometry("700x500")
+        self.geometry("700x900")
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -1236,6 +1190,38 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         self.outcome_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
         row += 1
 
+        # Add separator
+        separator = ctk.CTkFrame(main_frame, height=2, fg_color="gray")
+        separator.grid(row=row, column=0, columnspan=2,
+                       sticky="ew", padx=10, pady=10)
+        row += 1
+
+        # Step and Key Result fields
+        self.step_entries = []
+        self.key_result_entries = []
+
+        for i in range(1, 6):
+            # Step field
+            ctk.CTkLabel(main_frame, text=f"Step {i}:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            step_entry = ctk.CTkEntry(
+                main_frame, placeholder_text=f"Step {i} (50 chars max)")
+            step_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+            self.step_entries.append(step_entry)
+            row += 1
+
+            # Key Result field
+            ctk.CTkLabel(main_frame, text=f"Key Result {i}:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            key_result_entry = ctk.CTkEntry(
+                main_frame, placeholder_text=f"Key Result {i} (50 chars max)")
+            key_result_entry.grid(
+                row=row, column=1, sticky="ew", padx=10, pady=5)
+            self.key_result_entries.append(key_result_entry)
+            row += 1
+
         # Buttons
         button_frame = ctk.CTkFrame(main_frame)
         button_frame.grid(row=row, column=0, columnspan=2,
@@ -1248,114 +1234,13 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             button_frame, text="Save", command=self.save_action)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
-        btn_create_actions = ctk.CTkButton(
-            button_frame, text="Create Next Actions",
-            command=self.open_create_next_actions,
-            fg_color="#1a6b3a", hover_color="#145529"
-        )
-        btn_create_actions.grid(row=0, column=1, padx=5, pady=5)
+        btn_create_next_actions = ctk.CTkButton(
+            button_frame, text="Create Next Actions", command=self.create_next_actions)
+        btn_create_next_actions.grid(row=0, column=1, padx=5, pady=5)
 
         btn_cancel = ctk.CTkButton(
             button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=2, padx=5, pady=5)
-
-    def open_create_next_actions(self):
-        """Save the week action first, then open multi-action-item creation dialog."""
-        # Save/create the week action so we have an ID
-        saved_id = self._save_and_get_id()
-        if not saved_id:
-            return
-
-        self._show_create_next_actions_dialog(saved_id)
-
-    def _save_and_get_id(self) -> Optional[str]:
-        """Save the week action and return its ID (existing or newly created)."""
-        week_start = self.week_start_picker.get_date()
-        week_end = self.week_end_picker.get_date()
-        title = self.title_entry.get().strip()
-
-        if not (week_start and week_end and title):
-            messagebox.showwarning("Required Fields", "Please fill in Week Start, Week End and Title before creating actions.")
-            return None
-
-        description = self.description_text.get("1.0", "end-1c").strip()
-        outcome = self.outcome_text.get("1.0", "end-1c").strip()
-
-        try:
-            if self.action_id:
-                self.vps_manager.update_week_action(
-                    self.action_id,
-                    week_start_date=week_start,
-                    week_end_date=week_end,
-                    title=title,
-                    description=description,
-                    outcome_expected=outcome
-                )
-                return self.action_id
-            else:
-                new_id = self.vps_manager.create_week_action(
-                    month_tactic_id=self.month_tactic_id,
-                    segment_description_id=self.segment_id,
-                    week_start_date=week_start,
-                    week_end_date=week_end,
-                    title=title,
-                    description=description,
-                    outcome_expected=outcome
-                )
-                self.action_id = new_id
-                return new_id
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save weekly tactic: {e}")
-            return None
-
-    def _show_create_next_actions_dialog(self, week_action_id: str):
-        """Show a dialog with 5 title fields to create multiple Action Items at once."""
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Create Next Actions")
-        dialog.geometry("500x380")
-        dialog.transient(self)
-        dialog.grab_set()
-
-        ctk.CTkLabel(dialog, text="Enter titles for up to 5 Action Items:",
-                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(15, 5), padx=20)
-        ctk.CTkLabel(dialog, text="(Leave blank to skip)", font=ctk.CTkFont(size=11),
-                     text_color="gray").pack(pady=(0, 10), padx=20)
-
-        entries = []
-        for i in range(1, 6):
-            row_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-            row_frame.pack(fill="x", padx=20, pady=3)
-            ctk.CTkLabel(row_frame, text=f"Action {i}:", width=70,
-                         anchor="w").pack(side="left", padx=(0, 8))
-            entry = ctk.CTkEntry(row_frame, placeholder_text=f"Action item {i} title")
-            entry.pack(side="left", fill="x", expand=True)
-            entries.append(entry)
-
-        def do_create():
-            created = 0
-            for entry in entries:
-                t = entry.get().strip()
-                if t:
-                    from ..models import ActionItem
-                    item = ActionItem(
-                        who="",
-                        title=t,
-                        week_action_id=week_action_id,
-                        segment_description_id=self.segment_id
-                    )
-                    self.vps_manager.db_manager.create_action_item(item, apply_defaults=True)
-                    created += 1
-            dialog.destroy()
-            self.destroy()
-            if created:
-                messagebox.showinfo("Done", f"Created {created} action item(s).")
-
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(pady=15, padx=20, fill="x")
-        ctk.CTkButton(btn_frame, text="Create", command=do_create,
-                      fg_color="#1a6b3a").pack(side="left", padx=5)
-        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy,
-                      fg_color="gray").pack(side="left", padx=5)
 
     def load_action_data(self):
         """Load existing action data into form."""
@@ -1373,18 +1258,39 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         if self.action['outcome_expected']:
             self.outcome_text.insert("1.0", self.action['outcome_expected'])
 
-    def save_action(self):
-        """Validate and save the action."""
+        # Load Step and Key Result fields
+        for i in range(1, 6):
+            step_value = self.action.get(f'step_{i}', '')
+            if step_value:
+                self.step_entries[i-1].insert(0, step_value)
+
+            key_result_value = self.action.get(f'key_result_{i}', '')
+            if key_result_value:
+                self.key_result_entries[i-1].insert(0, key_result_value)
+
+    def _save_action(self, close_on_success: bool = True) -> Optional[str]:
+        """Validate and save the week action and optionally close."""
         # Get values
         week_start = self.week_start_picker.get_date()
         week_end = self.week_end_picker.get_date()
         title = self.title_entry.get().strip()
 
         if not (week_start and week_end and title):
-            return
+            messagebox.showerror(
+                "Validation Error", "Week start, week end, and title are required.")
+            return None
 
         description = self.description_text.get("1.0", "end-1c").strip()
         outcome = self.outcome_text.get("1.0", "end-1c").strip()
+
+        # Get Step and Key Result values (limit to 50 chars each)
+        steps = {}
+        key_results = {}
+        for i in range(1, 6):
+            step_value = self.step_entries[i-1].get().strip()[:50]
+            key_result_value = self.key_result_entries[i-1].get().strip()[:50]
+            steps[f'step_{i}'] = step_value
+            key_results[f'key_result_{i}'] = key_result_value
 
         # Save or update
         try:
@@ -1396,22 +1302,82 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                     week_end_date=week_end,
                     title=title,
                     description=description,
-                    outcome_expected=outcome
+                    outcome_expected=outcome,
+                    **steps,
+                    **key_results
                 )
+                saved_id = self.action_id
             else:
                 # Create new
-                self.vps_manager.create_week_action(
+                action_id = self.vps_manager.create_week_action(
                     month_tactic_id=self.month_tactic_id,
                     segment_description_id=self.segment_id,
                     week_start_date=week_start,
                     week_end_date=week_end,
                     title=title,
                     description=description,
-                    outcome_expected=outcome
+                    outcome_expected=outcome,
+                    **steps,
+                    **key_results
                 )
+                self.action_id = action_id
+                saved_id = action_id
 
-            # Close dialog
-            self.destroy()
+            if close_on_success:
+                self.destroy()
+            return saved_id
 
         except Exception as e:
-            print(f"Error saving week action: {e}")
+            messagebox.showerror("Error", f"Error saving week action: {e}")
+            return None
+
+    def save_action(self):
+        """Save and close."""
+        self._save_action(close_on_success=True)
+
+    def create_next_actions(self):
+        """Create 1-5 linked Action Items from this weekly tactic."""
+        action_id = self._save_action(close_on_success=False)
+        if not action_id:
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Create Next Actions")
+        dialog.geometry("500x380")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            dialog,
+            text="Enter up to 5 action titles (one per line):",
+            font=ctk.CTkFont(weight="bold")
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
+
+        txt_actions = ctk.CTkTextbox(dialog, height=220)
+        txt_actions.grid(row=1, column=0, sticky="nsew", padx=12, pady=6)
+
+        btn_frame = ctk.CTkFrame(dialog)
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=10)
+        btn_frame.grid_columnconfigure((0, 1), weight=1)
+
+        def on_create():
+            raw = txt_actions.get("1.0", "end-1c")
+            titles = [line.strip() for line in raw.splitlines() if line.strip()][:5]
+            if not titles:
+                messagebox.showerror(
+                    "Validation Error", "Please enter at least one action title.")
+                return
+
+            created = self.vps_manager.create_action_items_for_week_action(
+                action_id, titles)
+            messagebox.showinfo(
+                "Next Actions Created",
+                f"Created {len(created)} action item(s)."
+            )
+            dialog.destroy()
+
+        ctk.CTkButton(btn_frame, text="Create", command=on_create).grid(
+            row=0, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy).grid(
+            row=0, column=1, padx=5, pady=5)
