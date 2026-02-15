@@ -605,7 +605,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
         btn_add_initiative = ctk.CTkButton(
-            frame, text="+ Annual Initiative", width=130,
+            frame, text="+", width=25,
             command=lambda: self.add_annual_initiative(plan['id']))
         btn_add_initiative.grid(row=0, column=3, padx=2, pady=3)
 

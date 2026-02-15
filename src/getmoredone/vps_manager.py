@@ -362,10 +362,6 @@ class VPSManager:
 
         self.db.conn.commit()
 
-        # Auto-create the planning chain: 1 QI → 1 MT → 4 WTs
-        self._auto_create_initiative_chain(
-            initiative_id, annual_plan_id, segment_description_id, year, title)
-
         return initiative_id
 
     def _auto_create_initiative_chain(self, initiative_id: str, annual_plan_id: str,
