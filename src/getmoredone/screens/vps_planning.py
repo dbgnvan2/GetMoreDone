@@ -653,16 +653,22 @@ class VPSPlanningScreen(ctk.CTkFrame):
             command=lambda: self.add_quarter_to_initiative(initiative['id'], initiative['segment_description_id']))
         btn_add_quarter.grid(row=0, column=3, padx=2, pady=3)
 
+        btn_next_quarter = ctk.CTkButton(
+            frame, text="Create Next Quarter Records", width=190,
+            fg_color="#1a5276", hover_color="#154360",
+            command=lambda: self.create_next_quarter_records(initiative['id']))
+        btn_next_quarter.grid(row=0, column=4, padx=2, pady=3)
+
         btn_edit = ctk.CTkButton(
             frame, text="✎", width=25,
             command=lambda: self.edit_annual_initiative(initiative['id']))
-        btn_edit.grid(row=0, column=4, padx=2, pady=3)
+        btn_edit.grid(row=0, column=5, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(
             frame, text="🗑", width=25,
             command=lambda: self.delete_annual_initiative(initiative['id']),
             fg_color="darkred", hover_color="red")
-        btn_delete.grid(row=0, column=5, padx=2, pady=3)
+        btn_delete.grid(row=0, column=6, padx=2, pady=3)
 
         return frame
 
@@ -1017,6 +1023,25 @@ class VPSPlanningScreen(ctk.CTkFrame):
         )
         self.wait_window(dialog)
         self.refresh()
+
+    def create_next_quarter_records(self, annual_initiative_id: str):
+        """Auto-create the next quarter's full chain (QI + 3 MTs + 4 WAs each)."""
+        from tkinter import messagebox
+        qi_id = self.vps_manager.create_next_quarter_chain(annual_initiative_id)
+        if qi_id:
+            qi = self.vps_manager.get_quarter_initiative(qi_id)
+            q_num = qi['quarter'] if qi else '?'
+            year = qi['year'] if qi else '?'
+            messagebox.showinfo(
+                "Quarter Records Created",
+                f"Q{q_num} {year} records created:\n"
+                f"  1 Quarter Initiative\n"
+                f"  3 Month Tactics\n"
+                f"  12 Week Actions"
+            )
+            self.refresh()
+        else:
+            messagebox.showerror("Error", "Could not create quarter records.")
 
     def add_quarter_initiative(self, annual_plan_id: str):
         """Legacy method — Quarter Initiatives now belong to Annual Initiatives."""

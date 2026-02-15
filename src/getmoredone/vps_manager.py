@@ -408,6 +408,86 @@ class VPSManager:
                 title=wt_title
             )
 
+    def create_next_quarter_chain(self, annual_initiative_id: str) -> Optional[str]:
+        """Create the next quarter's full record chain (QI + 3 MTs + 4 WAs each).
+
+        - If no QIs exist: uses the current date's quarter.
+        - If QIs exist: uses the quarter after the latest one.
+        - Cycling: Q1→Q2→Q3→Q4→Q1 (year increments on Q4→Q1).
+
+        Returns the new Quarter Initiative ID, or None on error.
+        """
+        from datetime import date, timedelta
+
+        ai = self.get_annual_initiative(annual_initiative_id)
+        if not ai:
+            return None
+
+        existing_qis = self.get_quarter_initiatives(
+            annual_initiative_id=annual_initiative_id, active_only=False)
+
+        if not existing_qis:
+            today = date.today()
+            month = today.month
+            if month <= 3:
+                next_quarter = 1
+            elif month <= 6:
+                next_quarter = 2
+            elif month <= 9:
+                next_quarter = 3
+            else:
+                next_quarter = 4
+            next_year = today.year
+        else:
+            sorted_qis = sorted(existing_qis, key=lambda x: (x['year'], x['quarter']), reverse=True)
+            latest = sorted_qis[0]
+            if latest['quarter'] == 4:
+                next_quarter = 1
+                next_year = latest['year'] + 1
+            else:
+                next_quarter = latest['quarter'] + 1
+                next_year = latest['year']
+
+        q_start_month = {1: 1, 2: 4, 3: 7, 4: 10}[next_quarter]
+        qi_title = f"{ai['title']} Q{next_quarter}"
+        qi_id = self.create_quarter_initiative(
+            annual_plan_id=ai['annual_plan_id'],
+            annual_initiative_id=annual_initiative_id,
+            segment_description_id=ai['segment_description_id'],
+            quarter=next_quarter,
+            year=next_year,
+            title=qi_title
+        )
+
+        for month_offset in range(3):
+            month = q_start_month + month_offset
+            mt_title = f"{ai['title']} Q{next_quarter} M{month}"
+            mt_id = self.create_month_tactic(
+                quarter_initiative_id=qi_id,
+                segment_description_id=ai['segment_description_id'],
+                month=month,
+                year=next_year,
+                priority_focus=mt_title
+            )
+
+            month_start = date(next_year, month, 1)
+            days_to_monday = (7 - month_start.weekday()) % 7
+            first_monday = month_start + timedelta(days=days_to_monday)
+
+            for week_num in range(1, 5):
+                week_start = first_monday + timedelta(weeks=week_num - 1)
+                week_end = week_start + timedelta(days=6)
+                wt_title = f"{ai['title']} Q{next_quarter} M{month} W{week_num}"
+                self.create_week_action(
+                    month_tactic_id=mt_id,
+                    segment_description_id=ai['segment_description_id'],
+                    week_start_date=week_start.isoformat(),
+                    week_end_date=week_end.isoformat(),
+                    title=wt_title
+                )
+
+        return qi_id
+
     def update_annual_initiative(self, initiative_id: str, **kwargs) -> bool:
         """Update an annual initiative's fields."""
         allowed_fields = {'title', 'description', 'outcome_statement',
