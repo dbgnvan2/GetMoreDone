@@ -334,19 +334,25 @@ class VPSPlanningScreen(ctk.CTkFrame):
             initiatives = self.vps_manager.get_quarter_initiatives(
                 annual_plan_id=plan['id'])
 
+            # Fetch parent annual_vision for prefix labeling
+            annual_vision = self.vps_manager.get_annual_vision(
+                plan['annual_vision_id'])
+
             if not initiatives:
                 row = self.display_empty_message(
                     row, indent + 1, "No quarter initiatives")
             else:
                 for initiative in initiatives:
                     row = self.display_quarter_initiative_tree(
-                        initiative, row, indent + 1)
+                        initiative, row, indent + 1, annual_vision=annual_vision)
 
         return row
 
-    def display_quarter_initiative_tree(self, initiative: Dict[str, Any], row: int, indent: int) -> int:
+    def display_quarter_initiative_tree(self, initiative: Dict[str, Any], row: int, indent: int,
+                                        annual_vision: Optional[Dict[str, Any]] = None) -> int:
         """Display a Quarter Initiative and its children."""
-        init_frame = self.create_quarter_initiative_row(initiative, indent)
+        init_frame = self.create_quarter_initiative_row(
+            initiative, indent, annual_vision=annual_vision)
         init_frame.grid(row=row, column=0, sticky="ew",
                         pady=2, padx=(indent * 30 + 5, 5))
         row += 1
@@ -362,13 +368,15 @@ class VPSPlanningScreen(ctk.CTkFrame):
             else:
                 for tactic in tactics:
                     row = self.display_month_tactic_tree(
-                        tactic, row, indent + 1)
+                        tactic, row, indent + 1, annual_vision=annual_vision)
 
         return row
 
-    def display_month_tactic_tree(self, tactic: Dict[str, Any], row: int, indent: int) -> int:
+    def display_month_tactic_tree(self, tactic: Dict[str, Any], row: int, indent: int,
+                                  annual_vision: Optional[Dict[str, Any]] = None) -> int:
         """Display a Month Tactic and its children."""
-        tactic_frame = self.create_month_tactic_row(tactic, indent)
+        tactic_frame = self.create_month_tactic_row(
+            tactic, indent, annual_vision=annual_vision)
         tactic_frame.grid(row=row, column=0, sticky="ew",
                           pady=2, padx=(indent * 30 + 5, 5))
         row += 1
@@ -380,17 +388,19 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
             if not actions:
                 row = self.display_empty_message(
-                    row, indent + 1, "No week actions")
+                    row, indent + 1, "No weekly tactics")
             else:
                 for action in actions:
                     row = self.display_week_action_tree(
-                        action, row, indent + 1)
+                        action, row, indent + 1, annual_vision=annual_vision)
 
         return row
 
-    def display_week_action_tree(self, action: Dict[str, Any], row: int, indent: int) -> int:
-        """Display a Week Action and its linked action items."""
-        action_frame = self.create_week_action_row(action, indent)
+    def display_week_action_tree(self, action: Dict[str, Any], row: int, indent: int,
+                                 annual_vision: Optional[Dict[str, Any]] = None) -> int:
+        """Display a Weekly Tactic and its linked action items."""
+        action_frame = self.create_week_action_row(
+            action, indent, annual_vision=annual_vision)
         action_frame.grid(row=row, column=0, sticky="ew",
                           pady=2, padx=(indent * 30 + 5, 5))
         row += 1
@@ -587,7 +597,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         return frame
 
-    def create_quarter_initiative_row(self, initiative: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+    def create_quarter_initiative_row(self, initiative: Dict[str, Any], indent: int,
+                                      annual_vision: Optional[Dict[str, Any]] = None) -> ctk.CTkFrame:
         """Create a row for a Quarter Initiative."""
         node_id = f"quarter_initiative-{initiative['id']}"
         is_expanded = node_id in self.expanded_nodes
@@ -604,7 +615,12 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
         progress = initiative['progress_pct']
-        label = ctk.CTkLabel(frame, text=f"📋 Q{initiative['quarter']}: {initiative['title']} ({progress}%)",
+        prefix = annual_vision['title'] if annual_vision else ""
+        q_start_months = {1: 1, 2: 4, 3: 7, 4: 10}
+        q_month = q_start_months.get(initiative['quarter'], 1)
+        q_date = f"{initiative['year']}-{q_month:02d}-01"
+        label = ctk.CTkLabel(frame,
+                             text=f"📋 {prefix} Q{initiative['quarter']} {q_date}: {initiative['title']} ({progress}%)",
                              font=ctk.CTkFont(size=11), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
@@ -622,7 +638,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         return frame
 
-    def create_month_tactic_row(self, tactic: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+    def create_month_tactic_row(self, tactic: Dict[str, Any], indent: int,
+                               annual_vision: Optional[Dict[str, Any]] = None) -> ctk.CTkFrame:
         """Create a row for a Month Tactic."""
         node_id = f"month_tactic-{tactic['id']}"
         is_expanded = node_id in self.expanded_nodes
@@ -638,10 +655,10 @@ class VPSPlanningScreen(ctk.CTkFrame):
                                    command=lambda: self.toggle_node(node_id))
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
-        month_names = ["", "Jan", "Feb", "Mar", "Apr", "May",
-                       "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        month_name = month_names[tactic['month']]
-        label = ctk.CTkLabel(frame, text=f"📌 {month_name}: {tactic['priority_focus']} ({tactic['progress_pct']}%)",
+        prefix = annual_vision['title'] if annual_vision else ""
+        m_date = f"{tactic['year']}-{tactic['month']:02d}-01"
+        label = ctk.CTkLabel(frame,
+                             text=f"📌 {prefix} M{tactic['month']} {m_date}: {tactic['priority_focus']} ({tactic['progress_pct']}%)",
                              font=ctk.CTkFont(size=11), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
@@ -659,8 +676,10 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         return frame
 
-    def create_week_action_row(self, action: Dict[str, Any], indent: int) -> ctk.CTkFrame:
-        """Create a row for a Week Action."""
+    def create_week_action_row(self, action: Dict[str, Any], indent: int,
+                              annual_vision: Optional[Dict[str, Any]] = None) -> ctk.CTkFrame:
+        """Create a row for a Weekly Tactic."""
+        from datetime import datetime as _dt
         node_id = f"week_action-{action['id']}"
         is_expanded = node_id in self.expanded_nodes
 
@@ -675,11 +694,18 @@ class VPSPlanningScreen(ctk.CTkFrame):
                                    command=lambda: self.toggle_node(node_id))
         btn_expand.grid(row=0, column=1, padx=2, pady=3)
 
-        label = ctk.CTkLabel(frame, text=f"✅ Week {action['week_start_date']}: {action['title']}",
+        prefix = annual_vision['title'] if annual_vision else ""
+        try:
+            week_dt = _dt.fromisoformat(action['week_start_date'])
+            week_n = week_dt.isocalendar()[1]
+        except (ValueError, KeyError):
+            week_n = ""
+        label = ctk.CTkLabel(frame,
+                             text=f"✅ {prefix} W{week_n} {action['week_start_date']}: {action['title']}",
                              font=ctk.CTkFont(size=10), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(frame, text="+ Item", width=40,
+        btn_add = ctk.CTkButton(frame, text="+ Action Item", width=90,
                                 command=lambda: self.add_action_item(action['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
@@ -888,7 +914,16 @@ class VPSPlanningScreen(ctk.CTkFrame):
             self.refresh()
 
     def add_quarter_initiative(self, annual_plan_id: str):
-        """Add a Quarter Initiative to an Annual Plan."""
+        """Add a Quarter Initiative to an Annual Plan (max 4 quarters)."""
+        from tkinter import messagebox
+        existing = self.vps_manager.get_quarter_initiatives(
+            annual_plan_id=annual_plan_id)
+        if len(existing) >= 4:
+            messagebox.showwarning(
+                "Quarter Limit Reached",
+                "An Annual Plan can only have up to 4 quarters (Q1–Q4)."
+            )
+            return
         from .vps_editors import QuarterInitiativeEditorDialog
         plan = self.vps_manager.get_annual_plan(annual_plan_id)
         if plan:

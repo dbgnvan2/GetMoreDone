@@ -452,8 +452,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
             row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
-        # Week Action (VPS Integration)
-        ctk.CTkLabel(self.tab_organization, text="Week Action:").grid(
+        # Weekly Tactic (VPS Integration)
+        ctk.CTkLabel(self.tab_organization, text="Weekly Tactic:").grid(
             row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         self.week_action_var = ctk.StringVar(value="")
         self.week_action_combo = ctk.CTkComboBox(self.tab_organization, values=[
@@ -630,15 +630,20 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
             if not week_actions:
                 self.week_action_combo.configure(
-                    values=["(No Week Actions available)"])
+                    values=["(No Weekly Tactics available)"])
                 return
 
-            # Create display strings: "Week YYYY-MM-DD: Title"
+            # Create display strings: "W{iso_week} YYYY-MM-DD: Title"
+            from datetime import datetime as _dt
             self.week_action_options = {}  # Map display string to week_action_id
-            display_values = ["(None)"]  # Allow clearing the week action
+            display_values = ["(None)"]  # Allow clearing the weekly tactic
 
             for wa in week_actions:
-                display = f"Week {wa['week_start_date']}: {wa['title']}"
+                try:
+                    week_n = _dt.fromisoformat(wa['week_start_date']).isocalendar()[1]
+                except (ValueError, KeyError):
+                    week_n = "?"
+                display = f"W{week_n} {wa['week_start_date']}: {wa['title']}"
                 display_values.append(display)
                 self.week_action_options[display] = wa['id']
 
