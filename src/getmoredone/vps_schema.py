@@ -187,6 +187,11 @@ class VPSSchema:
         """)
 
         # ========================================================================
+        # EXTEND QUARTER_INITIATIVES to link to Annual Initiatives
+        # ========================================================================
+        VPSSchema._extend_quarter_initiatives(conn)
+
+        # ========================================================================
         # EXTEND ACTION_ITEMS for VPS Integration
         # ========================================================================
         VPSSchema._extend_action_items(conn)
@@ -222,6 +227,18 @@ class VPSSchema:
         VPSSchema._seed_segment_descriptions(conn)
 
         conn.commit()
+
+    @staticmethod
+    def _extend_quarter_initiatives(conn: sqlite3.Connection):
+        """Add annual_initiative_id FK to quarter_initiatives if not already present."""
+        cursor = conn.execute("PRAGMA table_info(quarter_initiatives)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'annual_initiative_id' not in columns:
+            conn.execute("""
+                ALTER TABLE quarter_initiatives
+                ADD COLUMN annual_initiative_id TEXT REFERENCES annual_initiatives(id) ON DELETE CASCADE
+            """)
 
     @staticmethod
     def _extend_action_items(conn: sqlite3.Connection):
@@ -349,6 +366,10 @@ class VPSSchema:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_quarter_initiatives_parent
             ON quarter_initiatives(annual_plan_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_quarter_initiatives_ai_parent
+            ON quarter_initiatives(annual_initiative_id)
         """)
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_quarter_initiatives_segment

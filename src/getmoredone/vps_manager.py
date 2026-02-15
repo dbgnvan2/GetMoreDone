@@ -348,7 +348,7 @@ class VPSManager:
     def create_annual_initiative(self, annual_plan_id: str, segment_description_id: str,
                                  year: int, title: str, description: str = "",
                                  outcome_statement: str = "") -> str:
-        """Create a new annual initiative."""
+        """Create a new annual initiative and auto-create 1 QI + 1 MT + 4 WTs beneath it."""
         initiative_id = f"ai-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
 
@@ -361,7 +361,56 @@ class VPSManager:
               description, outcome_statement, now, now))
 
         self.db.conn.commit()
+
+        # Auto-create the planning chain: 1 QI → 1 MT → 4 WTs
+        self._auto_create_initiative_chain(
+            initiative_id, annual_plan_id, segment_description_id, year, title)
+
         return initiative_id
+
+    def _auto_create_initiative_chain(self, initiative_id: str, annual_plan_id: str,
+                                      segment_description_id: str, year: int, title: str):
+        """Auto-create 1 QI + 1 MT + 4 WTs when an Annual Initiative is created."""
+        from datetime import date, timedelta
+
+        # --- Quarter Initiative (Q1) ---
+        qi_title = f"{title} Q1"
+        qi_id = self.create_quarter_initiative(
+            annual_plan_id=annual_plan_id,
+            annual_initiative_id=initiative_id,
+            segment_description_id=segment_description_id,
+            quarter=1,
+            year=year,
+            title=qi_title
+        )
+
+        # --- Month Tactic (M1 = January) ---
+        mt_title = f"{title} M1"
+        mt_id = self.create_month_tactic(
+            quarter_initiative_id=qi_id,
+            segment_description_id=segment_description_id,
+            month=1,
+            year=year,
+            priority_focus=mt_title
+        )
+
+        # --- 4 Weekly Tactics (first 4 Mondays of January) ---
+        # Find the first Monday on or after Jan 1 of the year
+        jan1 = date(year, 1, 1)
+        days_to_monday = (7 - jan1.weekday()) % 7  # days until next Monday (0 if already Monday)
+        first_monday = jan1 + timedelta(days=days_to_monday)
+
+        for week_num in range(1, 5):
+            week_start = first_monday + timedelta(weeks=week_num - 1)
+            week_end = week_start + timedelta(days=6)
+            wt_title = f"{title} W{week_num}"
+            self.create_week_action(
+                month_tactic_id=mt_id,
+                segment_description_id=segment_description_id,
+                week_start_date=week_start.isoformat(),
+                week_end_date=week_end.isoformat(),
+                title=wt_title
+            )
 
     def update_annual_initiative(self, initiative_id: str, **kwargs) -> bool:
         """Update an annual initiative's fields."""
@@ -386,9 +435,12 @@ class VPSManager:
 
     def delete_annual_initiative(self, initiative_id: str) -> bool:
         """
-        Delete an Annual Initiative.
-        Returns True if deleted, False on failure.
+        Delete an Annual Initiative if it has no child Quarter Initiatives.
+        Returns True if deleted, False if children exist.
         """
+        if self._has_children('quarter_initiatives', 'annual_initiative_id', initiative_id):
+            return False
+
         self.db.conn.execute(
             "DELETE FROM annual_initiatives WHERE id = ?",
             (initiative_id,)
@@ -401,6 +453,7 @@ class VPSManager:
     # ========================================================================
 
     def get_quarter_initiatives(self, annual_plan_id: Optional[str] = None,
+                                annual_initiative_id: Optional[str] = None,
                                 quarter: Optional[int] = None,
                                 year: Optional[int] = None,
                                 active_only: bool = True) -> List[Dict[str, Any]]:
@@ -408,7 +461,10 @@ class VPSManager:
         query = "SELECT * FROM quarter_initiatives WHERE 1=1"
         params = []
 
-        if annual_plan_id:
+        if annual_initiative_id:
+            query += " AND annual_initiative_id = ?"
+            params.append(annual_initiative_id)
+        elif annual_plan_id:
             query += " AND annual_plan_id = ?"
             params.append(annual_plan_id)
 
@@ -440,19 +496,20 @@ class VPSManager:
     def create_quarter_initiative(self, annual_plan_id: str, segment_description_id: str,
                                   quarter: int, year: int, title: str,
                                   outcome_statement: str = "",
-                                  tracking_measures: str = "[]") -> str:
+                                  tracking_measures: str = "[]",
+                                  annual_initiative_id: Optional[str] = None) -> str:
         """Create a new quarter initiative."""
         initiative_id = f"qi-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
 
         self.db.conn.execute("""
             INSERT INTO quarter_initiatives
-            (id, annual_plan_id, segment_description_id, quarter, year, title,
+            (id, annual_plan_id, annual_initiative_id, segment_description_id, quarter, year, title,
              outcome_statement, tracking_measures, status, progress_pct, is_active,
              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'not_started', 0, 1, ?, ?)
-        """, (initiative_id, annual_plan_id, segment_description_id, quarter, year,
-              title, outcome_statement, tracking_measures, now, now))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_started', 0, 1, ?, ?)
+        """, (initiative_id, annual_plan_id, annual_initiative_id, segment_description_id,
+              quarter, year, title, outcome_statement, tracking_measures, now, now))
 
         self.db.conn.commit()
         return initiative_id

@@ -240,12 +240,12 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
 class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing Quarter Initiatives."""
 
-    def __init__(self, parent, vps_manager: 'VPSManager', annual_plan_id: str,
+    def __init__(self, parent, vps_manager: 'VPSManager', annual_initiative_id: str,
                  segment_id: str, initiative_id: Optional[str] = None):
         super().__init__(parent)
 
         self.vps_manager = vps_manager
-        self.annual_plan_id = annual_plan_id
+        self.annual_initiative_id = annual_initiative_id
         self.segment_id = segment_id
         self.initiative_id = initiative_id
         self.initiative = None
@@ -395,9 +395,13 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                     status=status
                 )
             else:
-                # Create new
+                # Resolve the annual_plan_id from the annual_initiative
+                ai = self.vps_manager.get_annual_initiative(self.annual_initiative_id)
+                annual_plan_id = ai['annual_plan_id'] if ai else None
+                # Create new QI linked to the Annual Initiative
                 self.vps_manager.create_quarter_initiative(
-                    annual_plan_id=self.annual_plan_id,
+                    annual_plan_id=annual_plan_id,
+                    annual_initiative_id=self.annual_initiative_id,
                     segment_description_id=self.segment_id,
                     quarter=quarter,
                     year=year,
@@ -1238,14 +1242,120 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                           sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid_columnconfigure(2, weight=1)
 
         btn_save = ctk.CTkButton(
             button_frame, text="Save", command=self.save_action)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
+        btn_create_actions = ctk.CTkButton(
+            button_frame, text="Create Next Actions",
+            command=self.open_create_next_actions,
+            fg_color="#1a6b3a", hover_color="#145529"
+        )
+        btn_create_actions.grid(row=0, column=1, padx=5, pady=5)
+
         btn_cancel = ctk.CTkButton(
             button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
+        btn_cancel.grid(row=0, column=2, padx=5, pady=5)
+
+    def open_create_next_actions(self):
+        """Save the week action first, then open multi-action-item creation dialog."""
+        # Save/create the week action so we have an ID
+        saved_id = self._save_and_get_id()
+        if not saved_id:
+            return
+
+        self._show_create_next_actions_dialog(saved_id)
+
+    def _save_and_get_id(self) -> Optional[str]:
+        """Save the week action and return its ID (existing or newly created)."""
+        week_start = self.week_start_picker.get_date()
+        week_end = self.week_end_picker.get_date()
+        title = self.title_entry.get().strip()
+
+        if not (week_start and week_end and title):
+            messagebox.showwarning("Required Fields", "Please fill in Week Start, Week End and Title before creating actions.")
+            return None
+
+        description = self.description_text.get("1.0", "end-1c").strip()
+        outcome = self.outcome_text.get("1.0", "end-1c").strip()
+
+        try:
+            if self.action_id:
+                self.vps_manager.update_week_action(
+                    self.action_id,
+                    week_start_date=week_start,
+                    week_end_date=week_end,
+                    title=title,
+                    description=description,
+                    outcome_expected=outcome
+                )
+                return self.action_id
+            else:
+                new_id = self.vps_manager.create_week_action(
+                    month_tactic_id=self.month_tactic_id,
+                    segment_description_id=self.segment_id,
+                    week_start_date=week_start,
+                    week_end_date=week_end,
+                    title=title,
+                    description=description,
+                    outcome_expected=outcome
+                )
+                self.action_id = new_id
+                return new_id
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save weekly tactic: {e}")
+            return None
+
+    def _show_create_next_actions_dialog(self, week_action_id: str):
+        """Show a dialog with 5 title fields to create multiple Action Items at once."""
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Create Next Actions")
+        dialog.geometry("500x380")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        ctk.CTkLabel(dialog, text="Enter titles for up to 5 Action Items:",
+                     font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(15, 5), padx=20)
+        ctk.CTkLabel(dialog, text="(Leave blank to skip)", font=ctk.CTkFont(size=11),
+                     text_color="gray").pack(pady=(0, 10), padx=20)
+
+        entries = []
+        for i in range(1, 6):
+            row_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+            row_frame.pack(fill="x", padx=20, pady=3)
+            ctk.CTkLabel(row_frame, text=f"Action {i}:", width=70,
+                         anchor="w").pack(side="left", padx=(0, 8))
+            entry = ctk.CTkEntry(row_frame, placeholder_text=f"Action item {i} title")
+            entry.pack(side="left", fill="x", expand=True)
+            entries.append(entry)
+
+        def do_create():
+            created = 0
+            for entry in entries:
+                t = entry.get().strip()
+                if t:
+                    from ..models import ActionItem
+                    item = ActionItem(
+                        who="",
+                        title=t,
+                        week_action_id=week_action_id,
+                        segment_description_id=self.segment_id
+                    )
+                    self.vps_manager.db_manager.create_action_item(item, apply_defaults=True)
+                    created += 1
+            dialog.destroy()
+            self.destroy()
+            if created:
+                messagebox.showinfo("Done", f"Created {created} action item(s).")
+
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(pady=15, padx=20, fill="x")
+        ctk.CTkButton(btn_frame, text="Create", command=do_create,
+                      fg_color="#1a6b3a").pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy,
+                      fg_color="gray").pack(side="left", padx=5)
 
     def load_action_data(self):
         """Load existing action data into form."""
