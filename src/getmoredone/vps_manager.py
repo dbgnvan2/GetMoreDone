@@ -392,6 +392,7 @@ class VPSManager:
             quarter=quarter,
             year=year,
             title=f"{title_prefix} Q{quarter}",
+            auto_create_chain=False,
         )
 
         month_num = 1
@@ -483,7 +484,7 @@ class VPSManager:
         if active_only:
             query += " AND is_active = 1"
 
-        query += " ORDER BY year DESC, quarter DESC"
+        query += " ORDER BY year ASC, quarter ASC"
 
         cursor = self.db.conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
@@ -497,10 +498,39 @@ class VPSManager:
         row = cursor.fetchone()
         return dict(row) if row else None
 
+    def get_next_quarter_for_annual_initiative(self, annual_initiative_id: str) -> Dict[str, int]:
+        """
+        Determine next quarter/year defaults for a new quarter initiative.
+
+        Rules:
+        - No existing quarter initiatives -> use annual initiative year + Q1
+        - Existing -> increment from latest by (year, quarter)
+          Q4 rolls over to Q1 of next year
+        """
+        annual_initiative = self.get_annual_initiative(annual_initiative_id)
+        if not annual_initiative:
+            return {"year": datetime.now().year, "quarter": 1}
+
+        existing = self.get_quarter_initiatives(
+            annual_initiative_id=annual_initiative_id,
+            active_only=False
+        )
+        if not existing:
+            return {"year": int(annual_initiative["year"]), "quarter": 1}
+
+        latest = max(existing, key=lambda q: (int(q["year"]), int(q["quarter"])))
+        latest_year = int(latest["year"])
+        latest_quarter = int(latest["quarter"])
+
+        if latest_quarter >= 4:
+            return {"year": latest_year + 1, "quarter": 1}
+        return {"year": latest_year, "quarter": latest_quarter + 1}
+
     def create_quarter_initiative(self, segment_description_id: str,
                                   quarter: int, year: int, title: str,
                                   annual_initiative_id: Optional[str] = None,
                                   annual_plan_id: Optional[str] = None,
+                                  auto_create_chain: bool = True,
                                   outcome_statement: str = "",
                                   tracking_measures: str = "[]") -> str:
         """Create a new quarter initiative."""
@@ -516,6 +546,11 @@ class VPSManager:
         if not annual_initiative:
             raise ValueError("Annual initiative not found")
         annual_plan_id = annual_initiative['annual_plan_id']
+        ai_title = (annual_initiative.get("title") or "").strip() or "Annual Initiative"
+
+        # Auto title for new quarter initiatives under an annual initiative
+        auto_title = f"{ai_title} Q{quarter}"
+        final_title = auto_title
 
         self.db.conn.execute("""
             INSERT INTO quarter_initiatives
@@ -524,10 +559,49 @@ class VPSManager:
              created_at, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_started', 0, 1, ?, ?)
         """, (initiative_id, annual_plan_id, annual_initiative_id, segment_description_id, quarter, year,
-              title, outcome_statement, tracking_measures, now, now))
+              final_title, outcome_statement, tracking_measures, now, now))
 
         self.db.conn.commit()
+
+        if auto_create_chain:
+            self._auto_create_initial_chain_for_quarter_initiative(initiative_id)
+
         return initiative_id
+
+    def _auto_create_initial_chain_for_quarter_initiative(self, quarter_initiative_id: str) -> Dict[str, Any]:
+        """
+        Auto-create 1 month tactic and 4 week actions for a quarter initiative.
+        """
+        quarter_initiative = self.get_quarter_initiative(quarter_initiative_id)
+        if not quarter_initiative:
+            return {}
+
+        quarter = int(quarter_initiative["quarter"])
+        year = int(quarter_initiative["year"])
+        segment_id = quarter_initiative["segment_description_id"]
+        qi_title = (quarter_initiative.get("title") or "").strip() or f"Q{quarter}"
+
+        # First month of the selected quarter: Q1=1, Q2=4, Q3=7, Q4=10
+        month_num = ((quarter - 1) * 3) + 1
+        month_title_index = quarter
+        month_id = self.create_month_tactic(
+            quarter_initiative_id=quarter_initiative_id,
+            segment_description_id=segment_id,
+            month=month_num,
+            year=year,
+            priority_focus=f"{qi_title} M{month_title_index}",
+            description="",
+            auto_create_weeks=True,
+        )
+
+        week_actions = self.get_week_actions(month_tactic_id=month_id, active_only=False)
+        week_ids = [wa["id"] for wa in week_actions]
+
+        return {
+            "quarter_initiative_id": quarter_initiative_id,
+            "month_tactic_id": month_id,
+            "week_action_ids": week_ids,
+        }
 
     def update_quarter_initiative(self, initiative_id: str, **kwargs) -> bool:
         """Update a quarter initiative's fields."""
@@ -577,7 +651,7 @@ class VPSManager:
         if active_only:
             query += " AND is_active = 1"
 
-        query += " ORDER BY year DESC, month DESC"
+        query += " ORDER BY year ASC, month ASC"
 
         cursor = self.db.conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
@@ -593,7 +667,8 @@ class VPSManager:
 
     def create_month_tactic(self, quarter_initiative_id: str, segment_description_id: str,
                             month: int, year: int, priority_focus: str,
-                            description: str = "") -> str:
+                            description: str = "",
+                            auto_create_weeks: bool = True) -> str:
         """Create a new month tactic."""
         tactic_id = f"mt-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -608,7 +683,75 @@ class VPSManager:
               priority_focus, description, now, now))
 
         self.db.conn.commit()
+
+        if auto_create_weeks:
+            self._auto_create_week_actions_for_month_tactic(tactic_id)
+
         return tactic_id
+
+    def get_next_month_for_quarter_initiative(self, quarter_initiative_id: str) -> Dict[str, int]:
+        """
+        Determine next month/year defaults for a month tactic under a quarter initiative.
+
+        Rules:
+        - No month tactics: first month of quarter (Q1=Jan, Q2=Apr, Q3=Jul, Q4=Oct)
+        - Existing month tactics: next month after latest by (year, month)
+        """
+        quarter_initiative = self.get_quarter_initiative(quarter_initiative_id)
+        if not quarter_initiative:
+            today = date.today()
+            return {"year": today.year, "month": today.month}
+
+        existing = self.get_month_tactics(
+            quarter_initiative_id=quarter_initiative_id,
+            active_only=False
+        )
+        if not existing:
+            quarter = int(quarter_initiative["quarter"])
+            year = int(quarter_initiative["year"])
+            month = ((quarter - 1) * 3) + 1
+            return {"year": year, "month": month}
+
+        latest = max(existing, key=lambda m: (int(m["year"]), int(m["month"])))
+        month = int(latest["month"]) + 1
+        year = int(latest["year"])
+        if month > 12:
+            month = 1
+            year += 1
+        return {"year": year, "month": month}
+
+    def _auto_create_week_actions_for_month_tactic(self, month_tactic_id: str) -> List[str]:
+        """Auto-create 4 weekly tactics for a month tactic."""
+        month_tactic = self.get_month_tactic(month_tactic_id)
+        if not month_tactic:
+            return []
+
+        year = int(month_tactic["year"])
+        month = int(month_tactic["month"])
+        segment_id = month_tactic["segment_description_id"]
+        quarter_initiative = self.get_quarter_initiative(month_tactic["quarter_initiative_id"])
+        quarter_title = (quarter_initiative.get("title") if quarter_initiative else "") or "Quarter"
+
+        month_start = date(year, month, 1)
+        week_start = month_start - timedelta(days=month_start.weekday())
+        if week_start < month_start:
+            week_start += timedelta(days=7)
+
+        created: List[str] = []
+        for idx in range(4):
+            ws = week_start + timedelta(days=idx * 7)
+            we = ws + timedelta(days=6)
+            wa_id = self.create_week_action(
+                month_tactic_id=month_tactic_id,
+                segment_description_id=segment_id,
+                week_start_date=ws.isoformat(),
+                week_end_date=we.isoformat(),
+                title=f"{quarter_title} W{idx + 1}",
+                description="",
+                outcome_expected="",
+            )
+            created.append(wa_id)
+        return created
 
     def update_month_tactic(self, tactic_id: str, **kwargs) -> bool:
         """Update a month tactic's fields."""
@@ -653,7 +796,7 @@ class VPSManager:
         if active_only:
             query += " AND is_active = 1"
 
-        query += " ORDER BY week_start_date DESC, order_index"
+        query += " ORDER BY week_start_date ASC, order_index"
 
         cursor = self.db.conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
@@ -1088,132 +1231,144 @@ class VPSManager:
         return breadcrumb
 
     # ========================================================================
-    # DELETE METHODS (WITH CHILD RECORD PROTECTION)
+    # DELETE METHODS (CASCADE WITH PREVIEW SUPPORT)
     # ========================================================================
 
-    def _has_children(self, table: str, parent_id_column: str, parent_id: str) -> bool:
-        """Check if a record has child records."""
+    def _fetch_ids(self, table: str, where_col: str, where_vals: List[str]) -> List[str]:
+        """Fetch IDs from table where where_col in where_vals."""
+        if not where_vals:
+            return []
+        placeholders = ",".join(["?"] * len(where_vals))
         cursor = self.db.conn.execute(
-            f"SELECT COUNT(*) FROM {table} WHERE {parent_id_column} = ?",
-            (parent_id,)
+            f"SELECT id FROM {table} WHERE {where_col} IN ({placeholders})",
+            where_vals
         )
-        count = cursor.fetchone()[0]
-        return count > 0
+        return [row["id"] for row in cursor.fetchall()]
+
+    def _collect_cascade_ids(self, entity_type: str, entity_id: str) -> Dict[str, List[str]]:
+        """
+        Collect all descendant IDs that will be deleted for a given VPS entity.
+        """
+        ids: Dict[str, List[str]] = {
+            "tl_visions": [],
+            "annual_visions": [],
+            "annual_plans": [],
+            "annual_initiatives": [],
+            "quarter_initiatives": [],
+            "month_tactics": [],
+            "week_actions": [],
+            "action_items": [],
+        }
+
+        if entity_type == "tl_vision":
+            ids["tl_visions"] = [entity_id]
+            ids["annual_visions"] = self._fetch_ids("annual_visions", "tl_vision_id", [entity_id])
+        elif entity_type == "annual_vision":
+            ids["annual_visions"] = [entity_id]
+        elif entity_type == "annual_plan":
+            ids["annual_plans"] = [entity_id]
+        elif entity_type == "annual_initiative":
+            ids["annual_initiatives"] = [entity_id]
+        elif entity_type == "quarter_initiative":
+            ids["quarter_initiatives"] = [entity_id]
+        elif entity_type == "month_tactic":
+            ids["month_tactics"] = [entity_id]
+        elif entity_type == "week_action":
+            ids["week_actions"] = [entity_id]
+        else:
+            return ids
+
+        if ids["annual_visions"]:
+            ids["annual_plans"] = self._fetch_ids("annual_plans", "annual_vision_id", ids["annual_visions"])
+
+        if ids["annual_plans"]:
+            ids["annual_initiatives"] = self._fetch_ids("annual_initiatives", "annual_plan_id", ids["annual_plans"])
+
+            # Include legacy quarter initiatives still linked directly to annual plans
+            legacy_qi = self._fetch_ids("quarter_initiatives", "annual_plan_id", ids["annual_plans"])
+            qi_from_ai = self._fetch_ids("quarter_initiatives", "annual_initiative_id", ids["annual_initiatives"])
+            ids["quarter_initiatives"] = sorted(set(legacy_qi + qi_from_ai))
+        elif ids["annual_initiatives"]:
+            qi_from_ai = self._fetch_ids("quarter_initiatives", "annual_initiative_id", ids["annual_initiatives"])
+            ids["quarter_initiatives"] = sorted(set(qi_from_ai))
+
+        if ids["quarter_initiatives"]:
+            ids["month_tactics"] = self._fetch_ids("month_tactics", "quarter_initiative_id", ids["quarter_initiatives"])
+
+        if ids["month_tactics"]:
+            ids["week_actions"] = self._fetch_ids("week_actions", "month_tactic_id", ids["month_tactics"])
+
+        if ids["week_actions"]:
+            ids["action_items"] = self._fetch_ids("action_items", "week_action_id", ids["week_actions"])
+
+        return ids
+
+    def get_cascade_delete_preview(self, entity_type: str, entity_id: str) -> Dict[str, int]:
+        """Return count preview of what will be deleted for the given entity."""
+        ids = self._collect_cascade_ids(entity_type, entity_id)
+        return {k: len(v) for k, v in ids.items() if len(v) > 0}
+
+    def delete_entity_cascade(self, entity_type: str, entity_id: str) -> bool:
+        """
+        Delete an entity and all descendants.
+
+        Note: action_items.week_action_id is ON DELETE SET NULL, so we explicitly
+        delete action items linked to descendant week actions before parent deletion.
+        """
+        ids = self._collect_cascade_ids(entity_type, entity_id)
+        conn = self.db.conn
+
+        root_table_map = {
+            "tl_vision": "tl_visions",
+            "annual_vision": "annual_visions",
+            "annual_plan": "annual_plans",
+            "annual_initiative": "annual_initiatives",
+            "quarter_initiative": "quarter_initiatives",
+            "month_tactic": "month_tactics",
+            "week_action": "week_actions",
+        }
+        root_table = root_table_map.get(entity_type)
+        if not root_table:
+            return False
+
+        try:
+            conn.execute("BEGIN")
+
+            # Explicitly delete action items that would otherwise become orphaned.
+            if ids["action_items"]:
+                placeholders = ",".join(["?"] * len(ids["action_items"]))
+                conn.execute(
+                    f"DELETE FROM action_items WHERE id IN ({placeholders})",
+                    ids["action_items"]
+                )
+
+            conn.execute(f"DELETE FROM {root_table} WHERE id = ?", (entity_id,))
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            return False
 
     def delete_tl_vision(self, vision_id: str) -> bool:
-        """
-        Delete a TL Vision if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        # Check for annual visions
-        if self._has_children('annual_visions', 'tl_vision_id', vision_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM tl_visions WHERE id = ?",
-            (vision_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("tl_vision", vision_id)
 
     def delete_annual_vision(self, vision_id: str) -> bool:
-        """
-        Delete an Annual Vision if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        # Check for annual plans
-        if self._has_children('annual_plans', 'annual_vision_id', vision_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM annual_visions WHERE id = ?",
-            (vision_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("annual_vision", vision_id)
 
     def delete_annual_plan(self, plan_id: str) -> bool:
-        """
-        Delete an Annual Plan if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        # Check for annual initiatives
-        if self._has_children('annual_initiatives', 'annual_plan_id', plan_id):
-            return False
-
-        # Check for quarter initiatives
-        if self._has_children('quarter_initiatives', 'annual_plan_id', plan_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM annual_plans WHERE id = ?",
-            (plan_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("annual_plan", plan_id)
 
     def delete_annual_initiative(self, initiative_id: str) -> bool:
-        """
-        Delete an Annual Initiative if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        if self._has_children('quarter_initiatives', 'annual_initiative_id', initiative_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM annual_initiatives WHERE id = ?",
-            (initiative_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("annual_initiative", initiative_id)
 
     def delete_quarter_initiative(self, initiative_id: str) -> bool:
-        """
-        Delete a Quarter Initiative if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        # Check for month tactics
-        if self._has_children('month_tactics', 'quarter_initiative_id', initiative_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM quarter_initiatives WHERE id = ?",
-            (initiative_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("quarter_initiative", initiative_id)
 
     def delete_month_tactic(self, tactic_id: str) -> bool:
-        """
-        Delete a Month Tactic if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        # Check for week actions
-        if self._has_children('week_actions', 'month_tactic_id', tactic_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM month_tactics WHERE id = ?",
-            (tactic_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("month_tactic", tactic_id)
 
     def delete_week_action(self, action_id: str) -> bool:
-        """
-        Delete a Week Action if it has no child records.
-        Returns True if deleted, False if children exist.
-        """
-        # Check for linked action items
-        if self._has_children('action_items', 'week_action_id', action_id):
-            return False
-
-        self.db.conn.execute(
-            "DELETE FROM week_actions WHERE id = ?",
-            (action_id,)
-        )
-        self.db.conn.commit()
-        return True
+        return self.delete_entity_cascade("week_action", action_id)
 
     def delete_segment(self, segment_id: str) -> tuple[bool, dict]:
         """

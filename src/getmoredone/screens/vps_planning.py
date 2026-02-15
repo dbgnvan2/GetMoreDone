@@ -1118,6 +1118,46 @@ class VPSPlanningScreen(ctk.CTkFrame):
             icon='warning'
         )
 
+    def _confirm_cascade_delete(self, entity_type: str, entity_name: str, entity_id: str) -> bool:
+        """Show cascade-delete confirmation with child record counts."""
+        from tkinter import messagebox
+
+        preview = self.vps_manager.get_cascade_delete_preview(entity_type, entity_id)
+        label_map = {
+            "tl_visions": "TL Visions",
+            "annual_visions": "Annual Visions",
+            "annual_plans": "Annual Plans",
+            "annual_initiatives": "Annual Initiatives",
+            "quarter_initiatives": "Quarter Initiatives",
+            "month_tactics": "Month Tactics",
+            "week_actions": "Weekly Tactics",
+            "action_items": "Action Items",
+        }
+
+        lines = []
+        for key in [
+            "tl_visions",
+            "annual_visions",
+            "annual_plans",
+            "annual_initiatives",
+            "quarter_initiatives",
+            "month_tactics",
+            "week_actions",
+            "action_items",
+        ]:
+            count = preview.get(key, 0)
+            if count:
+                lines.append(f"- {label_map[key]}: {count}")
+
+        details = "\n".join(lines) if lines else "- No records found"
+        return messagebox.askyesno(
+            "Confirm Cascade Deletion",
+            f"You are deleting: {entity_name}\n\n"
+            f"The following records will be deleted:\n{details}\n\n"
+            "This action cannot be undone. Continue?",
+            icon='warning'
+        )
+
     def _show_error_has_children(self, entity_type: str):
         """Show error message when deletion fails due to child records."""
         from tkinter import messagebox
@@ -1130,76 +1170,54 @@ class VPSPlanningScreen(ctk.CTkFrame):
         """Delete a TL Vision."""
         vision = self.vps_manager.get_tl_vision(vision_id)
         if vision:
-            if self._confirm_delete("TL Vision", vision['title']):
-                result = self.vps_manager.delete_tl_vision(vision_id)
-                if result:
+            if self._confirm_cascade_delete("tl_vision", vision['title'], vision_id):
+                if self.vps_manager.delete_tl_vision(vision_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("TL Vision")
 
     def delete_annual_vision(self, vision_id: str):
         """Delete an Annual Vision."""
         vision = self.vps_manager.get_annual_vision(vision_id)
         if vision:
-            if self._confirm_delete("Annual Vision", vision['title']):
-                result = self.vps_manager.delete_annual_vision(vision_id)
-                if result:
+            if self._confirm_cascade_delete("annual_vision", vision['title'], vision_id):
+                if self.vps_manager.delete_annual_vision(vision_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Annual Vision")
 
     def delete_annual_plan(self, plan_id: str):
         """Delete an Annual Plan."""
         plan = self.vps_manager.get_annual_plan(plan_id)
         if plan:
-            if self._confirm_delete("Annual Plan", plan['theme']):
-                result = self.vps_manager.delete_annual_plan(plan_id)
-                if result:
+            if self._confirm_cascade_delete("annual_plan", plan['theme'], plan_id):
+                if self.vps_manager.delete_annual_plan(plan_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Annual Plan")
 
     def delete_annual_initiative(self, initiative_id: str):
         """Delete an Annual Initiative."""
         initiative = self.vps_manager.get_annual_initiative(initiative_id)
         if initiative:
-            if self._confirm_delete("Annual Initiative", initiative['title']):
-                result = self.vps_manager.delete_annual_initiative(initiative_id)
-                if result:
+            if self._confirm_cascade_delete("annual_initiative", initiative['title'], initiative_id):
+                if self.vps_manager.delete_annual_initiative(initiative_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Annual Initiative")
 
     def delete_quarter_initiative(self, initiative_id: str):
         """Delete a Quarter Initiative."""
         initiative = self.vps_manager.get_quarter_initiative(initiative_id)
         if initiative:
-            if self._confirm_delete("Quarter Initiative", initiative['title']):
-                result = self.vps_manager.delete_quarter_initiative(
-                    initiative_id)
-                if result:
+            if self._confirm_cascade_delete("quarter_initiative", initiative['title'], initiative_id):
+                if self.vps_manager.delete_quarter_initiative(initiative_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Quarter Initiative")
 
     def delete_month_tactic(self, tactic_id: str):
         """Delete a Month Tactic."""
         tactic = self.vps_manager.get_month_tactic(tactic_id)
         if tactic:
-            if self._confirm_delete("Month Tactic", tactic['priority_focus']):
-                result = self.vps_manager.delete_month_tactic(tactic_id)
-                if result:
+            if self._confirm_cascade_delete("month_tactic", tactic['priority_focus'], tactic_id):
+                if self.vps_manager.delete_month_tactic(tactic_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Month Tactic")
 
     def delete_week_action(self, action_id: str):
         """Delete a Week Action."""
         action = self.vps_manager.get_week_action(action_id)
         if action:
-            if self._confirm_delete("Week Action", action['title']):
-                result = self.vps_manager.delete_week_action(action_id)
-                if result:
+            if self._confirm_cascade_delete("week_action", action['title'], action_id):
+                if self.vps_manager.delete_week_action(action_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Week Action")

@@ -280,15 +280,16 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
 
         row = 0
 
-        # Quarter
-        ctk.CTkLabel(main_frame, text="Quarter:", font=ctk.CTkFont(weight="bold")).grid(
+        # Qtr Number
+        ctk.CTkLabel(main_frame, text="Qtr Number:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.quarter_var = ctk.StringVar(value="1")
         self.quarter_combo = ctk.CTkComboBox(
             main_frame,
             values=["1", "2", "3", "4"],
-            variable=self.quarter_var
+            variable=self.quarter_var,
+            command=lambda _val: self._refresh_auto_title()
         )
         self.quarter_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
@@ -309,8 +310,9 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.title_entry = ctk.CTkEntry(
-            main_frame, placeholder_text="Initiative name")
+            main_frame, placeholder_text="Auto-generated from Annual Initiative")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.title_entry.configure(state="readonly")
         row += 1
 
         # Outcome Statement
@@ -351,6 +353,16 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
             button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
+        # Pre-fill defaults for new records
+        if not self.initiative_id:
+            next_q = self.vps_manager.get_next_quarter_for_annual_initiative(
+                self.annual_initiative_id
+            )
+            self.quarter_var.set(str(next_q["quarter"]))
+            self.year_entry.delete(0, "end")
+            self.year_entry.insert(0, str(next_q["year"]))
+            self._refresh_auto_title()
+
     def load_initiative_data(self):
         """Load existing initiative data into form."""
         if not self.initiative:
@@ -367,6 +379,24 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         if self.initiative['status']:
             self.status_var.set(self.initiative['status'])
 
+    def _refresh_auto_title(self):
+        """Auto-generate title for new quarter initiatives."""
+        if self.initiative_id:
+            return
+
+        annual_initiative = self.vps_manager.get_annual_initiative(
+            self.annual_initiative_id)
+        prefix = "Annual Initiative"
+        if annual_initiative and annual_initiative.get("title"):
+            prefix = annual_initiative["title"].strip() or prefix
+        quarter = self.quarter_var.get().strip() or "1"
+        auto_title = f"{prefix} Q{quarter}"
+
+        self.title_entry.configure(state="normal")
+        self.title_entry.delete(0, "end")
+        self.title_entry.insert(0, auto_title)
+        self.title_entry.configure(state="readonly")
+
     def save_initiative(self):
         """Validate and save the initiative."""
         # Get values
@@ -377,8 +407,6 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
             return
 
         title = self.title_entry.get().strip()
-        if not title:
-            return
 
         outcome_statement = self.outcome_text.get("1.0", "end-1c").strip()
         status = self.status_var.get()
@@ -409,6 +437,7 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                     quarter=quarter,
                     year=year,
                     title=title,
+                    auto_create_chain=True,
                     outcome_statement=outcome_statement
                 )
 
@@ -997,7 +1026,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
             main_frame,
             values=["1", "2", "3", "4", "5", "6",
                     "7", "8", "9", "10", "11", "12"],
-            variable=self.month_var
+            variable=self.month_var,
+            command=lambda _val: self._refresh_auto_focus()
         )
         self.month_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
@@ -1020,6 +1050,7 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         self.focus_entry = ctk.CTkEntry(
             main_frame, placeholder_text="Main focus for the month")
         self.focus_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.focus_entry.configure(state="readonly")
         row += 1
 
         # Detailed Description
@@ -1046,6 +1077,15 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
             button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
+        if not self.tactic_id:
+            next_month = self.vps_manager.get_next_month_for_quarter_initiative(
+                self.quarter_initiative_id
+            )
+            self.month_var.set(str(next_month["month"]))
+            self.year_entry.delete(0, "end")
+            self.year_entry.insert(0, str(next_month["year"]))
+            self._refresh_auto_focus()
+
     def load_tactic_data(self):
         """Load existing tactic data into form."""
         if not self.tactic:
@@ -1055,9 +1095,30 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         self.year_entry.delete(0, "end")
         self.year_entry.insert(0, str(self.tactic['year']))
         if self.tactic['priority_focus']:
+            self.focus_entry.configure(state="normal")
             self.focus_entry.insert(0, self.tactic['priority_focus'])
+            self.focus_entry.configure(state="readonly")
         if self.tactic['description']:
             self.description_text.insert("1.0", self.tactic['description'])
+
+    def _refresh_auto_focus(self):
+        """Auto-generate month focus for new records."""
+        if self.tactic_id:
+            return
+
+        quarter_initiative = self.vps_manager.get_quarter_initiative(
+            self.quarter_initiative_id
+        )
+        prefix = "Quarter"
+        if quarter_initiative and quarter_initiative.get("title"):
+            prefix = quarter_initiative["title"].strip() or prefix
+
+        month = self.month_var.get().strip() or "1"
+        auto_focus = f"{prefix} M{month}"
+        self.focus_entry.configure(state="normal")
+        self.focus_entry.delete(0, "end")
+        self.focus_entry.insert(0, auto_focus)
+        self.focus_entry.configure(state="readonly")
 
     def save_tactic(self):
         """Validate and save the tactic."""
@@ -1093,7 +1154,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
                     month=month,
                     year=year,
                     priority_focus=priority_focus,
-                    description=description
+                    description=description,
+                    auto_create_weeks=True
                 )
 
             # Close dialog
