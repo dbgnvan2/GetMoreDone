@@ -310,6 +310,93 @@ class VPSManager:
         return True
 
     # ========================================================================
+    # ANNUAL_INITIATIVES
+    # ========================================================================
+
+    def get_annual_initiatives(self, annual_plan_id: Optional[str] = None,
+                               year: Optional[int] = None,
+                               active_only: bool = True) -> List[Dict[str, Any]]:
+        """Get annual initiatives, optionally filtered."""
+        query = "SELECT * FROM annual_initiatives WHERE 1=1"
+        params = []
+
+        if annual_plan_id:
+            query += " AND annual_plan_id = ?"
+            params.append(annual_plan_id)
+
+        if year:
+            query += " AND year = ?"
+            params.append(year)
+
+        if active_only:
+            query += " AND is_active = 1"
+
+        query += " ORDER BY title"
+
+        cursor = self.db.conn.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_annual_initiative(self, initiative_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific annual initiative by ID."""
+        cursor = self.db.conn.execute(
+            "SELECT * FROM annual_initiatives WHERE id = ?",
+            (initiative_id,)
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def create_annual_initiative(self, annual_plan_id: str, segment_description_id: str,
+                                 year: int, title: str, description: str = "",
+                                 outcome_statement: str = "") -> str:
+        """Create a new annual initiative."""
+        initiative_id = f"ai-{uuid4().hex[:8]}"
+        now = datetime.now().isoformat()
+
+        self.db.conn.execute("""
+            INSERT INTO annual_initiatives
+            (id, annual_plan_id, segment_description_id, year, title, description,
+             outcome_statement, status, progress_pct, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'not_started', 0, 1, ?, ?)
+        """, (initiative_id, annual_plan_id, segment_description_id, year, title,
+              description, outcome_statement, now, now))
+
+        self.db.conn.commit()
+        return initiative_id
+
+    def update_annual_initiative(self, initiative_id: str, **kwargs) -> bool:
+        """Update an annual initiative's fields."""
+        allowed_fields = {'title', 'description', 'outcome_statement',
+                          'status', 'progress_pct', 'is_active', 'year'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not updates:
+            return False
+
+        updates['updated_at'] = datetime.now().isoformat()
+
+        set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
+        values = list(updates.values()) + [initiative_id]
+
+        self.db.conn.execute(
+            f"UPDATE annual_initiatives SET {set_clause} WHERE id = ?",
+            values
+        )
+        self.db.conn.commit()
+        return True
+
+    def delete_annual_initiative(self, initiative_id: str) -> bool:
+        """
+        Delete an Annual Initiative.
+        Returns True if deleted, False on failure.
+        """
+        self.db.conn.execute(
+            "DELETE FROM annual_initiatives WHERE id = ?",
+            (initiative_id,)
+        )
+        self.db.conn.commit()
+        return True
+
+    # ========================================================================
     # QUARTER_INITIATIVES
     # ========================================================================
 
@@ -932,6 +1019,9 @@ class VPSManager:
         Delete an Annual Plan if it has no child records.
         Returns True if deleted, False if children exist.
         """
+        # Check for annual initiatives
+        if self._has_children('annual_initiatives', 'annual_plan_id', plan_id):
+            return False
         # Check for quarter initiatives
         if self._has_children('quarter_initiatives', 'annual_plan_id', plan_id):
             return False
@@ -1007,6 +1097,7 @@ class VPSManager:
             ('tl_visions', 'TL Visions'),
             ('annual_visions', 'Annual Visions'),
             ('annual_plans', 'Annual Plans'),
+            ('annual_initiatives', 'Annual Initiatives'),
             ('quarter_initiatives', 'Quarter Initiatives'),
             ('month_tactics', 'Month Tactics'),
             ('week_actions', 'Week Actions'),

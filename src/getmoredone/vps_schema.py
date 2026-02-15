@@ -95,6 +95,26 @@ class VPSSchema:
         """)
 
         # ========================================================================
+        # ANNUAL_INITIATIVE (Annual focus initiatives under a plan)
+        # ========================================================================
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS annual_initiatives (
+                id                   TEXT PRIMARY KEY,
+                annual_plan_id       TEXT NOT NULL REFERENCES annual_plans(id) ON DELETE CASCADE,
+                segment_description_id TEXT NOT NULL REFERENCES segment_descriptions(id) ON DELETE CASCADE,
+                year                 INTEGER NOT NULL,
+                title                TEXT NOT NULL,
+                description          TEXT,
+                outcome_statement    TEXT,
+                status               TEXT DEFAULT 'not_started' CHECK(status IN ('not_started', 'in_progress', 'at_risk', 'completed', 'on_hold', 'cancelled')),
+                progress_pct         INTEGER DEFAULT 0 CHECK(progress_pct BETWEEN 0 AND 100),
+                is_active            INTEGER DEFAULT 1,
+                created_at           TEXT NOT NULL,
+                updated_at           TEXT NOT NULL
+            )
+        """)
+
+        # ========================================================================
         # QUARTER_INITIATIVE (Quarterly focus areas)
         # ========================================================================
         conn.execute("""
@@ -309,6 +329,20 @@ class VPSSchema:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_annual_plans_status
             ON annual_plans(status)
+        """)
+
+        # Annual Initiatives
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_initiatives_parent
+            ON annual_initiatives(annual_plan_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_initiatives_segment
+            ON annual_initiatives(segment_description_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_initiatives_status
+            ON annual_initiatives(status)
         """)
 
         # Quarter Initiatives

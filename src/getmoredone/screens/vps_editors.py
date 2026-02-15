@@ -781,6 +781,212 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             )
 
 
+class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
+    """Dialog for creating/editing Annual Initiatives."""
+
+    def __init__(self, parent, vps_manager: 'VPSManager', annual_plan_id: str,
+                 segment_id: str, initiative_id: Optional[str] = None):
+        super().__init__(parent)
+
+        self.vps_manager = vps_manager
+        self.annual_plan_id = annual_plan_id
+        self.segment_id = segment_id
+        self.initiative_id = initiative_id
+        self.initiative = None
+
+        # Load initiative if editing
+        if initiative_id:
+            self.initiative = vps_manager.get_annual_initiative(initiative_id)
+            self.title("Edit Annual Initiative")
+        else:
+            self.title("New Annual Initiative")
+
+        self.geometry("600x500")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        # Create form
+        self.create_form()
+
+        # Load data if editing
+        if self.initiative:
+            self.load_initiative_data()
+
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+
+    def create_form(self):
+        """Create the form layout."""
+        main_frame = ctk.CTkFrame(self)
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        main_frame.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
+        # Segment display (read-only)
+        segment = self.vps_manager.get_segment(self.segment_id)
+        if segment:
+            ctk.CTkLabel(main_frame, text="Life Segment:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            ctk.CTkLabel(
+                main_frame,
+                text=segment['name'],
+                fg_color=segment['color_hex'],
+                corner_radius=5
+            ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
+            row += 1
+
+        # Year
+        ctk.CTkLabel(main_frame, text="Year:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=5
+        )
+        current_year = datetime.now().year
+        self.year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text=str(current_year))
+        self.year_entry.insert(0, str(current_year))
+        self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        # Title
+        ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=5
+        )
+        self.title_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="Initiative title")
+        self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        # Outcome Statement
+        ctk.CTkLabel(main_frame, text="Outcome:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="nw", padx=10, pady=5
+        )
+        self.outcome_text = ctk.CTkTextbox(main_frame, height=100)
+        self.outcome_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        # Description
+        ctk.CTkLabel(main_frame, text="Description:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="nw", padx=10, pady=5
+        )
+        self.description_text = ctk.CTkTextbox(main_frame, height=100)
+        self.description_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        # Status (only shown when editing)
+        if self.initiative_id:
+            ctk.CTkLabel(main_frame, text="Status:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            self.status_var = ctk.StringVar(value="not_started")
+            self.status_menu = ctk.CTkOptionMenu(
+                main_frame,
+                variable=self.status_var,
+                values=["not_started", "in_progress", "at_risk", "completed", "on_hold", "cancelled"]
+            )
+            self.status_menu.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+            row += 1
+
+            ctk.CTkLabel(main_frame, text="Progress %:", font=ctk.CTkFont(weight="bold")).grid(
+                row=row, column=0, sticky="w", padx=10, pady=5
+            )
+            self.progress_entry = ctk.CTkEntry(
+                main_frame, placeholder_text="0-100")
+            self.progress_entry.insert(0, "0")
+            self.progress_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+            row += 1
+
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
+
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_initiative)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
+
+    def load_initiative_data(self):
+        """Load existing initiative data into form."""
+        if not self.initiative:
+            return
+
+        self.year_entry.delete(0, "end")
+        self.year_entry.insert(0, str(self.initiative['year']))
+        self.title_entry.insert(0, self.initiative['title'])
+        if self.initiative.get('outcome_statement'):
+            self.outcome_text.insert("1.0", self.initiative['outcome_statement'])
+        if self.initiative.get('description'):
+            self.description_text.insert("1.0", self.initiative['description'])
+        if hasattr(self, 'status_var'):
+            self.status_var.set(self.initiative.get('status', 'not_started'))
+        if hasattr(self, 'progress_entry'):
+            self.progress_entry.delete(0, "end")
+            self.progress_entry.insert(0, str(self.initiative.get('progress_pct', 0)))
+
+    def save_initiative(self):
+        """Validate and save the initiative."""
+        year_str = self.year_entry.get().strip()
+        if not year_str:
+            year = datetime.now().year
+        else:
+            try:
+                year = int(year_str)
+            except ValueError:
+                messagebox.showerror("Validation Error", "Year must be a valid integer")
+                return
+
+        title = self.title_entry.get().strip()
+        if not title:
+            messagebox.showerror("Validation Error", "Title is required")
+            return
+
+        outcome_statement = self.outcome_text.get("1.0", "end-1c").strip()
+        description = self.description_text.get("1.0", "end-1c").strip()
+
+        try:
+            if self.initiative_id:
+                status = self.status_var.get() if hasattr(self, 'status_var') else 'not_started'
+                try:
+                    progress_pct = int(self.progress_entry.get().strip()) if hasattr(self, 'progress_entry') else 0
+                    if not (0 <= progress_pct <= 100):
+                        raise ValueError
+                except ValueError:
+                    messagebox.showerror("Validation Error", "Progress must be 0-100")
+                    return
+
+                self.vps_manager.update_annual_initiative(
+                    self.initiative_id,
+                    year=year,
+                    title=title,
+                    outcome_statement=outcome_statement,
+                    description=description,
+                    status=status,
+                    progress_pct=progress_pct
+                )
+            else:
+                self.vps_manager.create_annual_initiative(
+                    annual_plan_id=self.annual_plan_id,
+                    segment_description_id=self.segment_id,
+                    year=year,
+                    title=title,
+                    description=description,
+                    outcome_statement=outcome_statement
+                )
+
+            self.destroy()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Error saving annual initiative: {e}")
+
+
 class MonthTacticEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing Month Tactics."""
 

@@ -331,22 +331,37 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         node_id = f"annual_plan-{plan['id']}"
         if node_id in self.expanded_nodes:
-            initiatives = self.vps_manager.get_quarter_initiatives(
-                annual_plan_id=plan['id'])
-
             # Fetch parent annual_vision for prefix labeling
             annual_vision = self.vps_manager.get_annual_vision(
                 plan['annual_vision_id'])
 
-            if not initiatives:
+            # Show Annual Initiatives
+            annual_initiatives = self.vps_manager.get_annual_initiatives(
+                annual_plan_id=plan['id'])
+            for initiative in annual_initiatives:
+                row = self.display_annual_initiative_tree(
+                    initiative, row, indent + 1)
+
+            # Show Quarter Initiatives
+            quarter_initiatives = self.vps_manager.get_quarter_initiatives(
+                annual_plan_id=plan['id'])
+
+            if not annual_initiatives and not quarter_initiatives:
                 row = self.display_empty_message(
-                    row, indent + 1, "No quarter initiatives")
+                    row, indent + 1, "No initiatives yet")
             else:
-                for initiative in initiatives:
+                for initiative in quarter_initiatives:
                     row = self.display_quarter_initiative_tree(
                         initiative, row, indent + 1, annual_vision=annual_vision)
 
         return row
+
+    def display_annual_initiative_tree(self, initiative: Dict[str, Any], row: int, indent: int) -> int:
+        """Display an Annual Initiative (leaf node - no children)."""
+        init_frame = self.create_annual_initiative_row(initiative, indent)
+        init_frame.grid(row=row, column=0, sticky="ew",
+                        pady=2, padx=(indent * 30 + 5, 5))
+        return row + 1
 
     def display_quarter_initiative_tree(self, initiative: Dict[str, Any], row: int, indent: int,
                                         annual_vision: Optional[Dict[str, Any]] = None) -> int:
@@ -583,17 +598,57 @@ class VPSPlanningScreen(ctk.CTkFrame):
                              font=ctk.CTkFont(size=12), anchor="w")
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        btn_add = ctk.CTkButton(
-            frame, text="+", width=25, command=lambda: self.add_quarter_initiative(plan['id']))
-        btn_add.grid(row=0, column=3, padx=2, pady=3)
+        btn_add_initiative = ctk.CTkButton(
+            frame, text="+ Annual Initiative", width=130,
+            command=lambda: self.add_annual_initiative(plan['id']))
+        btn_add_initiative.grid(row=0, column=3, padx=2, pady=3)
+
+        btn_add_quarter = ctk.CTkButton(
+            frame, text="+ Quarter", width=75,
+            command=lambda: self.add_quarter_initiative(plan['id']))
+        btn_add_quarter.grid(row=0, column=4, padx=2, pady=3)
 
         btn_edit = ctk.CTkButton(
             frame, text="✎", width=25, command=lambda: self.edit_annual_plan(plan['id']))
-        btn_edit.grid(row=0, column=4, padx=2, pady=3)
+        btn_edit.grid(row=0, column=5, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_plan(
             plan['id']), fg_color="darkred", hover_color="red")
-        btn_delete.grid(row=0, column=5, padx=2, pady=3)
+        btn_delete.grid(row=0, column=6, padx=2, pady=3)
+
+        return frame
+
+    def create_annual_initiative_row(self, initiative: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+        """Create a row for an Annual Initiative."""
+        frame = ctk.CTkFrame(self.scroll_frame)
+        frame.grid_columnconfigure(2, weight=1)
+
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label.grid(row=0, column=0, sticky="w")
+
+        status_emoji = {"not_started": "⚪", "in_progress": "🔵",
+                        "completed": "✅", "at_risk": "🔴",
+                        "on_hold": "⏸", "cancelled": "❌"}.get(initiative['status'], "⚪")
+        progress = initiative.get('progress_pct', 0)
+        label = ctk.CTkLabel(
+            frame,
+            text=f"{status_emoji} 🎯 Initiative: {initiative['title']} ({progress}%)",
+            font=ctk.CTkFont(size=12),
+            anchor="w"
+        )
+        label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
+
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25,
+            command=lambda: self.edit_annual_initiative(initiative['id']))
+        btn_edit.grid(row=0, column=3, padx=2, pady=3)
+
+        btn_delete = ctk.CTkButton(
+            frame, text="🗑", width=25,
+            command=lambda: self.delete_annual_initiative(initiative['id']),
+            fg_color="darkred", hover_color="red")
+        btn_delete.grid(row=0, column=4, padx=2, pady=3)
 
         return frame
 
@@ -913,6 +968,17 @@ class VPSPlanningScreen(ctk.CTkFrame):
             self.wait_window(dialog)
             self.refresh()
 
+    def add_annual_initiative(self, annual_plan_id: str):
+        """Add an Annual Initiative to an Annual Plan."""
+        from .vps_editors import AnnualInitiativeEditorDialog
+        plan = self.vps_manager.get_annual_plan(annual_plan_id)
+        if plan:
+            dialog = AnnualInitiativeEditorDialog(
+                self, self.vps_manager, annual_plan_id, plan['segment_description_id']
+            )
+            self.wait_window(dialog)
+            self.refresh()
+
     def add_quarter_initiative(self, annual_plan_id: str):
         """Add a Quarter Initiative to an Annual Plan (max 4 quarters)."""
         from tkinter import messagebox
@@ -999,6 +1065,18 @@ class VPSPlanningScreen(ctk.CTkFrame):
             dialog = AnnualPlanEditorDialog(
                 self, self.vps_manager, plan['annual_vision_id'],
                 plan['segment_description_id'], plan_id
+            )
+            self.wait_window(dialog)
+            self.refresh()
+
+    def edit_annual_initiative(self, initiative_id: str):
+        """Edit an Annual Initiative."""
+        from .vps_editors import AnnualInitiativeEditorDialog
+        initiative = self.vps_manager.get_annual_initiative(initiative_id)
+        if initiative:
+            dialog = AnnualInitiativeEditorDialog(
+                self, self.vps_manager, initiative['annual_plan_id'],
+                initiative['segment_description_id'], initiative_id
             )
             self.wait_window(dialog)
             self.refresh()
@@ -1098,6 +1176,14 @@ class VPSPlanningScreen(ctk.CTkFrame):
                     self.refresh()
                 else:
                     self._show_error_has_children("Annual Plan")
+
+    def delete_annual_initiative(self, initiative_id: str):
+        """Delete an Annual Initiative."""
+        initiative = self.vps_manager.get_annual_initiative(initiative_id)
+        if initiative:
+            if self._confirm_delete("Annual Initiative", initiative['title']):
+                self.vps_manager.delete_annual_initiative(initiative_id)
+                self.refresh()
 
     def delete_quarter_initiative(self, initiative_id: str):
         """Delete a Quarter Initiative."""
