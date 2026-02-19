@@ -29,6 +29,10 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.drag_hover_frame = None
         self.drag_hover_base_color = None
         self.date_box_colors = {}
+        self.date_box_font_size = int(round(14 * 1.3))  # 30% larger
+        self.date_box_height = 86
+        self.item_row_height = 86
+        self._sync_ui_sizing_from_settings()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -36,6 +40,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.create_header()
         self.create_body()
         self.refresh()
+
+    def _sync_ui_sizing_from_settings(self):
+        """Sync Drag Schedule sizing options from persisted settings."""
+        box_height = max(20, int(getattr(self.settings, "drag_schedule_box_height_px", 86)))
+        self.date_box_height = box_height
+        self.item_row_height = box_height
 
     def create_header(self):
         header = ctk.CTkFrame(self)
@@ -126,6 +136,10 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.dates_frame.grid_columnconfigure(0, weight=1)
 
     def refresh(self):
+        # Re-load settings so size/color changes from Settings screen apply immediately.
+        self.settings = AppSettings.load()
+        self._sync_ui_sizing_from_settings()
+
         for widget in self.items_frame.winfo_children():
             widget.destroy()
         for widget in self.dates_frame.winfo_children():
@@ -145,7 +159,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             row = 0
             for item in items:
                 item_row = self.create_item_row(item)
-                item_row.grid(row=row, column=0, sticky="ew", pady=4, padx=4)
+                item_row.grid(row=row, column=0, sticky="ew", pady=2, padx=2)
                 row += 1
 
         self.build_date_boxes()
@@ -171,7 +185,8 @@ class DragScheduleScreen(ctk.CTkFrame):
         return items
 
     def create_item_row(self, item: ActionItem):
-        frame = ctk.CTkFrame(self.items_frame)
+        frame = ctk.CTkFrame(self.items_frame, height=self.item_row_height)
+        frame.grid_propagate(False)
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=0)
 
@@ -182,14 +197,14 @@ class DragScheduleScreen(ctk.CTkFrame):
             text=item.title,
             anchor="w"
         )
-        title_label.grid(row=0, column=0, sticky="ew", padx=10, pady=6)
+        title_label.grid(row=0, column=0, sticky="ew", padx=8, pady=2)
 
         date_label = ctk.CTkLabel(
             frame,
             text=date_text,
             text_color="gray70"
         )
-        date_label.grid(row=0, column=1, sticky="e", padx=10, pady=6)
+        date_label.grid(row=0, column=1, sticky="e", padx=8, pady=2)
 
         self.bind_drag_handlers(frame, item)
         self.bind_drag_handlers(title_label, item)
@@ -236,39 +251,45 @@ class DragScheduleScreen(ctk.CTkFrame):
             day = datetime.strptime(date_str, "%Y-%m-%d").date()
             count, total_minutes = date_stats.get(date_str, (0, 0))
             label_text = (
-                f"{day.strftime('%a')}\n"
-                f"{day.strftime('%b %d, %Y')}\n"
+                f"{day.strftime('%a')} - "
+                f"{day.strftime('%m/%d')} - "
                 f"{self.format_day_stats_text(count, total_minutes)}"
             )
             color = self.color_for_day_stats(count, total_minutes)
 
-            frame = ctk.CTkFrame(self.dates_frame, height=86, fg_color=color)
-            frame.grid(row=i, column=0, sticky="ew", padx=6, pady=6)
+            frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
+            frame.grid_propagate(False)
+            frame.grid(row=i, column=0, sticky="ew", padx=2, pady=2)
             frame.grid_columnconfigure(0, weight=1)
 
             label = ctk.CTkLabel(
                 frame,
                 text=label_text,
                 justify="center",
-                text_color="#0B3D91"
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=self._get_date_text_color()
             )
-            label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+            label.grid(row=0, column=0, sticky="ew", padx=6, pady=2)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
 
         for idx, (title, subtitle, date_str, color) in enumerate(future_options):
-            frame = ctk.CTkFrame(self.dates_frame, height=70, fg_color=color)
-            frame.grid(row=options_start_row + idx, column=0, sticky="ew", padx=6, pady=6)
+            short_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%m/%d")
+            future_text = f"{title} - {short_date}"
+            frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
+            frame.grid_propagate(False)
+            frame.grid(row=options_start_row + idx, column=0, sticky="ew", padx=2, pady=2)
             frame.grid_columnconfigure(0, weight=1)
 
             label = ctk.CTkLabel(
                 frame,
-                text=f"{title}\n{subtitle}",
+                text=future_text,
                 justify="center",
-                text_color="#0B3D91"
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=self._get_date_text_color()
             )
-            label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+            label.grid(row=0, column=0, sticky="ew", padx=6, pady=2)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
@@ -306,7 +327,15 @@ class DragScheduleScreen(ctk.CTkFrame):
         item_label = "item" if count == 1 else "items"
         hours = total_minutes // 60
         minutes = total_minutes % 60
-        return f"{count} {item_label} • {hours}h {minutes}m"
+        return f"{count} {item_label} - {hours}h {minutes}m"
+
+    def _get_date_text_color(self) -> str:
+        color = str(getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF") or "#FFFFFF").strip()
+        if not color.startswith("#"):
+            color = f"#{color}"
+        if len(color) != 7:
+            return "#FFFFFF"
+        return color
 
     def color_for_day_stats(self, count: int, total_minutes: int) -> str:
         """

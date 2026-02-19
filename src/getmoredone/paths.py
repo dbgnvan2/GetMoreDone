@@ -27,7 +27,7 @@ APP_AUTHOR = "GetMoreDone"
 def project_root() -> Path:
     """Project root when running from source (repo root)."""
     # src/getmoredone/paths.py -> src/getmoredone -> src -> repo root
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def resource_root() -> Path:

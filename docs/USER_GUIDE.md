@@ -2,7 +2,7 @@
 
 This guide explains what each screen, button, and workflow does, and why you might use it. It is aligned to the current UI and screen code in `src/getmoredone/screens`.
 
-Last updated: 2026-02-05
+Last updated: 2026-02-19
 
 ---
 
@@ -131,6 +131,11 @@ Header controls:
 Main area:
 - **Next Items list (left)** — What: Open items with no dates plus upcoming items in the selected window. Why: A short list of items worth scheduling.
 - **Date boxes (right)** — What: Drop targets for dates. Why: Reschedule by drag-and-drop.
+  - Date label format: `Day - MM/DD - N items - Nh Mm`
+  - Date label style: font is 30% larger than previous baseline.
+  - Date/future box height: controlled by setting (`Drag Schedule box height (px)`).
+- **Next item rows (left)** — What: draggable source records. Why: schedule items quickly.
+  - Row height: uses the same `Drag Schedule box height (px)` setting for visual alignment with right-side boxes.
 - **Future options (bottom)** — What: Mid Term, Long Term, 1st Next Month, 1st Next Quarter boxes. Why: Fast scheduling to common future anchors.
 
 Drag behavior:
@@ -218,6 +223,31 @@ Obsidian Integration:
 - **Notes Subfolder** — What: Subfolder for notes. Why: Keep GMD notes organized.
 - **Save Settings** — What: Stores vault settings. Why: Persist configuration.
 - **Test Connection** — What: Validates vault path and subfolder. Why: Confirm setup is correct.
+
+Date Increment Settings:
+- **First day of week (VPS)** — What: Sets week start day for APE Period week generation. Why: Keep weekly planning aligned with your calendar.
+- **Drag Schedule date text color** — What: Hex color for date-box text (default `#FFFFFF`). Why: Improve readability across box colors.
+  - Includes **Pick Color** button for visual selection.
+- **Drag Schedule box height (px)** — What: Controls the height of all Drag Schedule date/future boxes. Why: Match readability and spacing preferences.
+
+### Vision Planning (Unified Hub)
+- What: A single workspace with top navigation for all vision-planning flows.
+- Why: Removes redundant screens and keeps workflows in one place.
+
+Top buttons:
+- **Vision Elements** — Create and maintain Segment|SubSegment|Category keys.
+- **Annual Vision Segments** — Promote Vision Elements into Annual Vision/Plan records.
+- **APE Assignment** — Assign Annual Plan Elements to quarters and months.
+- **APE Period View** — Select weeks within a month and create weekly parent records.
+- **APE Weekly** — Work weekly parent records and their daily child Action Items.
+
+APE Weekly behavior:
+- Left list shows weekly parent records (weekly tactics).
+- Right list shows child daily Action Items linked by parent.
+- New daily item title format: `Weekly Title Prefix - Action Item Title`.
+- Prefix shortening rule: first two pipe-delimited parts become initials.
+  - Example: `Purposeful Work|Living Systems|Blog` → `PW|LS|Blog`.
+- Week token normalization: `Week 8` is normalized to `W8` in generated/normalized titles.
 
 Appearance:
 - **Theme** — What: Dark/light/system. Why: Choose a comfortable look.
