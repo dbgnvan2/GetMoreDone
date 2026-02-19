@@ -60,7 +60,7 @@ class GetMoreDoneApp(ctk.CTk):
         """Create navigation sidebar."""
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(13, weight=1)
+        self.sidebar.grid_rowconfigure(18, weight=1)
 
         # Logo/title
         self.logo_label = ctk.CTkLabel(
@@ -158,6 +158,41 @@ class GetMoreDoneApp(ctk.CTk):
             command=self.show_settings
         )
         self.btn_settings.grid(row=12, column=0, padx=20, pady=10)
+
+        self.btn_vision_elements = ctk.CTkButton(
+            self.sidebar,
+            text="Vision Elements",
+            command=self.show_vision_elements
+        )
+        self.btn_vision_elements.grid(row=13, column=0, padx=20, pady=10)
+
+        self.btn_annual_vision_segments = ctk.CTkButton(
+            self.sidebar,
+            text="Annual Vision Segments",
+            command=self.show_annual_vision_segments
+        )
+        self.btn_annual_vision_segments.grid(row=14, column=0, padx=20, pady=10)
+
+        self.btn_ape_assignment = ctk.CTkButton(
+            self.sidebar,
+            text="APE Assignment",
+            command=self.show_ape_assignment
+        )
+        self.btn_ape_assignment.grid(row=15, column=0, padx=20, pady=10)
+
+        self.btn_ape_period_view = ctk.CTkButton(
+            self.sidebar,
+            text="APE Period View",
+            command=self.show_ape_period_view
+        )
+        self.btn_ape_period_view.grid(row=16, column=0, padx=20, pady=10)
+
+        self.btn_weekly_items = ctk.CTkButton(
+            self.sidebar,
+            text="Weekly Items",
+            command=self.show_weekly_items
+        )
+        self.btn_weekly_items.grid(row=17, column=0, padx=20, pady=10)
 
     def clear_content(self):
         """Clear current screen from content area."""
@@ -259,6 +294,41 @@ class GetMoreDoneApp(ctk.CTk):
                 "Settings Error",
                 f"Could not open Settings.\n\n{e}\n\nDetails were printed to the console/log.",
             )
+
+    def show_vision_elements(self):
+        """Show Vision Elements screen."""
+        from .screens.vision_elements import VisionElementsScreen
+        self.clear_content()
+        self.current_screen = VisionElementsScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_annual_vision_segments(self):
+        """Show Annual Vision Segments screen."""
+        from .screens.annual_vision_segments import AnnualVisionSegmentsScreen
+        self.clear_content()
+        self.current_screen = AnnualVisionSegmentsScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_ape_assignment(self):
+        """Show APE Assignment screen."""
+        from .screens.ape_assignment import APEAssignmentScreen
+        self.clear_content()
+        self.current_screen = APEAssignmentScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_ape_period_view(self):
+        """Show APE Period View screen."""
+        from .screens.ape_period_view import APEPeriodViewScreen
+        self.clear_content()
+        self.current_screen = APEPeriodViewScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_weekly_items(self):
+        """Show Weekly Items screen."""
+        from .screens.weekly_items import WeeklyItemsScreen
+        self.clear_content()
+        self.current_screen = WeeklyItemsScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def refresh_current_screen(self):
         """Refresh the current screen (useful after edits)."""
