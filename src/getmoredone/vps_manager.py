@@ -4,6 +4,7 @@ Provides CRUD operations for all VPS entities.
 """
 
 import sqlite3
+import re
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
@@ -381,20 +382,23 @@ class VPSManager:
         Optionally filtered by exact week start date and/or APE linkage.
         """
         query = """
-            SELECT *
-            FROM action_items
-            WHERE item_type = 'week'
+            SELECT ai.*,
+                   ape.segment_name AS ape_segment_name
+            FROM action_items ai
+            LEFT JOIN annual_plan_elements ape
+              ON ape.id = ai.annual_plan_element_id
+            WHERE ai.item_type = 'week'
         """
         params: List[Any] = []
 
         if week_start_date:
-            query += " AND start_date = ?"
+            query += " AND ai.start_date = ?"
             params.append(week_start_date)
 
         if ape_only:
-            query += " AND annual_plan_element_id IS NOT NULL"
+            query += " AND ai.annual_plan_element_id IS NOT NULL"
 
-        query += " ORDER BY start_date DESC, title COLLATE NOCASE ASC"
+        query += " ORDER BY ai.start_date DESC, ai.title COLLATE NOCASE ASC"
         cursor = self.db.conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
@@ -424,6 +428,52 @@ class VPSManager:
 
         cursor = self.db.conn.execute(query)
         return [dict(row) for row in cursor.fetchall()]
+
+    def get_segment_color_map(self) -> Dict[str, str]:
+        """Get segment color map keyed by lowercase segment name."""
+        cursor = self.db.conn.execute(
+            "SELECT name, color_hex FROM segment_descriptions"
+        )
+        color_map: Dict[str, str] = {}
+        for row in cursor.fetchall():
+            name = (row["name"] or "").strip().lower()
+            if name:
+                color_map[name] = row["color_hex"] or "#334155"
+        return color_map
+
+    def resolve_segment_color(self, segment_name: str, color_map: Optional[Dict[str, str]] = None) -> str:
+        """
+        Resolve a segment color by exact/fuzzy match against settings segments.
+        Falls back to a deterministic palette color.
+        """
+        if color_map is None:
+            color_map = self.get_segment_color_map()
+
+        raw = (segment_name or "").strip()
+        if not raw:
+            return "#64748B"
+
+        key = raw.lower()
+        if key in color_map:
+            return color_map[key]
+
+        norm = re.sub(r"[^a-z0-9]", "", key)
+        if not norm:
+            return "#64748B"
+
+        # Fuzzy match: normalized equality / prefix / containment
+        for existing_name, color in color_map.items():
+            existing_norm = re.sub(r"[^a-z0-9]", "", existing_name.lower())
+            if not existing_norm:
+                continue
+            if norm == existing_norm or norm.startswith(existing_norm) or existing_norm.startswith(norm):
+                return color
+            if norm in existing_norm or existing_norm in norm:
+                return color
+
+        # Deterministic fallback by segment name hash
+        palette = ["#0EA5E9", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#14B8A6", "#F97316"]
+        return palette[sum(ord(c) for c in norm) % len(palette)]
 
     def get_segment(self, segment_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific segment by ID."""

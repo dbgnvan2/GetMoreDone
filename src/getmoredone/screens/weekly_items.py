@@ -280,6 +280,12 @@ class WeeklyItemsScreen(ctk.CTkFrame):
     def _apply_listbox_color(self, listbox: tk.Listbox, index: int, segment_name: str):
         color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
         try:
-            listbox.itemconfig(index, fg=color, selectforeground="white", selectbackground=color)
+            listbox.itemconfig(
+                index,
+                bg=color,
+                fg="white",
+                selectbackground=color,
+                selectforeground="white",
+            )
         except Exception:
             pass
