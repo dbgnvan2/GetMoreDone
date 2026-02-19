@@ -1,4 +1,4 @@
-"""Weekly Items screen: weekly action items on the left and related actions on the right."""
+"""APE Weekly screen: weekly action items on the left and related actions on the right."""
 
 import customtkinter as ctk
 import tkinter as tk
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class WeeklyItemsScreen(ctk.CTkFrame):
-    """Show weekly action items for a selected week and their related action items."""
+    """Show APE weekly action items for a selected week and related actions."""
 
     def __init__(self, parent, vps_manager: "VPSManager", app: "GetMoreDoneApp"):
         super().__init__(parent)
@@ -26,6 +26,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         self.selected_weekly_item: Optional[Dict[str, Any]] = None
 
         self.related_actions: List[Dict[str, Any]] = []
+        self.segment_colors = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -40,7 +41,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
         ctk.CTkLabel(
             header,
-            text="Weekly Items",
+            text="APE Weekly",
             font=ctk.CTkFont(size=20, weight="bold"),
         ).grid(row=0, column=0, padx=(10, 20), pady=10)
 
@@ -66,7 +67,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(body, text="Weekly Items", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(body, text="APE Weekly Items", font=ctk.CTkFont(weight="bold")).grid(
             row=0, column=0, sticky="w", padx=8, pady=(8, 4)
         )
         ctk.CTkLabel(body, text="Related Action Items", font=ctk.CTkFont(weight="bold")).grid(
@@ -116,6 +117,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         ).pack(side="left", padx=6, pady=6)
 
     def refresh(self):
+        self.segment_colors = self.vps_manager.get_segment_color_map()
         weekly_items = self.vps_manager.get_weekly_action_items(ape_only=True)
         unique_starts = sorted({wi["start_date"] for wi in weekly_items if wi.get("start_date")})
         unique_starts.reverse()
@@ -164,6 +166,9 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             title = (wi.get("title") or "(untitled)").strip()
             due = wi.get("due_date", "")
             self.weekly_list.insert(tk.END, f"{title}  [{week_start} - {due}]")
+            idx = self.weekly_list.size() - 1
+            segment_name = wi.get("ape_segment_name") or wi.get("who") or ""
+            self._apply_listbox_color(self.weekly_list, idx, segment_name)
 
         self.status_label.configure(text=f"{len(self.weekly_items)} weekly item(s) for {week_start}")
 
@@ -185,6 +190,9 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             start = action.get("start_date") or ""
             status = action.get("status") or "open"
             self.actions_list.insert(tk.END, f"{title}  [{start}] ({status})")
+            idx = self.actions_list.size() - 1
+            segment_name = self.selected_weekly_item.get("ape_segment_name") or self.selected_weekly_item.get("who") or ""
+            self._apply_listbox_color(self.actions_list, idx, segment_name)
 
         self.status_label.configure(
             text=f"{len(self.related_actions)} related action item(s) for selected weekly item"
@@ -241,6 +249,9 @@ class WeeklyItemsScreen(ctk.CTkFrame):
                 start = action.get("start_date") or ""
                 status = action.get("status") or "open"
                 self.actions_list.insert(tk.END, f"{title}  [{start}] ({status})")
+                idx = self.actions_list.size() - 1
+                segment_name = self.selected_weekly_item.get("ape_segment_name") or self.selected_weekly_item.get("who") or ""
+                self._apply_listbox_color(self.actions_list, idx, segment_name)
 
     def open_selected_action_item(self, _event=None):
         if not self.related_actions:
@@ -265,3 +276,10 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             vps_manager=self.vps_manager,
             on_close_callback=self.on_action_editor_closed,
         )
+
+    def _apply_listbox_color(self, listbox: tk.Listbox, index: int, segment_name: str):
+        color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
+        try:
+            listbox.itemconfig(index, fg=color, selectforeground="white", selectbackground=color)
+        except Exception:
+            pass
