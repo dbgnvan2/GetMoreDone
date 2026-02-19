@@ -103,6 +103,13 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
         ctk.CTkButton(
             actions,
+            text="Open Weekly Action",
+            command=self.open_selected_weekly_item,
+            width=140,
+        ).pack(side="left", padx=6, pady=6)
+
+        ctk.CTkButton(
+            actions,
             text="Open Action",
             command=self.open_selected_action_item,
             width=120,
@@ -208,6 +215,22 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         )
         self.app.db_manager.create_action_item(item, apply_defaults=False)
         self.on_action_editor_closed()
+
+    def open_selected_weekly_item(self):
+        """Open the selected weekly action item in the editor."""
+        if not self.selected_weekly_item:
+            messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
+            return
+
+        from .item_editor import ItemEditorDialog
+
+        ItemEditorDialog(
+            self,
+            self.app.db_manager,
+            item_id=self.selected_weekly_item["id"],
+            vps_manager=self.vps_manager,
+            on_close_callback=self.on_action_editor_closed,
+        )
 
     def on_action_editor_closed(self):
         if self.selected_weekly_item:
