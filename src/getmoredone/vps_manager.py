@@ -7,9 +7,11 @@ import sqlite3
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 from uuid import uuid4
+from calendar import monthrange
 
 from .database import Database
 from .db_manager import DatabaseManager
+from .models import ActionItem
 
 
 class VPSManager:
@@ -29,6 +31,385 @@ class VPSManager:
     def close(self):
         """Close database connection."""
         self.db.close()
+
+    # ========================================================================
+    # VISION ELEMENTS (Segment > SubSegment > Category)
+    # ========================================================================
+
+    def get_vision_segments(self) -> List[Dict[str, Any]]:
+        cursor = self.db.conn.execute(
+            "SELECT * FROM vision_segments ORDER BY name COLLATE NOCASE ASC"
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_vision_subsegments(self, segment_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        params: List[Any] = []
+        query = """
+            SELECT ss.*, s.name AS segment_name
+            FROM vision_subsegments ss
+            JOIN vision_segments s ON s.id = ss.segment_id
+        """
+        if segment_name:
+            query += " WHERE LOWER(s.name) = LOWER(?)"
+            params.append(segment_name.strip())
+        query += " ORDER BY ss.name COLLATE NOCASE ASC"
+        cursor = self.db.conn.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_vision_categories(self, segment_name: Optional[str] = None,
+                              subsegment_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        params: List[Any] = []
+        query = """
+            SELECT c.*, ss.name AS subsegment_name, s.name AS segment_name
+            FROM vision_categories c
+            JOIN vision_subsegments ss ON ss.id = c.subsegment_id
+            JOIN vision_segments s ON s.id = ss.segment_id
+            WHERE 1=1
+        """
+        if segment_name:
+            query += " AND LOWER(s.name) = LOWER(?)"
+            params.append(segment_name.strip())
+        if subsegment_name:
+            query += " AND LOWER(ss.name) = LOWER(?)"
+            params.append(subsegment_name.strip())
+        query += " ORDER BY c.name COLLATE NOCASE ASC"
+        cursor = self.db.conn.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def _create_or_get_vision_segment(self, name: str) -> str:
+        now = datetime.now().isoformat()
+        norm = name.strip()
+        row = self.db.conn.execute(
+            "SELECT id FROM vision_segments WHERE LOWER(name) = LOWER(?)",
+            (norm,)
+        ).fetchone()
+        if row:
+            return row["id"]
+        seg_id = f"vsg-{uuid4().hex[:8]}"
+        self.db.conn.execute(
+            "INSERT INTO vision_segments (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (seg_id, norm, now, now)
+        )
+        return seg_id
+
+    def _create_or_get_vision_subsegment(self, segment_id: str, name: str) -> str:
+        now = datetime.now().isoformat()
+        norm = name.strip()
+        row = self.db.conn.execute(
+            "SELECT id FROM vision_subsegments WHERE segment_id = ? AND LOWER(name) = LOWER(?)",
+            (segment_id, norm)
+        ).fetchone()
+        if row:
+            return row["id"]
+        sub_id = f"vss-{uuid4().hex[:8]}"
+        self.db.conn.execute(
+            "INSERT INTO vision_subsegments (id, segment_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (sub_id, segment_id, norm, now, now)
+        )
+        return sub_id
+
+    def _create_or_get_vision_category(self, subsegment_id: str, name: str) -> str:
+        now = datetime.now().isoformat()
+        norm = name.strip()
+        row = self.db.conn.execute(
+            "SELECT id FROM vision_categories WHERE subsegment_id = ? AND LOWER(name) = LOWER(?)",
+            (subsegment_id, norm)
+        ).fetchone()
+        if row:
+            return row["id"]
+        cat_id = f"vct-{uuid4().hex[:8]}"
+        self.db.conn.execute(
+            "INSERT INTO vision_categories (id, subsegment_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            (cat_id, subsegment_id, norm, now, now)
+        )
+        return cat_id
+
+    def create_or_get_vision_element(self, segment_name: str, subsegment_name: str, category_name: str) -> str:
+        """Create linked Segment/SubSegment/Category and the Vision Element key record."""
+        segment_name = segment_name.strip()
+        subsegment_name = subsegment_name.strip()
+        category_name = category_name.strip()
+        if not segment_name or not subsegment_name or not category_name:
+            raise ValueError("Segment, SubSegment, and Category are required")
+
+        seg_id = self._create_or_get_vision_segment(segment_name)
+        sub_id = self._create_or_get_vision_subsegment(seg_id, subsegment_name)
+        cat_id = self._create_or_get_vision_category(sub_id, category_name)
+
+        key_field = f"{segment_name}|{subsegment_name}|{category_name}"
+        now = datetime.now().isoformat()
+        row = self.db.conn.execute(
+            "SELECT id FROM vision_elements WHERE key_field = ?",
+            (key_field,)
+        ).fetchone()
+        if row:
+            self.db.conn.commit()
+            return row["id"]
+
+        ve_id = f"ve-{uuid4().hex[:8]}"
+        self.db.conn.execute("""
+            INSERT INTO vision_elements (id, segment_id, subsegment_id, category_id, key_field, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+        """, (ve_id, seg_id, sub_id, cat_id, key_field, now, now))
+        self.db.conn.commit()
+        return ve_id
+
+    def get_vision_elements(self) -> List[Dict[str, Any]]:
+        cursor = self.db.conn.execute("""
+            SELECT ve.id, ve.key_field, s.name AS segment_name, ss.name AS subsegment_name, c.name AS category_name
+            FROM vision_elements ve
+            JOIN vision_segments s ON s.id = ve.segment_id
+            JOIN vision_subsegments ss ON ss.id = ve.subsegment_id
+            JOIN vision_categories c ON c.id = ve.category_id
+            WHERE ve.is_active = 1
+            ORDER BY s.name COLLATE NOCASE ASC, ss.name COLLATE NOCASE ASC, c.name COLLATE NOCASE ASC
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def create_annual_records_from_vision_element(self, year: int, vision_element_id: str) -> Dict[str, str]:
+        """Create Annual Vision Element + Annual Plan Element from a vision element."""
+        row = self.db.conn.execute("""
+            SELECT ve.id, ve.key_field, s.name AS segment_name, ss.name AS subsegment_name, c.name AS category_name
+            FROM vision_elements ve
+            JOIN vision_segments s ON s.id = ve.segment_id
+            JOIN vision_subsegments ss ON ss.id = ve.subsegment_id
+            JOIN vision_categories c ON c.id = ve.category_id
+            WHERE ve.id = ?
+        """, (vision_element_id,)).fetchone()
+        if not row:
+            raise ValueError("Vision element not found")
+
+        data = dict(row)
+        now = datetime.now().isoformat()
+
+        ave_row = self.db.conn.execute(
+            "SELECT id FROM annual_vision_elements WHERE year = ? AND vision_element_id = ?",
+            (year, vision_element_id)
+        ).fetchone()
+        if ave_row:
+            ave_id = ave_row["id"]
+        else:
+            ave_id = f"ave-{uuid4().hex[:8]}"
+            self.db.conn.execute("""
+                INSERT INTO annual_vision_elements
+                (id, year, vision_element_id, segment_name, subsegment_name, category_name, key_field, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ave_id, year, vision_element_id, data["segment_name"],
+                data["subsegment_name"], data["category_name"], data["key_field"], now, now
+            ))
+
+        ape_row = self.db.conn.execute(
+            "SELECT id FROM annual_plan_elements WHERE year = ? AND vision_element_id = ?",
+            (year, vision_element_id)
+        ).fetchone()
+        if ape_row:
+            ape_id = ape_row["id"]
+        else:
+            ape_id = f"ape-{uuid4().hex[:8]}"
+            self.db.conn.execute("""
+                INSERT INTO annual_plan_elements
+                (id, year, vision_element_id, annual_vision_element_id, segment_name, subsegment_name, category_name, key_field, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                ape_id, year, vision_element_id, ave_id, data["segment_name"],
+                data["subsegment_name"], data["category_name"], data["key_field"], now, now
+            ))
+
+        self.db.conn.commit()
+        return {"annual_vision_element_id": ave_id, "annual_plan_element_id": ape_id}
+
+    def get_annual_vision_elements(self, year: int) -> List[Dict[str, Any]]:
+        cursor = self.db.conn.execute("""
+            SELECT * FROM annual_vision_elements
+            WHERE year = ?
+            ORDER BY segment_name COLLATE NOCASE ASC, subsegment_name COLLATE NOCASE ASC, category_name COLLATE NOCASE ASC
+        """, (year,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_annual_plan_elements(self, year: int) -> List[Dict[str, Any]]:
+        cursor = self.db.conn.execute("""
+            SELECT * FROM annual_plan_elements
+            WHERE year = ?
+            ORDER BY segment_name COLLATE NOCASE ASC, subsegment_name COLLATE NOCASE ASC, category_name COLLATE NOCASE ASC
+        """, (year,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def set_annual_plan_element_quarter(self, ape_id: str, quarter: int, enabled: bool) -> bool:
+        if quarter not in (1, 2, 3, 4):
+            return False
+        col = f"q{quarter}"
+        self.db.conn.execute(
+            f"UPDATE annual_plan_elements SET {col} = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, datetime.now().isoformat(), ape_id)
+        )
+        self.db.conn.commit()
+        return True
+
+    def set_annual_plan_element_month(self, ape_id: str, month: int, enabled: bool) -> bool:
+        if month < 1 or month > 12:
+            return False
+        col = f"m{month}"
+        self.db.conn.execute(
+            f"UPDATE annual_plan_elements SET {col} = ?, updated_at = ? WHERE id = ?",
+            (1 if enabled else 0, datetime.now().isoformat(), ape_id)
+        )
+        self.db.conn.commit()
+        return True
+
+    def get_annual_plan_elements_for_period(self, year: int, quarter: int, month: int) -> List[Dict[str, Any]]:
+        if quarter not in (1, 2, 3, 4) or month < 1 or month > 12:
+            return []
+        q_col = f"q{quarter}"
+        m_col = f"m{month}"
+        cursor = self.db.conn.execute(f"""
+            SELECT * FROM annual_plan_elements
+            WHERE year = ?
+              AND {q_col} = 1
+              AND {m_col} = 1
+            ORDER BY segment_name COLLATE NOCASE ASC, subsegment_name COLLATE NOCASE ASC, category_name COLLATE NOCASE ASC
+        """, (year,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_month_week_starts(self, year: int, month: int, first_day_of_week: int = 0) -> List[Dict[str, Any]]:
+        """
+        Return week start options for a month based on configured first weekday.
+
+        first_day_of_week: 0=Monday .. 6=Sunday
+        """
+        if month < 1 or month > 12:
+            return []
+        if first_day_of_week < 0 or first_day_of_week > 6:
+            first_day_of_week = 0
+
+        month_start = date(year, month, 1)
+        month_end = date(year, month, monthrange(year, month)[1])
+        offset = (first_day_of_week - month_start.weekday()) % 7
+        first_week_start = month_start + timedelta(days=offset)
+
+        options: List[Dict[str, Any]] = []
+        week_of_month = 1
+        cursor = first_week_start
+        while cursor <= month_end:
+            week_of_year = cursor.isocalendar().week
+            options.append(
+                {
+                    "week_of_month": week_of_month,
+                    "week_of_year": week_of_year,
+                    "week_start_date": cursor.isoformat(),
+                    "week_end_date": (cursor + timedelta(days=6)).isoformat(),
+                    "day_of_month": cursor.day,
+                    "label": f"Wk{week_of_month} {cursor.day} (WOY {week_of_year})",
+                }
+            )
+            week_of_month += 1
+            cursor += timedelta(days=7)
+        return options
+
+    def get_existing_week_item_starts_for_ape(self, ape_id: str, year: int, month: int) -> List[str]:
+        """Get existing weekly Action Item start dates for one APE and month."""
+        rows = self.db_manager.db.conn.execute(
+            """
+            SELECT start_date
+            FROM action_items
+            WHERE annual_plan_element_id = ?
+              AND item_type = 'week'
+              AND start_date LIKE ?
+            ORDER BY start_date ASC
+            """,
+            (ape_id, f"{year:04d}-{month:02d}-%"),
+        ).fetchall()
+        return [r["start_date"] for r in rows if r["start_date"]]
+
+    def create_week_action_items_for_ape(self, ape_id: str, year: int, month: int,
+                                         week_start_dates: List[str]) -> Dict[str, Any]:
+        """
+        Create weekly Action Items linked to an Annual Plan Element.
+        Returns created_count, skipped_count, and created_ids.
+        """
+        if month < 1 or month > 12:
+            raise ValueError("Month must be 1-12")
+        if not week_start_dates:
+            return {"created_count": 0, "skipped_count": 0, "created_ids": []}
+
+        ape = self.db.conn.execute(
+            "SELECT * FROM annual_plan_elements WHERE id = ?",
+            (ape_id,),
+        ).fetchone()
+        if not ape:
+            raise ValueError("Annual Plan Element not found")
+
+        existing = set(self.get_existing_week_item_starts_for_ape(ape_id, year, month))
+
+        created_ids: List[str] = []
+        skipped_count = 0
+        key_field = ape["key_field"]
+        who_value = ape["segment_name"] or "VPS"
+
+        for week_start in week_start_dates:
+            if week_start in existing:
+                skipped_count += 1
+                continue
+
+            ws = date.fromisoformat(week_start)
+            week_of_year = ws.isocalendar().week
+            we = ws + timedelta(days=6)
+
+            item = ActionItem(
+                who=who_value,
+                title=f"{key_field} - Week {week_of_year} ({ws.isoformat()})",
+                description=f"Weekly action item for {key_field} (Week {week_of_year}, starts {ws.isoformat()})",
+                start_date=ws.isoformat(),
+                due_date=we.isoformat(),
+                category="VPS",
+                status="open",
+                annual_plan_element_id=ape_id,
+                item_type="week",
+            )
+            created_ids.append(self.db_manager.create_action_item(item, apply_defaults=False))
+
+        return {
+            "created_count": len(created_ids),
+            "skipped_count": skipped_count,
+            "created_ids": created_ids,
+        }
+
+    def get_weekly_action_items(self, week_start_date: Optional[str] = None,
+                                ape_only: bool = True) -> List[Dict[str, Any]]:
+        """
+        Get Action Items flagged as weekly (item_type='week').
+        Optionally filtered by exact week start date and/or APE linkage.
+        """
+        query = """
+            SELECT *
+            FROM action_items
+            WHERE item_type = 'week'
+        """
+        params: List[Any] = []
+
+        if week_start_date:
+            query += " AND start_date = ?"
+            params.append(week_start_date)
+
+        if ape_only:
+            query += " AND annual_plan_element_id IS NOT NULL"
+
+        query += " ORDER BY start_date DESC, title COLLATE NOCASE ASC"
+        cursor = self.db.conn.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_related_actions_for_weekly_item(self, weekly_item_id: str) -> List[Dict[str, Any]]:
+        """Get child Action Items under a weekly Action Item."""
+        cursor = self.db.conn.execute(
+            """
+            SELECT *
+            FROM action_items
+            WHERE parent_id = ?
+            ORDER BY start_date ASC, title COLLATE NOCASE ASC
+            """,
+            (weekly_item_id,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
 
     # ========================================================================
     # SEGMENT DESCRIPTIONS

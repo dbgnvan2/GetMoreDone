@@ -1,4 +1,4 @@
-"""Weekly Items screen: weekly tactics on the left and linked action items on the right."""
+"""Weekly Items screen: weekly action items on the left and related actions on the right."""
 
 import customtkinter as ctk
 import tkinter as tk
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class WeeklyItemsScreen(ctk.CTkFrame):
-    """Show weekly tactics for a selected week and their related action items."""
+    """Show weekly action items for a selected week and their related action items."""
 
     def __init__(self, parent, vps_manager: "VPSManager", app: "GetMoreDoneApp"):
         super().__init__(parent)
@@ -23,7 +23,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         self.week_var = ctk.StringVar(value="")
 
         self.weekly_items: List[Dict[str, Any]] = []
-        self.selected_week_action: Optional[Dict[str, Any]] = None
+        self.selected_weekly_item: Optional[Dict[str, Any]] = None
 
         self.related_actions: List[Dict[str, Any]] = []
 
@@ -66,7 +66,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(body, text="Weekly Tactics", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(body, text="Weekly Items", font=ctk.CTkFont(weight="bold")).grid(
             row=0, column=0, sticky="w", padx=8, pady=(8, 4)
         )
         ctk.CTkLabel(body, text="Related Action Items", font=ctk.CTkFont(weight="bold")).grid(
@@ -109,8 +109,8 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         ).pack(side="left", padx=6, pady=6)
 
     def refresh(self):
-        week_actions = self.vps_manager.get_week_actions(active_only=False)
-        unique_starts = sorted({wa["week_start_date"] for wa in week_actions if wa.get("week_start_date")})
+        weekly_items = self.vps_manager.get_weekly_action_items(ape_only=True)
+        unique_starts = sorted({wi["start_date"] for wi in weekly_items if wi.get("start_date")})
         unique_starts.reverse()
         self.week_options = unique_starts
 
@@ -119,7 +119,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             self.week_var.set("")
             self.weekly_list.delete(0, tk.END)
             self.actions_list.delete(0, tk.END)
-            self.status_label.configure(text="No weekly tactics found.")
+            self.status_label.configure(text="No weekly action items found.")
             return
 
         self.week_combo.configure(values=self.week_options)
@@ -136,27 +136,27 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             self.week_var.set(current_week_start)
             self.load_selected_week()
         else:
-            messagebox.showinfo("Week Not Found", "No weekly tactics exist for the current week.")
+            messagebox.showinfo("Week Not Found", "No weekly items exist for the current week.")
 
     def load_selected_week(self):
         week_start = self.week_var.get().strip()
         if not week_start:
             return
 
-        self.weekly_items = self.vps_manager.get_week_actions(
+        self.weekly_items = self.vps_manager.get_weekly_action_items(
             week_start_date=week_start,
-            active_only=False,
+            ape_only=True,
         )
 
         self.weekly_list.delete(0, tk.END)
         self.actions_list.delete(0, tk.END)
         self.related_actions = []
-        self.selected_week_action = None
+        self.selected_weekly_item = None
 
-        for wa in self.weekly_items:
-            title = (wa.get("title") or "(untitled)").strip()
-            end_date = wa.get("week_end_date", "")
-            self.weekly_list.insert(tk.END, f"{title}  [{week_start} - {end_date}]")
+        for wi in self.weekly_items:
+            title = (wi.get("title") or "(untitled)").strip()
+            due = wi.get("due_date", "")
+            self.weekly_list.insert(tk.END, f"{title}  [{week_start} - {due}]")
 
         self.status_label.configure(text=f"{len(self.weekly_items)} weekly item(s) for {week_start}")
 
@@ -169,8 +169,8 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         if idx < 0 or idx >= len(self.weekly_items):
             return
 
-        self.selected_week_action = self.weekly_items[idx]
-        self.related_actions = self.vps_manager.get_action_items_for_week_action(self.selected_week_action["id"])
+        self.selected_weekly_item = self.weekly_items[idx]
+        self.related_actions = self.vps_manager.get_related_actions_for_weekly_item(self.selected_weekly_item["id"])
 
         self.actions_list.delete(0, tk.END)
         for action in self.related_actions:
@@ -180,28 +180,38 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             self.actions_list.insert(tk.END, f"{title}  [{start}] ({status})")
 
         self.status_label.configure(
-            text=f"{len(self.related_actions)} related action item(s) for selected weekly tactic"
+            text=f"{len(self.related_actions)} related action item(s) for selected weekly item"
         )
 
     def create_action_item_for_selected_weekly(self):
-        if not self.selected_week_action:
+        if not self.selected_weekly_item:
             messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
             return
+        from ..models import ActionItem
 
-        from .item_editor import ItemEditorDialog
+        dialog = ctk.CTkInputDialog(text="Action Item title:", title="New Related Action")
+        title = (dialog.get_input() or "").strip()
+        if not title:
+            return
 
-        ItemEditorDialog(
-            self,
-            self.app.db_manager,
-            week_action_id=self.selected_week_action["id"],
-            segment_description_id=self.selected_week_action.get("segment_description_id"),
-            vps_manager=self.vps_manager,
-            on_close_callback=self.on_action_editor_closed,
+        weekly = self.selected_weekly_item
+        item = ActionItem(
+            who=weekly.get("who") or "",
+            title=title,
+            description=f"Related to weekly item: {weekly.get('title') or ''}",
+            parent_id=weekly["id"],
+            start_date=weekly.get("start_date"),
+            due_date=weekly.get("start_date"),
+            category=weekly.get("category"),
+            annual_plan_element_id=weekly.get("annual_plan_element_id"),
+            item_type="daily",
         )
+        self.app.db_manager.create_action_item(item, apply_defaults=False)
+        self.on_action_editor_closed()
 
     def on_action_editor_closed(self):
-        if self.selected_week_action:
-            self.related_actions = self.vps_manager.get_action_items_for_week_action(self.selected_week_action["id"])
+        if self.selected_weekly_item:
+            self.related_actions = self.vps_manager.get_related_actions_for_weekly_item(self.selected_weekly_item["id"])
             self.actions_list.delete(0, tk.END)
             for action in self.related_actions:
                 title = (action.get("title") or "(untitled)").strip()
