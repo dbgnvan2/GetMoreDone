@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..models import Status
 from ..app_settings import AppSettings
+from .segment_color_utils import resolve_segment_color_for_item
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -21,6 +22,11 @@ class AllItemsScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
@@ -139,6 +145,13 @@ class AllItemsScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
+            # Refresh VPS segment color cache
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
+
             # Get filters
             status_filter = None if self.status_var.get() == "all" else self.status_var.get()
             who_filter = None if self.who_var.get() == "All" else self.who_var.get()
@@ -189,8 +202,18 @@ class AllItemsScreen(ctk.CTkFrame):
 
             # Create item rows
             for idx, item in enumerate(items, start=1):
-                # Background colors: grey for completed, red for critical open items
-                if item.status == Status.COMPLETED:
+                segment_color = resolve_segment_color_for_item(
+                    item,
+                    self.segment_colors_by_id,
+                    self.segment_colors_by_name,
+                    self.db_manager,
+                    self._parent_segment_cache,
+                    self._ape_segment_cache,
+                    self._week_action_segment_cache,
+                )
+                if segment_color:
+                    bg_color = segment_color
+                elif item.status == Status.COMPLETED:
                     bg_color = "gray30"
                 elif item.importance == 20 or item.urgency == 20:
                     bg_color = "darkred"
@@ -216,11 +239,13 @@ class AllItemsScreen(ctk.CTkFrame):
                         row=0, column=0, padx=5, pady=5)
 
                 # Title
-                ctk.CTkLabel(
+                title_label = ctk.CTkLabel(
                     item_frame,
                     text=item.title,
                     anchor="w"
-                ).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                )
+                title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
                 # Who
                 ctk.CTkLabel(item_frame, text=item.who, width=100).grid(
@@ -259,11 +284,13 @@ class AllItemsScreen(ctk.CTkFrame):
                 ).grid(row=0, column=4, padx=5, pady=5)
 
                 # Priority
-                ctk.CTkLabel(
+                priority_label = ctk.CTkLabel(
                     item_frame,
                     text=str(item.priority_score),
                     width=80
-                ).grid(row=0, column=5, padx=5, pady=5)
+                )
+                priority_label.grid(row=0, column=5, padx=5, pady=5)
+                priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
 
                 # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
                 time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -346,11 +373,12 @@ class AllItemsScreen(ctk.CTkFrame):
         from .timer_window import TimerWindow
         timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
-    def edit_item(self, item_id: str):
+    def edit_item(self, item_id: str, focus_tab: str | None = None):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
         ItemEditorDialog(self, self.db_manager, item_id,
-                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
+                         focus_tab=focus_tab)
 
     def create_new_item(self):
         """Open item editor for new item."""

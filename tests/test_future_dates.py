@@ -75,3 +75,18 @@ def test_future_date_settings_persist():
         settings.next_month_offset_days = original_month
         settings.next_quarter_offset_days = original_quarter
         settings.save()
+
+
+def test_drag_schedule_text_color_setting_persist():
+    settings = AppSettings.load()
+    original_color = getattr(settings, "drag_schedule_date_text_color", "#FFFFFF")
+
+    try:
+        settings.drag_schedule_date_text_color = "#FFFFFF"
+        settings.save()
+
+        reloaded = AppSettings.load()
+        assert reloaded.drag_schedule_date_text_color == "#FFFFFF"
+    finally:
+        settings.drag_schedule_date_text_color = original_color
+        settings.save()

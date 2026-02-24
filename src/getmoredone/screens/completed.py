@@ -5,6 +5,8 @@ Completed screen - view completed items.
 import customtkinter as ctk
 from typing import TYPE_CHECKING
 
+from .segment_color_utils import resolve_segment_color_for_item
+
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
     from ..app import GetMoreDoneApp
@@ -17,6 +19,11 @@ class CompletedScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.db_manager = db_manager
         self.app = app
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
         # Track column visibility state (default: collapsed)
         self.columns_expanded = False
 
@@ -117,6 +124,13 @@ class CompletedScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
+            # Refresh VPS segment color cache
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
+
             # Get filters
             days_back = int(self.days_var.get())
             who_filter = None if self.who_var.get() == "All" else self.who_var.get()
@@ -155,9 +169,22 @@ class CompletedScreen(ctk.CTkFrame):
 
             # Display items
             for idx, item in enumerate(items):
-                # RED background for critical items (even when completed)
+                segment_color = resolve_segment_color_for_item(
+                    item,
+                    self.segment_colors_by_id,
+                    self.segment_colors_by_name,
+                    self.db_manager,
+                    self._parent_segment_cache,
+                    self._ape_segment_cache,
+                    self._week_action_segment_cache,
+                )
                 is_critical = (item.importance == 20 or item.urgency == 20)
-                bg_color = "darkred" if is_critical else None
+                if segment_color:
+                    bg_color = segment_color
+                elif is_critical:
+                    bg_color = "darkred"
+                else:
+                    bg_color = None
                 item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
                 item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
                 item_frame.grid_columnconfigure(1, weight=1)

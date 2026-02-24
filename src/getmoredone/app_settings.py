@@ -48,10 +48,16 @@ class AppSettings:
     include_saturday: bool = True
     # Include Sunday in date calculations (push, +/-)
     include_sunday: bool = True
+    # First day of week for VPS week generation (0=Monday .. 6=Sunday)
+    first_day_of_week: int = 0
 
     # List view settings
     # Default state for list views (Today, Upcoming, All Items)
     default_columns_expanded: bool = False
+    # Drag Schedule date box text color (hex)
+    drag_schedule_date_text_color: str = "#FFFFFF"
+    # Drag Schedule date/future box height in pixels
+    drag_schedule_box_height_px: int = 86
 
     # Future date options (Drag Schedule)
     mid_term_offset_days: int = 90

@@ -6,6 +6,7 @@ import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, List
 
 from ..models import ActionItem, Status
+from .segment_color_utils import resolve_segment_color_for_item
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -20,6 +21,11 @@ class HierarchicalScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.search_query = ""  # Track search query
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -106,6 +112,13 @@ class HierarchicalScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
+            # Refresh VPS segment color cache
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
+
             # Get status filter
             status = self.status_var.get()
             status_filter = None if status == "all" else status
@@ -177,8 +190,18 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, indent_level: int) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        # Background colors: grey for completed, red for critical open items
-        if item.status == Status.COMPLETED:
+        segment_color = resolve_segment_color_for_item(
+            item,
+            self.segment_colors_by_id,
+            self.segment_colors_by_name,
+            self.db_manager,
+            self._parent_segment_cache,
+            self._ape_segment_cache,
+            self._week_action_segment_cache,
+        )
+        if segment_color:
+            bg_color = segment_color
+        elif item.status == Status.COMPLETED:
             bg_color = "gray30"
         elif item.importance == 20 or item.urgency == 20:
             bg_color = "darkred"

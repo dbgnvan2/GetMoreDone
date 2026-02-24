@@ -49,6 +49,8 @@ class ActionItem:
     status: str = "open"
     completed_at: Optional[str] = None
     week_action_id: Optional[str] = None  # References week_actions.id for VPS integration
+    annual_plan_element_id: Optional[str] = None  # References annual_plan_elements.id for APE linkage
+    item_type: str = "daily"  # daily, week
     segment_description_id: Optional[str] = None  # References segment_descriptions.id for VPS integration
     is_habit: bool = False  # VPS: Indicates if this is a habit item
     percent_complete: int = 0  # VPS: Completion percentage (0-100)

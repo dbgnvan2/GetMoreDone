@@ -10,6 +10,7 @@ from ..db_manager import DatabaseManager
 from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
+from .segment_color_utils import resolve_segment_color_for_item
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -23,6 +24,11 @@ class TodayScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
@@ -146,6 +152,13 @@ class TodayScreen(ctk.CTkFrame):
 
             # Get today's items (start_date <= today, includes completed)
             items = self.get_todays_items()
+
+            # Refresh VPS color caches
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
 
             if not items:
                 label = ctk.CTkLabel(
@@ -274,12 +287,22 @@ class TodayScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        # Determine background color: RED for critical items, gray for completed, default otherwise
+        segment_color = resolve_segment_color_for_item(
+            item,
+            self.segment_colors_by_id,
+            self.segment_colors_by_name,
+            self.db_manager,
+            self._parent_segment_cache,
+            self._ape_segment_cache,
+            self._week_action_segment_cache,
+        )
         is_critical = (item.importance == 20 or item.urgency == 20)
-        if is_critical and not is_completed:
-            bg_color = "darkred"
+        if segment_color:
+            bg_color = segment_color
         elif is_completed:
             bg_color = "gray20"
+        elif is_critical:
+            bg_color = "darkred"
         else:
             bg_color = None
 
@@ -322,6 +345,7 @@ class TodayScreen(ctk.CTkFrame):
             text_color="gray60" if is_completed else None
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
         # Start Date
         start_date_text = item.start_date if item.start_date else "-"
@@ -365,6 +389,7 @@ class TodayScreen(ctk.CTkFrame):
             fg_color="gray30"
         )
         score_label.grid(row=0, column=4, padx=5, pady=5)
+        score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
 
         # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
         time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -449,11 +474,12 @@ class TodayScreen(ctk.CTkFrame):
         from .timer_window import TimerWindow
         timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
-    def edit_item(self, item_id: str):
+    def edit_item(self, item_id: str, focus_tab: str | None = None):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
         ItemEditorDialog(self, self.db_manager, item_id,
-                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
+                         focus_tab=focus_tab)
 
     def create_new_item(self):
         """Open item editor for new item."""

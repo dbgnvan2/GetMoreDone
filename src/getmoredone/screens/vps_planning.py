@@ -13,6 +13,16 @@ if TYPE_CHECKING:
 class VPSPlanningScreen(ctk.CTkFrame):
     """Screen showing VPS planning hierarchy in collapsible tree view."""
 
+    LEVEL_COLORS = {
+        "TL Vision": "#7C3AED",
+        "Annual Vision": "#2563EB",
+        "Annual Plan": "#0D9488",
+        "Annual Initiative": "#F59E0B",
+        "Quarter": "#EA580C",
+        "Month": "#059669",
+        "Week": "#0284C7",
+    }
+
     def __init__(self, parent, vps_manager: 'VPSManager', app: 'GetMoreDoneApp'):
         super().__init__(parent)
         self.vps_manager = vps_manager
@@ -23,6 +33,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         # Track selected segments for filtering
         self.selected_segments = set()  # Set of segment IDs to display
+        self.segment_colors_by_id: Dict[str, str] = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -43,7 +54,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         """Create header with controls."""
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(1, weight=1)
+        header.grid_columnconfigure(7, weight=1)
 
         # Title
         title = ctk.CTkLabel(
@@ -52,6 +63,26 @@ class VPSPlanningScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=20, weight="bold")
         )
         title.grid(row=0, column=0, padx=10, pady=10)
+
+        subtitle = ctk.CTkLabel(
+            header,
+            text="Color-coded hierarchy for faster planning scans",
+            text_color="#94A3B8"
+        )
+        subtitle.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
+
+        legend = ctk.CTkFrame(header, fg_color="transparent")
+        legend.grid(row=0, column=1, rowspan=2, padx=8, pady=8, sticky="w")
+        for idx, (name, color) in enumerate(self.LEVEL_COLORS.items()):
+            badge = ctk.CTkLabel(
+                legend,
+                text=name,
+                fg_color=color,
+                corner_radius=6,
+                padx=8,
+                pady=3
+            )
+            badge.grid(row=0, column=idx, padx=3, pady=3, sticky="w")
 
         # Segment filter
         ctk.CTkLabel(header, text="Segments:").grid(
@@ -62,7 +93,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="Select Segments...",
             command=self.show_segment_filter_dialog,
-            width=150
+            width=150,
+            fg_color="#334155",
+            hover_color="#475569"
         )
         self.segment_filter_btn.grid(row=0, column=3, padx=5, pady=10)
 
@@ -71,7 +104,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="Expand All",
             command=self.expand_all,
-            width=100
+            width=100,
+            fg_color="#1D4ED8",
+            hover_color="#1E40AF"
         )
         btn_expand.grid(row=0, column=4, padx=5, pady=10)
 
@@ -79,7 +114,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="Collapse All",
             command=self.collapse_all,
-            width=100
+            width=100,
+            fg_color="#0F766E",
+            hover_color="#115E59"
         )
         btn_collapse.grid(row=0, column=5, padx=5, pady=10)
 
@@ -87,7 +124,9 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_new = ctk.CTkButton(
             header,
             text="+ New Vision",
-            command=self.create_new_tl_vision
+            command=self.create_new_tl_vision,
+            fg_color="#9333EA",
+            hover_color="#7E22CE"
         )
         btn_new.grid(row=0, column=6, padx=10, pady=10)
 
@@ -219,6 +258,11 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
             # Get all segments
             segments = self.vps_manager.get_all_segments()
+            self.segment_colors_by_id = {}
+            for segment in segments:
+                color = (segment.get('color_hex') or '').strip()
+                if color:
+                    self.segment_colors_by_id[segment['id']] = color
 
             # Initialize selected_segments if empty
             if not self.selected_segments:
@@ -412,7 +456,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def display_week_action_tree(self, action: Dict[str, Any], row: int, indent: int) -> int:
         """Display a Week Action and its linked action items."""
-        action_frame = self.create_week_action_row(action, indent)
+        segment_color = self._resolve_segment_color(action.get('segment_description_id'))
+        action_frame = self.create_week_action_row(action, indent, segment_color)
         action_frame.grid(row=row, column=0, sticky="ew",
                           pady=2, padx=(indent * 30 + 5, 5))
         row += 1
@@ -427,13 +472,15 @@ class VPSPlanningScreen(ctk.CTkFrame):
                     row, indent + 1, "No action items")
             else:
                 for item in action_items:
-                    row = self.display_action_item(item, row, indent + 1)
+                    row = self.display_action_item(
+                        item, row, indent + 1, segment_color)
 
         return row
 
-    def display_action_item(self, item: Dict[str, Any], row: int, indent: int) -> int:
+    def display_action_item(self, item: Dict[str, Any], row: int, indent: int,
+                            segment_color: Optional[str]) -> int:
         """Display an action item (leaf node)."""
-        item_frame = self.create_action_item_row(item, indent)
+        item_frame = self.create_action_item_row(item, indent, segment_color)
         item_frame.grid(row=row, column=0, sticky="ew",
                         pady=2, padx=(indent * 30 + 5, 5))
         return row + 1
@@ -716,12 +763,16 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         return frame
 
-    def create_week_action_row(self, action: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+    def create_week_action_row(self, action: Dict[str, Any], indent: int,
+                               segment_color: Optional[str] = None) -> ctk.CTkFrame:
         """Create a row for a Week Action."""
         node_id = f"week_action-{action['id']}"
         is_expanded = node_id in self.expanded_nodes
 
-        frame = ctk.CTkFrame(self.scroll_frame)
+        frame_kwargs = {}
+        if segment_color:
+            frame_kwargs['fg_color'] = segment_color
+        frame = ctk.CTkFrame(self.scroll_frame, **frame_kwargs)
         frame.grid_columnconfigure(2, weight=1)
 
         indent_label = ctk.CTkLabel(
@@ -750,9 +801,13 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         return frame
 
-    def create_action_item_row(self, item: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+    def create_action_item_row(self, item: Dict[str, Any], indent: int,
+                               segment_color: Optional[str]) -> ctk.CTkFrame:
         """Create a row for an Action Item."""
-        frame = ctk.CTkFrame(self.scroll_frame)
+        frame_kwargs = {}
+        if segment_color:
+            frame_kwargs['fg_color'] = segment_color
+        frame = ctk.CTkFrame(self.scroll_frame, **frame_kwargs)
         frame.grid_columnconfigure(1, weight=1)
 
         indent_label = ctk.CTkLabel(
@@ -773,6 +828,13 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=2, padx=2, pady=3)
 
         return frame
+
+    def _resolve_segment_color(self, segment_id: Optional[str]) -> Optional[str]:
+        """Look up a segment color derived from VPL Life Segment settings."""
+        if not segment_id:
+            return None
+        color = self.segment_colors_by_id.get(segment_id)
+        return color if color else None
 
     # ========================================================================
     # TREE NAVIGATION

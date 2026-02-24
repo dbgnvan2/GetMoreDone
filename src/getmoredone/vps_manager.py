@@ -5,14 +5,29 @@ Provides CRUD operations for all VPS entities.
 
 import sqlite3
 import re
+import logging
 from datetime import datetime, date, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from uuid import uuid4
 from calendar import monthrange
 
 from .database import Database
 from .db_manager import DatabaseManager
 from .models import ActionItem
+from .paths import app_data_dir_path
+
+
+def _get_weekly_debug_logger() -> logging.Logger:
+    logger = logging.getLogger("getmoredone.weekly_tactic")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.INFO)
+    log_path = app_data_dir_path() / "weekly_tactic_debug.log"
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
 
 
 class VPSManager:
@@ -23,6 +38,7 @@ class VPSManager:
         self.db = Database(db_path)
         self.db.connect()
         self.db.initialize_schema()
+        self.logger = _get_weekly_debug_logger()
 
         # Store db_manager for action item operations
         # If not provided, create one using the same db_path
@@ -32,6 +48,59 @@ class VPSManager:
     def close(self):
         """Close database connection."""
         self.db.close()
+
+    @staticmethod
+    def shorten_pipe_prefix(text: str) -> str:
+        """
+        Shorten first two pipe-delimited segments to initials.
+        Example: Purposeful Work|Living Systems|Blog -> PW|LS|Blog
+        """
+        raw = (text or "").strip()
+        if not raw or "|" not in raw:
+            return raw
+
+        parts = [p.strip() for p in raw.split("|")]
+        if len(parts) < 3:
+            return raw
+
+        def initials(phrase: str) -> str:
+            words = [w for w in phrase.split() if w]
+            return "".join(w[0].upper() for w in words) if words else phrase[:1].upper()
+
+        parts[0] = initials(parts[0])
+        parts[1] = initials(parts[1])
+        return "|".join(parts)
+
+    @staticmethod
+    def normalize_week_token(text: str) -> str:
+        """Convert 'Week N' to 'Wn' in titles."""
+        return re.sub(r"\bWeek\s+(\d+)\b", r"W\1", text or "", flags=re.IGNORECASE)
+
+    def normalize_action_item_title_prefixes(self) -> int:
+        """
+        Normalize existing Action Item titles:
+        - shorten Segment|SubSegment prefix
+        - convert 'Week N' to 'Wn'
+        Returns count of updated records.
+        """
+        rows = self.db.conn.execute(
+            "SELECT id, title FROM action_items WHERE title IS NOT NULL"
+        ).fetchall()
+
+        updated = 0
+        now = datetime.now().isoformat()
+        for row in rows:
+            old = row["title"] or ""
+            new = self.normalize_week_token(self.shorten_pipe_prefix(old))
+            if new != old:
+                self.db.conn.execute(
+                    "UPDATE action_items SET title = ?, updated_at = ? WHERE id = ?",
+                    (new, now, row["id"]),
+                )
+                updated += 1
+        if updated:
+            self.db.conn.commit()
+        return updated
 
     # ========================================================================
     # VISION ELEMENTS (Segment > SubSegment > Category)
@@ -346,6 +415,7 @@ class VPSManager:
         skipped_count = 0
         key_field = ape["key_field"]
         who_value = ape["segment_name"] or "VPS"
+        segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
 
         for week_start in week_start_dates:
             if week_start in existing:
@@ -358,14 +428,15 @@ class VPSManager:
 
             item = ActionItem(
                 who=who_value,
-                title=f"{key_field} - Week {week_of_year} ({ws.isoformat()})",
-                description=f"Weekly action item for {key_field} (Week {week_of_year}, starts {ws.isoformat()})",
+                title=f"{self.normalize_week_token(self.shorten_pipe_prefix(key_field))} - W{week_of_year} ({ws.isoformat()})",
+                description=f"Weekly action item for {key_field} (W{week_of_year}, starts {ws.isoformat()})",
                 start_date=ws.isoformat(),
                 due_date=we.isoformat(),
                 category="VPS",
                 status="open",
                 annual_plan_element_id=ape_id,
                 item_type="week",
+                segment_description_id=segment_id,
             )
             created_ids.append(self.db_manager.create_action_item(item, apply_defaults=False))
 
@@ -400,7 +471,105 @@ class VPSManager:
 
         query += " ORDER BY ai.start_date DESC, ai.title COLLATE NOCASE ASC"
         cursor = self.db.conn.execute(query, params)
-        return [dict(row) for row in cursor.fetchall()]
+        rows = [dict(row) for row in cursor.fetchall()]
+        self.logger.info(
+            "[vps:get_weekly_action_items] db=%s week_start=%s ape_only=%s count=%d",
+            self.db.db_path,
+            week_start_date,
+            ape_only,
+            len(rows),
+        )
+        return rows
+
+    def get_weekly_action_items_in_range(self, start_date: str, end_date: str,
+                                         segment_ids: Optional[List[str]] = None,
+                                         ape_only: bool = True) -> List[Dict[str, Any]]:
+        """Return weekly action items whose start dates fall inside the range."""
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+
+        query = """
+            SELECT ai.*,
+                   ape.segment_name AS ape_segment_name
+            FROM action_items ai
+            LEFT JOIN annual_plan_elements ape
+              ON ape.id = ai.annual_plan_element_id
+            WHERE ai.item_type = 'week'
+              AND ai.start_date BETWEEN ? AND ?
+        """
+        params: List[Any] = [start_date, end_date]
+
+        if ape_only:
+            query += " AND ai.annual_plan_element_id IS NOT NULL"
+
+        if segment_ids:
+            placeholders = ",".join("?" for _ in segment_ids)
+            query += f" AND ai.segment_description_id IN ({placeholders})"
+            params.extend(segment_ids)
+
+        query += " ORDER BY ai.start_date ASC, ai.title COLLATE NOCASE ASC"
+        cursor = self.db.conn.execute(query, params)
+        rows = [dict(row) for row in cursor.fetchall()]
+        self.logger.info(
+            "[vps:get_weekly_action_items_in_range] db=%s range=%s..%s segment_ids=%s ape_only=%s count=%d",
+            self.db.db_path,
+            start_date,
+            end_date,
+            segment_ids,
+            ape_only,
+            len(rows),
+        )
+        return rows
+
+    def get_weekly_action_item_months(self, ape_only: bool = True) -> List[Dict[str, int]]:
+        """Return distinct months that contain weekly action items."""
+        query = """
+            SELECT DISTINCT
+                CAST(strftime('%Y', start_date) AS INTEGER) AS year,
+                CAST(strftime('%m', start_date) AS INTEGER) AS month
+            FROM action_items
+            WHERE item_type = 'week'
+        """
+        if ape_only:
+            query += " AND annual_plan_element_id IS NOT NULL"
+        query += " ORDER BY year DESC, month DESC"
+
+        cursor = self.db.conn.execute(query)
+        rows = [dict(row) for row in cursor.fetchall() if row["year"] and row["month"]]
+        self.logger.info(
+            "[vps:get_weekly_action_item_months] db=%s ape_only=%s count=%d",
+            self.db.db_path,
+            ape_only,
+            len(rows),
+        )
+        return rows
+
+    def get_weekly_action_item_bounds(self, ape_only: bool = True) -> Optional[Tuple[str, str]]:
+        """Return the min/max start dates for weekly action items."""
+        query = """
+            SELECT MIN(start_date) AS min_start, MAX(start_date) AS max_start
+            FROM action_items
+            WHERE item_type = 'week'
+        """
+        if ape_only:
+            query += " AND annual_plan_element_id IS NOT NULL"
+
+        row = self.db.conn.execute(query).fetchone()
+        if not row or not row["min_start"] or not row["max_start"]:
+            self.logger.info(
+                "[vps:get_weekly_action_item_bounds] db=%s ape_only=%s bounds=None",
+                self.db.db_path,
+                ape_only,
+            )
+            return None
+        self.logger.info(
+            "[vps:get_weekly_action_item_bounds] db=%s ape_only=%s bounds=%s..%s",
+            self.db.db_path,
+            ape_only,
+            row["min_start"],
+            row["max_start"],
+        )
+        return row["min_start"], row["max_start"]
 
     def get_related_actions_for_weekly_item(self, weekly_item_id: str) -> List[Dict[str, Any]]:
         """Get child Action Items under a weekly Action Item."""
@@ -440,6 +609,27 @@ class VPSManager:
             if name:
                 color_map[name] = row["color_hex"] or "#334155"
         return color_map
+
+    def get_segment_colors_by_id(self) -> Dict[str, str]:
+        """Return a mapping of segment IDs to their configured colors."""
+        cursor = self.db.conn.execute(
+            "SELECT id, color_hex FROM segment_descriptions"
+        )
+        colors: Dict[str, str] = {}
+        for row in cursor.fetchall():
+            color = (row["color_hex"] or "").strip() or "#334155"
+            colors[row["id"]] = color
+        return colors
+
+    def resolve_segment_id_by_name(self, segment_name: Optional[str]) -> Optional[str]:
+        """Resolve a segment_description_id using a case-insensitive name match."""
+        if not segment_name:
+            return None
+        row = self.db.conn.execute(
+            "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+            (segment_name.strip(),),
+        ).fetchone()
+        return row["id"] if row else None
 
     def resolve_segment_color(self, segment_name: str, color_map: Optional[Dict[str, str]] = None) -> str:
         """
@@ -1231,6 +1421,44 @@ class VPSManager:
 
         cursor = self.db.conn.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
+
+    def get_week_actions_in_range(self, start_date: str, end_date: str,
+                                  segment_ids: Optional[List[str]] = None,
+                                  active_only: bool = True) -> List[Dict[str, Any]]:
+        """Get week actions whose week_start_date falls within the provided range."""
+        if start_date > end_date:
+            start_date, end_date = end_date, start_date
+
+        query = "SELECT * FROM week_actions WHERE week_start_date BETWEEN ? AND ?"
+        params: List[Any] = [start_date, end_date]
+
+        if active_only:
+            query += " AND is_active = 1"
+
+        if segment_ids:
+            placeholders = ",".join("?" for _ in segment_ids)
+            query += f" AND segment_description_id IN ({placeholders})"
+            params.extend(segment_ids)
+
+        query += " ORDER BY week_start_date ASC, title COLLATE NOCASE ASC"
+
+        cursor = self.db.conn.execute(query, params)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_week_action_months(self, active_only: bool = True) -> List[Dict[str, int]]:
+        """Return distinct year/month pairs where weekly tactics exist."""
+        query = """
+            SELECT DISTINCT
+                CAST(strftime('%Y', week_start_date) AS INTEGER) AS year,
+                CAST(strftime('%m', week_start_date) AS INTEGER) AS month
+            FROM week_actions
+        """
+        if active_only:
+            query += " WHERE is_active = 1"
+        query += " ORDER BY year DESC, month DESC"
+
+        cursor = self.db.conn.execute(query)
+        return [dict(row) for row in cursor.fetchall() if row["year"] and row["month"]]
 
     def get_week_action(self, action_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific week action by ID."""

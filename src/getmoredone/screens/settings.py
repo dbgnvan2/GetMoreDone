@@ -9,7 +9,7 @@ import threading
 from pathlib import Path
 from datetime import datetime
 from typing import TYPE_CHECKING
-from tkinter import filedialog
+from tkinter import filedialog, colorchooser, messagebox
 
 from ..app_settings import AppSettings
 from ..obsidian_utils import validate_obsidian_setup
@@ -348,6 +348,59 @@ class SettingsScreen(ctk.CTkFrame):
         columns_expanded_checkbox.grid(row=3, column=0, columnspan=2,
                                        sticky="w", padx=10, pady=5)
 
+        # First day of week selector (used by VPS week generation)
+        ctk.CTkLabel(section, text="First day of week (VPS):").grid(
+            row=4, column=0, sticky="w", padx=10, pady=5
+        )
+        first_day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        first_day_idx = int(getattr(self.settings, "first_day_of_week", 0))
+        if first_day_idx < 0 or first_day_idx > 6:
+            first_day_idx = 0
+        self.first_day_of_week_var = ctk.StringVar(value=first_day_names[first_day_idx])
+        self.first_day_of_week_combo = ctk.CTkComboBox(
+            section,
+            values=first_day_names,
+            variable=self.first_day_of_week_var,
+            width=180
+        )
+        self.first_day_of_week_combo.grid(row=4, column=1, sticky="w", padx=10, pady=5)
+
+        # Drag Schedule date text color setting
+        ctk.CTkLabel(section, text="Drag Schedule date text color:").grid(
+            row=5, column=0, sticky="w", padx=10, pady=5
+        )
+        self.drag_schedule_text_color_var = ctk.StringVar(
+            value=getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")
+        )
+        self.drag_schedule_text_color_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.drag_schedule_text_color_var,
+            width=180
+        )
+        self.drag_schedule_text_color_entry.grid(row=5, column=1, sticky="w", padx=10, pady=5)
+
+        self.drag_schedule_text_color_pick_btn = ctk.CTkButton(
+            section,
+            text="Pick Color",
+            width=100,
+            command=self.pick_drag_schedule_text_color
+        )
+        self.drag_schedule_text_color_pick_btn.grid(row=5, column=2, sticky="w", padx=6, pady=5)
+
+        # Drag Schedule date box height setting
+        ctk.CTkLabel(section, text="Drag Schedule box height (px):").grid(
+            row=6, column=0, sticky="w", padx=10, pady=5
+        )
+        self.drag_schedule_box_height_var = ctk.StringVar(
+            value=str(getattr(self.settings, "drag_schedule_box_height_px", 86))
+        )
+        self.drag_schedule_box_height_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.drag_schedule_box_height_var,
+            width=180
+        )
+        self.drag_schedule_box_height_entry.grid(row=6, column=1, sticky="w", padx=10, pady=5)
+
         # Save button
         btn_save = ctk.CTkButton(
             section,
@@ -357,13 +410,13 @@ class SettingsScreen(ctk.CTkFrame):
             hover_color="green",
             width=150
         )
-        btn_save.grid(row=4, column=0, sticky="w", padx=10, pady=10)
+        btn_save.grid(row=7, column=0, sticky="w", padx=10, pady=10)
 
         # Status label
         self.date_increment_status_label = ctk.CTkLabel(
             section, text="", text_color="green")
         self.date_increment_status_label.grid(
-            row=4, column=1, sticky="w", padx=10, pady=10)
+            row=7, column=1, sticky="w", padx=10, pady=10)
 
         # Info
         info_text = ("These settings control how dates are incremented when using:\n"
@@ -372,7 +425,7 @@ class SettingsScreen(ctk.CTkFrame):
                      "• Continue button (duplicate action for next day)\n\n"
                      "Note: Manual date entry is not affected by these settings.")
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=5
+            row=8, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
 
     def save_date_increment_settings(self):
@@ -380,12 +433,36 @@ class SettingsScreen(ctk.CTkFrame):
         self.settings.include_saturday = self.include_saturday_var.get()
         self.settings.include_sunday = self.include_sunday_var.get()
         self.settings.default_columns_expanded = self.default_columns_expanded_var.get()
+        first_day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        selected = self.first_day_of_week_var.get().strip()
+        try:
+            self.settings.first_day_of_week = first_day_names.index(selected)
+        except ValueError:
+            self.settings.first_day_of_week = 0
+
+        color_value = self.drag_schedule_text_color_var.get().strip() or "#FFFFFF"
+        if not color_value.startswith("#"):
+            color_value = f"#{color_value}"
+        if len(color_value) != 7:
+            color_value = "#FFFFFF"
+        self.settings.drag_schedule_date_text_color = color_value
+        self.settings.drag_schedule_box_height_px = self._parse_positive_int(
+            self.drag_schedule_box_height_var.get(),
+            default=getattr(self.settings, "drag_schedule_box_height_px", 86)
+        )
         self.settings.save()
 
         self.date_increment_status_label.configure(
             text="✓ Settings saved",
             text_color="green"
         )
+
+    def pick_drag_schedule_text_color(self):
+        """Pick Drag Schedule date text color using color chooser."""
+        initial = self.drag_schedule_text_color_var.get().strip() or "#FFFFFF"
+        picked = colorchooser.askcolor(color=initial, title="Pick Drag Schedule Date Text Color")
+        if picked and picked[1]:
+            self.drag_schedule_text_color_var.set(picked[1].upper())
 
     def _parse_positive_int(self, value: str, default: int) -> int:
         try:
@@ -968,6 +1045,14 @@ class SettingsScreen(ctk.CTkFrame):
             hover_color="#555555",
         ).pack(side="left", padx=5)
 
+        ctk.CTkButton(
+            btn_frame,
+            text="Email Import Help",
+            command=self.show_email_import_help,
+            fg_color="#1F2937",
+            hover_color="#374151",
+        ).pack(side="left", padx=5)
+
         # Status label
         self.gmail_status_label = ctk.CTkLabel(section, text="", wraplength=700)
         self.gmail_status_label.grid(row=8, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
@@ -1078,8 +1163,6 @@ class SettingsScreen(ctk.CTkFrame):
 
     def run_email_import_now(self):
         """Run the Gmail importer immediately (in a background thread)."""
-        from tkinter import messagebox
-
         # Save current UI values first
         self.save_email_import_settings()
 
@@ -1124,6 +1207,28 @@ class SettingsScreen(ctk.CTkFrame):
             self.gmail_status_label.configure(text="Opened logs.", text_color="gray")
         except Exception as e:
             self.gmail_status_label.configure(text=f"Could not open logs: {e}", text_color="red")
+
+    def show_email_import_help(self):
+        """Show a help dialog with Gmail importer recovery steps."""
+        help_path = Path(__file__).resolve().parents[3] / "docs" / "EMAIL_IMPORT_HELP.md"
+        try:
+            content = help_path.read_text(encoding="utf-8")
+        except Exception as e:
+            messagebox.showerror("Email Import Help", f"Could not load help file:\n{e}")
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Gmail Import Help")
+        dialog.geometry("720x520")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        textbox = ctk.CTkTextbox(dialog, wrap="word")
+        textbox.pack(fill="both", expand=True, padx=15, pady=(15, 5))
+        textbox.insert("1.0", content)
+        textbox.configure(state="disabled")
+
+        ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=(0, 15))
 
     def run_calendar_import_now(self):
         """Run Google Calendar importer immediately (in a background thread)."""

@@ -91,6 +91,8 @@ class Database:
                 planned_minutes   INTEGER,
                 status            TEXT NOT NULL DEFAULT 'open',
                 completed_at      TEXT,
+                item_type         TEXT NOT NULL DEFAULT 'daily',
+                annual_plan_element_id TEXT,
 
                 created_at        TEXT NOT NULL,
                 updated_at        TEXT NOT NULL
@@ -257,6 +259,18 @@ class Database:
             conn.execute("""
                 ALTER TABLE action_items
                 ADD COLUMN contact_id INTEGER REFERENCES contacts(id)
+            """)
+
+        if 'item_type' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN item_type TEXT NOT NULL DEFAULT 'daily'
+            """)
+
+        if 'annual_plan_element_id' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN annual_plan_element_id TEXT
             """)
             # Make who nullable for existing items
             # (SQLite doesn't support ALTER COLUMN, handled by new schema)

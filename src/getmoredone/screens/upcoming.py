@@ -9,6 +9,7 @@ from typing import Optional, TYPE_CHECKING
 from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
+from .segment_color_utils import resolve_segment_color_for_item
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -23,6 +24,11 @@ class UpcomingScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
         # Track column visibility state
         self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
@@ -146,6 +152,13 @@ class UpcomingScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
+            # Refresh VPS segment color cache
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
+
             # Get filters
             n_days = int(self.days_var.get())
             who_filter = None if self.who_var.get() == "All" else self.who_var.get()
@@ -238,9 +251,22 @@ class UpcomingScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        # RED background for critical items
+        segment_color = resolve_segment_color_for_item(
+            item,
+            self.segment_colors_by_id,
+            self.segment_colors_by_name,
+            self.db_manager,
+            self._parent_segment_cache,
+            self._ape_segment_cache,
+            self._week_action_segment_cache,
+        )
         is_critical = (item.importance == 20 or item.urgency == 20)
-        bg_color = "darkred" if is_critical else None
+        if segment_color:
+            bg_color = segment_color
+        elif is_critical:
+            bg_color = "darkred"
+        else:
+            bg_color = None
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         frame.grid_columnconfigure(1, weight=1)
 
@@ -267,6 +293,7 @@ class UpcomingScreen(ctk.CTkFrame):
             anchor="w"
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
         # Start Date
         start_date_text = item.start_date if item.start_date else "-"
@@ -328,6 +355,7 @@ class UpcomingScreen(ctk.CTkFrame):
             fg_color="gray30"
         )
         score_label.grid(row=0, column=6, padx=5, pady=5)
+        score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
 
         # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
         time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -448,11 +476,12 @@ class UpcomingScreen(ctk.CTkFrame):
         from .timer_window import TimerWindow
         timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
-    def edit_item(self, item_id: str):
+    def edit_item(self, item_id: str, focus_tab: str | None = None):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
         ItemEditorDialog(self, self.db_manager, item_id,
-                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
+                         focus_tab=focus_tab)
 
     def push_item(self, item_id: str):
         """Push item to next day without showing dialog, using weekend-aware logic."""

@@ -24,6 +24,9 @@ Current end-user documentation including:
 - What/why for buttons and controls
 - Item Editor, Timer, Calendar, and Settings details
 - Drag Schedule usage
+- Vision Planning hub and APE Weekly workflow
+- Drag Schedule date-box text format and color setting
+- Drag Schedule date-box height setting and color picker
 
 ### GetMoreDone_MasterSpec_SQLite_v1.md (19KB)
 
@@ -51,6 +54,15 @@ Feature backlog and task tracking:
 - Completed features with dates
 - Pending enhancements
 - Known issues
+
+### docs/MULTI_AGENT_WORKFLOW.md (NEW)
+
+Starter operational guide for multi-agent delivery:
+
+- Role definitions (Code / Docs / GitHub agents)
+- Worktree bootstrap command and branch model
+- Required handoff note workflow
+- PR template and CI docs-gate behavior
 
 ## VPS (Visionary Planning System) Documentation
 

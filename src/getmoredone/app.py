@@ -37,6 +37,14 @@ class GetMoreDoneApp(ctk.CTk):
         # Initialize VPS manager with shared db_manager
         self.vps_manager = VPSManager(db_manager=self.db_manager)
 
+        # Backfill legacy action items so they carry segment ids
+        try:
+            updated_segments = self.db_manager.backfill_action_item_segments()
+            if updated_segments:
+                print(f"[VPS] Backfilled segment ids on {updated_segments} action item(s).")
+        except Exception as exc:
+            print(f"[WARN] Unable to backfill action item segments: {exc}")
+
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -103,10 +111,10 @@ class GetMoreDoneApp(ctk.CTk):
 
         self.btn_vps_planning = ctk.CTkButton(
             self.sidebar,
-            text="VPS Planning",
-            command=self.show_vps_planning,
-            fg_color="purple",
-            hover_color="mediumpurple"
+            text="Vision Planning",
+            command=self.show_vision_planning_hub,
+            fg_color="#0E7490",
+            hover_color="#0891B2"
         )
         self.btn_vps_planning.grid(row=5, column=0, padx=20, pady=10)
 
@@ -159,15 +167,6 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_settings.grid(row=12, column=0, padx=20, pady=10)
 
-        self.btn_vision_planning_hub = ctk.CTkButton(
-            self.sidebar,
-            text="Vision Planning",
-            command=self.show_vision_planning_hub,
-            fg_color="#0E7490",
-            hover_color="#0891B2"
-        )
-        self.btn_vision_planning_hub.grid(row=13, column=0, padx=20, pady=10)
-
     def clear_content(self):
         """Clear current screen from content area."""
         if self.current_screen:
@@ -203,11 +202,8 @@ class GetMoreDoneApp(ctk.CTk):
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_vps_planning(self):
-        """Show VPS Planning screen."""
-        from .screens.vps_planning import VPSPlanningScreen
-        self.clear_content()
-        self.current_screen = VPSPlanningScreen(self.content_frame, self.vps_manager, self)
-        self.current_screen.grid(row=0, column=0, sticky="nsew")
+        """Backwards-compatible entrypoint for Vision Planning hub."""
+        self.show_vision_planning_hub()
 
     def show_plan(self):
         """Show Plan screen."""

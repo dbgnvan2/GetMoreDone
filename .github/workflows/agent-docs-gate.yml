@@ -1,0 +1,23 @@
+name: Agent Docs Gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  docs-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run docs sync gate
+        run: |
+          python tools/agents/check_docs_sync.py --base origin/${{ github.base_ref }} --head ${{ github.sha }}

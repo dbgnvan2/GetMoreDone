@@ -115,6 +115,103 @@ class VPSSchema:
         """)
 
         # ========================================================================
+        # VISION ELEMENT MASTER DATA (Segment > SubSegment > Category)
+        # ========================================================================
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vision_segments (
+                id               TEXT PRIMARY KEY,
+                name             TEXT NOT NULL UNIQUE,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vision_subsegments (
+                id               TEXT PRIMARY KEY,
+                segment_id       TEXT NOT NULL REFERENCES vision_segments(id) ON DELETE CASCADE,
+                name             TEXT NOT NULL,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL,
+                UNIQUE(segment_id, name)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vision_categories (
+                id               TEXT PRIMARY KEY,
+                subsegment_id    TEXT NOT NULL REFERENCES vision_subsegments(id) ON DELETE CASCADE,
+                name             TEXT NOT NULL,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL,
+                UNIQUE(subsegment_id, name)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vision_elements (
+                id               TEXT PRIMARY KEY,
+                segment_id       TEXT NOT NULL REFERENCES vision_segments(id) ON DELETE CASCADE,
+                subsegment_id    TEXT NOT NULL REFERENCES vision_subsegments(id) ON DELETE CASCADE,
+                category_id      TEXT NOT NULL REFERENCES vision_categories(id) ON DELETE CASCADE,
+                key_field        TEXT NOT NULL UNIQUE,
+                is_active        INTEGER DEFAULT 1,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL
+            )
+        """)
+
+        # ========================================================================
+        # ANNUAL VISION / PLAN ELEMENTS (created from Vision Elements)
+        # ========================================================================
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS annual_vision_elements (
+                id               TEXT PRIMARY KEY,
+                year             INTEGER NOT NULL,
+                vision_element_id TEXT NOT NULL REFERENCES vision_elements(id) ON DELETE CASCADE,
+                segment_name     TEXT NOT NULL,
+                subsegment_name  TEXT NOT NULL,
+                category_name    TEXT NOT NULL,
+                key_field        TEXT NOT NULL,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL,
+                UNIQUE(year, vision_element_id)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS annual_plan_elements (
+                id               TEXT PRIMARY KEY,
+                year             INTEGER NOT NULL,
+                vision_element_id TEXT NOT NULL REFERENCES vision_elements(id) ON DELETE CASCADE,
+                annual_vision_element_id TEXT NOT NULL REFERENCES annual_vision_elements(id) ON DELETE CASCADE,
+                segment_name     TEXT NOT NULL,
+                subsegment_name  TEXT NOT NULL,
+                category_name    TEXT NOT NULL,
+                key_field        TEXT NOT NULL,
+                q1               INTEGER DEFAULT 0,
+                q2               INTEGER DEFAULT 0,
+                q3               INTEGER DEFAULT 0,
+                q4               INTEGER DEFAULT 0,
+                m1               INTEGER DEFAULT 0,
+                m2               INTEGER DEFAULT 0,
+                m3               INTEGER DEFAULT 0,
+                m4               INTEGER DEFAULT 0,
+                m5               INTEGER DEFAULT 0,
+                m6               INTEGER DEFAULT 0,
+                m7               INTEGER DEFAULT 0,
+                m8               INTEGER DEFAULT 0,
+                m9               INTEGER DEFAULT 0,
+                m10              INTEGER DEFAULT 0,
+                m11              INTEGER DEFAULT 0,
+                m12              INTEGER DEFAULT 0,
+                created_at       TEXT NOT NULL,
+                updated_at       TEXT NOT NULL,
+                UNIQUE(year, vision_element_id)
+            )
+        """)
+
+        # ========================================================================
         # QUARTER_INITIATIVE (Quarterly focus areas)
         # ========================================================================
         conn.execute("""
@@ -198,6 +295,11 @@ class VPSSchema:
         VPSSchema._extend_quarter_initiatives(conn)
 
         # ========================================================================
+        # EXTEND ANNUAL_PLAN_ELEMENTS for period assignment flags
+        # ========================================================================
+        VPSSchema._extend_annual_plan_elements(conn)
+
+        # ========================================================================
         # EXTEND WEEK_ACTIONS for Step/Key Result fields
         # ========================================================================
         VPSSchema._extend_week_actions(conn)
@@ -260,6 +362,18 @@ class VPSSchema:
                 ADD COLUMN segment_description_id TEXT REFERENCES segment_descriptions(id) ON DELETE SET NULL
             """)
 
+        if 'item_type' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN item_type TEXT NOT NULL DEFAULT 'daily'
+            """)
+
+        if 'annual_plan_element_id' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN annual_plan_element_id TEXT
+            """)
+
     @staticmethod
     def _extend_quarter_initiatives(conn: sqlite3.Connection):
         """Add annual initiative linkage to existing quarter_initiatives tables."""
@@ -271,6 +385,22 @@ class VPSSchema:
                 ALTER TABLE quarter_initiatives
                 ADD COLUMN annual_initiative_id TEXT REFERENCES annual_initiatives(id) ON DELETE CASCADE
             """)
+
+    @staticmethod
+    def _extend_annual_plan_elements(conn: sqlite3.Connection):
+        """Add quarter/month assignment flags to annual_plan_elements."""
+        cursor = conn.execute("PRAGMA table_info(annual_plan_elements)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        for i in range(1, 5):
+            col = f"q{i}"
+            if col not in columns:
+                conn.execute(f"ALTER TABLE annual_plan_elements ADD COLUMN {col} INTEGER DEFAULT 0")
+
+        for i in range(1, 13):
+            col = f"m{i}"
+            if col not in columns:
+                conn.execute(f"ALTER TABLE annual_plan_elements ADD COLUMN {col} INTEGER DEFAULT 0")
 
     @staticmethod
     def _extend_week_actions(conn: sqlite3.Connection):
@@ -363,6 +493,38 @@ class VPSSchema:
             ON annual_initiatives(year)
         """)
 
+        # Vision Element hierarchy
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_subsegments_segment
+            ON vision_subsegments(segment_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_categories_subsegment
+            ON vision_categories(subsegment_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_elements_segment
+            ON vision_elements(segment_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_elements_subsegment
+            ON vision_elements(subsegment_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_elements_category
+            ON vision_elements(category_id)
+        """)
+
+        # Annual element records
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_vision_elements_year
+            ON annual_vision_elements(year)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_plan_elements_year
+            ON annual_plan_elements(year)
+        """)
+
         # Quarter Initiatives
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_quarter_initiatives_parent
@@ -433,6 +595,14 @@ class VPSSchema:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_action_items_habit
             ON action_items(is_habit) WHERE is_habit = 1
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_action_items_type
+            ON action_items(item_type)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_action_items_annual_plan_element
+            ON action_items(annual_plan_element_id)
         """)
 
         # Habit Tracking

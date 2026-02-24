@@ -67,7 +67,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(1, weight=1)
 
-        ctk.CTkLabel(body, text="APE Weekly Items", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(body, text="Weekly Tactics", font=ctk.CTkFont(weight="bold")).grid(
             row=0, column=0, sticky="w", padx=8, pady=(8, 4)
         )
         ctk.CTkLabel(body, text="Related Action Items", font=ctk.CTkFont(weight="bold")).grid(
@@ -210,9 +210,12 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             return
 
         weekly = self.selected_weekly_item
+        weekly_title = self.vps_manager.normalize_week_token((weekly.get("title") or "").strip())
+        weekly_title_short = self._shorten_pipe_prefix(weekly_title)
+        full_title = f"{weekly_title_short} - {title}" if weekly_title_short else title
         item = ActionItem(
             who=weekly.get("who") or "",
-            title=title,
+            title=full_title,
             description=f"Related to weekly item: {weekly.get('title') or ''}",
             parent_id=weekly["id"],
             start_date=weekly.get("start_date"),
@@ -223,6 +226,9 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         )
         self.app.db_manager.create_action_item(item, apply_defaults=False)
         self.on_action_editor_closed()
+
+    def _shorten_pipe_prefix(self, text: str) -> str:
+        return self.vps_manager.shorten_pipe_prefix(text)
 
     def open_selected_weekly_item(self):
         """Open the selected weekly action item in the editor."""
