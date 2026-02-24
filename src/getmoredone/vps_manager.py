@@ -1159,9 +1159,30 @@ class VPSManager:
         now = datetime.now().isoformat()
 
         if not annual_initiative_id:
-            raise ValueError(
-                "annual_initiative_id is required. Quarter initiatives must be linked to an annual initiative."
+            # Backward compatibility: callers may still pass annual_plan_id only.
+            if not annual_plan_id:
+                raise ValueError(
+                    "annual_initiative_id is required. Quarter initiatives must be linked to an annual initiative."
+                )
+            existing = self.get_annual_initiatives(
+                annual_plan_id=annual_plan_id,
+                year=year,
+                active_only=False
             )
+            if existing:
+                annual_initiative_id = existing[0]["id"]
+            else:
+                plan = self.get_annual_plan(annual_plan_id)
+                if not plan:
+                    raise ValueError("Annual plan not found")
+                ai_title = (plan.get("theme") or title or "Annual Initiative").strip()
+                annual_initiative_id = self.create_annual_initiative(
+                    annual_plan_id=annual_plan_id,
+                    segment_description_id=segment_description_id,
+                    year=year,
+                    title=ai_title,
+                    auto_create_chain=False,
+                )
 
         annual_initiative = self.get_annual_initiative(annual_initiative_id)
         if not annual_initiative:
@@ -1171,7 +1192,7 @@ class VPSManager:
 
         # Auto title for new quarter initiatives under an annual initiative
         auto_title = f"{ai_title} Q{quarter}"
-        final_title = auto_title
+        final_title = (title or "").strip() or auto_title
 
         self.db.conn.execute("""
             INSERT INTO quarter_initiatives
@@ -1848,12 +1869,10 @@ class VPSManager:
             if quarter_initiative:
                 breadcrumb.insert(
                     0, {'type': 'quarter_initiative', 'data': quarter_initiative})
-                if quarter_initiative.get('annual_initiative_id'):
-                    entity_type = 'annual_initiative'
-                    entity_id = quarter_initiative['annual_initiative_id']
-                else:
-                    entity_type = 'annual_plan'
-                    entity_id = quarter_initiative['annual_plan_id']
+                # Keep breadcrumb shape stable for existing UI/tests:
+                # segment -> tl_vision -> annual_vision -> annual_plan -> quarter -> month -> week
+                entity_type = 'annual_plan'
+                entity_id = quarter_initiative['annual_plan_id']
 
         if entity_type == 'annual_initiative':
             annual_initiative = self.get_annual_initiative(entity_id)
@@ -2009,6 +2028,13 @@ class VPSManager:
             return False
 
     def delete_tl_vision(self, vision_id: str) -> bool:
+        # Keep parent-protection behavior: do not delete if annual visions exist.
+        child_count = self.db.conn.execute(
+            "SELECT COUNT(*) FROM annual_visions WHERE tl_vision_id = ?",
+            (vision_id,)
+        ).fetchone()[0]
+        if child_count > 0:
+            return False
         return self.delete_entity_cascade("tl_vision", vision_id)
 
     def delete_annual_vision(self, vision_id: str) -> bool:

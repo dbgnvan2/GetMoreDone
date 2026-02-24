@@ -51,19 +51,33 @@ def default_db_path() -> Path:
     return app_data_dir_path() / "getmoredone.db"
 
 
-def env_db_path() -> Path | None:
+def _is_memory_db_target(value: str) -> bool:
+    """Return True for SQLite in-memory DB targets."""
+    v = (value or "").strip().lower()
+    if v == ":memory:":
+        return True
+    if v.startswith("file::memory:"):
+        return True
+    return v.startswith("file:") and "mode=memory" in v
+
+
+def env_db_path() -> Path | str | None:
     """Optional override DB path via env var GETMOREDONE_DB."""
     import os
 
     v = os.environ.get("GETMOREDONE_DB")
     if not v:
         return None
+    if _is_memory_db_target(v):
+        return v
     return Path(v).expanduser().resolve()
 
 
-def resolve_db_path(db_path: str | None = None) -> Path:
+def resolve_db_path(db_path: str | None = None) -> Path | str:
     """Resolve DB path using (1) explicit arg, (2) env override, (3) default."""
     if db_path:
+        if _is_memory_db_target(db_path):
+            return db_path
         return Path(db_path).expanduser().resolve()
     env = env_db_path()
     if env is not None:
