@@ -11,7 +11,7 @@ from typing import Optional
 from .app_settings import AppSettings
 from .db_manager import DatabaseManager
 from .paths import app_data_dir_path
-from .theme import apply_theme_settings, semantic_colors
+from .theme import apply_theme_settings, button_style
 from .vps_manager import VPSManager
 
 
@@ -233,21 +233,15 @@ class GetMoreDoneApp(ctk.CTk):
         self._apply_sidebar_button_styles()
 
     def _apply_sidebar_button_styles(self):
-        palette = semantic_colors()
         active_name = getattr(self, "active_nav_button", "")
         for name, button in self.nav_buttons.items():
             if name == active_name:
                 button.configure(
-                    fg_color=palette["primary"],
-                    hover_color=palette["primary_hover"],
-                    border_width=0,
+                    **button_style("primary"),
                 )
             else:
                 button.configure(
-                    fg_color="transparent",
-                    hover_color=palette["ghost_hover"],
-                    border_width=1,
-                    border_color=palette["border"],
+                    **button_style("secondary"),
                 )
 
     def _set_active_nav(self, name: str):

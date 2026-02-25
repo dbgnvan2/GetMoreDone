@@ -11,7 +11,7 @@ from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors
+from ..theme import apply_segment_accent, semantic_colors, button_style
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -64,6 +64,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Search",
             width=80,
+            **button_style("secondary"),
             command=self.perform_search
         )
         btn_search.grid(row=0, column=2, padx=5)
@@ -73,6 +74,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Collapse" if self.columns_expanded else "Expand",
             width=100,
+            **button_style("secondary"),
             command=self.toggle_columns
         )
         self.expand_collapse_btn.grid(row=0, column=3, padx=5)
@@ -82,6 +84,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Top 3",
             width=100,
+            **button_style("secondary"),
             command=self.toggle_top3
         )
         self.top3_btn.grid(row=0, column=4, padx=5)
@@ -91,6 +94,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="+ New Item",
             width=100,
+            **button_style("primary"),
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=6, padx=5)
@@ -100,6 +104,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Refresh",
             width=100,
+            **button_style("secondary"),
             command=self.refresh
         )
         btn_refresh.grid(row=0, column=7, padx=5)
@@ -130,6 +135,9 @@ class TodayScreen(ctk.CTkFrame):
         self.show_top_3_only = not self.show_top_3_only
         self.top3_btn.configure(
             text="Show All" if self.show_top_3_only else "Top 3")
+        self.top3_btn.configure(
+            **button_style("primary" if self.show_top_3_only else "secondary")
+        )
         self.load_items()
 
     def refresh(self):
@@ -385,7 +393,8 @@ class TodayScreen(ctk.CTkFrame):
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color=palette["chip_bg"]
+            fg_color=palette["chip_bg"],
+            text_color=palette["body_text"],
         )
         score_label.grid(row=0, column=4, padx=5, pady=5)
         score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
@@ -431,8 +440,7 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text="⏱ Timer",
                 width=70,
-                fg_color=palette["primary"],
-                hover_color=palette["primary_hover"],
+                **button_style("secondary"),
                 command=lambda: self.start_timer(item.id)
             )
             btn_timer.grid(row=0, column=btn_col_start, padx=2, pady=5)
@@ -441,10 +449,7 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text="Edit",
                 width=60,
-                fg_color="transparent",
-                hover_color=palette["ghost_hover"],
-                border_width=1,
-                border_color=palette["border"],
+                **button_style("secondary"),
                 command=lambda: self.edit_item(item.id)
             )
             btn_edit.grid(row=0, column=btn_col_start+1, padx=2, pady=5)
@@ -453,10 +458,7 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text="Push",
                 width=60,
-                fg_color="transparent",
-                hover_color=palette["ghost_hover"],
-                border_width=1,
-                border_color=palette["border"],
+                **button_style("secondary"),
                 command=lambda item_id=item.id: self.push_item(item_id)
             )
             btn_push.grid(row=0, column=btn_col_start+2, padx=2, pady=5)

@@ -68,11 +68,12 @@ def semantic_colors() -> Dict[str, str]:
         "border": _theme_value("CTkFrame", "border_color", "gray28"),
         "muted_text": muted_text,
         "body_text": label_text,
+        "on_primary": _theme_value("CTkButton", "text_color", "#DCE4EE"),
         "surface_subtle": _theme_value("CTkFrame", "top_fg_color", "gray21"),
         "chip_bg": _theme_value("CTkSegmentedButton", "unselected_color", "gray29"),
-        "date_start_text": muted_text,
-        "date_due_text": primary,
-        "time_text": muted_text,
+        "date_start_text": label_text,
+        "date_due_text": label_text,
+        "time_text": label_text,
         "success_tint": "#E8F5EE" if mode == "light" else "#1F2B24",
         "critical_tint": "#FDECEC" if mode == "light" else "#3A2328",
         "selected_tint": "#E6EEF8" if mode == "light" else "#223247",
@@ -87,3 +88,29 @@ def apply_segment_accent(frame: ctk.CTkFrame, segment_color: str | None):
         return
     accent = ctk.CTkFrame(frame, width=5, fg_color=segment_color, corner_radius=0)
     accent.place(x=0, y=0, relheight=1)
+
+
+def button_style(kind: str = "primary") -> Dict[str, object]:
+    """Shared semantic button styles used across screens."""
+    palette = semantic_colors()
+    if kind == "secondary":
+        return {
+            "fg_color": "transparent",
+            "hover_color": palette["ghost_hover"],
+            "border_width": 1,
+            "border_color": palette["border"],
+            "text_color": palette["body_text"],
+        }
+    if kind == "danger":
+        return {
+            "fg_color": "#B91C1C",
+            "hover_color": "#991B1B",
+            "text_color": "#FEE2E2",
+            "border_width": 0,
+        }
+    return {
+        "fg_color": palette["primary"],
+        "hover_color": palette["primary_hover"],
+        "text_color": palette["on_primary"],
+        "border_width": 0,
+    }

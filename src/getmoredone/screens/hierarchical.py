@@ -7,7 +7,7 @@ from typing import Optional, TYPE_CHECKING, List
 
 from ..models import ActionItem, Status
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors
+from ..theme import apply_segment_accent, semantic_colors, button_style
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -27,6 +27,7 @@ class HierarchicalScreen(ctk.CTkFrame):
         self._parent_segment_cache = {}
         self._ape_segment_cache = {}
         self._week_action_segment_cache = {}
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -71,6 +72,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             header,
             text="Search",
             width=80,
+            **button_style("secondary"),
             command=self.perform_search
         )
         btn_search.grid(row=0, column=2, padx=5, pady=10)
@@ -93,6 +95,7 @@ class HierarchicalScreen(ctk.CTkFrame):
         btn_new = ctk.CTkButton(
             header,
             text="+ New Item",
+            **button_style("primary"),
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=6, padx=10, pady=10)
@@ -104,6 +107,7 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the hierarchical list."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -191,7 +195,7 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, indent_level: int) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        palette = semantic_colors()
+        palette = self.palette
         segment_color = resolve_segment_color_for_item(
             item,
             self.segment_colors_by_id,
@@ -241,7 +245,8 @@ class HierarchicalScreen(ctk.CTkFrame):
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color="gray30"
+            fg_color=palette["chip_bg"],
+            text_color=palette["body_text"]
         )
         score_label.grid(row=0, column=1, padx=5, pady=5)
 
@@ -265,7 +270,7 @@ class HierarchicalScreen(ctk.CTkFrame):
                 frame,
                 text=f"({len(children)} sub)",
                 width=70,
-                text_color="lightblue"
+                text_color=palette["body_text"]
             )
             child_count_label.grid(row=0, column=3, padx=5, pady=5)
         else:
@@ -278,10 +283,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             frame,
             text="Edit",
             width=60,
-            fg_color="transparent",
-            hover_color=palette["ghost_hover"],
-            border_width=1,
-            border_color=palette["border"],
+            **button_style("secondary"),
             command=lambda: self.edit_item(item.id)
         )
         btn_edit.grid(row=0, column=4, padx=5, pady=5)

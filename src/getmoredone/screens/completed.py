@@ -6,7 +6,7 @@ import customtkinter as ctk
 from typing import TYPE_CHECKING
 
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors
+from ..theme import apply_segment_accent, semantic_colors, button_style
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -27,6 +27,7 @@ class CompletedScreen(ctk.CTkFrame):
         self._week_action_segment_cache = {}
         # Track column visibility state (default: collapsed)
         self.columns_expanded = False
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -94,6 +95,7 @@ class CompletedScreen(ctk.CTkFrame):
             header,
             text="Expand",
             width=100,
+            **button_style("secondary"),
             command=self.toggle_columns
         )
         self.expand_collapse_btn.grid(row=0, column=6, padx=5, pady=10)
@@ -103,7 +105,7 @@ class CompletedScreen(ctk.CTkFrame):
             header,
             text="",
             font=ctk.CTkFont(size=12, weight="bold"),
-            text_color="lightblue"
+            text_color=self.palette["body_text"]
         )
         self.stats_label.grid(row=0, column=7, padx=(20, 10), pady=10)
 
@@ -116,6 +118,7 @@ class CompletedScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the list of completed items."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -169,7 +172,7 @@ class CompletedScreen(ctk.CTkFrame):
                 return
 
             # Display items
-            palette = semantic_colors()
+            palette = self.palette
             for idx, item in enumerate(items):
                 segment_color = resolve_segment_color_for_item(
                     item,
@@ -254,10 +257,7 @@ class CompletedScreen(ctk.CTkFrame):
                     item_frame,
                     text="Edit",
                     width=60,
-                    fg_color="transparent",
-                    hover_color=palette["ghost_hover"],
-                    border_width=1,
-                    border_color=palette["border"],
+                    **button_style("secondary"),
                     command=lambda i=item.id: self.edit_item(i)
                 )
                 btn_edit.grid(row=0, column=4+col_offset, padx=2, pady=5)
@@ -267,10 +267,7 @@ class CompletedScreen(ctk.CTkFrame):
                     item_frame,
                     text="Reopen",
                     width=70,
-                    fg_color="transparent",
-                    hover_color=palette["ghost_hover"],
-                    border_width=1,
-                    border_color=palette["border"],
+                    **button_style("secondary"),
                     command=lambda i=item.id: self.uncomplete_item(i)
                 )
                 btn_uncomplete.grid(row=0, column=5+col_offset, padx=2, pady=5)

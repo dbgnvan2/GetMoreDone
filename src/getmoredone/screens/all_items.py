@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from ..models import Status
 from ..app_settings import AppSettings
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors
+from ..theme import apply_segment_accent, semantic_colors, button_style
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -76,6 +76,7 @@ class AllItemsScreen(ctk.CTkFrame):
             header,
             text="Search",
             width=80,
+            **button_style("secondary"),
             command=self.perform_search
         )
         btn_search.grid(row=0, column=2, padx=5, pady=10)
@@ -112,6 +113,7 @@ class AllItemsScreen(ctk.CTkFrame):
             header,
             text="Collapse" if self.columns_expanded else "Expand",
             width=100,
+            **button_style("secondary"),
             command=self.toggle_columns
         )
         self.expand_collapse_btn.grid(row=0, column=8, padx=5, pady=10)
@@ -120,6 +122,7 @@ class AllItemsScreen(ctk.CTkFrame):
         btn_new = ctk.CTkButton(
             header,
             text="+ New Item",
+            **button_style("primary"),
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=9, padx=10, pady=10)
@@ -341,8 +344,7 @@ class AllItemsScreen(ctk.CTkFrame):
                         item_frame,
                         text="⏱ Timer",
                         width=70,
-                        fg_color=palette["primary"],
-                        hover_color=palette["primary_hover"],
+                        **button_style("secondary"),
                         command=lambda i=item.id: self.start_timer(i)
                     )
                     btn_timer.grid(row=0, column=col, padx=2, pady=5)
@@ -353,10 +355,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text="Edit",
                     width=60,
-                    fg_color="transparent",
-                    hover_color=palette["ghost_hover"],
-                    border_width=1,
-                    border_color=palette["border"],
+                    **button_style("secondary"),
                     command=lambda i=item.id: self.edit_item(i)
                 )
                 btn_edit.grid(row=0, column=col, padx=2, pady=5)
