@@ -285,12 +285,14 @@ class AllItemsScreen(ctk.CTkFrame):
                         due_text = dt.strftime("%m/%d")
                     except:
                         pass
-                ctk.CTkLabel(
+                due_label = ctk.CTkLabel(
                     item_frame,
                     text=due_text,
                     width=60,
                     text_color=palette["date_due_text"]
-                ).grid(row=0, column=4, padx=5, pady=5)
+                )
+                due_label.grid(row=0, column=4, padx=5, pady=5)
+                due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
                 # Priority
                 priority_label = ctk.CTkLabel(
@@ -428,6 +430,31 @@ class AllItemsScreen(ctk.CTkFrame):
         except ValueError:
             return
         item.priority_score = max(0, min(9999, score))
+        self.db_manager.update_action_item(item)
+        self.refresh()
+
+    def edit_due_date_inline(self, item_id: str):
+        """Edit item due date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        current = item.due_date or ""
+        dialog = ctk.CTkInputDialog(
+            text="Due date (YYYY-MM-DD), blank to clear:",
+            title=f"Due Date ({current or 'none'})",
+        )
+        raw = dialog.get_input()
+        if raw is None:
+            return
+        raw = raw.strip()
+        if raw:
+            try:
+                raw = date.fromisoformat(raw).isoformat()
+            except ValueError:
+                return
+        else:
+            raw = None
+        item.due_date = raw
         self.db_manager.update_action_item(item)
         self.refresh()
 
