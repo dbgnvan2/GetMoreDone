@@ -1,12 +1,11 @@
 """APE Weekly screen: weekly action items on the left and related actions on the right."""
 
 import customtkinter as ctk
-import tkinter as tk
 from datetime import date, timedelta
 from tkinter import messagebox
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 
-from ..theme import semantic_colors
+from ..theme import apply_segment_accent, button_style, semantic_colors
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -29,6 +28,8 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
         self.related_actions: List[Dict[str, Any]] = []
         self.segment_colors = {}
+        self.selected_weekly_idx: Optional[int] = None
+        self.selected_action_idx: Optional[int] = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -52,11 +53,11 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         self.week_combo = ctk.CTkComboBox(header, width=170, values=[""], variable=self.week_var)
         self.week_combo.grid(row=0, column=2, padx=5, pady=10)
 
-        ctk.CTkButton(header, text="Load", width=90, command=self.load_selected_week).grid(
+        ctk.CTkButton(header, text="Load", width=90, command=self.load_selected_week, **button_style("secondary")).grid(
             row=0, column=3, padx=5, pady=10
         )
 
-        ctk.CTkButton(header, text="This Week", width=90, command=self.jump_to_current_week).grid(
+        ctk.CTkButton(header, text="This Week", width=90, command=self.jump_to_current_week, **button_style("secondary")).grid(
             row=0, column=4, padx=5, pady=10
         )
 
@@ -86,14 +87,13 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         right.grid_rowconfigure(0, weight=1)
         right.grid_columnconfigure(0, weight=1)
 
-        self.weekly_list = tk.Listbox(left, exportselection=False)
+        self.weekly_list = ctk.CTkScrollableFrame(left, label_text="")
         self.weekly_list.grid(row=0, column=0, sticky="nsew")
-        self.weekly_list.bind("<<ListboxSelect>>", self.on_select_weekly_item)
+        self.weekly_list.grid_columnconfigure(0, weight=1)
 
-        self.actions_list = tk.Listbox(right, exportselection=False)
+        self.actions_list = ctk.CTkScrollableFrame(right, label_text="")
         self.actions_list.grid(row=0, column=0, sticky="nsew")
-        self.actions_list.bind("<Double-Button-1>", self.open_selected_action_item)
-        self._apply_subtle_selection_styles()
+        self.actions_list.grid_columnconfigure(0, weight=1)
 
         actions = ctk.CTkFrame(body)
         actions.grid(row=2, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
@@ -103,6 +103,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             text="+ Action Item",
             command=self.create_action_item_for_selected_weekly,
             width=120,
+            **button_style("primary"),
         ).pack(side="left", padx=6, pady=6)
 
         ctk.CTkButton(
@@ -110,6 +111,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             text="Open Weekly Action",
             command=self.open_selected_weekly_item,
             width=140,
+            **button_style("secondary"),
         ).pack(side="left", padx=6, pady=6)
 
         ctk.CTkButton(
@@ -117,6 +119,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             text="Open Action",
             command=self.open_selected_action_item,
             width=120,
+            **button_style("secondary"),
         ).pack(side="left", padx=6, pady=6)
 
     def refresh(self):
@@ -129,8 +132,8 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         if not self.week_options:
             self.week_combo.configure(values=[""])
             self.week_var.set("")
-            self.weekly_list.delete(0, tk.END)
-            self.actions_list.delete(0, tk.END)
+            self._clear_scroll(self.weekly_list)
+            self._clear_scroll(self.actions_list)
             self.status_label.configure(text="No weekly action items found.")
             return
 
@@ -160,42 +163,28 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             ape_only=True,
         )
 
-        self.weekly_list.delete(0, tk.END)
-        self.actions_list.delete(0, tk.END)
+        self._clear_scroll(self.weekly_list)
+        self._clear_scroll(self.actions_list)
         self.related_actions = []
         self.selected_weekly_item = None
+        self.selected_weekly_idx = None
+        self.selected_action_idx = None
 
-        for wi in self.weekly_items:
-            title = (wi.get("title") or "(untitled)").strip()
-            due = wi.get("due_date", "")
-            self.weekly_list.insert(tk.END, f"{title}  [{week_start} - {due}]")
-            idx = self.weekly_list.size() - 1
-            segment_name = wi.get("ape_segment_name") or wi.get("who") or ""
-            self._apply_listbox_color(self.weekly_list, idx, segment_name)
+        self._render_weekly_rows(week_start)
 
         self.status_label.configure(text=f"{len(self.weekly_items)} weekly item(s) for {week_start}")
 
-    def on_select_weekly_item(self, _event=None):
-        selection = self.weekly_list.curselection()
-        if not selection:
-            return
-
-        idx = selection[0]
+    def on_select_weekly_item(self, idx: int):
         if idx < 0 or idx >= len(self.weekly_items):
             return
 
+        self.selected_weekly_idx = idx
         self.selected_weekly_item = self.weekly_items[idx]
+        self._render_weekly_rows(self.week_var.get().strip())
         self.related_actions = self.vps_manager.get_related_actions_for_weekly_item(self.selected_weekly_item["id"])
+        self.selected_action_idx = None
 
-        self.actions_list.delete(0, tk.END)
-        for action in self.related_actions:
-            title = (action.get("title") or "(untitled)").strip()
-            start = action.get("start_date") or ""
-            status = action.get("status") or "open"
-            self.actions_list.insert(tk.END, f"{title}  [{start}] ({status})")
-            idx = self.actions_list.size() - 1
-            segment_name = self.selected_weekly_item.get("ape_segment_name") or self.selected_weekly_item.get("who") or ""
-            self._apply_listbox_color(self.actions_list, idx, segment_name)
+        self._render_action_rows()
 
         self.status_label.configure(
             text=f"{len(self.related_actions)} related action item(s) for selected weekly item"
@@ -252,25 +241,15 @@ class WeeklyItemsScreen(ctk.CTkFrame):
     def on_action_editor_closed(self):
         if self.selected_weekly_item:
             self.related_actions = self.vps_manager.get_related_actions_for_weekly_item(self.selected_weekly_item["id"])
-            self.actions_list.delete(0, tk.END)
-            for action in self.related_actions:
-                title = (action.get("title") or "(untitled)").strip()
-                start = action.get("start_date") or ""
-                status = action.get("status") or "open"
-                self.actions_list.insert(tk.END, f"{title}  [{start}] ({status})")
-                idx = self.actions_list.size() - 1
-                segment_name = self.selected_weekly_item.get("ape_segment_name") or self.selected_weekly_item.get("who") or ""
-                self._apply_listbox_color(self.actions_list, idx, segment_name)
+            self.selected_action_idx = None
+            self._render_action_rows()
 
     def open_selected_action_item(self, _event=None):
         if not self.related_actions:
             return
-
-        selection = self.actions_list.curselection()
-        if not selection:
+        if self.selected_action_idx is None:
             return
-
-        idx = selection[0]
+        idx = self.selected_action_idx
         if idx < 0 or idx >= len(self.related_actions):
             return
 
@@ -286,20 +265,60 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             on_close_callback=self.on_action_editor_closed,
         )
 
-    def _apply_listbox_color(self, listbox: tk.Listbox, index: int, segment_name: str):
-        color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
-        try:
-            listbox.itemconfig(
-                index,
-                fg=color,
-            )
-        except Exception:
-            pass
-
-    def _apply_subtle_selection_styles(self):
+    def _render_weekly_rows(self, week_start: str):
+        self._clear_scroll(self.weekly_list)
         palette = semantic_colors()
-        for widget in (self.weekly_list, self.actions_list):
-            widget.configure(
-                selectbackground=palette["selected_tint"],
-                selectforeground=widget.cget("fg"),
-            )
+        for idx, wi in enumerate(self.weekly_items):
+            title = (wi.get("title") or "(untitled)").strip()
+            due = wi.get("due_date", "")
+            segment_name = wi.get("ape_segment_name") or wi.get("who") or ""
+            color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
+            bg = palette["selected_tint"] if idx == self.selected_weekly_idx else None
+
+            row = ctk.CTkFrame(self.weekly_list, fg_color=bg)
+            row.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            row.grid_columnconfigure(1, weight=1)
+            apply_segment_accent(row, color)
+            ctk.CTkLabel(row, text=str(idx + 1), width=30).grid(row=0, column=0, padx=5, pady=5)
+            lbl = ctk.CTkLabel(row, text=f"{title}  [{week_start} - {due}]", anchor="w")
+            lbl.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            chip = ctk.CTkLabel(row, text=f" {segment_name} ", fg_color=color, text_color="white", corner_radius=6)
+            chip.grid(row=0, column=2, padx=5, pady=5)
+            for widget in (row, lbl):
+                widget.bind("<Button-1>", lambda _e, i=idx: self.on_select_weekly_item(i))
+
+    def _render_action_rows(self):
+        self._clear_scroll(self.actions_list)
+        palette = semantic_colors()
+        segment_name = ""
+        if self.selected_weekly_item:
+            segment_name = self.selected_weekly_item.get("ape_segment_name") or self.selected_weekly_item.get("who") or ""
+        color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
+        for idx, action in enumerate(self.related_actions):
+            title = (action.get("title") or "(untitled)").strip()
+            start = action.get("start_date") or ""
+            status = action.get("status") or "open"
+            bg = palette["selected_tint"] if idx == self.selected_action_idx else None
+
+            row = ctk.CTkFrame(self.actions_list, fg_color=bg)
+            row.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            row.grid_columnconfigure(1, weight=1)
+            apply_segment_accent(row, color)
+            ctk.CTkLabel(row, text=str(idx + 1), width=30).grid(row=0, column=0, padx=5, pady=5)
+            lbl = ctk.CTkLabel(row, text=f"{title}  [{start}] ({status})", anchor="w")
+            lbl.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            for widget in (row, lbl):
+                widget.bind("<Button-1>", lambda _e, i=idx: self._select_action(i))
+                widget.bind("<Double-Button-1>", lambda _e, i=idx: self._open_action_from_index(i))
+
+    def _select_action(self, idx: int):
+        self.selected_action_idx = idx
+        self._render_action_rows()
+
+    def _open_action_from_index(self, idx: int):
+        self.selected_action_idx = idx
+        self.open_selected_action_item()
+
+    def _clear_scroll(self, frame: ctk.CTkScrollableFrame):
+        for child in frame.winfo_children():
+            child.destroy()

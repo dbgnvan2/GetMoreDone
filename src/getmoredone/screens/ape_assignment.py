@@ -1,10 +1,11 @@
 """Annual Plan Element assignment screen (Quarter/Month flags)."""
 
 import customtkinter as ctk
-import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional
+
+from ..theme import apply_segment_accent, button_style, semantic_colors
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -21,7 +22,11 @@ class APEAssignmentScreen(ctk.CTkFrame):
         self.drag_idx: Optional[int] = None
         self.ape_rows = []
         self.selected_ape_id: Optional[str] = None
+        self.selected_idx: Optional[int] = None
         self.segment_colors = {}
+        self.q_vars = {}
+        self.m_vars = {}
+        self._syncing_targets = False
 
         self.year_var = ctk.StringVar(value=str(datetime.now().year))
 
@@ -39,7 +44,7 @@ class APEAssignmentScreen(ctk.CTkFrame):
         )
         ctk.CTkLabel(header, text="Year:").pack(side="left", padx=(16, 4))
         ctk.CTkEntry(header, width=90, textvariable=self.year_var).pack(side="left", padx=4)
-        ctk.CTkButton(header, text="Load", width=90, command=self.refresh_all).pack(side="left", padx=6)
+        ctk.CTkButton(header, text="Load", width=90, command=self.refresh_all, **button_style("secondary")).pack(side="left", padx=6)
 
         body = ctk.CTkFrame(self)
         body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
@@ -65,24 +70,20 @@ class APEAssignmentScreen(ctk.CTkFrame):
         right.grid_columnconfigure(0, weight=1)
         right.grid_columnconfigure(1, weight=1)
 
-        self.ape_list = tk.Listbox(left, exportselection=False)
+        self.ape_list = ctk.CTkScrollableFrame(left)
         self.ape_list.grid(row=0, column=0, sticky="nsew")
-        self.ape_list.bind("<<ListboxSelect>>", self.on_select_ape)
-        self.ape_list.bind("<ButtonPress-1>", self.on_drag_start)
-        self.ape_list.bind("<ButtonRelease-1>", self.on_drag_release)
+        self.ape_list.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(right, text="Quarters").grid(row=0, column=0, sticky="w", padx=8, pady=4)
         ctk.CTkLabel(right, text="Months").grid(row=0, column=1, sticky="w", padx=8, pady=4)
 
-        self.q_list = tk.Listbox(right, exportselection=False, height=8)
+        self.q_list = ctk.CTkScrollableFrame(right, label_text="")
         self.q_list.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.q_list.bind("<Double-Button-1>", self.toggle_quarter)
-        self.q_list.bind("<ButtonRelease-1>", self.on_target_release)
+        self.q_list.grid_columnconfigure(0, weight=1)
 
-        self.m_list = tk.Listbox(right, exportselection=False, height=14)
+        self.m_list = ctk.CTkScrollableFrame(right, label_text="")
         self.m_list.grid(row=1, column=1, sticky="nsew", padx=8, pady=(0, 8))
-        self.m_list.bind("<Double-Button-1>", self.toggle_month)
-        self.m_list.bind("<ButtonRelease-1>", self.on_target_release)
+        self.m_list.grid_columnconfigure(0, weight=1)
 
     def parse_year(self) -> Optional[int]:
         try:
@@ -97,32 +98,71 @@ class APEAssignmentScreen(ctk.CTkFrame):
             return
         self.segment_colors = self.vps_manager.get_segment_color_map()
         self.ape_rows = self.vps_manager.get_annual_plan_elements(year)
-        self.ape_list.delete(0, tk.END)
-        for idx, row in enumerate(self.ape_rows):
-            self.ape_list.insert(tk.END, row["key_field"])
-            self._apply_row_color(idx, row.get("segment_name", ""))
+        self._render_ape_rows()
         self.selected_ape_id = None
+        self.selected_idx = None
         self.render_targets(None)
 
-    def on_select_ape(self, _event):
-        sel = self.ape_list.curselection()
-        if not sel:
+    def _render_ape_rows(self):
+        for w in self.ape_list.winfo_children():
+            w.destroy()
+        palette = semantic_colors()
+        for idx, row in enumerate(self.ape_rows):
+            segment_name = row.get("segment_name", "")
+            color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
+            bg = palette["selected_tint"] if idx == self.selected_idx else None
+            item = ctk.CTkFrame(self.ape_list, fg_color=bg)
+            item.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            item.grid_columnconfigure(1, weight=1)
+            apply_segment_accent(item, color)
+            ctk.CTkLabel(item, text=str(idx + 1), width=30).grid(row=0, column=0, padx=5, pady=5)
+            label = ctk.CTkLabel(item, text=row.get("key_field", ""), anchor="w")
+            label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            chip = ctk.CTkLabel(item, text=f" {segment_name} ", fg_color=color, text_color="white", corner_radius=6)
+            chip.grid(row=0, column=2, padx=5, pady=5)
+            for widget in (item, label):
+                widget.bind("<Button-1>", lambda _e, i=idx: self.on_select_ape(i))
+
+    def on_select_ape(self, index: int):
+        if index < 0 or index >= len(self.ape_rows):
             return
-        row = self.ape_rows[sel[0]]
+        row = self.ape_rows[index]
         self.selected_ape_id = row["id"]
+        self.selected_idx = index
+        self._render_ape_rows()
         self.render_targets(row)
 
     def render_targets(self, row: Optional[dict]):
-        self.q_list.delete(0, tk.END)
-        self.m_list.delete(0, tk.END)
+        self._syncing_targets = True
+        for w in self.q_list.winfo_children():
+            w.destroy()
+        for w in self.m_list.winfo_children():
+            w.destroy()
+        self.q_vars = {}
+        self.m_vars = {}
 
         for q in range(1, 5):
             checked = bool(row and row.get(f"q{q}", 0) == 1)
-            self.q_list.insert(tk.END, f"[{'x' if checked else ' '}] Q{q}")
+            var = ctk.BooleanVar(value=checked)
+            self.q_vars[q] = var
+            ctk.CTkCheckBox(
+                self.q_list,
+                text=f"Q{q}",
+                variable=var,
+                command=lambda qq=q: self.set_quarter(qq),
+            ).grid(row=q - 1, column=0, sticky="w", padx=8, pady=4)
 
         for m in range(1, 13):
             checked = bool(row and row.get(f"m{m}", 0) == 1)
-            self.m_list.insert(tk.END, f"[{'x' if checked else ' '}] M{m}")
+            var = ctk.BooleanVar(value=checked)
+            self.m_vars[m] = var
+            ctk.CTkCheckBox(
+                self.m_list,
+                text=f"M{m}",
+                variable=var,
+                command=lambda mm=m: self.set_month(mm),
+            ).grid(row=m - 1, column=0, sticky="w", padx=8, pady=3)
+        self._syncing_targets = False
 
     def _selected_row(self) -> Optional[dict]:
         if not self.selected_ape_id:
@@ -132,27 +172,23 @@ class APEAssignmentScreen(ctk.CTkFrame):
                 return r
         return None
 
-    def toggle_quarter(self, _event=None):
+    def set_quarter(self, q: int):
+        if self._syncing_targets:
+            return
         row = self._selected_row()
         if not row:
             return
-        sel = self.q_list.curselection()
-        if not sel:
-            return
-        q = sel[0] + 1
-        enabled = not bool(row.get(f"q{q}", 0) == 1)
+        enabled = bool(self.q_vars[q].get())
         self.vps_manager.set_annual_plan_element_quarter(row["id"], q, enabled)
         self.refresh_row(row["id"])
 
-    def toggle_month(self, _event=None):
+    def set_month(self, m: int):
+        if self._syncing_targets:
+            return
         row = self._selected_row()
         if not row:
             return
-        sel = self.m_list.curselection()
-        if not sel:
-            return
-        m = sel[0] + 1
-        enabled = not bool(row.get(f"m{m}", 0) == 1)
+        enabled = bool(self.m_vars[m].get())
         self.vps_manager.set_annual_plan_element_month(row["id"], m, enabled)
         self.refresh_row(row["id"])
 
@@ -162,57 +198,21 @@ class APEAssignmentScreen(ctk.CTkFrame):
             return
         self.segment_colors = self.vps_manager.get_segment_color_map()
         self.ape_rows = self.vps_manager.get_annual_plan_elements(year)
-        self.ape_list.delete(0, tk.END)
-        for idx, row in enumerate(self.ape_rows):
-            self.ape_list.insert(tk.END, row["key_field"])
-            self._apply_row_color(idx, row.get("segment_name", ""))
         self.selected_ape_id = ape_id
+        self.selected_idx = next((i for i, r in enumerate(self.ape_rows) if r["id"] == ape_id), None)
+        self._render_ape_rows()
         row = self._selected_row()
         self.render_targets(row)
 
     def on_drag_start(self, _event):
-        sel = self.ape_list.curselection()
-        self.drag_idx = sel[0] if sel else None
+        self.drag_idx = None
 
     def on_drag_release(self, _event):
         # no-op here; handled in target release
         pass
 
     def on_target_release(self, event):
-        if self.drag_idx is None:
-            return
-        if self.drag_idx < 0 or self.drag_idx >= len(self.ape_rows):
-            self.drag_idx = None
-            return
-
-        row = self.ape_rows[self.drag_idx]
-        self.selected_ape_id = row["id"]
-        widget = event.widget
-
-        if widget is self.q_list:
-            idx = self.q_list.nearest(event.y)
-            q = idx + 1
-            if 1 <= q <= 4:
-                self.vps_manager.set_annual_plan_element_quarter(row["id"], q, True)
-                self.refresh_row(row["id"])
-        elif widget is self.m_list:
-            idx = self.m_list.nearest(event.y)
-            m = idx + 1
-            if 1 <= m <= 12:
-                self.vps_manager.set_annual_plan_element_month(row["id"], m, True)
-                self.refresh_row(row["id"])
-
         self.drag_idx = None
 
     def _apply_row_color(self, index: int, segment_name: str):
-        color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
-        try:
-            self.ape_list.itemconfig(
-                index,
-                bg=color,
-                fg="white",
-                selectbackground=color,
-                selectforeground="white",
-            )
-        except Exception:
-            pass
+        return

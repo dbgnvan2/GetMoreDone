@@ -1,13 +1,12 @@
 """View APEs assigned to a selected quarter and month, then create weekly Action Items."""
 
 import customtkinter as ctk
-import tkinter as tk
 from datetime import datetime
 from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional
 
 from ..app_settings import AppSettings
-from ..theme import button_style
+from ..theme import apply_segment_accent, button_style, semantic_colors
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -30,6 +29,7 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         self.selected_ape_id: Optional[str] = None
         self.week_vars = {}
         self.segment_colors = {}
+        self.selected_idx: Optional[int] = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -54,7 +54,7 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         ctk.CTkLabel(top, text="Month").pack(side="left", padx=(12, 4))
         ctk.CTkComboBox(top, width=80, values=[str(i) for i in range(1, 13)], variable=self.m_var).pack(side="left", padx=4)
 
-        ctk.CTkButton(top, text="Load", width=90, command=self.refresh).pack(side="left", padx=10)
+        ctk.CTkButton(top, text="Load", width=90, command=self.refresh, **button_style("secondary")).pack(side="left", padx=10)
 
         body = ctk.CTkFrame(self)
         body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
@@ -79,9 +79,9 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         right.grid_rowconfigure(1, weight=1)
         right.grid_columnconfigure(0, weight=1)
 
-        self.ape_list = tk.Listbox(left, exportselection=False)
+        self.ape_list = ctk.CTkScrollableFrame(left)
         self.ape_list.grid(row=0, column=0, sticky="nsew")
-        self.ape_list.bind("<<ListboxSelect>>", self.on_select_ape)
+        self.ape_list.grid_columnconfigure(0, weight=1)
 
         self.week_info_label = ctk.CTkLabel(right, text="")
         self.week_info_label.grid(row=0, column=0, sticky="w", padx=8, pady=4)
@@ -128,10 +128,8 @@ class APEPeriodViewScreen(ctk.CTkFrame):
 
         self.segment_colors = self.vps_manager.get_segment_color_map()
         self.ape_rows = self.vps_manager.get_annual_plan_elements_for_period(year, quarter, month)
-        self.ape_list.delete(0, tk.END)
-        for idx, row in enumerate(self.ape_rows):
-            self.ape_list.insert(tk.END, row["key_field"])
-            self._apply_row_color(idx, row.get("segment_name", ""))
+        self.selected_idx = None
+        self._render_ape_rows()
 
         self.selected_ape_id = None
         self.render_week_options()
@@ -179,12 +177,34 @@ class APEPeriodViewScreen(ctk.CTkFrame):
                 return row
         return None
 
-    def on_select_ape(self, _event):
-        sel = self.ape_list.curselection()
-        if not sel:
+    def _render_ape_rows(self):
+        for w in self.ape_list.winfo_children():
+            w.destroy()
+        palette = semantic_colors()
+        for idx, row in enumerate(self.ape_rows):
+            segment_name = row.get("segment_name", "")
+            color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
+            bg = palette["selected_tint"] if idx == self.selected_idx else None
+            item = ctk.CTkFrame(self.ape_list, fg_color=bg)
+            item.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            item.grid_columnconfigure(1, weight=1)
+            apply_segment_accent(item, color)
+
+            ctk.CTkLabel(item, text=str(idx + 1), width=30).grid(row=0, column=0, padx=5, pady=5)
+            lbl = ctk.CTkLabel(item, text=row.get("key_field", ""), anchor="w")
+            lbl.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            chip = ctk.CTkLabel(item, text=f" {segment_name} ", fg_color=color, text_color="white", corner_radius=6)
+            chip.grid(row=0, column=2, padx=5, pady=5)
+            for widget in (item, lbl):
+                widget.bind("<Button-1>", lambda _e, i=idx: self.on_select_ape(i))
+
+    def on_select_ape(self, index: int):
+        if index < 0 or index >= len(self.ape_rows):
             return
-        row = self.ape_rows[sel[0]]
+        row = self.ape_rows[index]
         self.selected_ape_id = row["id"]
+        self.selected_idx = index
+        self._render_ape_rows()
 
         parsed = self._parse_period()
         if not parsed:
@@ -227,14 +247,4 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         )
 
     def _apply_row_color(self, index: int, segment_name: str):
-        color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
-        try:
-            self.ape_list.itemconfig(
-                index,
-                bg=color,
-                fg="white",
-                selectbackground=color,
-                selectforeground="white",
-            )
-        except Exception:
-            pass
+        return

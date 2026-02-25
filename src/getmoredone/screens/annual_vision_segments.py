@@ -1,10 +1,11 @@
 """Annual Vision Segments screen with drag/drop from Vision Elements."""
 
 import customtkinter as ctk
-import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
+
+from ..theme import apply_segment_accent, button_style, semantic_colors
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -25,7 +26,9 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
 
         self.year_var = ctk.StringVar(value=str(datetime.now().year))
         self.left_items = []  # list of dict vision elements
+        self.right_items = []
         self.segment_colors = {}
+        self.left_selected_idx: Optional[int] = None
 
         self.create_ui()
         self.refresh_lists()
@@ -41,13 +44,13 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         ctk.CTkLabel(header, text="Year:").grid(row=0, column=1, padx=(18, 4), pady=8)
         self.year_entry = ctk.CTkEntry(header, width=90, textvariable=self.year_var)
         self.year_entry.grid(row=0, column=2, padx=4, pady=8)
-        ctk.CTkButton(header, text="Load Year", width=100, command=self.refresh_lists).grid(
+        ctk.CTkButton(header, text="Load Year", width=100, command=self.refresh_lists, **button_style("secondary")).grid(
             row=0, column=3, padx=6, pady=8
         )
-        ctk.CTkButton(header, text="Add Selected >>", width=120, command=self.add_selected).grid(
+        ctk.CTkButton(header, text="Add Selected >>", width=120, command=self.add_selected, **button_style("primary")).grid(
             row=0, column=4, padx=6, pady=8
         )
-        ctk.CTkButton(header, text="Refresh", width=90, command=self.refresh_lists).grid(
+        ctk.CTkButton(header, text="Refresh", width=90, command=self.refresh_lists, **button_style("secondary")).grid(
             row=0, column=5, padx=6, pady=8
         )
 
@@ -74,14 +77,12 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         right_frame.grid_rowconfigure(0, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
 
-        self.left_list = tk.Listbox(left_frame, exportselection=False)
+        self.left_list = ctk.CTkScrollableFrame(left_frame)
         self.left_list.grid(row=0, column=0, sticky="nsew")
-        self.right_list = tk.Listbox(right_frame, exportselection=False)
+        self.left_list.grid_columnconfigure(0, weight=1)
+        self.right_list = ctk.CTkScrollableFrame(right_frame)
         self.right_list.grid(row=0, column=0, sticky="nsew")
-
-        self.left_list.bind("<ButtonPress-1>", self.on_left_press)
-        self.left_list.bind("<ButtonRelease-1>", self.on_left_release)
-        self.right_list.bind("<ButtonRelease-1>", self.on_right_release)
+        self.right_list.grid_columnconfigure(0, weight=1)
 
     def _parse_year(self) -> Optional[int]:
         try:
@@ -97,28 +98,42 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
 
         self.segment_colors = self.vps_manager.get_segment_color_map()
         self.left_items = self.vps_manager.get_vision_elements()
-        self.left_list.delete(0, tk.END)
-        for idx, row in enumerate(self.left_items):
-            self.left_list.insert(tk.END, row["key_field"])
-            self._apply_row_color(self.left_list, idx, row.get("segment_name", ""))
+        self.right_items = self.vps_manager.get_annual_vision_elements(year)
+        self.left_selected_idx = None
+        self._render_rows(self.left_list, self.left_items, selectable=True)
+        self._render_rows(self.right_list, self.right_items, selectable=False)
 
-        self.right_list.delete(0, tk.END)
-        for idx, row in enumerate(self.vps_manager.get_annual_vision_elements(year)):
-            self.right_list.insert(tk.END, row["key_field"])
-            self._apply_row_color(self.right_list, idx, row.get("segment_name", ""))
-
-    def _apply_row_color(self, listbox: tk.Listbox, index: int, segment_name: str):
+    def _resolve_segment_color(self, segment_name: str) -> str:
         color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
-        try:
-            listbox.itemconfig(
-                index,
-                bg=color,
-                fg="white",
-                selectbackground=color,
-                selectforeground="white",
-            )
-        except Exception:
-            pass
+        return color
+
+    def _render_rows(self, container: ctk.CTkScrollableFrame, rows: list[dict], selectable: bool):
+        for w in container.winfo_children():
+            w.destroy()
+        palette = semantic_colors()
+        for idx, row in enumerate(rows):
+            segment_name = row.get("segment_name", "")
+            segment_color = self._resolve_segment_color(segment_name)
+            bg = palette["selected_tint"] if selectable and idx == self.left_selected_idx else None
+            item = ctk.CTkFrame(container, fg_color=bg)
+            item.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            item.grid_columnconfigure(1, weight=1)
+            apply_segment_accent(item, segment_color)
+
+            ctk.CTkLabel(item, text=str(idx + 1), width=28).grid(row=0, column=0, padx=5, pady=5)
+            text = row.get("key_field") or "-"
+            lbl = ctk.CTkLabel(item, text=text, anchor="w")
+            lbl.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            chip = ctk.CTkLabel(item, text=f" {segment_name} ", fg_color=segment_color, text_color="white", corner_radius=6)
+            chip.grid(row=0, column=2, padx=5, pady=5)
+
+            if selectable:
+                for widget in (item, lbl):
+                    widget.bind("<Button-1>", lambda _e, i=idx: self.on_left_select(i))
+
+    def on_left_select(self, idx: int):
+        self.left_selected_idx = idx
+        self._render_rows(self.left_list, self.left_items, selectable=True)
 
     def _create_from_index(self, idx: int):
         year = self._parse_year()
@@ -131,25 +146,15 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         self.refresh_lists()
 
     def add_selected(self):
-        sel = self.left_list.curselection()
-        if not sel:
+        if self.left_selected_idx is None:
             return
-        self._create_from_index(sel[0])
+        self._create_from_index(self.left_selected_idx)
 
     def on_left_press(self, event):
-        sel = self.left_list.curselection()
-        self.drag_index = sel[0] if sel else None
+        self.drag_index = None
 
     def on_left_release(self, event):
-        # If released over right list, create records.
-        widget = self.winfo_containing(event.x_root, event.y_root)
-        if self.drag_index is None:
-            return
-        if widget is self.right_list:
-            self._create_from_index(self.drag_index)
         self.drag_index = None
 
     def on_right_release(self, _event):
-        if self.drag_index is not None:
-            self._create_from_index(self.drag_index)
-            self.drag_index = None
+        self.drag_index = None
