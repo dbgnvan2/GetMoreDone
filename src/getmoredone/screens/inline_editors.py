@@ -1,0 +1,177 @@
+"""Small inline editor dialogs for list views."""
+
+from __future__ import annotations
+
+import customtkinter as ctk
+from datetime import date, datetime
+from typing import Optional
+
+from ..app_settings import AppSettings
+from ..date_utils import increment_date
+from ..models import PriorityFactors
+from ..theme import button_style
+
+
+class InlineDateDialog(ctk.CTkToplevel):
+    """Popup date editor with quick adjust controls."""
+
+    def __init__(self, parent, title: str, initial_date: Optional[str]):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("540x130")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self.result = None
+        self.date_var = ctk.StringVar(value=initial_date or "")
+
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", padx=10, pady=(12, 6))
+
+        self.entry = ctk.CTkEntry(row, textvariable=self.date_var, width=220)
+        self.entry.pack(side="left", padx=(0, 8))
+        self.entry.focus()
+
+        ctk.CTkButton(row, text="Today", width=70, command=lambda: self.set_today(0)).pack(side="left", padx=3)
+        ctk.CTkButton(row, text="-1", width=55, command=lambda: self.adjust(-1)).pack(side="left", padx=3)
+        ctk.CTkButton(row, text="+1", width=55, command=lambda: self.adjust(1)).pack(side="left", padx=3)
+        ctk.CTkButton(row, text="Clear", width=60, **button_style("secondary"), command=self.clear).pack(side="left", padx=3)
+
+        actions = ctk.CTkFrame(self, fg_color="transparent")
+        actions.pack(fill="x", padx=10, pady=(4, 10))
+        ctk.CTkButton(actions, text="Save", width=80, **button_style("primary"), command=self.save).pack(side="right", padx=3)
+        ctk.CTkButton(actions, text="Cancel", width=80, **button_style("secondary"), command=self.cancel).pack(side="right", padx=3)
+
+    def _current_date(self) -> date:
+        raw = self.date_var.get().strip()
+        if raw:
+            try:
+                return datetime.strptime(raw, "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        return date.today()
+
+    def set_today(self, offset_days: int):
+        target = date.today()
+        if offset_days:
+            settings = AppSettings.load()
+            target = increment_date(
+                target, offset_days, settings.include_saturday, settings.include_sunday
+            )
+        self.date_var.set(target.isoformat())
+
+    def adjust(self, delta: int):
+        settings = AppSettings.load()
+        new_value = increment_date(
+            self._current_date(), delta, settings.include_saturday, settings.include_sunday
+        )
+        self.date_var.set(new_value.isoformat())
+
+    def clear(self):
+        self.date_var.set("")
+
+    def save(self):
+        raw = self.date_var.get().strip()
+        if raw:
+            try:
+                raw = date.fromisoformat(raw).isoformat()
+            except ValueError:
+                return
+            self.result = raw
+        else:
+            self.result = None
+        self.destroy()
+
+    def cancel(self):
+        self.result = "__cancel__"
+        self.destroy()
+
+
+class InlinePriorityDialog(ctk.CTkToplevel):
+    """Popup priority editor using same factors as full item editor."""
+
+    def __init__(self, parent, item):
+        super().__init__(parent)
+        self.title(f"Priority Factors (P:{item.priority_score})")
+        self.geometry("430x330")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self.result = None
+        self.item = item
+
+        form = ctk.CTkFrame(self)
+        form.pack(fill="both", expand=True, padx=12, pady=12)
+
+        importance_values = [f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
+        urgency_values = [f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
+        size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
+        value_values = [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
+
+        self.importance_var = ctk.StringVar(value=self._label_for(PriorityFactors.IMPORTANCE, item.importance))
+        self.urgency_var = ctk.StringVar(value=self._label_for(PriorityFactors.URGENCY, item.urgency))
+        self.size_var = ctk.StringVar(value=self._label_for(PriorityFactors.SIZE, item.size))
+        self.value_var = ctk.StringVar(value=self._label_for(PriorityFactors.VALUE, item.value))
+
+        self._combo_row(form, 0, "Importance:", importance_values, self.importance_var)
+        self._combo_row(form, 1, "Urgency:", urgency_values, self.urgency_var)
+        self._combo_row(form, 2, "Effort-Cost:", size_values, self.size_var)
+        self._combo_row(form, 3, "Value:", value_values, self.value_var)
+
+        score_box = ctk.CTkFrame(form)
+        score_box.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(14, 8))
+        ctk.CTkLabel(score_box, text="Priority Score:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=8, pady=8)
+        self.score_label = ctk.CTkLabel(score_box, text="")
+        self.score_label.pack(side="left", padx=8, pady=8)
+        self.update_score()
+
+        actions = ctk.CTkFrame(form, fg_color="transparent")
+        actions.grid(row=5, column=0, columnspan=2, sticky="ew", padx=8, pady=8)
+        ctk.CTkButton(actions, text="Save", width=90, **button_style("primary"), command=self.save).pack(side="right", padx=4)
+        ctk.CTkButton(actions, text="Cancel", width=90, **button_style("secondary"), command=self.cancel).pack(side="right", padx=4)
+
+    def _combo_row(self, parent, row: int, label: str, values: list[str], var: ctk.StringVar):
+        ctk.CTkLabel(parent, text=label).grid(row=row, column=0, sticky="w", padx=8, pady=5)
+        combo = ctk.CTkComboBox(
+            parent, values=values, variable=var, width=220, command=lambda _v: self.update_score()
+        )
+        combo.grid(row=row, column=1, sticky="w", padx=8, pady=5)
+
+    def _label_for(self, mapping: dict[str, int], value: Optional[int]) -> str:
+        if value is None:
+            return ""
+        for k, v in mapping.items():
+            if v == value:
+                return f"{k} ({v})"
+        return ""
+
+    def _value_from(self, raw: str) -> Optional[int]:
+        if not raw:
+            return None
+        try:
+            return int(raw.split("(")[-1].replace(")", "").strip())
+        except ValueError:
+            return None
+
+    def update_score(self):
+        i = self._value_from(self.importance_var.get()) or 0
+        u = self._value_from(self.urgency_var.get()) or 0
+        s = self._value_from(self.size_var.get()) or 0
+        v = self._value_from(self.value_var.get()) or 0
+        score = i * u * s * v if all([i, u, s, v]) else 0
+        self.score_label.configure(text=f"{score} ({i}×{u}×{s}×{v})")
+
+    def save(self):
+        self.result = {
+            "importance": self._value_from(self.importance_var.get()),
+            "urgency": self._value_from(self.urgency_var.get()),
+            "size": self._value_from(self.size_var.get()),
+            "value": self._value_from(self.value_var.get()),
+        }
+        self.destroy()
+
+    def cancel(self):
+        self.result = "__cancel__"
+        self.destroy()

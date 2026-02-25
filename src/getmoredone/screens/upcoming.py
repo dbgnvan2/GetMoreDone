@@ -11,6 +11,7 @@ from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
 from ..theme import apply_segment_accent, semantic_colors, button_style
+from .inline_editors import InlineDateDialog, InlinePriorityDialog
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -488,23 +489,11 @@ class UpcomingScreen(ctk.CTkFrame):
         item = self.db_manager.get_action_item(item_id)
         if not item:
             return
-        current = item.start_date or ""
-        dialog = ctk.CTkInputDialog(
-            text="Start date (YYYY-MM-DD), blank to clear:",
-            title=f"Start Date ({current or 'none'})",
-        )
-        raw = dialog.get_input()
-        if raw is None:
+        dialog = InlineDateDialog(self, "Edit Start Date", item.start_date)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
             return
-        raw = raw.strip()
-        if raw:
-            try:
-                raw = date.fromisoformat(raw).isoformat()
-            except ValueError:
-                return
-        else:
-            raw = None
-        item.start_date = raw
+        item.start_date = dialog.result
         self.db_manager.update_action_item(item)
         self.refresh()
 
@@ -513,21 +502,14 @@ class UpcomingScreen(ctk.CTkFrame):
         item = self.db_manager.get_action_item(item_id)
         if not item:
             return
-        dialog = ctk.CTkInputDialog(
-            text="Priority score (0-9999):",
-            title=f"Priority (current: {item.priority_score})",
-        )
-        raw = dialog.get_input()
-        if raw is None:
+        dialog = InlinePriorityDialog(self, item)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
             return
-        raw = raw.strip()
-        if not raw:
-            return
-        try:
-            score = int(raw)
-        except ValueError:
-            return
-        item.priority_score = max(0, min(9999, score))
+        item.importance = dialog.result["importance"]
+        item.urgency = dialog.result["urgency"]
+        item.size = dialog.result["size"]
+        item.value = dialog.result["value"]
         self.db_manager.update_action_item(item)
         self.refresh()
 
@@ -536,23 +518,11 @@ class UpcomingScreen(ctk.CTkFrame):
         item = self.db_manager.get_action_item(item_id)
         if not item:
             return
-        current = item.due_date or ""
-        dialog = ctk.CTkInputDialog(
-            text="Due date (YYYY-MM-DD), blank to clear:",
-            title=f"Due Date ({current or 'none'})",
-        )
-        raw = dialog.get_input()
-        if raw is None:
+        dialog = InlineDateDialog(self, "Edit Due Date", item.due_date)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
             return
-        raw = raw.strip()
-        if raw:
-            try:
-                raw = date.fromisoformat(raw).isoformat()
-            except ValueError:
-                return
-        else:
-            raw = None
-        item.due_date = raw
+        item.due_date = dialog.result
         self.db_manager.update_action_item(item)
         self.refresh()
 
