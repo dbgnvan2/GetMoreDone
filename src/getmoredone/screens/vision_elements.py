@@ -20,7 +20,7 @@ class VisionElementsScreen(ctk.CTkFrame):
         self.app = app
 
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
         self.segment_var = ctk.StringVar(value="")
         self.subsegment_var = ctk.StringVar(value="")
@@ -32,68 +32,67 @@ class VisionElementsScreen(ctk.CTkFrame):
         self.refresh_list()
 
     def create_ui(self):
-        palette = semantic_colors()
-        header_frame = ctk.CTkFrame(self)
-        header_frame.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 4))
-        header_frame.grid_columnconfigure(0, weight=1)
+        top = ctk.CTkFrame(self)
+        top.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 8))
+        top.grid_columnconfigure(0, weight=1)
+        top.grid_columnconfigure(1, weight=1)
+        top.grid_columnconfigure(2, weight=1)
+        top.grid_columnconfigure(4, weight=1)
 
-        header = ctk.CTkLabel(
-            header_frame,
+        # Line 1: title
+        ctk.CTkLabel(
+            top,
             text="Vision Elements",
             font=ctk.CTkFont(size=22, weight="bold")
+        ).grid(row=0, column=0, columnspan=5, sticky="w", padx=12, pady=(10, 6))
+
+        # Line 2: selectors in one row
+        selector_row = ctk.CTkFrame(top, fg_color="transparent")
+        selector_row.grid(row=1, column=0, columnspan=5, sticky="ew", padx=8, pady=4)
+        selector_row.grid_columnconfigure(1, weight=1)
+        selector_row.grid_columnconfigure(3, weight=1)
+        selector_row.grid_columnconfigure(5, weight=1)
+
+        ctk.CTkLabel(selector_row, text="Segment:").grid(row=0, column=0, sticky="w", padx=(4, 6), pady=4)
+        self.segment_combo = ctk.CTkComboBox(
+            selector_row, variable=self.segment_var, values=[], command=self.on_segment_change
         )
-        header.grid(row=0, column=0, sticky="w", padx=12, pady=(10, 2))
+        self.segment_combo.grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=4)
 
-        subtitle = ctk.CTkLabel(
-            header_frame,
-            text="Build linked Segment → SubSegment → Category records",
-            text_color=palette["muted_text"],
+        ctk.CTkLabel(selector_row, text="SubSegment:").grid(row=0, column=2, sticky="w", padx=(0, 6), pady=4)
+        self.subsegment_combo = ctk.CTkComboBox(
+            selector_row, variable=self.subsegment_var, values=[], command=self.on_subsegment_change
         )
-        subtitle.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+        self.subsegment_combo.grid(row=0, column=3, sticky="ew", padx=(0, 8), pady=4)
 
-        form = ctk.CTkFrame(self)
-        form.grid(row=1, column=0, sticky="ew", padx=12, pady=8)
-        form.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(selector_row, text="Category:").grid(row=0, column=4, sticky="w", padx=(0, 6), pady=4)
+        self.category_combo = ctk.CTkComboBox(
+            selector_row, variable=self.category_var, values=[], command=lambda _: self.update_key_preview()
+        )
+        self.category_combo.grid(row=0, column=5, sticky="ew", padx=(0, 4), pady=4)
 
-        ctk.CTkLabel(form, text="Segment:").grid(row=0, column=0, sticky="w", padx=8, pady=6)
-        self.segment_combo = ctk.CTkComboBox(form, variable=self.segment_var, values=[], command=self.on_segment_change)
-        self.segment_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
-
-        ctk.CTkLabel(form, text="SubSegment:").grid(row=1, column=0, sticky="w", padx=8, pady=6)
-        self.subsegment_combo = ctk.CTkComboBox(form, variable=self.subsegment_var, values=[], command=self.on_subsegment_change)
-        self.subsegment_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
-
-        ctk.CTkLabel(form, text="Category:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-        self.category_combo = ctk.CTkComboBox(form, variable=self.category_var, values=[], command=lambda _: self.update_key_preview())
-        self.category_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
-
-        ctk.CTkLabel(form, text="Key Field:").grid(row=3, column=0, sticky="w", padx=8, pady=6)
-        self.key_entry = ctk.CTkEntry(form, textvariable=self.key_var, state="readonly")
-        self.key_entry.grid(row=3, column=1, sticky="ew", padx=8, pady=6)
-
-        btn_row = ctk.CTkFrame(form, fg_color="transparent")
-        btn_row.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=8)
-        btn_row.grid_columnconfigure((0, 1), weight=1)
+        # Line 3: key field + actions
+        ctk.CTkLabel(top, text="Key Field:").grid(row=2, column=0, sticky="w", padx=(12, 6), pady=(4, 10))
+        self.key_entry = ctk.CTkEntry(top, textvariable=self.key_var, state="readonly")
+        self.key_entry.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 8), pady=(4, 10))
 
         ctk.CTkButton(
-            btn_row,
+            top,
             text="Create Linked Vision Element",
             command=self.create_vision_element,
+            width=210,
             **button_style("primary"),
-        ).grid(
-            row=0, column=0, padx=4, pady=4, sticky="ew"
-        )
+        ).grid(row=2, column=3, sticky="e", padx=(0, 6), pady=(4, 10))
         ctk.CTkButton(
-            btn_row,
+            top,
             text="Refresh",
             command=self.refresh_all,
+            width=110,
             **button_style("secondary"),
-        ).grid(
-            row=0, column=1, padx=4, pady=4, sticky="ew"
-        )
+        ).grid(row=2, column=4, sticky="e", padx=(0, 8), pady=(4, 10))
 
         self.list_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.list_frame.grid(row=2, column=0, sticky="nsew", padx=12, pady=(4, 12))
+        self.list_frame.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         self.list_frame.grid_columnconfigure(0, weight=1)
 
     def on_segment_change(self, _value: str):
