@@ -13,6 +13,7 @@ from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
+from ..theme import button_style
 from ..utils.icon_loader import load_music_note_icon
 
 
@@ -158,8 +159,7 @@ class TimerWindow(ctk.CTkToplevel):
             controls_frame,
             text="Start",
             command=self.start_timer,
-            fg_color="green",
-            hover_color="darkgreen"
+            **button_style("primary"),
         )
         self.start_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
@@ -175,8 +175,7 @@ class TimerWindow(ctk.CTkToplevel):
             controls_frame,
             text="Stop",
             command=self.stop_timer,
-            fg_color="red",
-            hover_color="darkred",
+            **button_style("danger"),
             state="disabled"
         )
         self.stop_button.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
@@ -198,8 +197,7 @@ class TimerWindow(ctk.CTkToplevel):
             music_frame,
             text="▶ Play",
             command=self.play_music,
-            fg_color="purple",
-            hover_color="darkviolet",
+            **button_style("secondary"),
             width=80
         )
         self.music_play_button.grid(row=0, column=1, padx=5, pady=5)
@@ -209,8 +207,7 @@ class TimerWindow(ctk.CTkToplevel):
             music_frame,
             text="⏸ Pause",
             command=self.pause_music,
-            fg_color="purple",
-            hover_color="darkviolet",
+            **button_style("secondary"),
             width=80,
             state="disabled"
         )
@@ -236,8 +233,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.completion_frame,
             text="Finished",
             command=self.finished_action,
-            fg_color="darkblue",
-            hover_color="blue"
+            **button_style("secondary"),
         )
         self.finished_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
@@ -245,8 +241,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.completion_frame,
             text="Continue",
             command=self.continue_action,
-            fg_color="darkgreen",
-            hover_color="green"
+            **button_style("primary"),
         )
         self.continue_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
 
@@ -269,8 +264,7 @@ class TimerWindow(ctk.CTkToplevel):
             text="Pop Out",
             width=90,
             command=self.open_next_action_window,
-            fg_color="blue",
-            hover_color="darkblue"
+            **button_style("secondary"),
         )
         self.popout_notes_button.grid(row=0, column=1, padx=5)
 
@@ -280,8 +274,7 @@ class TimerWindow(ctk.CTkToplevel):
             text="Save Notes",
             width=100,
             command=self.save_notes,
-            fg_color="green",
-            hover_color="darkgreen"
+            **button_style("primary"),
         )
         self.save_notes_button.grid(row=0, column=2, padx=5)
 
@@ -1260,8 +1253,7 @@ class CompletionNoteDialog(ctk.CTkToplevel):
             button_frame,
             text="Save",
             command=self.save,
-            fg_color="green",
-            hover_color="darkgreen"
+            **button_style("primary"),
         ).pack(side="left", expand=True, padx=5)
 
         ctk.CTkButton(
@@ -1368,8 +1360,7 @@ class NextActionWindow(ctk.CTkToplevel):
             text="Save Notes",
             width=100,
             command=self.save_notes,
-            fg_color="green",
-            hover_color="darkgreen"
+            **button_style("primary"),
         )
         self.save_button.grid(row=0, column=1, padx=5)
 
@@ -1536,8 +1527,7 @@ class NextStepsDialog(ctk.CTkToplevel):
             button_frame,
             text="Save",
             command=self.save,
-            fg_color="green",
-            hover_color="darkgreen"
+            **button_style("primary"),
         ).pack(side="left", expand=True, padx=5)
 
         ctk.CTkButton(

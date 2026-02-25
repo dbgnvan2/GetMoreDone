@@ -5,6 +5,8 @@ VPS Planning screen - shows strategic planning hierarchy with collapsible tree v
 import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, Dict, Any, List
 
+from ..theme import button_style
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
     from ..app import GetMoreDoneApp
@@ -94,8 +96,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             text="Select Segments...",
             command=self.show_segment_filter_dialog,
             width=150,
-            fg_color="#334155",
-            hover_color="#475569"
+            **button_style("secondary"),
         )
         self.segment_filter_btn.grid(row=0, column=3, padx=5, pady=10)
 
@@ -105,8 +106,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             text="Expand All",
             command=self.expand_all,
             width=100,
-            fg_color="#1D4ED8",
-            hover_color="#1E40AF"
+            **button_style("secondary"),
         )
         btn_expand.grid(row=0, column=4, padx=5, pady=10)
 
@@ -115,8 +115,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             text="Collapse All",
             command=self.collapse_all,
             width=100,
-            fg_color="#0F766E",
-            hover_color="#115E59"
+            **button_style("secondary"),
         )
         btn_collapse.grid(row=0, column=5, padx=5, pady=10)
 
@@ -125,8 +124,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="+ New Vision",
             command=self.create_new_tl_vision,
-            fg_color="#9333EA",
-            hover_color="#7E22CE"
+            **button_style("primary"),
         )
         btn_new.grid(row=0, column=6, padx=10, pady=10)
 
@@ -212,8 +210,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             btn_frame,
             text="Apply",
             command=apply_filter,
-            fg_color="green",
-            width=100
+            width=100,
+            **button_style("primary"),
         )
         btn_apply.pack(side="right", padx=5)
 
@@ -222,8 +220,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             btn_frame,
             text="Cancel",
             command=dialog.destroy,
-            fg_color="gray",
-            width=100
+            width=100,
+            **button_style("secondary"),
         )
         btn_cancel.pack(side="right", padx=5)
 
@@ -581,7 +579,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_tl_vision(
-            vision['id']), fg_color="darkred", hover_color="red")
+            vision['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -615,7 +613,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_vision(
-            vision['id']), fg_color="darkred", hover_color="red")
+            vision['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -651,7 +649,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_plan(
-            plan['id']), fg_color="darkred", hover_color="red")
+            plan['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -686,7 +684,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_initiative(
-            initiative['id']), fg_color="darkred", hover_color="red")
+            initiative['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -721,7 +719,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_quarter_initiative(
-            initiative['id']), fg_color="darkred", hover_color="red")
+            initiative['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -758,7 +756,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_month_tactic(
-            tactic['id']), fg_color="darkred", hover_color="red")
+            tactic['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -796,7 +794,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_week_action(
-            action['id']), fg_color="darkred", hover_color="red")
+            action['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -972,7 +970,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             dialog,
             text="Cancel",
             command=dialog.destroy,
-            fg_color="gray"
+            **button_style("secondary"),
         )
         cancel_btn.pack(pady=20)
 

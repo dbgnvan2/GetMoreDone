@@ -4,6 +4,8 @@ import customtkinter as ctk
 from tkinter import messagebox
 from typing import TYPE_CHECKING
 
+from ..theme import button_style
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
     from ..app import GetMoreDoneApp
@@ -82,8 +84,7 @@ class VisionElementsScreen(ctk.CTkFrame):
             btn_row,
             text="Create Linked Vision Element",
             command=self.create_vision_element,
-            fg_color="#0E7490",
-            hover_color="#0891B2"
+            **button_style("primary"),
         ).grid(
             row=0, column=0, padx=4, pady=4, sticky="ew"
         )
@@ -91,8 +92,7 @@ class VisionElementsScreen(ctk.CTkFrame):
             btn_row,
             text="Refresh",
             command=self.refresh_all,
-            fg_color="#334155",
-            hover_color="#475569"
+            **button_style("secondary"),
         ).grid(
             row=0, column=1, padx=4, pady=4, sticky="ew"
         )

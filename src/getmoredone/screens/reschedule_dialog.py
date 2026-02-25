@@ -6,6 +6,8 @@ import customtkinter as ctk
 from datetime import datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 
+from ..theme import button_style
+
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
 
@@ -99,7 +101,12 @@ class RescheduleDialog(ctk.CTkToplevel):
         btn_frame = ctk.CTkFrame(main_frame)
         btn_frame.pack(pady=(15, 0))
 
-        btn_save = ctk.CTkButton(btn_frame, text="Push to Next Day", command=self.save, fg_color="darkgreen", hover_color="green")
+        btn_save = ctk.CTkButton(
+            btn_frame,
+            text="Push to Next Day",
+            command=self.save,
+            **button_style("primary"),
+        )
         btn_save.pack(side="left", padx=5)
 
         btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy)

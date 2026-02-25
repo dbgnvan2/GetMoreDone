@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from tkinter import messagebox, colorchooser
 
+from ..theme import button_style
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
 
@@ -136,16 +138,16 @@ class VPSSegmentEditorDialog(ctk.CTkToplevel):
             button_frame,
             text="Save",
             command=self.save_segment,
-            fg_color="green",
-            width=120
+            width=120,
+            **button_style("primary"),
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
             button_frame,
             text="Cancel",
             command=self.destroy,
-            fg_color="gray",
-            width=120
+            width=120,
+            **button_style("secondary"),
         ).pack(side="left", padx=5)
 
     def load_segment_data(self):

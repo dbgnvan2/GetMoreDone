@@ -7,6 +7,7 @@ from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional
 
 from ..app_settings import AppSettings
+from ..theme import button_style
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -97,8 +98,7 @@ class APEPeriodViewScreen(ctk.CTkFrame):
             actions,
             text="Create Week Action Items",
             command=self.create_week_items_for_selected_ape,
-            fg_color="darkgreen",
-            hover_color="green",
+            **button_style("primary"),
             width=220,
         ).grid(row=0, column=0, sticky="w")
 

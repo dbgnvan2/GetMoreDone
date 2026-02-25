@@ -13,7 +13,7 @@ from tkinter import filedialog, colorchooser, messagebox
 
 from ..app_settings import AppSettings
 from ..obsidian_utils import validate_obsidian_setup
-from ..theme import APPEARANCE_MODES, THEME_NAMES
+from ..theme import APPEARANCE_MODES, THEME_NAMES, button_style
 from ..utils.icon_loader import load_volume_icon
 
 if TYPE_CHECKING:
@@ -131,8 +131,7 @@ class SettingsScreen(ctk.CTkFrame):
             section,
             text="Load Demo Data",
             command=self.load_demo_data,
-            fg_color="#444444",
-            hover_color="#555555",
+            **button_style("secondary"),
         )
         btn_demo.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
@@ -204,8 +203,7 @@ class SettingsScreen(ctk.CTkFrame):
             btn_frame,
             text="Save Settings",
             command=self.save_obsidian_settings,
-            fg_color="darkgreen",
-            hover_color="green"
+            **button_style("primary"),
         )
         btn_save.pack(side="left", padx=5)
 
@@ -458,8 +456,7 @@ class SettingsScreen(ctk.CTkFrame):
             section,
             text="Save Settings",
             command=self.save_date_increment_settings,
-            fg_color="darkgreen",
-            hover_color="green",
+            **button_style("primary"),
             width=150
         )
         btn_save.grid(row=7, column=0, sticky="w", padx=10, pady=10)
@@ -618,8 +615,7 @@ class SettingsScreen(ctk.CTkFrame):
             section,
             text="Save Settings",
             command=self.save_timer_audio_settings,
-            fg_color="darkgreen",
-            hover_color="green",
+            **button_style("primary"),
             width=150
         )
         btn_save.grid(row=3, column=0, sticky="w", padx=10, pady=10)
@@ -730,8 +726,7 @@ class SettingsScreen(ctk.CTkFrame):
                 scroll,
                 text="Delete",
                 width=80,
-                fg_color="darkred",
-                hover_color="red",
+                **button_style("danger"),
                 command=lambda v=value, ft=factor_type: self.delete_factor_value(
                     v, ft)
             )
@@ -940,8 +935,7 @@ class SettingsScreen(ctk.CTkFrame):
                 status_label.configure(
                     text=f"Error: {str(e)}", text_color="red")
 
-        ctk.CTkButton(btn_frame, text="Delete", fg_color="darkred",
-                      hover_color="red", command=delete).pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame, text="Delete", **button_style("danger"), command=delete).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="Cancel",
                       command=dialog.destroy).pack(side="left", padx=5)
 
@@ -1073,8 +1067,7 @@ class SettingsScreen(ctk.CTkFrame):
             btn_frame,
             text="Save Email Import Settings",
             command=self.save_email_import_settings,
-            fg_color="darkgreen",
-            hover_color="green",
+            **button_style("primary"),
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
@@ -1093,16 +1086,14 @@ class SettingsScreen(ctk.CTkFrame):
             btn_frame,
             text="Open Logs",
             command=self.open_email_import_logs,
-            fg_color="#444444",
-            hover_color="#555555",
+            **button_style("secondary"),
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
             btn_frame,
             text="Email Import Help",
             command=self.show_email_import_help,
-            fg_color="#1F2937",
-            hover_color="#374151",
+            **button_style("secondary"),
         ).pack(side="left", padx=5)
 
         # Status label
@@ -1155,8 +1146,7 @@ class SettingsScreen(ctk.CTkFrame):
             section,
             text="Save Future Date Options",
             command=self.save_future_date_options,
-            fg_color="darkgreen",
-            hover_color="green",
+            **button_style("primary"),
             width=220
         )
         btn_save.grid(row=5, column=0, sticky="w", padx=10, pady=10)
@@ -1363,8 +1353,8 @@ class SettingsScreen(ctk.CTkFrame):
             buttons_frame,
             text="+ New Segment",
             command=self.create_new_segment,
-            fg_color="green",
-            width=150
+            width=150,
+            **button_style("primary"),
         ).pack(side="left", padx=5)
 
         ctk.CTkButton(
@@ -1465,8 +1455,7 @@ class SettingsScreen(ctk.CTkFrame):
             frame,
             text="🗑 Delete",
             command=lambda s=segment: self.delete_segment(s),
-            fg_color="darkred",
-            hover_color="red",
+            **button_style("danger"),
             width=80
         )
         delete_btn.grid(row=0, column=5, rowspan=2, padx=5, pady=5)
@@ -1600,7 +1589,7 @@ class SettingsScreen(ctk.CTkFrame):
                 text="Cancel",
                 command=cancel_deletion,
                 width=120,
-                fg_color="gray"
+                **button_style("secondary"),
             ).pack(side="left", padx=5)
 
             ctk.CTkButton(
@@ -1608,8 +1597,7 @@ class SettingsScreen(ctk.CTkFrame):
                 text="Proceed with Deletion",
                 command=proceed_deletion,
                 width=180,
-                fg_color="#8B0000",
-                hover_color="#660000"
+                **button_style("danger"),
             ).pack(side="left", padx=5)
 
             # Bind Enter key

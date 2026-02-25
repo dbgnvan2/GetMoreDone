@@ -7,6 +7,7 @@ from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional
 
 from ..models import Contact
+from ..theme import button_style
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -123,8 +124,7 @@ class EditContactDialog(ctk.CTkToplevel):
                 btn_frame,
                 text="Delete",
                 command=self.delete_contact,
-                fg_color="red",
-                hover_color="darkred"
+                **button_style("danger"),
             )
             btn_delete.grid(row=0, column=0, padx=5, pady=10)
 
@@ -133,8 +133,7 @@ class EditContactDialog(ctk.CTkToplevel):
             btn_frame,
             text="Save",
             command=self.save_contact,
-            fg_color="green",
-            hover_color="darkgreen"
+            **button_style("primary"),
         )
         btn_save.grid(row=0, column=2, padx=5, pady=10)
 

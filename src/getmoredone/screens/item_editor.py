@@ -13,6 +13,7 @@ from ..validation import Validator
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from ..paths import app_data_dir_path
+from ..theme import button_style
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -609,7 +610,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Calendar button (available for both new and existing items)
         btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event,
-                                     width=100, fg_color="purple", hover_color="darkviolet")
+                                     width=100, **button_style("secondary"))
         btn_calendar.pack(side="left", padx=5)
 
         # Error label
@@ -628,8 +629,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 text="Delete",
                 command=self.delete_item,
                 width=100,
-                fg_color="darkred",
-                hover_color="red"
+                **button_style("danger"),
             )
             btn_delete.pack(side="right", padx=5)
 
@@ -1292,8 +1292,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 text=f"{contact.name}" +
                 (f" ({contact.contact_type})" if contact.contact_type else ""),
                 anchor="w",
-                fg_color="transparent",
-                hover_color="gray30",
+                **button_style("secondary"),
                 height=30,
                 command=lambda c=contact: self.select_contact(c)
             )
@@ -1944,8 +1943,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             frame,
             text="×",
             width=30,
-            fg_color="darkred",
-            hover_color="red",
+            **button_style("danger"),
             command=lambda: self.delete_note(note.id)
         )
         btn_delete.pack(side="left", padx=2)
@@ -2450,8 +2448,7 @@ class SetParentDialog(ctk.CTkToplevel):
             text="Clear Parent",
             width=100,
             command=self.clear_parent,
-            fg_color="darkred",
-            hover_color="red"
+            **button_style("danger"),
         )
         btn_clear.grid(row=0, column=4, padx=5, pady=5)
         row += 1
@@ -2517,8 +2514,7 @@ class SetParentDialog(ctk.CTkToplevel):
             text="Select",
             width=100,
             command=lambda: self.select_parent(item.id),
-            fg_color="darkgreen",
-            hover_color="green"
+            **button_style("primary"),
         )
         btn_select.grid(row=0, column=4, padx=5, pady=5)
 
@@ -2758,8 +2754,7 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
                 text="Select",
                 width=80,
                 command=lambda wi=week_item, disp=display: self._select_week_action(wi, disp),
-                fg_color="darkgreen",
-                hover_color="green"
+                **button_style("primary"),
             )
             btn.grid(row=0, column=3, padx=5, pady=5)
             row += 1
@@ -2989,8 +2984,7 @@ class CreateNoteDialog(ctk.CTkToplevel):
             btn_frame,
             text="Create & Open",
             command=self.create_note,
-            fg_color="darkgreen",
-            hover_color="green",
+            **button_style("primary"),
             width=120
         )
         btn_create.pack(side="left", padx=5)
@@ -3334,8 +3328,7 @@ class LinkNoteDialog(ctk.CTkToplevel):
             text="Link This",
             width=80,
             command=lambda: self.link_note_file(note['path'], note['title']),
-            fg_color="darkgreen",
-            hover_color="green"
+            **button_style("primary"),
         )
         btn_select.pack(side="right", padx=5)
 
@@ -3444,8 +3437,7 @@ class DeleteConfirmDialog(ctk.CTkToplevel):
             btn_frame,
             text="Delete",
             width=100,
-            fg_color="darkred",
-            hover_color="red",
+            **button_style("danger"),
             command=self.confirm
         ).pack(side="left", padx=5)
 
@@ -3504,8 +3496,7 @@ class DeleteChildrenWarningDialog(ctk.CTkToplevel):
             btn_frame,
             text="Delete Anyway",
             width=120,
-            fg_color="darkred",
-            hover_color="red",
+            **button_style("danger"),
             command=self.confirm
         ).pack(side="left", padx=5)
 
