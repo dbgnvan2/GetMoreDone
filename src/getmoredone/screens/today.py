@@ -11,6 +11,7 @@ from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
+from ..theme import apply_segment_accent, semantic_colors
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -33,6 +34,7 @@ class TodayScreen(ctk.CTkFrame):
         self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
         self.search_query = ""  # Track search query
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -80,8 +82,6 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Top 3",
             width=100,
-            fg_color="blue",
-            hover_color="darkblue",
             command=self.toggle_top3
         )
         self.top3_btn.grid(row=0, column=4, padx=5)
@@ -91,8 +91,6 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="+ New Item",
             width=100,
-            fg_color="green",
-            hover_color="darkgreen",
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=6, padx=5)
@@ -141,6 +139,7 @@ class TodayScreen(ctk.CTkFrame):
 
     def load_items(self):
         """Load and display today's items."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -187,7 +186,7 @@ class TodayScreen(ctk.CTkFrame):
             # Open items section
             if open_items:
                 open_header = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="gray25")
+                    self.scroll_frame, fg_color=self.palette["surface_subtle"])
                 open_header.grid(row=row, column=0,
                                  sticky="ew", pady=(10, 0), padx=5)
                 ctk.CTkLabel(
@@ -221,14 +220,14 @@ class TodayScreen(ctk.CTkFrame):
                     time_str = f"{total_minutes}m" if total_minutes > 0 else "0m"
 
                 completed_header = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="darkgreen")
+                    self.scroll_frame, fg_color=self.palette["success_strong"])
                 completed_header.grid(
                     row=row, column=0, sticky="ew", pady=(20, 0), padx=5)
                 ctk.CTkLabel(
                     completed_header,
                     text=f"Completed ({len(completed_items)} items | Time: {time_str})",
                     font=ctk.CTkFont(size=14, weight="bold"),
-                    text_color="lightgreen"
+                    text_color=self.palette["on_strong"]
                 ).pack(padx=10, pady=5, anchor="w")
                 row += 1
 
@@ -287,6 +286,7 @@ class TodayScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:
         """Create a row for an action item."""
+        palette = self.palette
         segment_color = resolve_segment_color_for_item(
             item,
             self.segment_colors_by_id,
@@ -297,16 +297,15 @@ class TodayScreen(ctk.CTkFrame):
             self._week_action_segment_cache,
         )
         is_critical = (item.importance == 20 or item.urgency == 20)
-        if segment_color:
-            bg_color = segment_color
-        elif is_completed:
-            bg_color = "gray20"
+        if is_completed:
+            bg_color = palette["success_tint"]
         elif is_critical:
-            bg_color = "darkred"
+            bg_color = palette["critical_tint"]
         else:
             bg_color = None
 
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+        apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(1, weight=1)
 
         # Completion indicator
@@ -317,7 +316,7 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text=completion_text,
                 font=ctk.CTkFont(size=16),
-                text_color="lightgreen",
+                text_color=palette["muted_text"],
                 width=30
             ).grid(row=0, column=0, padx=5, pady=5)
         else:
@@ -342,7 +341,7 @@ class TodayScreen(ctk.CTkFrame):
             text=info_text,
             font=ctk.CTkFont(size=12),
             anchor="w",
-            text_color="gray60" if is_completed else None
+            text_color=palette["muted_text"] if is_completed else None
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
@@ -360,7 +359,7 @@ class TodayScreen(ctk.CTkFrame):
             text=f"S:{start_date_text}",
             width=60,
             anchor="w",
-            text_color="lightblue"
+            text_color=palette["date_start_text"]
         )
         start_label.grid(row=0, column=2, padx=5, pady=5)
 
@@ -377,7 +376,7 @@ class TodayScreen(ctk.CTkFrame):
             text=f"D:{due_date_text}",
             width=60,
             anchor="w",
-            text_color="orange"
+            text_color=palette["date_due_text"]
         )
         due_label.grid(row=0, column=3, padx=5, pady=5)
 
@@ -386,7 +385,7 @@ class TodayScreen(ctk.CTkFrame):
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color="gray30"
+            fg_color=palette["chip_bg"]
         )
         score_label.grid(row=0, column=4, padx=5, pady=5)
         score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
@@ -398,7 +397,7 @@ class TodayScreen(ctk.CTkFrame):
             text=time_text,
             width=50,
             anchor="w",
-            text_color="lightyellow"
+            text_color=palette["time_text"]
         )
         time_label.grid(row=0, column=5, padx=5, pady=5)
 
@@ -432,8 +431,8 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text="⏱ Timer",
                 width=70,
-                fg_color="darkgreen",
-                hover_color="green",
+                fg_color=palette["primary"],
+                hover_color=palette["primary_hover"],
                 command=lambda: self.start_timer(item.id)
             )
             btn_timer.grid(row=0, column=btn_col_start, padx=2, pady=5)
@@ -442,6 +441,10 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text="Edit",
                 width=60,
+                fg_color="transparent",
+                hover_color=palette["ghost_hover"],
+                border_width=1,
+                border_color=palette["border"],
                 command=lambda: self.edit_item(item.id)
             )
             btn_edit.grid(row=0, column=btn_col_start+1, padx=2, pady=5)
@@ -450,8 +453,10 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text="Push",
                 width=60,
-                fg_color="orange",
-                hover_color="darkorange",
+                fg_color="transparent",
+                hover_color=palette["ghost_hover"],
+                border_width=1,
+                border_color=palette["border"],
                 command=lambda item_id=item.id: self.push_item(item_id)
             )
             btn_push.grid(row=0, column=btn_col_start+2, padx=2, pady=5)

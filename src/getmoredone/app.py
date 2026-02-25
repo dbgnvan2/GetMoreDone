@@ -8,8 +8,10 @@ import sys
 from datetime import datetime
 from typing import Optional
 
+from .app_settings import AppSettings
 from .db_manager import DatabaseManager
 from .paths import app_data_dir_path
+from .theme import apply_theme_settings, semantic_colors
 from .vps_manager import VPSManager
 
 
@@ -19,6 +21,10 @@ class GetMoreDoneApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        # Load settings first so startup theme matches persisted preferences.
+        self.settings = AppSettings.load()
+        apply_theme_settings(self.settings)
+
         # Configure window
         today = datetime.now()
         day_of_week = today.strftime("%A")
@@ -26,10 +32,6 @@ class GetMoreDoneApp(ctk.CTk):
         mode_tag = "[PROD]" if getattr(sys, "frozen", False) else "[DEV]"
         self.title(f"GetMoreDone {mode_tag} - {day_of_week}, {date_str}")
         self.geometry("1200x700")
-
-        # Set theme
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
 
         # Initialize database
         self.db_manager = DatabaseManager()
@@ -64,6 +66,35 @@ class GetMoreDoneApp(ctk.CTk):
         # Show default screen
         self.show_upcoming()
 
+    def apply_theme_preferences(self):
+        """Apply the active settings theme and refresh visible UI."""
+        apply_theme_settings(self.settings)
+        self._apply_sidebar_button_styles()
+        self._rebuild_active_screen()
+
+    def _rebuild_active_screen(self):
+        """Recreate active screen so new theme colors apply immediately."""
+        active_name = getattr(self, "active_nav_button", None)
+        if not active_name:
+            return
+        show_methods = {
+            "today": self.show_today,
+            "upcoming": self.show_upcoming,
+            "all_items": self.show_all_items,
+            "hierarchical": self.show_hierarchical,
+            "vision_planning": self.show_vision_planning_hub,
+            "plan": self.show_plan,
+            "drag_schedule": self.show_drag_schedule,
+            "completed": self.show_completed,
+            "contacts": self.show_contacts,
+            "defaults": self.show_defaults,
+            "stats": self.show_stats,
+            "settings": self.show_settings,
+        }
+        show_fn = show_methods.get(active_name)
+        if show_fn is not None:
+            show_fn()
+
     def create_sidebar(self):
         """Create navigation sidebar."""
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
@@ -79,93 +110,149 @@ class GetMoreDoneApp(ctk.CTk):
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
 
         # Navigation buttons
+        self.nav_buttons = {}
         self.btn_today = ctk.CTkButton(
             self.sidebar,
             text="Today",
             command=self.show_today,
-            fg_color="darkgreen",
-            hover_color="green"
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_today.grid(row=1, column=0, padx=20, pady=10)
+        self.nav_buttons["today"] = self.btn_today
 
         self.btn_upcoming = ctk.CTkButton(
             self.sidebar,
             text="Upcoming",
-            command=self.show_upcoming
+            command=self.show_upcoming,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_upcoming.grid(row=2, column=0, padx=20, pady=10)
+        self.nav_buttons["upcoming"] = self.btn_upcoming
 
         self.btn_all_items = ctk.CTkButton(
             self.sidebar,
             text="All Items",
-            command=self.show_all_items
+            command=self.show_all_items,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_all_items.grid(row=3, column=0, padx=20, pady=10)
+        self.nav_buttons["all_items"] = self.btn_all_items
 
         self.btn_hierarchical = ctk.CTkButton(
             self.sidebar,
             text="Hierarchical",
-            command=self.show_hierarchical
+            command=self.show_hierarchical,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_hierarchical.grid(row=4, column=0, padx=20, pady=10)
+        self.nav_buttons["hierarchical"] = self.btn_hierarchical
 
         self.btn_vps_planning = ctk.CTkButton(
             self.sidebar,
             text="Vision Planning",
             command=self.show_vision_planning_hub,
-            fg_color="#0E7490",
-            hover_color="#0891B2"
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_vps_planning.grid(row=5, column=0, padx=20, pady=10)
+        self.nav_buttons["vision_planning"] = self.btn_vps_planning
 
         self.btn_plan = ctk.CTkButton(
             self.sidebar,
             text="Plan",
-            command=self.show_plan
+            command=self.show_plan,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_plan.grid(row=6, column=0, padx=20, pady=10)
+        self.nav_buttons["plan"] = self.btn_plan
 
         self.btn_drag_schedule = ctk.CTkButton(
             self.sidebar,
             text="Drag Schedule",
-            command=self.show_drag_schedule
+            command=self.show_drag_schedule,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_drag_schedule.grid(row=7, column=0, padx=20, pady=10)
+        self.nav_buttons["drag_schedule"] = self.btn_drag_schedule
 
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
-            command=self.show_completed
+            command=self.show_completed,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_completed.grid(row=8, column=0, padx=20, pady=10)
+        self.nav_buttons["completed"] = self.btn_completed
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
             text="Contacts",
-            command=self.show_contacts
+            command=self.show_contacts,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_contacts.grid(row=9, column=0, padx=20, pady=10)
+        self.nav_buttons["contacts"] = self.btn_contacts
 
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
-            command=self.show_defaults
+            command=self.show_defaults,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_defaults.grid(row=10, column=0, padx=20, pady=10)
+        self.nav_buttons["defaults"] = self.btn_defaults
 
         self.btn_stats = ctk.CTkButton(
             self.sidebar,
             text="Stats",
-            command=self.show_stats
+            command=self.show_stats,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_stats.grid(row=11, column=0, padx=20, pady=10)
+        self.nav_buttons["stats"] = self.btn_stats
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
             text="Settings",
-            command=self.show_settings
+            command=self.show_settings,
+            fg_color="transparent",
+            border_width=1
         )
         self.btn_settings.grid(row=12, column=0, padx=20, pady=10)
+        self.nav_buttons["settings"] = self.btn_settings
+        self._apply_sidebar_button_styles()
+
+    def _apply_sidebar_button_styles(self):
+        palette = semantic_colors()
+        active_name = getattr(self, "active_nav_button", "")
+        for name, button in self.nav_buttons.items():
+            if name == active_name:
+                button.configure(
+                    fg_color=palette["primary"],
+                    hover_color=palette["primary_hover"],
+                    border_width=0,
+                )
+            else:
+                button.configure(
+                    fg_color="transparent",
+                    hover_color=palette["ghost_hover"],
+                    border_width=1,
+                    border_color=palette["border"],
+                )
+
+    def _set_active_nav(self, name: str):
+        self.active_nav_button = name
+        self._apply_sidebar_button_styles()
 
     def clear_content(self):
         """Clear current screen from content area."""
@@ -179,6 +266,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = TodayScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("today")
 
     def show_upcoming(self):
         """Show Upcoming screen."""
@@ -186,6 +274,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = UpcomingScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("upcoming")
 
     def show_all_items(self):
         """Show All Items screen."""
@@ -193,6 +282,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = AllItemsScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("all_items")
 
     def show_hierarchical(self):
         """Show Hierarchical screen."""
@@ -200,6 +290,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = HierarchicalScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("hierarchical")
 
     def show_vps_planning(self):
         """Backwards-compatible entrypoint for Vision Planning hub."""
@@ -211,6 +302,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = PlanScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("plan")
 
     def show_drag_schedule(self):
         """Show Drag Schedule screen."""
@@ -218,6 +310,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = DragScheduleScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("drag_schedule")
 
     def show_completed(self):
         """Show Completed screen."""
@@ -225,6 +318,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = CompletedScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("completed")
 
     def show_contacts(self):
         """Show Contacts management screen."""
@@ -232,6 +326,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = ManageContactsScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("contacts")
 
     def show_defaults(self):
         """Show Defaults screen."""
@@ -239,6 +334,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = DefaultsScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("defaults")
 
     def show_stats(self):
         """Show Stats screen."""
@@ -246,6 +342,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = StatsScreen(self.content_frame, self.db_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("stats")
 
     def show_settings(self):
         """Show Settings screen."""
@@ -254,6 +351,7 @@ class GetMoreDoneApp(ctk.CTk):
             self.clear_content()
             self.current_screen = SettingsScreen(self.content_frame, self.db_manager, self)
             self.current_screen.grid(row=0, column=0, sticky="nsew")
+            self._set_active_nav("settings")
         except Exception as e:
             # In packaged apps, import/GUI errors may only go to stderr; show a dialog too.
             import traceback
@@ -278,6 +376,7 @@ class GetMoreDoneApp(ctk.CTk):
         self.clear_content()
         self.current_screen = VisionPlanningHubScreen(self.content_frame, self.vps_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("vision_planning")
 
     def show_annual_vision_segments(self):
         """Show Annual Vision Segments screen."""

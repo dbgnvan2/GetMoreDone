@@ -89,6 +89,21 @@ def default_settings_path() -> Path:
     return app_data_dir_path() / "settings.json"
 
 
+def bundled_themes_dir() -> Path:
+    """Directory containing app theme JSON files."""
+    return resource_root() / "themes"
+
+
+def resolve_theme_path(theme_name: str) -> Path:
+    """Resolve a named theme file from bundled themes, fallback to apple_grey."""
+    slug = (theme_name or "").strip().lower() or "apple_grey"
+    themes_dir = bundled_themes_dir()
+    candidate = themes_dir / f"{slug}.json"
+    if candidate.exists():
+        return candidate
+    return themes_dir / "apple_grey.json"
+
+
 def legacy_dot_dir() -> Path:
     """Legacy location used for Google credentials/token.
 

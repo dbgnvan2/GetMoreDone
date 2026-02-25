@@ -13,6 +13,7 @@ from tkinter import filedialog, colorchooser, messagebox
 
 from ..app_settings import AppSettings
 from ..obsidian_utils import validate_obsidian_setup
+from ..theme import APPEARANCE_MODES, THEME_NAMES
 from ..utils.icon_loader import load_volume_icon
 
 if TYPE_CHECKING:
@@ -278,27 +279,78 @@ class SettingsScreen(ctk.CTkFrame):
             parent = self
         section = ctk.CTkFrame(parent)
         section.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        section.grid_columnconfigure(1, weight=1)
 
         # Section title
         ctk.CTkLabel(
             section,
             text="Appearance",
             font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 15))
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(10, 15))
 
-        # Theme
-        ctk.CTkLabel(section, text="Theme:").grid(
+        ctk.CTkLabel(section, text="Appearance Mode:").grid(
             row=1, column=0, sticky="w", padx=10, pady=5)
-
-        theme_var = ctk.StringVar(value="dark")
-        theme_combo = ctk.CTkComboBox(
-            section,
-            values=["dark", "light", "system"],
-            variable=theme_var,
-            width=150,
-            command=lambda choice: ctk.set_appearance_mode(choice)
+        self.appearance_mode_var = ctk.StringVar(
+            value=getattr(self.settings, "appearance_mode", "dark")
         )
-        theme_combo.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+        self.appearance_mode_combo = ctk.CTkComboBox(
+            section,
+            values=list(APPEARANCE_MODES),
+            variable=self.appearance_mode_var,
+            width=180,
+            command=self.on_theme_preference_changed
+        )
+        self.appearance_mode_combo.grid(row=1, column=1, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(section, text="Color Theme:").grid(
+            row=2, column=0, sticky="w", padx=10, pady=5)
+        self.theme_name_var = ctk.StringVar(
+            value=getattr(self.settings, "theme_name", "apple_grey")
+        )
+        self.theme_name_combo = ctk.CTkComboBox(
+            section,
+            values=list(THEME_NAMES),
+            variable=self.theme_name_var,
+            width=180,
+            command=self.on_theme_preference_changed
+        )
+        self.theme_name_combo.grid(row=2, column=1, sticky="w", padx=10, pady=5)
+
+        self.theme_apply_btn = ctk.CTkButton(
+            section,
+            text="Apply Theme",
+            command=self.apply_theme_preferences,
+            width=120
+        )
+        self.theme_apply_btn.grid(row=1, column=2, rowspan=2, sticky="w", padx=10, pady=5)
+
+        self.appearance_status_label = ctk.CTkLabel(section, text="", text_color="green")
+        self.appearance_status_label.grid(row=3, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 4))
+
+        info_text = (
+            "Appearance mode controls system/dark/light rendering.\n"
+            "Color theme switches between bundled CustomTkinter palettes."
+        )
+        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+            row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
+        )
+
+    def on_theme_preference_changed(self, _choice=None):
+        """Apply and persist theme choices immediately."""
+        self.apply_theme_preferences()
+
+    def apply_theme_preferences(self):
+        """Save selected appearance and theme, then apply app-wide."""
+        self.settings.appearance_mode = self.appearance_mode_var.get().strip().lower()
+        self.settings.theme_name = self.theme_name_var.get().strip().lower()
+        self.settings.save()
+
+        self.app.settings = self.settings
+        self.app.apply_theme_preferences()
+        self.appearance_status_label.configure(
+            text=f"✓ Applied {self.settings.appearance_mode}/{self.settings.theme_name}",
+            text_color="green",
+        )
 
     def create_date_increment_section(self, parent=None):
         """Create date increment settings section."""

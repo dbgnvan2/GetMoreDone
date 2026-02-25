@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from ..models import Status
 from ..app_settings import AppSettings
 from .segment_color_utils import resolve_segment_color_for_item
+from ..theme import apply_segment_accent, semantic_colors
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -30,6 +31,7 @@ class AllItemsScreen(ctk.CTkFrame):
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -136,6 +138,7 @@ class AllItemsScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the list of items."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -183,7 +186,7 @@ class AllItemsScreen(ctk.CTkFrame):
                 return
 
             # Create table header
-            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color=self.palette["surface_subtle"])
             header_frame.grid(row=0, column=0, sticky="ew",
                               pady=(0, 5), padx=5)
             header_frame.grid_columnconfigure(1, weight=1)
@@ -201,6 +204,7 @@ class AllItemsScreen(ctk.CTkFrame):
                 ).grid(row=0, column=col, padx=5, pady=5, sticky="w")
 
             # Create item rows
+            palette = self.palette
             for idx, item in enumerate(items, start=1):
                 segment_color = resolve_segment_color_for_item(
                     item,
@@ -211,15 +215,14 @@ class AllItemsScreen(ctk.CTkFrame):
                     self._ape_segment_cache,
                     self._week_action_segment_cache,
                 )
-                if segment_color:
-                    bg_color = segment_color
-                elif item.status == Status.COMPLETED:
-                    bg_color = "gray30"
+                if item.status == Status.COMPLETED:
+                    bg_color = palette["success_tint"]
                 elif item.importance == 20 or item.urgency == 20:
-                    bg_color = "darkred"
+                    bg_color = palette["critical_tint"]
                 else:
                     bg_color = None
                 item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+                apply_segment_accent(item_frame, segment_color)
                 item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
                 item_frame.grid_columnconfigure(1, weight=1)
 
@@ -264,7 +267,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=start_text,
                     width=60,
-                    text_color="lightblue"
+                    text_color=palette["date_start_text"]
                 ).grid(row=0, column=3, padx=5, pady=5)
 
                 # Due date
@@ -280,7 +283,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=due_text,
                     width=60,
-                    text_color="orange"
+                    text_color=palette["date_due_text"]
                 ).grid(row=0, column=4, padx=5, pady=5)
 
                 # Priority
@@ -298,7 +301,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=time_text,
                     width=60,
-                    text_color="lightyellow"
+                    text_color=palette["time_text"]
                 ).grid(row=0, column=6, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
@@ -338,8 +341,8 @@ class AllItemsScreen(ctk.CTkFrame):
                         item_frame,
                         text="⏱ Timer",
                         width=70,
-                        fg_color="darkgreen",
-                        hover_color="green",
+                        fg_color=palette["primary"],
+                        hover_color=palette["primary_hover"],
                         command=lambda i=item.id: self.start_timer(i)
                     )
                     btn_timer.grid(row=0, column=col, padx=2, pady=5)
@@ -350,6 +353,10 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text="Edit",
                     width=60,
+                    fg_color="transparent",
+                    hover_color=palette["ghost_hover"],
+                    border_width=1,
+                    border_color=palette["border"],
                     command=lambda i=item.id: self.edit_item(i)
                 )
                 btn_edit.grid(row=0, column=col, padx=2, pady=5)

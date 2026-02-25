@@ -6,6 +6,8 @@ from datetime import date, timedelta
 from tkinter import messagebox
 from typing import TYPE_CHECKING, List, Dict, Any, Optional
 
+from ..theme import semantic_colors
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
     from ..app import GetMoreDoneApp
@@ -91,6 +93,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         self.actions_list = tk.Listbox(right, exportselection=False)
         self.actions_list.grid(row=0, column=0, sticky="nsew")
         self.actions_list.bind("<Double-Button-1>", self.open_selected_action_item)
+        self._apply_subtle_selection_styles()
 
         actions = ctk.CTkFrame(body)
         actions.grid(row=2, column=1, sticky="ew", padx=(4, 8), pady=(0, 8))
@@ -288,10 +291,15 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         try:
             listbox.itemconfig(
                 index,
-                bg=color,
-                fg="white",
-                selectbackground=color,
-                selectforeground="white",
+                fg=color,
             )
         except Exception:
             pass
+
+    def _apply_subtle_selection_styles(self):
+        palette = semantic_colors()
+        for widget in (self.weekly_list, self.actions_list):
+            widget.configure(
+                selectbackground=palette["selected_tint"],
+                selectforeground=widget.cget("fg"),
+            )

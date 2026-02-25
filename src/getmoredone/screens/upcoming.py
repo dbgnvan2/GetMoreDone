@@ -10,6 +10,7 @@ from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
+from ..theme import apply_segment_accent, semantic_colors
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -32,6 +33,7 @@ class UpcomingScreen(ctk.CTkFrame):
         # Track column visibility state
         self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -143,6 +145,7 @@ class UpcomingScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the list of upcoming items."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -226,7 +229,7 @@ class UpcomingScreen(ctk.CTkFrame):
                     start_date, len(items_for_date), total_planned)
 
                 header_frame = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="gray25")
+                    self.scroll_frame, fg_color=self.palette["surface_subtle"])
                 header_frame.grid(row=row, column=0,
                                   sticky="ew", pady=(10, 0), padx=5)
                 header_frame.grid_columnconfigure(0, weight=1)
@@ -251,6 +254,7 @@ class UpcomingScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem) -> ctk.CTkFrame:
         """Create a row for an action item."""
+        palette = self.palette
         segment_color = resolve_segment_color_for_item(
             item,
             self.segment_colors_by_id,
@@ -261,13 +265,12 @@ class UpcomingScreen(ctk.CTkFrame):
             self._week_action_segment_cache,
         )
         is_critical = (item.importance == 20 or item.urgency == 20)
-        if segment_color:
-            bg_color = segment_color
-        elif is_critical:
-            bg_color = "darkred"
+        if is_critical:
+            bg_color = palette["critical_tint"]
         else:
             bg_color = None
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+        apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(1, weight=1)
 
         # Complete checkbox
@@ -308,7 +311,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=f"S:{start_date_text}",
             width=60,
             anchor="w",
-            text_color="lightblue"
+            text_color=palette["date_start_text"]
         )
         start_label.grid(row=0, column=2, padx=5, pady=5)
 
@@ -325,7 +328,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=f"D:{due_date_text}",
             width=60,
             anchor="w",
-            text_color="orange"
+            text_color=palette["date_due_text"]
         )
         due_label.grid(row=0, column=3, padx=5, pady=5)
 
@@ -352,7 +355,7 @@ class UpcomingScreen(ctk.CTkFrame):
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color="gray30"
+            fg_color=palette["chip_bg"]
         )
         score_label.grid(row=0, column=6, padx=5, pady=5)
         score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
@@ -364,7 +367,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=time_text,
             width=50,
             anchor="w",
-            text_color="lightyellow"
+            text_color=palette["time_text"]
         )
         time_label.grid(row=0, column=7, padx=5, pady=5)
 
@@ -399,8 +402,8 @@ class UpcomingScreen(ctk.CTkFrame):
             frame,
             text="⏱ Timer",
             width=70,
-            fg_color="darkgreen",
-            hover_color="green",
+            fg_color=palette["primary"],
+            hover_color=palette["primary_hover"],
             command=lambda: self.start_timer(item.id)
         )
         btn_timer.grid(row=0, column=8+col_offset, padx=2, pady=5)
@@ -409,6 +412,10 @@ class UpcomingScreen(ctk.CTkFrame):
             frame,
             text="Edit",
             width=60,
+            fg_color="transparent",
+            hover_color=palette["ghost_hover"],
+            border_width=1,
+            border_color=palette["border"],
             command=lambda: self.edit_item(item.id)
         )
         btn_edit.grid(row=0, column=9+col_offset, padx=2, pady=5)
@@ -417,8 +424,10 @@ class UpcomingScreen(ctk.CTkFrame):
             frame,
             text="Push",
             width=60,
-            fg_color="orange",
-            hover_color="darkorange",
+            fg_color="transparent",
+            hover_color=palette["ghost_hover"],
+            border_width=1,
+            border_color=palette["border"],
             command=lambda: self.push_item(item.id)
         )
         btn_push.grid(row=0, column=10+col_offset, padx=2, pady=5)
