@@ -209,6 +209,7 @@ class CompletedScreen(ctk.CTkFrame):
                     anchor="w"
                 )
                 title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
                 # Completed date
                 if item.completed_at:
@@ -252,16 +253,6 @@ class CompletedScreen(ctk.CTkFrame):
                         factor_col += 1
                     col_offset = 1
 
-                # Edit button
-                btn_edit = ctk.CTkButton(
-                    item_frame,
-                    text="Edit",
-                    width=60,
-                    **button_style("secondary"),
-                    command=lambda i=item.id: self.edit_item(i)
-                )
-                btn_edit.grid(row=0, column=4+col_offset, padx=2, pady=5)
-
                 # Uncomplete button
                 btn_uncomplete = ctk.CTkButton(
                     item_frame,
@@ -270,7 +261,7 @@ class CompletedScreen(ctk.CTkFrame):
                     **button_style("secondary"),
                     command=lambda i=item.id: self.uncomplete_item(i)
                 )
-                btn_uncomplete.grid(row=0, column=5+col_offset, padx=2, pady=5)
+                btn_uncomplete.grid(row=0, column=4+col_offset, padx=2, pady=5)
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
             self.scroll_frame.grid(**grid_info)

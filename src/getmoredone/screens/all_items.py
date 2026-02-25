@@ -3,6 +3,7 @@ All Items screen - table view of all action items.
 """
 
 import customtkinter as ctk
+from datetime import date
 from typing import TYPE_CHECKING
 
 from ..models import Status
@@ -266,12 +267,14 @@ class AllItemsScreen(ctk.CTkFrame):
                         start_text = dt.strftime("%m/%d")
                     except:
                         pass
-                ctk.CTkLabel(
+                start_label = ctk.CTkLabel(
                     item_frame,
                     text=start_text,
                     width=60,
                     text_color=palette["date_start_text"]
-                ).grid(row=0, column=3, padx=5, pady=5)
+                )
+                start_label.grid(row=0, column=3, padx=5, pady=5)
+                start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
                 # Due date
                 due_text = item.due_date or "-"
@@ -293,10 +296,13 @@ class AllItemsScreen(ctk.CTkFrame):
                 priority_label = ctk.CTkLabel(
                     item_frame,
                     text=str(item.priority_score),
-                    width=80
+                    width=80,
+                    fg_color=palette["chip_bg"],
+                    text_color=palette["chip_text"],
+                    corner_radius=6,
                 )
                 priority_label.grid(row=0, column=5, padx=5, pady=5)
-                priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
+                priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
                 # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
                 time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -350,15 +356,6 @@ class AllItemsScreen(ctk.CTkFrame):
                     btn_timer.grid(row=0, column=col, padx=2, pady=5)
                     col += 1
 
-                # Edit button
-                btn_edit = ctk.CTkButton(
-                    item_frame,
-                    text="Edit",
-                    width=60,
-                    **button_style("secondary"),
-                    command=lambda i=item.id: self.edit_item(i)
-                )
-                btn_edit.grid(row=0, column=col, padx=2, pady=5)
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
             self.scroll_frame.grid(**grid_info)
@@ -385,6 +382,54 @@ class AllItemsScreen(ctk.CTkFrame):
         ItemEditorDialog(self, self.db_manager, item_id,
                          vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
                          focus_tab=focus_tab)
+
+    def edit_start_date_inline(self, item_id: str):
+        """Edit item start date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        current = item.start_date or ""
+        dialog = ctk.CTkInputDialog(
+            text="Start date (YYYY-MM-DD), blank to clear:",
+            title=f"Start Date ({current or 'none'})",
+        )
+        raw = dialog.get_input()
+        if raw is None:
+            return
+        raw = raw.strip()
+        if raw:
+            try:
+                raw = date.fromisoformat(raw).isoformat()
+            except ValueError:
+                return
+        else:
+            raw = None
+        item.start_date = raw
+        self.db_manager.update_action_item(item)
+        self.refresh()
+
+    def edit_priority_inline(self, item_id: str):
+        """Edit item priority score in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = ctk.CTkInputDialog(
+            text="Priority score (0-9999):",
+            title=f"Priority (current: {item.priority_score})",
+        )
+        raw = dialog.get_input()
+        if raw is None:
+            return
+        raw = raw.strip()
+        if not raw:
+            return
+        try:
+            score = int(raw)
+        except ValueError:
+            return
+        item.priority_score = max(0, min(9999, score))
+        self.db_manager.update_action_item(item)
+        self.refresh()
 
     def create_new_item(self):
         """Open item editor for new item."""

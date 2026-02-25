@@ -239,6 +239,7 @@ class HierarchicalScreen(ctk.CTkFrame):
         )
         title_label.grid(row=0, column=0, sticky="w",
                          padx=indent_padding, pady=5)
+        title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
         # Priority score
         score_label = ctk.CTkLabel(
@@ -277,16 +278,6 @@ class HierarchicalScreen(ctk.CTkFrame):
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=70).grid(
                 row=0, column=3, padx=5, pady=5)
-
-        # Edit button
-        btn_edit = ctk.CTkButton(
-            frame,
-            text="Edit",
-            width=60,
-            **button_style("secondary"),
-            command=lambda: self.edit_item(item.id)
-        )
-        btn_edit.grid(row=0, column=4, padx=5, pady=5)
 
         return frame
 

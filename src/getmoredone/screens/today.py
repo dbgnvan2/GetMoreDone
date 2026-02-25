@@ -370,6 +370,7 @@ class TodayScreen(ctk.CTkFrame):
             text_color=palette["date_start_text"]
         )
         start_label.grid(row=0, column=2, padx=5, pady=5)
+        start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
         # Due Date
         due_date_text = item.due_date if item.due_date else "-"
@@ -394,10 +395,11 @@ class TodayScreen(ctk.CTkFrame):
             text=f"P:{item.priority_score}",
             width=60,
             fg_color=palette["chip_bg"],
-            text_color=palette["body_text"],
+            text_color=palette["chip_text"],
+            corner_radius=6,
         )
         score_label.grid(row=0, column=4, padx=5, pady=5)
-        score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id, focus_tab="Priority"))
+        score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
         # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
         time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -445,15 +447,6 @@ class TodayScreen(ctk.CTkFrame):
             )
             btn_timer.grid(row=0, column=btn_col_start, padx=2, pady=5)
 
-            btn_edit = ctk.CTkButton(
-                frame,
-                text="Edit",
-                width=60,
-                **button_style("secondary"),
-                command=lambda: self.edit_item(item.id)
-            )
-            btn_edit.grid(row=0, column=btn_col_start+1, padx=2, pady=5)
-
             btn_push = ctk.CTkButton(
                 frame,
                 text="Push",
@@ -461,7 +454,7 @@ class TodayScreen(ctk.CTkFrame):
                 **button_style("secondary"),
                 command=lambda item_id=item.id: self.push_item(item_id)
             )
-            btn_push.grid(row=0, column=btn_col_start+2, padx=2, pady=5)
+            btn_push.grid(row=0, column=btn_col_start+1, padx=2, pady=5)
 
         return frame
 
@@ -487,6 +480,54 @@ class TodayScreen(ctk.CTkFrame):
         ItemEditorDialog(self, self.db_manager, item_id,
                          vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
                          focus_tab=focus_tab)
+
+    def edit_start_date_inline(self, item_id: str):
+        """Edit item start date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        current = item.start_date or ""
+        dialog = ctk.CTkInputDialog(
+            text="Start date (YYYY-MM-DD), blank to clear:",
+            title=f"Start Date ({current or 'none'})",
+        )
+        raw = dialog.get_input()
+        if raw is None:
+            return
+        raw = raw.strip()
+        if raw:
+            try:
+                raw = date.fromisoformat(raw).isoformat()
+            except ValueError:
+                return
+        else:
+            raw = None
+        item.start_date = raw
+        self.db_manager.update_action_item(item)
+        self.refresh()
+
+    def edit_priority_inline(self, item_id: str):
+        """Edit item priority score in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = ctk.CTkInputDialog(
+            text="Priority score (0-9999):",
+            title=f"Priority (current: {item.priority_score})",
+        )
+        raw = dialog.get_input()
+        if raw is None:
+            return
+        raw = raw.strip()
+        if not raw:
+            return
+        try:
+            score = int(raw)
+        except ValueError:
+            return
+        item.priority_score = max(0, min(9999, score))
+        self.db_manager.update_action_item(item)
+        self.refresh()
 
     def create_new_item(self):
         """Open item editor for new item."""
