@@ -3,6 +3,8 @@
 import customtkinter as ctk
 from typing import TYPE_CHECKING, Optional
 
+from ..theme import button_style, semantic_colors
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
     from ..app import GetMoreDoneApp
@@ -26,6 +28,7 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
         self.open_screen("vision_elements")
 
     def create_ui(self):
+        palette = semantic_colors()
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
         header.grid_columnconfigure(1, weight=1)
@@ -39,28 +42,27 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
         ctk.CTkLabel(
             header,
             text="Unified workspace for vision elements, annual segments, APE planning, and APE weekly execution",
-            text_color="#94A3B8"
+            text_color=palette["muted_text"],
         ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
 
         nav = ctk.CTkFrame(self)
         nav.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
 
         buttons = [
-            ("Vision Elements", "vision_elements", "#0E7490", "#0891B2"),
-            ("Annual Vision Segments", "annual_vision_segments", "#2563EB", "#1D4ED8"),
-            ("APE Assignment", "ape_assignment", "#0D9488", "#0F766E"),
-            ("APE Period View", "ape_period_view", "#D97706", "#B45309"),
-            ("APE Weekly", "ape_weekly", "#0284C7", "#0369A1"),
+            ("Vision Elements", "vision_elements"),
+            ("Annual Vision Segments", "annual_vision_segments"),
+            ("APE Assignment", "ape_assignment"),
+            ("APE Period View", "ape_period_view"),
+            ("APE Weekly", "ape_weekly"),
         ]
 
-        for i, (label, key, fg, hover) in enumerate(buttons):
+        for i, (label, key) in enumerate(buttons):
             btn = ctk.CTkButton(
                 nav,
                 text=label,
                 command=lambda k=key: self.open_screen(k),
-                fg_color=fg,
-                hover_color=hover,
-                width=170
+                width=170,
+                **button_style("secondary"),
             )
             btn.grid(row=0, column=i, padx=6, pady=8)
             self.nav_buttons[key] = btn
@@ -94,6 +96,6 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
 
         for k, btn in self.nav_buttons.items():
             if k == key:
-                btn.configure(border_width=2, border_color="#E2E8F0")
+                btn.configure(**button_style("primary"))
             else:
-                btn.configure(border_width=0)
+                btn.configure(**button_style("secondary"))
