@@ -6,7 +6,14 @@ import customtkinter as ctk
 from typing import TYPE_CHECKING
 
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style
+from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from .title_format import (
+    split_action_item_title,
+    format_column_text,
+    TITLE_COL_CHARS,
+    CONTEXT_COL_CHARS,
+    CONTACT_COL_CHARS,
+)
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -192,65 +199,78 @@ class CompletedScreen(ctk.CTkFrame):
                 apply_segment_accent(item_frame, segment_color)
                 item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
                 item_frame.grid_columnconfigure(1, weight=1)
+                parsed = split_action_item_title(item.title)
 
                 # Checkmark
                 ctk.CTkLabel(item_frame, text="✓", width=30).grid(
                     row=0, column=0, padx=5, pady=5)
 
-                # Title and info
-                info_text = f"{item.title}"
-                if item.who:
-                    info_text += f" ({item.who})"
-
                 title_label = ctk.CTkLabel(
                     item_frame,
-                    text=info_text,
-                    font=ctk.CTkFont(size=12),
+                    text=format_column_text(parsed.title, TITLE_COL_CHARS),
+                    width=300,
+                    font=list_row_font(),
                     anchor="w"
                 )
                 title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
                 title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+                # Context
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
+                    width=140,
+                    anchor="w",
+                    text_color=palette["muted_text"],
+                    font=list_row_font(),
+                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+                # Who
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(item.who, CONTACT_COL_CHARS),
+                    width=110,
+                    anchor="w",
+                    font=list_row_font(),
+                ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
                 # Completed date
                 if item.completed_at:
                     completed_label = ctk.CTkLabel(
                         item_frame,
                         text=f"Completed: {item.completed_at[:10]}",
-                        width=150
+                        width=150,
+                        font=list_row_font()
                     )
-                    completed_label.grid(row=0, column=2, padx=5, pady=5)
+                    completed_label.grid(row=0, column=4, padx=5, pady=5)
 
                 # Priority score
                 score_label = ctk.CTkLabel(
                     item_frame,
                     text=f"P:{item.priority_score}",
-                    width=60
+                    width=60,
+                    font=list_row_font()
                 )
-                score_label.grid(row=0, column=3, padx=5, pady=5)
+                score_label.grid(row=0, column=5, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
                     factors_frame = ctk.CTkFrame(
                         item_frame, fg_color="transparent")
-                    factors_frame.grid(row=0, column=4, padx=5, pady=5)
-                    factor_col = 0
-                    if item.importance:
-                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                    factors_frame.grid(row=0, column=6, padx=5, pady=5)
+                    columns = [
+                        ("G", item.group, 120),
+                        ("C", item.category, 120),
+                        ("I", item.importance, 40),
+                        ("U", item.urgency, 40),
+                        ("E", item.size, 40),
+                        ("V", item.value, 40),
+                    ]
+                    for factor_col, (label, value, width) in enumerate(columns):
+                        text = f"{label}:{value}" if value not in (None, "") else ""
+                        ctk.CTkLabel(factors_frame, text=text, width=width, anchor="w", font=list_row_font()).grid(
                             row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.urgency:
-                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.size:
-                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.value:
-                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
                     col_offset = 1
 
                 # Uncomplete button
@@ -261,7 +281,7 @@ class CompletedScreen(ctk.CTkFrame):
                     **button_style("secondary"),
                     command=lambda i=item.id: self.uncomplete_item(i)
                 )
-                btn_uncomplete.grid(row=0, column=4+col_offset, padx=2, pady=5)
+                btn_uncomplete.grid(row=0, column=7+col_offset, padx=2, pady=5)
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
             self.scroll_frame.grid(**grid_info)

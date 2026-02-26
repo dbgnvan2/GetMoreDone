@@ -314,23 +314,37 @@ class SettingsScreen(ctk.CTkFrame):
         )
         self.theme_name_combo.grid(row=2, column=1, sticky="w", padx=10, pady=5)
 
+        ctk.CTkLabel(section, text="Row Text Size:").grid(
+            row=3, column=0, sticky="w", padx=10, pady=5)
+        current_font_size = int(getattr(self.settings, "list_row_font_size", 14))
+        self.list_row_font_size_var = ctk.StringVar(value=str(current_font_size))
+        self.list_row_font_size_combo = ctk.CTkComboBox(
+            section,
+            values=[str(size) for size in range(10, 25)],
+            variable=self.list_row_font_size_var,
+            width=180,
+            command=self.on_theme_preference_changed
+        )
+        self.list_row_font_size_combo.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
         self.theme_apply_btn = ctk.CTkButton(
             section,
             text="Apply Theme",
             command=self.apply_theme_preferences,
             width=120
         )
-        self.theme_apply_btn.grid(row=1, column=2, rowspan=2, sticky="w", padx=10, pady=5)
+        self.theme_apply_btn.grid(row=1, column=2, rowspan=3, sticky="w", padx=10, pady=5)
 
         self.appearance_status_label = ctk.CTkLabel(section, text="", text_color="green")
-        self.appearance_status_label.grid(row=3, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 4))
+        self.appearance_status_label.grid(row=4, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 4))
 
         info_text = (
             "Appearance mode controls system/dark/light rendering.\n"
-            "Color theme switches between bundled CustomTkinter palettes."
+            "Color theme switches between bundled CustomTkinter palettes.\n"
+            "Row Text Size controls font size in item listing rows."
         )
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
+            row=5, column=0, columnspan=3, sticky="w", padx=10, pady=5
         )
 
     def on_theme_preference_changed(self, _choice=None):
@@ -341,12 +355,16 @@ class SettingsScreen(ctk.CTkFrame):
         """Save selected appearance and theme, then apply app-wide."""
         self.settings.appearance_mode = self.appearance_mode_var.get().strip().lower()
         self.settings.theme_name = self.theme_name_var.get().strip().lower()
+        try:
+            self.settings.list_row_font_size = int(self.list_row_font_size_var.get().strip())
+        except ValueError:
+            self.settings.list_row_font_size = 14
         self.settings.save()
 
         self.app.settings = self.settings
         self.app.apply_theme_preferences()
         self.appearance_status_label.configure(
-            text=f"✓ Applied {self.settings.appearance_mode}/{self.settings.theme_name}",
+            text=f"✓ Applied {self.settings.appearance_mode}/{self.settings.theme_name} (row text {self.settings.list_row_font_size})",
             text_color="green",
         )
 

@@ -47,6 +47,14 @@ class GetMoreDoneApp(ctk.CTk):
         except Exception as exc:
             print(f"[WARN] Unable to backfill action item segments: {exc}")
 
+        # Normalize obvious legacy title/who formatting.
+        try:
+            normalized = self.db_manager.normalize_title_who_fields()
+            if normalized:
+                print(f"[DATA] Normalized title/who fields on {normalized} action item(s).")
+        except Exception as exc:
+            print(f"[WARN] Unable to normalize title/who fields: {exc}")
+
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)

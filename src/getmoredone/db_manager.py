@@ -6,6 +6,7 @@ Provides CRUD operations and business logic for all entities.
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 import sqlite3
+import re
 
 from .database import Database
 from .models import (
@@ -103,8 +104,15 @@ class DatabaseManager:
             return self._row_to_action_item(row)
         return None
 
-    def update_action_item(self, item: ActionItem):
-        """Update an existing action item."""
+    def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True):
+        """Update an existing action item.
+
+        Args:
+            item: Action item to persist.
+            normalize_week_dates: When True, week-typed items are snapped to week bounds.
+                Inline list edits and quick reschedules can disable this to preserve
+                user-entered day-level dates.
+        """
         # Get existing item to preserve original_due_date if it exists
         existing = self.get_action_item(item.id)
         if existing and existing.original_due_date:
@@ -122,7 +130,8 @@ class DatabaseManager:
         item.updated_at = datetime.now().isoformat()
 
         self._stamp_segment_from_relationships(item)
-        self._normalize_week_item_dates(item)
+        if normalize_week_dates:
+            self._normalize_week_item_dates(item)
 
         self.db.conn.execute("""
             UPDATE action_items SET
@@ -166,7 +175,7 @@ class DatabaseManager:
 
         item.status = Status.COMPLETED
         item.completed_at = datetime.now().isoformat()
-        self.update_action_item(item)
+        self.update_action_item(item, normalize_week_dates=False)
         return True
 
     def uncomplete_action_item(self, item_id: str) -> bool:
@@ -663,10 +672,46 @@ class DatabaseManager:
             history.to_start, history.to_due, history.reason, history.created_at
         ))
 
+        # Weekly linked items should update the shared week_action date range.
+        if item.item_type == "week" and item.week_action_id:
+            target_start = new_start
+            target_due = new_due
+
+            wa = self.db.conn.execute(
+                "SELECT week_start_date, week_end_date FROM week_actions WHERE id = ?",
+                (item.week_action_id,),
+            ).fetchone()
+            if wa:
+                target_start = target_start or wa["week_start_date"]
+                target_due = target_due or wa["week_end_date"]
+
+            target_start = target_start or item.start_date
+            target_due = target_due or item.due_date
+            now = datetime.now().isoformat()
+
+            self.db.conn.execute(
+                """
+                UPDATE week_actions
+                SET week_start_date = ?, week_end_date = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (target_start, target_due, now, item.week_action_id),
+            )
+            self.db.conn.execute(
+                """
+                UPDATE action_items
+                SET start_date = ?, due_date = ?, updated_at = ?
+                WHERE week_action_id = ? AND item_type = 'week'
+                """,
+                (target_start, target_due, now, item.week_action_id),
+            )
+            self.db.conn.commit()
+            return
+
         # Update item
         item.start_date = new_start
         item.due_date = new_due
-        self.update_action_item(item)
+        self.update_action_item(item, normalize_week_dates=False)
 
     # ==================== LINKS ====================
 
@@ -1055,6 +1100,44 @@ class DatabaseManager:
                     values,
                 )
                 updated += 1
+
+        if updated:
+            self.db.conn.commit()
+        return updated
+
+    def normalize_title_who_fields(self) -> int:
+        """Move trailing parenthetical who text into `who` when who is blank.
+
+        Example: ``"Task name (Creative)"`` -> title ``"Task name"``, who ``"Creative"``.
+        """
+        rows = self.db.conn.execute(
+            "SELECT id, title, who FROM action_items"
+        ).fetchall()
+        updated = 0
+        now = datetime.now().isoformat()
+        pattern = re.compile(r"^(?P<title>.+?)\s*\((?P<who>[^()]{2,40})\)\s*$")
+
+        for row in rows:
+            who = (row["who"] or "").strip()
+            if who:
+                continue
+            title = (row["title"] or "").strip()
+            if not title:
+                continue
+            match = pattern.match(title)
+            if not match:
+                continue
+
+            clean_title = match.group("title").strip()
+            parsed_who = match.group("who").strip()
+            if not clean_title or not parsed_who:
+                continue
+
+            self.db.conn.execute(
+                "UPDATE action_items SET title = ?, who = ?, updated_at = ? WHERE id = ?",
+                (clean_title, parsed_who, now, row["id"]),
+            )
+            updated += 1
 
         if updated:
             self.db.conn.commit()

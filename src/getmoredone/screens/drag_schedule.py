@@ -195,14 +195,16 @@ class DragScheduleScreen(ctk.CTkFrame):
         title_label = ctk.CTkLabel(
             frame,
             text=item.title,
-            anchor="w"
+            anchor="w",
+            font=ctk.CTkFont(size=14)
         )
         title_label.grid(row=0, column=0, sticky="ew", padx=8, pady=2)
 
         date_label = ctk.CTkLabel(
             frame,
             text=date_text,
-            text_color="gray70"
+            text_color="gray70",
+            font=ctk.CTkFont(size=14)
         )
         date_label.grid(row=0, column=1, sticky="e", padx=8, pady=2)
 

@@ -130,6 +130,14 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
             if selectable:
                 for widget in (item, lbl):
                     widget.bind("<Button-1>", lambda _e, i=idx: self.on_left_select(i))
+            else:
+                ctk.CTkButton(
+                    item,
+                    text="Edit",
+                    width=64,
+                    command=lambda r=row: self.edit_annual_item(r),
+                    **button_style("secondary"),
+                ).grid(row=0, column=3, padx=5, pady=5, sticky="e")
 
     def on_left_select(self, idx: int):
         self.left_selected_idx = idx
@@ -158,3 +166,82 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
 
     def on_right_release(self, _event):
         self.drag_index = None
+
+    def edit_annual_item(self, row: dict):
+        """Edit a right-side annual item by updating its source Vision Element."""
+        vision_element_id = row.get("vision_element_id")
+        if not vision_element_id:
+            messagebox.showerror("Missing Source", "This annual record is missing its source Vision Element.")
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Edit Annual Vision Element")
+        dialog.geometry("620x220")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        segment_var = ctk.StringVar(value=row.get("segment_name") or "")
+        subsegment_var = ctk.StringVar(value=row.get("subsegment_name") or "")
+        category_var = ctk.StringVar(value=row.get("category_name") or "")
+
+        frame = ctk.CTkFrame(dialog)
+        frame.pack(fill="both", expand=True, padx=12, pady=12)
+        frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(frame, text="Segment:").grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        segment_combo = ctk.CTkComboBox(frame, variable=segment_var, values=[])
+        segment_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
+
+        ctk.CTkLabel(frame, text="SubSegment:").grid(row=1, column=0, sticky="w", padx=8, pady=6)
+        subsegment_combo = ctk.CTkComboBox(frame, variable=subsegment_var, values=[])
+        subsegment_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+
+        ctk.CTkLabel(frame, text="Category:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
+        category_combo = ctk.CTkComboBox(frame, variable=category_var, values=[])
+        category_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
+
+        status_label = ctk.CTkLabel(frame, text="", text_color="red")
+        status_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 6))
+
+        def load_segments():
+            values = [r["name"] for r in self.vps_manager.get_vision_segments()]
+            segment_combo.configure(values=values or [""])
+
+        def load_subsegments():
+            seg = segment_var.get().strip() or None
+            values = [r["name"] for r in self.vps_manager.get_vision_subsegments(segment_name=seg)]
+            subsegment_combo.configure(values=values or [""])
+
+        def load_categories():
+            seg = segment_var.get().strip() or None
+            sub = subsegment_var.get().strip() or None
+            values = [r["name"] for r in self.vps_manager.get_vision_categories(segment_name=seg, subsegment_name=sub)]
+            category_combo.configure(values=values or [""])
+
+        segment_combo.configure(command=lambda _v: (load_subsegments(), load_categories()))
+        subsegment_combo.configure(command=lambda _v: load_categories())
+
+        load_segments()
+        load_subsegments()
+        load_categories()
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.grid(row=4, column=0, columnspan=2, sticky="e", padx=8, pady=(8, 4))
+        ctk.CTkButton(actions, text="Cancel", width=90, command=dialog.destroy, **button_style("secondary")).pack(
+            side="right", padx=4
+        )
+
+        def on_save():
+            seg = segment_var.get().strip()
+            sub = subsegment_var.get().strip()
+            cat = category_var.get().strip()
+            if not seg or not sub or not cat:
+                status_label.configure(text="Segment, SubSegment, and Category are required.")
+                return
+            try:
+                self.vps_manager.update_vision_element(vision_element_id, seg, sub, cat)
+            except Exception as exc:
+                status_label.configure(text=f"Unable to save: {exc}")
+                return
+            dialog.destroy()
+            self.refresh_lists()

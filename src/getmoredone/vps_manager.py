@@ -236,6 +236,59 @@ class VPSManager:
         """)
         return [dict(row) for row in cursor.fetchall()]
 
+    def update_vision_element(
+        self,
+        vision_element_id: str,
+        segment_name: str,
+        subsegment_name: str,
+        category_name: str,
+    ) -> bool:
+        """Update a Vision Element and keep annual mirrors in sync."""
+        row = self.db.conn.execute(
+            "SELECT id FROM vision_elements WHERE id = ?",
+            (vision_element_id,),
+        ).fetchone()
+        if not row:
+            return False
+
+        seg_id = self._resolve_segment_id_by_name(segment_name)
+        if not seg_id:
+            raise ValueError(f"Unknown segment: {segment_name}")
+
+        sub_id = self._create_or_get_vision_subsegment(seg_id, subsegment_name)
+        cat_id = self._create_or_get_vision_category(sub_id, category_name)
+        key_field = f"{segment_name}|{subsegment_name}|{category_name}"
+        now = datetime.now().isoformat()
+
+        self.db.conn.execute(
+            """
+            UPDATE vision_elements
+            SET segment_id = ?, subsegment_id = ?, category_id = ?, key_field = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (seg_id, sub_id, cat_id, key_field, now, vision_element_id),
+        )
+
+        # Keep derived annual records aligned.
+        self.db.conn.execute(
+            """
+            UPDATE annual_vision_elements
+            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?, updated_at = ?
+            WHERE vision_element_id = ?
+            """,
+            (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
+        )
+        self.db.conn.execute(
+            """
+            UPDATE annual_plan_elements
+            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?, updated_at = ?
+            WHERE vision_element_id = ?
+            """,
+            (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
+        )
+        self.db.conn.commit()
+        return True
+
     def create_annual_records_from_vision_element(self, year: int, vision_element_id: str) -> Dict[str, str]:
         """Create Annual Vision Element + Annual Plan Element from a vision element."""
         row = self.db.conn.execute("""

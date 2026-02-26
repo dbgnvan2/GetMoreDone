@@ -10,7 +10,8 @@ import customtkinter as ctk
 from .paths import resolve_theme_path
 
 APPEARANCE_MODES = ("system", "dark", "light")
-THEME_NAMES = ("green", "orange", "pink", "grey", "apple_grey")
+THEME_NAMES = ("green", "orange", "pink", "grey", "blue", "purple", "apple_grey", "black_white")
+LIST_ROW_FONT_SIZE = 14
 
 
 def normalize_appearance_mode(value: str) -> str:
@@ -29,8 +30,14 @@ def theme_path_for(theme_name: str) -> Path:
 
 def apply_theme_settings(settings) -> Tuple[str, str]:
     """Apply appearance mode + color theme from settings."""
+    global LIST_ROW_FONT_SIZE
     mode = normalize_appearance_mode(getattr(settings, "appearance_mode", "dark"))
     theme_name = normalize_theme_name(getattr(settings, "theme_name", "apple_grey"))
+    font_size = getattr(settings, "list_row_font_size", LIST_ROW_FONT_SIZE)
+    try:
+        LIST_ROW_FONT_SIZE = max(10, min(24, int(font_size)))
+    except (TypeError, ValueError):
+        LIST_ROW_FONT_SIZE = 14
 
     ctk.set_appearance_mode(mode)
 
@@ -116,3 +123,8 @@ def button_style(kind: str = "primary") -> Dict[str, object]:
         "text_color": palette["on_primary"],
         "border_width": 0,
     }
+
+
+def list_row_font() -> ctk.CTkFont:
+    """Standard larger font for item-list rows."""
+    return ctk.CTkFont(size=LIST_ROW_FONT_SIZE)

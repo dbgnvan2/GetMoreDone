@@ -2,7 +2,7 @@
 """Generate CustomTkinter themes from relative HSL differences.
 
 Input base theme: themes/base_dark_blue.json
-Output themes: green, orange, pink, grey, apple_grey
+Output themes: green, orange, pink, grey, blue, purple, apple_grey, black_white
 """
 
 from __future__ import annotations
@@ -45,11 +45,17 @@ ACCENT_ONLY_TARGET_ANCHORS: Dict[str, List[str]] = {
     "orange": ["#C2410C", "#9A3412"],
     "pink": ["#BE185D", "#9D174D"],
     "grey": ["#475569", "#334155"],
+    "blue": ["#3B8ED0", "#1F6AA5"],
+    "purple": ["#8B5CF6", "#7C3AED"],
 }
 
 APPLE_GREY_ANCHOR = ["#1D1D1F", "#D2D2D7"]
 APPLE_GREY_HOVER = ["#000000", "#F5F5F7"]
 APPLE_GREY_BUTTON_TEXT = ["#FFFFFF", "#1D1D1F"]
+
+BLACK_WHITE_ANCHOR = ["#111111", "#F3F4F6"]
+BLACK_WHITE_HOVER = ["#000000", "#FFFFFF"]
+BLACK_WHITE_BUTTON_TEXT = ["#FFFFFF", "#111111"]
 
 APPLE_NEUTRAL_OVERRIDES: Dict[Tuple[str, str], List[str]] = {
     ("CTk", "fg_color"): ["#F5F5F7", "#000000"],
@@ -62,6 +68,19 @@ APPLE_NEUTRAL_OVERRIDES: Dict[Tuple[str, str], List[str]] = {
     ("CTkEntry", "border_color"): ["#D2D2D7", "#424245"],
     ("CTkEntry", "text_color"): ["#1D1D1F", "#F5F5F7"],
     ("CTkEntry", "placeholder_text_color"): ["#6E6E73", "#A1A1A6"],
+}
+
+BLACK_WHITE_NEUTRAL_OVERRIDES: Dict[Tuple[str, str], List[str]] = {
+    ("CTk", "fg_color"): ["#FFFFFF", "#000000"],
+    ("CTkToplevel", "fg_color"): ["#FFFFFF", "#000000"],
+    ("CTkFrame", "fg_color"): ["#FFFFFF", "#000000"],
+    ("CTkFrame", "top_fg_color"): ["#FFFFFF", "#000000"],
+    ("CTkFrame", "border_color"): ["#D1D5DB", "#4B5563"],
+    ("CTkLabel", "text_color"): ["#000000", "#FFFFFF"],
+    ("CTkEntry", "fg_color"): ["#FFFFFF", "#111111"],
+    ("CTkEntry", "border_color"): ["#9CA3AF", "#6B7280"],
+    ("CTkEntry", "text_color"): ["#000000", "#FFFFFF"],
+    ("CTkEntry", "placeholder_text_color"): ["#6B7280", "#9CA3AF"],
 }
 
 
@@ -169,6 +188,17 @@ def generate_apple_grey_theme(base_theme: dict) -> dict:
     return theme
 
 
+def generate_black_white_theme(base_theme: dict) -> dict:
+    theme = generate_theme(base_theme, BLACK_WHITE_ANCHOR)
+    apply_neutral_overrides(theme, BLACK_WHITE_NEUTRAL_OVERRIDES)
+
+    if "CTkButton" in theme:
+        theme["CTkButton"]["fg_color"] = list(BLACK_WHITE_ANCHOR)
+        theme["CTkButton"]["hover_color"] = list(BLACK_WHITE_HOVER)
+        theme["CTkButton"]["text_color"] = list(BLACK_WHITE_BUTTON_TEXT)
+    return theme
+
+
 def main() -> int:
     if not BASE_THEME_PATH.exists():
         raise FileNotFoundError(f"Missing base theme: {BASE_THEME_PATH}")
@@ -192,6 +222,13 @@ def main() -> int:
         json.dump(apple_theme, f, indent=2)
         f.write("\n")
     print(f"wrote {apple_path}")
+
+    black_white_theme = generate_black_white_theme(base_theme)
+    black_white_path = THEMES_DIR / "black_white.json"
+    with black_white_path.open("w", encoding="utf-8") as f:
+        json.dump(black_white_theme, f, indent=2)
+        f.write("\n")
+    print(f"wrote {black_white_path}")
 
     return 0
 

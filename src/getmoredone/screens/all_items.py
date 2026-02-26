@@ -8,8 +8,15 @@ from typing import TYPE_CHECKING
 from ..models import Status
 from ..app_settings import AppSettings
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style
+from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
+from .title_format import (
+    split_action_item_title,
+    format_column_text,
+    TITLE_COL_CHARS,
+    CONTEXT_COL_CHARS,
+    CONTACT_COL_CHARS,
+)
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -195,9 +202,9 @@ class AllItemsScreen(ctk.CTkFrame):
                               pady=(0, 5), padx=5)
             header_frame.grid_columnconfigure(1, weight=1)
 
-            headers = ["✓", "Title", "Who", "Start", "Due",
+            headers = ["✓", "Title", "Context", "Who", "Start", "Due",
                        "Priority", "Est. Time", "Status", "Actions"]
-            col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0]
+            col_weights = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
 
             for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
                 header_frame.grid_columnconfigure(col, weight=weight)
@@ -229,6 +236,7 @@ class AllItemsScreen(ctk.CTkFrame):
                 apply_segment_accent(item_frame, segment_color)
                 item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
                 item_frame.grid_columnconfigure(1, weight=1)
+                parsed = split_action_item_title(item.title)
 
                 # Checkbox
                 if item.status == Status.OPEN:
@@ -245,18 +253,36 @@ class AllItemsScreen(ctk.CTkFrame):
                     ctk.CTkLabel(item_frame, text="✓").grid(
                         row=0, column=0, padx=5, pady=5)
 
-                # Title
+                # Context
                 title_label = ctk.CTkLabel(
                     item_frame,
-                    text=item.title,
-                    anchor="w"
+                    text=format_column_text(parsed.title, TITLE_COL_CHARS),
+                    width=300,
+                    anchor="w",
+                    text_color=segment_color,
+                    font=list_row_font()
                 )
                 title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
                 title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
+                # Context
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
+                    width=140,
+                    anchor="w",
+                    text_color=palette["muted_text"],
+                    font=list_row_font()
+                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
                 # Who
-                ctk.CTkLabel(item_frame, text=item.who, width=100).grid(
-                    row=0, column=2, padx=5, pady=5)
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(item.who, CONTACT_COL_CHARS),
+                    width=100,
+                    font=list_row_font(),
+                ).grid(
+                    row=0, column=3, padx=5, pady=5)
 
                 # Start date
                 start_text = item.start_date or "-"
@@ -271,9 +297,10 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=start_text,
                     width=60,
-                    text_color=palette["date_start_text"]
+                    text_color=palette["body_text"],
+                    font=list_row_font()
                 )
-                start_label.grid(row=0, column=3, padx=5, pady=5)
+                start_label.grid(row=0, column=4, padx=5, pady=5)
                 start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
                 # Due date
@@ -289,9 +316,10 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=due_text,
                     width=60,
-                    text_color=palette["date_due_text"]
+                    text_color=palette["body_text"],
+                    font=list_row_font()
                 )
-                due_label.grid(row=0, column=4, padx=5, pady=5)
+                due_label.grid(row=0, column=5, padx=5, pady=5)
                 due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
                 # Priority
@@ -302,8 +330,9 @@ class AllItemsScreen(ctk.CTkFrame):
                     fg_color=palette["chip_bg"],
                     text_color=palette["chip_text"],
                     corner_radius=6,
+                    font=list_row_font(),
                 )
-                priority_label.grid(row=0, column=5, padx=5, pady=5)
+                priority_label.grid(row=0, column=6, padx=5, pady=5)
                 priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
                 # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
@@ -312,40 +341,36 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=time_text,
                     width=60,
-                    text_color=palette["time_text"]
-                ).grid(row=0, column=6, padx=5, pady=5)
+                    text_color=palette["body_text"],
+                    font=list_row_font()
+                ).grid(row=0, column=7, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
                     factors_frame = ctk.CTkFrame(
                         item_frame, fg_color="transparent")
-                    factors_frame.grid(row=0, column=7, padx=5, pady=5)
-                    factor_col = 0
-                    if item.importance:
-                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                    factors_frame.grid(row=0, column=8, padx=5, pady=5)
+                    columns = [
+                        ("G", item.group, 120),
+                        ("C", item.category, 120),
+                        ("I", item.importance, 40),
+                        ("U", item.urgency, 40),
+                        ("E", item.size, 40),
+                        ("V", item.value, 40),
+                    ]
+                    for factor_col, (label, value, width) in enumerate(columns):
+                        text = f"{label}:{value}" if value not in (None, "") else ""
+                        ctk.CTkLabel(factors_frame, text=text, width=width, anchor="w", font=list_row_font()).grid(
                             row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.urgency:
-                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.size:
-                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.value:
-                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
                     col_offset = 1
 
                 # Status
-                ctk.CTkLabel(item_frame, text=item.status, width=80).grid(
-                    row=0, column=7+col_offset, padx=5, pady=5)
+                ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font()).grid(
+                    row=0, column=8+col_offset, padx=5, pady=5)
 
                 # Action buttons
-                col = 8 + col_offset
+                col = 9 + col_offset
                 # Timer button (only for open items)
                 if item.status == Status.OPEN:
                     btn_timer = ctk.CTkButton(
@@ -355,7 +380,7 @@ class AllItemsScreen(ctk.CTkFrame):
                         **button_style("secondary"),
                         command=lambda i=item.id: self.start_timer(i)
                     )
-                    btn_timer.grid(row=0, column=col, padx=2, pady=5)
+                    btn_timer.grid(row=0, column=col, padx=(0, 2), pady=5)
                     col += 1
 
         finally:
@@ -394,8 +419,11 @@ class AllItemsScreen(ctk.CTkFrame):
         self.wait_window(dialog)
         if dialog.result == "__cancel__":
             return
-        item.start_date = dialog.result
-        self.db_manager.update_action_item(item)
+        new_start = dialog.result
+        new_due = item.due_date
+        if new_start and new_due and new_due < new_start:
+            new_due = new_start
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_start_edit")
         self.refresh()
 
     def edit_priority_inline(self, item_id: str):
@@ -411,7 +439,7 @@ class AllItemsScreen(ctk.CTkFrame):
         item.urgency = dialog.result["urgency"]
         item.size = dialog.result["size"]
         item.value = dialog.result["value"]
-        self.db_manager.update_action_item(item)
+        self.db_manager.update_action_item(item, normalize_week_dates=False)
         self.refresh()
 
     def edit_due_date_inline(self, item_id: str):
@@ -423,8 +451,11 @@ class AllItemsScreen(ctk.CTkFrame):
         self.wait_window(dialog)
         if dialog.result == "__cancel__":
             return
-        item.due_date = dialog.result
-        self.db_manager.update_action_item(item)
+        new_due = dialog.result
+        new_start = item.start_date
+        if new_start and new_due and new_due < new_start:
+            new_due = new_start
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_due_edit")
         self.refresh()
 
     def create_new_item(self):

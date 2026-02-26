@@ -7,7 +7,14 @@ from typing import Optional, TYPE_CHECKING, List
 
 from ..models import ActionItem, Status
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style
+from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from .title_format import (
+    split_action_item_title,
+    format_column_text,
+    TITLE_COL_CHARS,
+    CONTEXT_COL_CHARS,
+    CONTACT_COL_CHARS,
+)
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -214,32 +221,49 @@ class HierarchicalScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(0, weight=1)
+        parsed = split_action_item_title(item.title)
 
         # Calculate left padding for indentation
         indent_padding = (indent_level * 30, 5)
 
-        # Title with indentation (left-aligned for main items, indented for children)
-        info_text = f"{item.title}"
-        if item.who:
-            info_text += f" ({item.who})"
+        # Title with indentation indicator for child rows.
+        title_text = parsed.title
         if item.group:
-            info_text += f" [{item.group}]"
+            title_text += f" [{item.group}]"
 
         # Add indentation indicator for child items
         if indent_level > 0:
             indicator = "└─ "
-            info_text = indicator + info_text
+            title_text = indicator + title_text
 
         title_label = ctk.CTkLabel(
             frame,
-            text=info_text,
+            text=format_column_text(title_text, TITLE_COL_CHARS),
+            width=300,
             font=ctk.CTkFont(
-                size=12, family="Courier" if indent_level > 0 else None),
+                size=14, family="Courier" if indent_level > 0 else None),
             anchor="w"
         )
         title_label.grid(row=0, column=0, sticky="w",
                          padx=indent_padding, pady=5)
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
+            width=140,
+            anchor="w",
+            text_color=palette["muted_text"],
+            font=list_row_font(),
+        ).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(item.who, CONTACT_COL_CHARS),
+            width=100,
+            anchor="w",
+            font=list_row_font(),
+        ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
         # Priority score
         score_label = ctk.CTkLabel(
@@ -247,22 +271,24 @@ class HierarchicalScreen(ctk.CTkFrame):
             text=f"P:{item.priority_score}",
             width=60,
             fg_color=palette["chip_bg"],
-            text_color=palette["body_text"]
+            text_color=palette["body_text"],
+            font=list_row_font()
         )
-        score_label.grid(row=0, column=1, padx=5, pady=5)
+        score_label.grid(row=0, column=3, padx=5, pady=5)
 
         # Due date
         if item.due_date:
             due_label = ctk.CTkLabel(
                 frame,
                 text=f"Due: {item.due_date}",
-                width=110
+                width=110,
+                font=list_row_font()
             )
-            due_label.grid(row=0, column=2, padx=5, pady=5)
+            due_label.grid(row=0, column=4, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=110).grid(
-                row=0, column=2, padx=5, pady=5)
+                row=0, column=4, padx=5, pady=5)
 
         # Child count
         children = self.db_manager.get_children(item.id)
@@ -271,13 +297,14 @@ class HierarchicalScreen(ctk.CTkFrame):
                 frame,
                 text=f"({len(children)} sub)",
                 width=70,
-                text_color=palette["body_text"]
+                text_color=palette["body_text"],
+                font=list_row_font()
             )
-            child_count_label.grid(row=0, column=3, padx=5, pady=5)
+            child_count_label.grid(row=0, column=5, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=70).grid(
-                row=0, column=3, padx=5, pady=5)
+                row=0, column=5, padx=5, pady=5)
 
         return frame
 

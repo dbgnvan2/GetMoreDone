@@ -43,14 +43,40 @@ class InlineDateDialog(ctk.CTkToplevel):
         ctk.CTkButton(actions, text="Save", width=80, **button_style("primary"), command=self.save).pack(side="right", padx=3)
         ctk.CTkButton(actions, text="Cancel", width=80, **button_style("secondary"), command=self.cancel).pack(side="right", padx=3)
 
-    def _current_date(self) -> date:
-        raw = self.date_var.get().strip()
-        if raw:
+    def _entry_raw(self) -> str:
+        return (self.entry.get() or "").strip()
+
+    def _parse_date(self, raw: str) -> Optional[date]:
+        value = (raw or "").strip()
+        if not value:
+            return None
+
+        # Preferred canonical form.
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+
+        # Common manual inputs.
+        for fmt in ("%m/%d/%Y", "%m/%d"):
             try:
-                return datetime.strptime(raw, "%Y-%m-%d").date()
+                parsed = datetime.strptime(value, fmt).date()
+                if fmt == "%m/%d":
+                    parsed = parsed.replace(year=date.today().year)
+                return parsed
             except ValueError:
-                pass
-        return date.today()
+                continue
+        return None
+
+    def _set_entry_value(self, value: str):
+        # Keep both the Entry widget and StringVar in sync for CTk consistency.
+        self.date_var.set(value)
+        self.entry.delete(0, "end")
+        self.entry.insert(0, value)
+
+    def _current_date(self) -> date:
+        parsed = self._parse_date(self._entry_raw())
+        return parsed if parsed else date.today()
 
     def set_today(self, offset_days: int):
         target = date.today()
@@ -59,26 +85,25 @@ class InlineDateDialog(ctk.CTkToplevel):
             target = increment_date(
                 target, offset_days, settings.include_saturday, settings.include_sunday
             )
-        self.date_var.set(target.isoformat())
+        self._set_entry_value(target.isoformat())
 
     def adjust(self, delta: int):
         settings = AppSettings.load()
         new_value = increment_date(
             self._current_date(), delta, settings.include_saturday, settings.include_sunday
         )
-        self.date_var.set(new_value.isoformat())
+        self._set_entry_value(new_value.isoformat())
 
     def clear(self):
-        self.date_var.set("")
+        self._set_entry_value("")
 
     def save(self):
-        raw = self.date_var.get().strip()
+        raw = self._entry_raw()
         if raw:
-            try:
-                raw = date.fromisoformat(raw).isoformat()
-            except ValueError:
+            parsed = self._parse_date(raw)
+            if not parsed:
                 return
-            self.result = raw
+            self.result = parsed.isoformat()
         else:
             self.result = None
         self.destroy()

@@ -14,6 +14,7 @@ from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from ..paths import app_data_dir_path
 from ..theme import button_style
+from .title_format import split_action_item_title, build_action_item_title
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -225,10 +226,17 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         row_l += 1
 
-        # Title
+        # Context + Title
+        ctk.CTkLabel(left_col, text="Context:").grid(row=row_l,
+                                                     column=0, sticky="w", padx=10, pady=5)
+        self.title_context_entry = ctk.CTkEntry(
+            left_col, width=320, placeholder_text="PW|LS|Blog - W8")
+        self.title_context_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
+        row_l += 1
+
         ctk.CTkLabel(left_col, text="* Title:").grid(row=row_l,
                                                      column=0, sticky="w", padx=10, pady=5)
-        self.title_entry = ctk.CTkEntry(left_col, width=320)
+        self.title_entry = ctk.CTkEntry(left_col, width=320, placeholder_text="write blog 3")
         self.title_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
@@ -762,7 +770,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.who_var.set(self.item.who)
         self.selected_contact_id = self.item.contact_id
-        self.title_entry.insert(0, self.item.title)
+        parsed = split_action_item_title(self.item.title)
+        if parsed.context:
+            self.title_context_entry.insert(0, parsed.context)
+        self.title_entry.insert(0, parsed.title or self.item.title)
 
         if self.item.description:
             self.description_text.insert("1.0", self.item.description)
@@ -1404,7 +1415,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Set fields
             item.who = self.who_var.get().strip()
             item.contact_id = self.selected_contact_id
-            item.title = self.title_entry.get().strip()
+            item.title = build_action_item_title(
+                self.title_context_entry.get(),
+                self.title_entry.get(),
+            ).strip()
             item.description = self.description_text.get(
                 "1.0", "end").strip() or None
             item.next_action = self.next_action_text.get(
@@ -1964,7 +1978,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
             # Set fields
             item.who = self.who_var.get().strip()
             item.contact_id = self.selected_contact_id
-            item.title = self.title_entry.get().strip()
+            item.title = build_action_item_title(
+                self.title_context_entry.get(),
+                self.title_entry.get(),
+            ).strip()
             item.description = self.description_text.get(
                 "1.0", "end").strip() or None
             item.next_action = self.next_action_text.get(

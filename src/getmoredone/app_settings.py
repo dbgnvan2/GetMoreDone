@@ -21,6 +21,7 @@ class AppSettings:
     completion_icon: str = "✓"
     appearance_mode: str = "dark"  # system | dark | light
     theme_name: str = "apple_grey"
+    list_row_font_size: int = 14
 
     # Timer settings
     default_time_block_minutes: int = 30
@@ -95,6 +96,9 @@ class AppSettings:
                     settings.appearance_mode)
                 settings.theme_name = cls._normalize_theme_name(
                     settings.theme_name)
+                settings.list_row_font_size = cls._normalize_list_row_font_size(
+                    getattr(settings, "list_row_font_size", 14)
+                )
                 return settings
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -108,6 +112,9 @@ class AppSettings:
         self.appearance_mode = self._normalize_appearance_mode(
             self.appearance_mode)
         self.theme_name = self._normalize_theme_name(self.theme_name)
+        self.list_row_font_size = self._normalize_list_row_font_size(
+            self.list_row_font_size
+        )
 
         # Ensure data directory exists
         settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -126,9 +133,17 @@ class AppSettings:
 
     @staticmethod
     def _normalize_theme_name(value: Optional[str]) -> str:
-        allowed = {"green", "orange", "pink", "grey", "apple_grey"}
+        allowed = {"green", "orange", "pink", "grey", "blue", "purple", "apple_grey", "black_white"}
         name = (value or "").strip().lower()
         return name if name in allowed else "apple_grey"
+
+    @staticmethod
+    def _normalize_list_row_font_size(value: Optional[int]) -> int:
+        try:
+            size = int(value)
+        except (TypeError, ValueError):
+            size = 14
+        return max(10, min(24, size))
 
     def validate_vault_path(self) -> bool:
         """Check if vault path exists."""

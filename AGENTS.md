@@ -62,3 +62,47 @@ PRs must satisfy:
 ## Rule of thumb
 
 If code behavior, UI text, CLI flags, or dependencies changed, docs and requirements must be updated in the same PR (or linked follow-up PR owned by Docs Agent).
+
+
+# GetMoreDone — UI Theme System (CustomTkinter)
+
+## Goal
+Implement a cohesive UI color system with low runtime overhead by:
+1) using CustomTkinter custom theme JSON for global widget defaults, and
+2) using a small set of semantic color tokens for UI states (selection, danger, etc.)
+
+## Tech constraints
+- UI framework: CustomTkinter.
+- Use CustomTkinter custom theme JSON files loaded via:
+  customtkinter.set_default_color_theme("path/to/theme.json")
+- Appearance mode values must be one of: "system", "dark", "light".
+
+## Theme architecture
+- Create /themes directory with >= 2 theme json files (e.g., graphite.json, ocean.json).
+- Add user settings:
+  - appearance_mode: "system" | "dark" | "light"
+  - theme_name: string mapped to a theme json path
+- On app startup:
+  - load AppSettings first
+  - call set_appearance_mode(settings.appearance_mode)
+  - call set_default_color_theme(path_for_theme_name)
+
+## Semantic color rules
+- Reduce color noise: only 1 “primary” color for main action emphasis.
+- “Success/Warning/Danger” colors are for status only (not decoration).
+- Segment/category colors from data (e.g., segment_descriptions.color_hex) are allowed ONLY for small accents (chip/stripe/icon), not full-row fills.
+
+## Refactor policy
+- No new hard-coded colors in widgets (hex or named colors) except:
+  - data-driven segment colors
+  - very rare one-off brand assets (must be centralized)
+- Replace existing hard-coded fg_color/hover_color/text_color with:
+  - theme defaults OR
+  - a small semantic style helper (e.g., ui/theme_tokens.py)
+
+## Definition of done
+1) Theme can be switched via Settings screen (and persists).
+2) Sidebar buttons no longer hard-code greens/teals; they follow theme.
+3) Row selection highlight is subtle (not a saturated full-row fill).
+4) Timer/Edit/Push button hierarchy is consistent (primary/secondary/ghost).
+5) Grep shows near-zero hard-coded color strings in UI code.
