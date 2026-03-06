@@ -110,54 +110,63 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_vps_planning.grid(row=5, column=0, padx=20, pady=10)
 
+        self.btn_vision_planning = ctk.CTkButton(
+            self.sidebar,
+            text="Vision Planning",
+            command=self.show_vision_planning,
+            fg_color="#5B2D8E",
+            hover_color="#7B4DBE"
+        )
+        self.btn_vision_planning.grid(row=6, column=0, padx=20, pady=10)
+
         self.btn_plan = ctk.CTkButton(
             self.sidebar,
             text="Plan",
             command=self.show_plan
         )
-        self.btn_plan.grid(row=6, column=0, padx=20, pady=10)
+        self.btn_plan.grid(row=7, column=0, padx=20, pady=10)
 
         self.btn_drag_schedule = ctk.CTkButton(
             self.sidebar,
             text="Drag Schedule",
             command=self.show_drag_schedule
         )
-        self.btn_drag_schedule.grid(row=7, column=0, padx=20, pady=10)
+        self.btn_drag_schedule.grid(row=8, column=0, padx=20, pady=10)
 
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
             command=self.show_completed
         )
-        self.btn_completed.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=9, column=0, padx=20, pady=10)
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
             text="Contacts",
             command=self.show_contacts
         )
-        self.btn_contacts.grid(row=9, column=0, padx=20, pady=10)
+        self.btn_contacts.grid(row=10, column=0, padx=20, pady=10)
 
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
             command=self.show_defaults
         )
-        self.btn_defaults.grid(row=10, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=11, column=0, padx=20, pady=10)
 
         self.btn_stats = ctk.CTkButton(
             self.sidebar,
             text="Stats",
             command=self.show_stats
         )
-        self.btn_stats.grid(row=11, column=0, padx=20, pady=10)
+        self.btn_stats.grid(row=12, column=0, padx=20, pady=10)
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
             text="Settings",
             command=self.show_settings
         )
-        self.btn_settings.grid(row=12, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=13, column=0, padx=20, pady=10)
 
         self.btn_vision_planning_hub = ctk.CTkButton(
             self.sidebar,
@@ -207,6 +216,13 @@ class GetMoreDoneApp(ctk.CTk):
         from .screens.vps_planning import VPSPlanningScreen
         self.clear_content()
         self.current_screen = VPSPlanningScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_vision_planning(self):
+        """Show Vision Planning screen."""
+        from .screens.vision_planning import VisionPlanningScreen
+        self.clear_content()
+        self.current_screen = VisionPlanningScreen(self.content_frame, self.vps_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_plan(self):

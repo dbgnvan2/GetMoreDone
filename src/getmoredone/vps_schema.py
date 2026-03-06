@@ -203,6 +203,34 @@ class VPSSchema:
         VPSSchema._extend_week_actions(conn)
 
         # ========================================================================
+        # VISION_SEGMENTS (Master list: Segment/SubSegment/Category elements)
+        # ========================================================================
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS vision_segments (
+                id          TEXT PRIMARY KEY,
+                segment_id  TEXT REFERENCES segment_descriptions(id) ON DELETE CASCADE,
+                subsegment  TEXT NOT NULL,
+                category    TEXT NOT NULL,
+                order_index INTEGER DEFAULT 0,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT NOT NULL
+            )
+        """)
+
+        # ========================================================================
+        # ANNUAL_VISION_SEGMENT_ITEMS (Which vision segments are assigned to a year)
+        # ========================================================================
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS annual_vision_segment_items (
+                id                TEXT PRIMARY KEY,
+                vision_segment_id TEXT NOT NULL REFERENCES vision_segments(id) ON DELETE CASCADE,
+                year              INTEGER NOT NULL,
+                created_at        TEXT NOT NULL,
+                UNIQUE(vision_segment_id, year)
+            )
+        """)
+
+        # ========================================================================
         # HABIT_TRACKING (Daily completion tracking for habits)
         # ========================================================================
         conn.execute("""
@@ -433,6 +461,26 @@ class VPSSchema:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_action_items_habit
             ON action_items(is_habit) WHERE is_habit = 1
+        """)
+
+        # Vision Segments
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_segments_segment
+            ON vision_segments(segment_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_vision_segments_order
+            ON vision_segments(order_index)
+        """)
+
+        # Annual Vision Segment Items
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_vision_segment_items_year
+            ON annual_vision_segment_items(year)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_annual_vision_segment_items_vs
+            ON annual_vision_segment_items(vision_segment_id)
         """)
 
         # Habit Tracking
