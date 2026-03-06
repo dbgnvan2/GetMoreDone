@@ -179,7 +179,7 @@ class VisionPlanningScreen(ctk.CTkFrame):
         self.tabview = ctk.CTkTabview(self)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
 
-        tab_vs = self.tabview.add("Vision Segments")
+        tab_vs = self.tabview.add("Vision Elements")
         tab_avs = self.tabview.add("Annual Vision Segments")
         tab_ape_a = self.tabview.add("APE Assignment")
         tab_ape_p = self.tabview.add("APE Period View")
@@ -205,7 +205,7 @@ class VisionPlanningScreen(ctk.CTkFrame):
             self._load_all_vision_elements()
 
     # ------------------------------------------------------------------
-    # Vision Segments tab
+    # Vision Elements tab
     # ------------------------------------------------------------------
 
     def _build_vision_segments_tab(self, parent):
@@ -216,7 +216,7 @@ class VisionPlanningScreen(ctk.CTkFrame):
         toolbar = ctk.CTkFrame(parent)
         toolbar.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 0))
         ctk.CTkLabel(
-            toolbar, text="Vision Segments",
+            toolbar, text="Vision Elements",
             font=ctk.CTkFont(size=15, weight="bold")
         ).pack(side="left", padx=10, pady=8)
         ctk.CTkButton(
