@@ -46,6 +46,7 @@ class VPSManager:
         self.db_manager = db_manager if db_manager else DatabaseManager(
             db_path)
         self.sync_vision_segments_with_settings()
+        self.sync_vision_elements_with_taxonomy()
 
     def close(self):
         """Close database connection."""
@@ -135,6 +136,85 @@ class VPSManager:
     # VISION ELEMENTS (Segment > SubSegment > Category)
     # ========================================================================
 
+    def sync_vision_elements_with_taxonomy(self):
+        """Ensure every Segment/SubSegment/Category row has a Vision Element key row."""
+        rows = self.db.conn.execute(
+            """
+            SELECT
+                s.id AS segment_id,
+                s.name AS segment_name,
+                ss.id AS subsegment_id,
+                ss.name AS subsegment_name,
+                c.id AS category_id,
+                c.name AS category_name
+            FROM vision_categories c
+            JOIN vision_subsegments ss ON ss.id = c.subsegment_id
+            JOIN vision_segments s ON s.id = ss.segment_id
+            ORDER BY s.name COLLATE NOCASE ASC, ss.name COLLATE NOCASE ASC, c.name COLLATE NOCASE ASC
+            """
+        ).fetchall()
+
+        now = datetime.now().isoformat()
+        changed = False
+        for row in rows:
+            key_field = f"{row['segment_name']}|{row['subsegment_name']}|{row['category_name']}"
+            existing = self.db.conn.execute(
+                """
+                SELECT id, key_field FROM vision_elements
+                WHERE category_id = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (row["category_id"],),
+            ).fetchone()
+            if existing:
+                if (existing["key_field"] or "") != key_field:
+                    conflict = self.db.conn.execute(
+                        "SELECT id FROM vision_elements WHERE key_field = ? AND id <> ?",
+                        (key_field, existing["id"]),
+                    ).fetchone()
+                    if not conflict:
+                        self.db.conn.execute(
+                            """
+                            UPDATE vision_elements
+                            SET segment_id = ?, subsegment_id = ?, category_id = ?, key_field = ?, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (
+                                row["segment_id"],
+                                row["subsegment_id"],
+                                row["category_id"],
+                                key_field,
+                                now,
+                                existing["id"],
+                            ),
+                        )
+                        self._sync_vision_element_derived_fields(existing["id"])
+                        changed = True
+                continue
+
+            self.db.conn.execute(
+                """
+                INSERT INTO vision_elements
+                (id, segment_id, subsegment_id, category_id, key_field, vision_text, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    f"ve-{uuid4().hex[:8]}",
+                    row["segment_id"],
+                    row["subsegment_id"],
+                    row["category_id"],
+                    key_field,
+                    "",
+                    now,
+                    now,
+                ),
+            )
+            changed = True
+
+        if changed:
+            self.db.conn.commit()
+
     def get_vision_segments(self) -> List[Dict[str, Any]]:
         self.sync_vision_segments_with_settings()
         cursor = self.db.conn.execute(
@@ -219,7 +299,7 @@ class VPSManager:
         ).fetchone()
         if not settings_row:
             raise ValueError(
-                f"Segment '{norm}' does not exist in Vision Segments. Create it in VPS Plan -> Vision Segments first."
+                f"Segment '{norm}' does not exist in Vision Elements. Create it in VPS Plan -> Vision Elements first."
             )
         norm = settings_row["name"]
         row = self.db.conn.execute(
@@ -322,7 +402,7 @@ class VPSManager:
         if not sub_id:
             raise ValueError(
                 f"SubSegment '{subsegment_name}' does not exist under '{segment_name}'. "
-                "Create it in VPS Plan -> Vision Segments first."
+                "Create it in VPS Plan -> Vision Elements first."
             )
         cat_id = self._create_or_get_vision_category(sub_id, category_name)
 
@@ -357,6 +437,7 @@ class VPSManager:
         return cur.rowcount > 0
 
     def get_vision_elements(self) -> List[Dict[str, Any]]:
+        self.sync_vision_elements_with_taxonomy()
         cursor = self.db.conn.execute("""
             SELECT
                 ve.id,
@@ -408,7 +489,7 @@ class VPSManager:
         if not sub_id:
             raise ValueError(
                 f"SubSegment '{subsegment_name}' does not exist under '{segment_name}'. "
-                "Create it in VPS Plan -> Vision Segments first."
+                "Create it in VPS Plan -> Vision Elements first."
             )
         cat_id = self._create_or_get_vision_category(sub_id, category_name)
         key_field = f"{segment_name}|{subsegment_name}|{category_name}"
@@ -953,6 +1034,7 @@ class VPSManager:
         return {"annual_vision_element_id": ave_id, "annual_plan_element_id": ape_id}
 
     def get_annual_vision_elements(self, year: int) -> List[Dict[str, Any]]:
+        self.sync_vision_elements_with_taxonomy()
         cursor = self.db.conn.execute("""
             SELECT * FROM annual_vision_elements
             WHERE year = ?

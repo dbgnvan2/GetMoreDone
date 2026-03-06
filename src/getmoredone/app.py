@@ -381,11 +381,15 @@ class GetMoreDoneApp(ctk.CTk):
         self._set_active_nav("vision_planning")
 
     def show_annual_vision_segments(self):
-        """Show Annual Vision Segments screen."""
+        """Show Annual Vision Elements screen."""
         from .screens.annual_vision_segments import AnnualVisionSegmentsScreen
         self.clear_content()
         self.current_screen = AnnualVisionSegmentsScreen(self.content_frame, self.vps_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_annual_vision_elements(self):
+        """Compatibility alias for Annual Vision Elements navigation."""
+        self.show_annual_vision_segments()
 
     def show_ape_assignment(self):
         """Show APE Assignment screen."""

@@ -1,4 +1,4 @@
-"""Annual Vision Segments screen with drag/drop from Vision Elements."""
+"""Annual Vision Elements screen with drag/drop from Vision Elements."""
 
 import customtkinter as ctk
 from tkinter import messagebox
@@ -46,7 +46,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         header.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         header.grid_columnconfigure(6, weight=1)
 
-        ctk.CTkLabel(header, text="Annual Vision Segments", font=ctk.CTkFont(size=22, weight="bold")).grid(
+        ctk.CTkLabel(header, text="Annual Vision Elements", font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, padx=8, pady=8, sticky="w"
         )
         ctk.CTkLabel(header, text="Year:").grid(row=0, column=1, padx=(18, 4), pady=8)

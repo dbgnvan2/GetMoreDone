@@ -43,7 +43,7 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
 
         ctk.CTkLabel(
             header,
-            text="Unified workspace for vision elements, annual segments, APE planning, and APE weekly execution",
+            text="Unified workspace for vision elements, annual vision elements, APE planning, and APE weekly execution",
             text_color=palette["muted_text"],
         ).grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
 
@@ -51,8 +51,8 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
         nav.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
 
         buttons = [
-            ("Vision Segments", "vision_segments"),
-            ("Annual Vision Segments", "annual_vision_segments"),
+            ("Vision Elements", "vision_segments"),
+            ("Annual Vision Elements", "annual_vision_segments"),
             ("APE Assignment", "ape_assignment"),
             ("APE Period View", "ape_period_view"),
             ("APE Weekly", "ape_weekly"),

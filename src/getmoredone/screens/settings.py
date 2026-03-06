@@ -91,7 +91,7 @@ class SettingsScreen(ctk.CTkFrame):
         email_tab.grid_columnconfigure(0, weight=1)
         self.create_email_import_section(email_tab)
 
-        # VPS segment management moved into VPS Plan -> Vision Segments.
+        # VPS segment management moved into VPS Plan -> Vision Elements.
 
     def create_database_section(self, parent=None):
         """Create database management section."""
