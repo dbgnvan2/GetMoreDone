@@ -21,6 +21,8 @@ data/
 *$py.class
 *.db
 *.json
+!themes/
+!themes/*.json
 .DS_Store
 
 # Ignore specific duplicate/temp files

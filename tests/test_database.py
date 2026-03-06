@@ -9,7 +9,8 @@ from datetime import datetime
 
 from src.getmoredone.database import Database
 from src.getmoredone.db_manager import DatabaseManager
-from src.getmoredone.models import ActionItem, Defaults, PriorityFactors
+from src.getmoredone.models import ActionItem, Contact, Defaults, PriorityFactors
+from src.getmoredone.paths import resolve_db_path
 
 
 @pytest.fixture
@@ -391,6 +392,32 @@ def test_push_item_without_dates(temp_db):
     assert updated_item is not None
     assert updated_item.start_date is None
     assert updated_item.due_date is None
+
+
+def test_resolve_db_path_keeps_memory_token():
+    """':memory:' should stay in-memory, not resolve to a filesystem path."""
+    assert resolve_db_path(":memory:") == ":memory:"
+
+
+def test_resolve_db_path_keeps_memory_uri():
+    """SQLite memory URIs should be preserved as-is."""
+    uri = "file::memory:?cache=shared"
+    assert resolve_db_path(uri) == uri
+
+
+def test_memory_databases_are_isolated_between_managers():
+    """Two :memory: managers should not share persisted data."""
+    db1 = DatabaseManager(":memory:")
+    try:
+        db1.create_contact(Contact(name="Isolated Contact"))
+    finally:
+        db1.close()
+
+    db2 = DatabaseManager(":memory:")
+    try:
+        assert db2.get_contact_by_name("Isolated Contact") is None
+    finally:
+        db2.close()
 
 
 if __name__ == "__main__":

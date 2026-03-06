@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from tkinter import messagebox
 
+from ..color_contrast import pick_text_color
 from ..widgets.date_picker import DatePickerButton
 
 if TYPE_CHECKING:
@@ -64,6 +65,7 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
                 main_frame,
                 text=segment['name'],
                 fg_color=segment['color_hex'],
+                text_color=pick_text_color(segment['color_hex']),
                 corner_radius=5
             ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
             row += 1
@@ -240,12 +242,12 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
 class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing Quarter Initiatives."""
 
-    def __init__(self, parent, vps_manager: 'VPSManager', annual_plan_id: str,
+    def __init__(self, parent, vps_manager: 'VPSManager', annual_initiative_id: str,
                  segment_id: str, initiative_id: Optional[str] = None):
         super().__init__(parent)
 
         self.vps_manager = vps_manager
-        self.annual_plan_id = annual_plan_id
+        self.annual_initiative_id = annual_initiative_id
         self.segment_id = segment_id
         self.initiative_id = initiative_id
         self.initiative = None
@@ -280,15 +282,16 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
 
         row = 0
 
-        # Quarter
-        ctk.CTkLabel(main_frame, text="Quarter:", font=ctk.CTkFont(weight="bold")).grid(
+        # Qtr Number
+        ctk.CTkLabel(main_frame, text="Qtr Number:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.quarter_var = ctk.StringVar(value="1")
         self.quarter_combo = ctk.CTkComboBox(
             main_frame,
             values=["1", "2", "3", "4"],
-            variable=self.quarter_var
+            variable=self.quarter_var,
+            command=lambda _val: self._refresh_auto_title()
         )
         self.quarter_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
@@ -309,8 +312,9 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
             row=row, column=0, sticky="w", padx=10, pady=5
         )
         self.title_entry = ctk.CTkEntry(
-            main_frame, placeholder_text="Initiative name")
+            main_frame, placeholder_text="Auto-generated from Annual Initiative")
         self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.title_entry.configure(state="readonly")
         row += 1
 
         # Outcome Statement
@@ -341,6 +345,7 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                           sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid_columnconfigure(2, weight=1)
 
         btn_save = ctk.CTkButton(
             button_frame, text="Save", command=self.save_initiative)
@@ -349,6 +354,16 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         btn_cancel = ctk.CTkButton(
             button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
+
+        # Pre-fill defaults for new records
+        if not self.initiative_id:
+            next_q = self.vps_manager.get_next_quarter_for_annual_initiative(
+                self.annual_initiative_id
+            )
+            self.quarter_var.set(str(next_q["quarter"]))
+            self.year_entry.delete(0, "end")
+            self.year_entry.insert(0, str(next_q["year"]))
+            self._refresh_auto_title()
 
     def load_initiative_data(self):
         """Load existing initiative data into form."""
@@ -366,6 +381,24 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
         if self.initiative['status']:
             self.status_var.set(self.initiative['status'])
 
+    def _refresh_auto_title(self):
+        """Auto-generate title for new quarter initiatives."""
+        if self.initiative_id:
+            return
+
+        annual_initiative = self.vps_manager.get_annual_initiative(
+            self.annual_initiative_id)
+        prefix = "Annual Initiative"
+        if annual_initiative and annual_initiative.get("title"):
+            prefix = annual_initiative["title"].strip() or prefix
+        quarter = self.quarter_var.get().strip() or "1"
+        auto_title = f"{prefix} Q{quarter}"
+
+        self.title_entry.configure(state="normal")
+        self.title_entry.delete(0, "end")
+        self.title_entry.insert(0, auto_title)
+        self.title_entry.configure(state="readonly")
+
     def save_initiative(self):
         """Validate and save the initiative."""
         # Get values
@@ -376,8 +409,6 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
             return
 
         title = self.title_entry.get().strip()
-        if not title:
-            return
 
         outcome_statement = self.outcome_text.get("1.0", "end-1c").strip()
         status = self.status_var.get()
@@ -396,12 +427,19 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                 )
             else:
                 # Create new
+                annual_initiative = self.vps_manager.get_annual_initiative(
+                    self.annual_initiative_id)
+                if not annual_initiative:
+                    messagebox.showerror(
+                        "Error", "Annual Initiative not found.")
+                    return
                 self.vps_manager.create_quarter_initiative(
-                    annual_plan_id=self.annual_plan_id,
+                    annual_initiative_id=self.annual_initiative_id,
                     segment_description_id=self.segment_id,
                     quarter=quarter,
                     year=year,
                     title=title,
+                    auto_create_chain=True,
                     outcome_statement=outcome_statement
                 )
 
@@ -465,6 +503,7 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
                 main_frame,
                 text=segment['name'],
                 fg_color=segment['color_hex'],
+                text_color=pick_text_color(segment['color_hex']),
                 corner_radius=5
             ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
             row += 1
@@ -651,6 +690,7 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
                 main_frame,
                 text=segment['name'],
                 fg_color=segment['color_hex'],
+                text_color=pick_text_color(segment['color_hex']),
                 corner_radius=5
             ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
             row += 1
@@ -781,6 +821,163 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             )
 
 
+class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
+    """Dialog for creating/editing Annual Initiatives."""
+
+    def __init__(self, parent, vps_manager: 'VPSManager', annual_plan_id: str,
+                 segment_id: str, initiative_id: Optional[str] = None):
+        super().__init__(parent)
+
+        self.vps_manager = vps_manager
+        self.annual_plan_id = annual_plan_id
+        self.segment_id = segment_id
+        self.initiative_id = initiative_id
+        self.initiative = None
+
+        if initiative_id:
+            self.initiative = vps_manager.get_annual_initiative(initiative_id)
+            self.title("Edit Annual Initiative")
+        else:
+            self.title("New Annual Initiative")
+
+        self.geometry("600x500")
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self.create_form()
+
+        if self.initiative:
+            self.load_initiative_data()
+
+        self.transient(parent)
+        self.grab_set()
+
+    def create_form(self):
+        """Create the form layout."""
+        main_frame = ctk.CTkFrame(self)
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        main_frame.grid_columnconfigure(1, weight=1)
+
+        row = 0
+
+        ctk.CTkLabel(main_frame, text="Year:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=5
+        )
+        current_year = datetime.now().year
+        self.year_entry = ctk.CTkEntry(
+            main_frame, placeholder_text=str(current_year))
+        self.year_entry.insert(0, str(current_year))
+        self.year_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        ctk.CTkLabel(main_frame, text="Title:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=5
+        )
+        self.title_entry = ctk.CTkEntry(
+            main_frame, placeholder_text="Annual initiative title")
+        self.title_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        ctk.CTkLabel(main_frame, text="Outcome Statement:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="nw", padx=10, pady=5
+        )
+        self.outcome_text = ctk.CTkTextbox(main_frame, height=120)
+        self.outcome_text.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        ctk.CTkLabel(main_frame, text="Description:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="nw", padx=10, pady=5
+        )
+        self.description_text = ctk.CTkTextbox(main_frame, height=120)
+        self.description_text.grid(
+            row=row, column=1, sticky="ew", padx=10, pady=5)
+        row += 1
+
+        ctk.CTkLabel(main_frame, text="Status:", font=ctk.CTkFont(weight="bold")).grid(
+            row=row, column=0, sticky="w", padx=10, pady=5
+        )
+        self.status_var = ctk.StringVar(value="not_started")
+        self.status_combo = ctk.CTkComboBox(
+            main_frame,
+            values=["not_started", "in_progress", "at_risk",
+                    "completed", "on_hold", "cancelled"],
+            variable=self.status_var
+        )
+        self.status_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
+        row += 1
+
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.grid(row=row, column=0, columnspan=2,
+                          sticky="ew", padx=10, pady=10)
+        button_frame.grid_columnconfigure(0, weight=1)
+        button_frame.grid_columnconfigure(1, weight=1)
+
+        btn_save = ctk.CTkButton(
+            button_frame, text="Save", command=self.save_initiative)
+        btn_save.grid(row=0, column=0, padx=5, pady=5)
+
+        btn_cancel = ctk.CTkButton(
+            button_frame, text="Cancel", command=self.destroy)
+        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
+
+    def load_initiative_data(self):
+        """Load existing initiative data into form."""
+        if not self.initiative:
+            return
+
+        self.year_entry.delete(0, "end")
+        self.year_entry.insert(0, str(self.initiative['year']))
+        if self.initiative.get('title'):
+            self.title_entry.insert(0, self.initiative['title'])
+        if self.initiative.get('outcome_statement'):
+            self.outcome_text.insert("1.0", self.initiative['outcome_statement'])
+        if self.initiative.get('description'):
+            self.description_text.insert("1.0", self.initiative['description'])
+        if self.initiative.get('status'):
+            self.status_var.set(self.initiative['status'])
+
+    def save_initiative(self):
+        """Validate and save the annual initiative."""
+        try:
+            year = int(self.year_entry.get().strip())
+        except ValueError:
+            messagebox.showerror("Validation Error", "Year must be a valid integer")
+            return
+
+        title = self.title_entry.get().strip()
+        if not title:
+            messagebox.showerror("Validation Error", "Title is required")
+            return
+
+        outcome_statement = self.outcome_text.get("1.0", "end-1c").strip()
+        description = self.description_text.get("1.0", "end-1c").strip()
+        status = self.status_var.get()
+
+        try:
+            if self.initiative_id:
+                self.vps_manager.update_annual_initiative(
+                    self.initiative_id,
+                    year=year,
+                    title=title,
+                    outcome_statement=outcome_statement,
+                    description=description,
+                    status=status
+                )
+            else:
+                self.vps_manager.create_annual_initiative(
+                    annual_plan_id=self.annual_plan_id,
+                    segment_description_id=self.segment_id,
+                    year=year,
+                    title=title,
+                    description=description,
+                    outcome_statement=outcome_statement
+                )
+
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save annual initiative: {e}")
+
+
 class MonthTacticEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing Month Tactics."""
 
@@ -833,7 +1030,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
             main_frame,
             values=["1", "2", "3", "4", "5", "6",
                     "7", "8", "9", "10", "11", "12"],
-            variable=self.month_var
+            variable=self.month_var,
+            command=lambda _val: self._refresh_auto_focus()
         )
         self.month_combo.grid(row=row, column=1, sticky="w", padx=10, pady=5)
         row += 1
@@ -856,6 +1054,7 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         self.focus_entry = ctk.CTkEntry(
             main_frame, placeholder_text="Main focus for the month")
         self.focus_entry.grid(row=row, column=1, sticky="ew", padx=10, pady=5)
+        self.focus_entry.configure(state="readonly")
         row += 1
 
         # Detailed Description
@@ -882,6 +1081,15 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
             button_frame, text="Cancel", command=self.destroy)
         btn_cancel.grid(row=0, column=1, padx=5, pady=5)
 
+        if not self.tactic_id:
+            next_month = self.vps_manager.get_next_month_for_quarter_initiative(
+                self.quarter_initiative_id
+            )
+            self.month_var.set(str(next_month["month"]))
+            self.year_entry.delete(0, "end")
+            self.year_entry.insert(0, str(next_month["year"]))
+            self._refresh_auto_focus()
+
     def load_tactic_data(self):
         """Load existing tactic data into form."""
         if not self.tactic:
@@ -891,9 +1099,30 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
         self.year_entry.delete(0, "end")
         self.year_entry.insert(0, str(self.tactic['year']))
         if self.tactic['priority_focus']:
+            self.focus_entry.configure(state="normal")
             self.focus_entry.insert(0, self.tactic['priority_focus'])
+            self.focus_entry.configure(state="readonly")
         if self.tactic['description']:
             self.description_text.insert("1.0", self.tactic['description'])
+
+    def _refresh_auto_focus(self):
+        """Auto-generate month focus for new records."""
+        if self.tactic_id:
+            return
+
+        quarter_initiative = self.vps_manager.get_quarter_initiative(
+            self.quarter_initiative_id
+        )
+        prefix = "Quarter"
+        if quarter_initiative and quarter_initiative.get("title"):
+            prefix = quarter_initiative["title"].strip() or prefix
+
+        month = self.month_var.get().strip() or "1"
+        auto_focus = f"{prefix} M{month}"
+        self.focus_entry.configure(state="normal")
+        self.focus_entry.delete(0, "end")
+        self.focus_entry.insert(0, auto_focus)
+        self.focus_entry.configure(state="readonly")
 
     def save_tactic(self):
         """Validate and save the tactic."""
@@ -929,7 +1158,8 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
                     month=month,
                     year=year,
                     priority_focus=priority_focus,
-                    description=description
+                    description=description,
+                    auto_create_weeks=True
                 )
 
             # Close dialog
@@ -1064,14 +1294,19 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                           sticky="ew", padx=10, pady=10)
         button_frame.grid_columnconfigure(0, weight=1)
         button_frame.grid_columnconfigure(1, weight=1)
+        button_frame.grid_columnconfigure(2, weight=1)
 
         btn_save = ctk.CTkButton(
             button_frame, text="Save", command=self.save_action)
         btn_save.grid(row=0, column=0, padx=5, pady=5)
 
+        btn_create_next_actions = ctk.CTkButton(
+            button_frame, text="Create Next Actions", command=self.create_next_actions)
+        btn_create_next_actions.grid(row=0, column=1, padx=5, pady=5)
+
         btn_cancel = ctk.CTkButton(
             button_frame, text="Cancel", command=self.destroy)
-        btn_cancel.grid(row=0, column=1, padx=5, pady=5)
+        btn_cancel.grid(row=0, column=2, padx=5, pady=5)
 
     def load_action_data(self):
         """Load existing action data into form."""
@@ -1099,15 +1334,17 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             if key_result_value:
                 self.key_result_entries[i-1].insert(0, key_result_value)
 
-    def save_action(self):
-        """Validate and save the action."""
+    def _save_action(self, close_on_success: bool = True) -> Optional[str]:
+        """Validate and save the week action and optionally close."""
         # Get values
         week_start = self.week_start_picker.get_date()
         week_end = self.week_end_picker.get_date()
         title = self.title_entry.get().strip()
 
         if not (week_start and week_end and title):
-            return
+            messagebox.showerror(
+                "Validation Error", "Week start, week end, and title are required.")
+            return None
 
         description = self.description_text.get("1.0", "end-1c").strip()
         outcome = self.outcome_text.get("1.0", "end-1c").strip()
@@ -1135,9 +1372,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                     **steps,
                     **key_results
                 )
-                # Auto-create Action Items from non-blank Steps (idempotent - won't create duplicates)
-                self.vps_manager.auto_create_action_items_from_steps(
-                    self.action_id)
+                saved_id = self.action_id
             else:
                 # Create new
                 action_id = self.vps_manager.create_week_action(
@@ -1151,12 +1386,64 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
                     **steps,
                     **key_results
                 )
+                self.action_id = action_id
+                saved_id = action_id
 
-                # Auto-create Action Items from non-blank Steps
-                self.vps_manager.auto_create_action_items_from_steps(action_id)
-
-            # Close dialog
-            self.destroy()
+            if close_on_success:
+                self.destroy()
+            return saved_id
 
         except Exception as e:
-            print(f"Error saving week action: {e}")
+            messagebox.showerror("Error", f"Error saving week action: {e}")
+            return None
+
+    def save_action(self):
+        """Save and close."""
+        self._save_action(close_on_success=True)
+
+    def create_next_actions(self):
+        """Create 1-5 linked Action Items from this weekly tactic."""
+        action_id = self._save_action(close_on_success=False)
+        if not action_id:
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Create Next Actions")
+        dialog.geometry("500x380")
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            dialog,
+            text="Enter up to 5 action titles (one per line):",
+            font=ctk.CTkFont(weight="bold")
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(12, 6))
+
+        txt_actions = ctk.CTkTextbox(dialog, height=220)
+        txt_actions.grid(row=1, column=0, sticky="nsew", padx=12, pady=6)
+
+        btn_frame = ctk.CTkFrame(dialog)
+        btn_frame.grid(row=2, column=0, sticky="ew", padx=12, pady=10)
+        btn_frame.grid_columnconfigure((0, 1), weight=1)
+
+        def on_create():
+            raw = txt_actions.get("1.0", "end-1c")
+            titles = [line.strip() for line in raw.splitlines() if line.strip()][:5]
+            if not titles:
+                messagebox.showerror(
+                    "Validation Error", "Please enter at least one action title.")
+                return
+
+            created = self.vps_manager.create_action_items_for_week_action(
+                action_id, titles)
+            messagebox.showinfo(
+                "Next Actions Created",
+                f"Created {len(created)} action item(s)."
+            )
+            dialog.destroy()
+
+        ctk.CTkButton(btn_frame, text="Create", command=on_create).grid(
+            row=0, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="Cancel", command=dialog.destroy).grid(
+            row=0, column=1, padx=5, pady=5)

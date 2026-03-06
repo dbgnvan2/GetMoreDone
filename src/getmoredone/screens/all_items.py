@@ -7,6 +7,17 @@ from typing import TYPE_CHECKING
 
 from ..models import Status
 from ..app_settings import AppSettings
+from ..color_contrast import pick_text_color
+from .segment_color_utils import resolve_segment_color_for_item
+from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from .inline_editors import InlineDateDialog, InlinePriorityDialog
+from .title_format import (
+    split_action_item_title,
+    format_column_text,
+    TITLE_COL_CHARS,
+    CONTEXT_COL_CHARS,
+    CONTACT_COL_CHARS,
+)
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -21,9 +32,15 @@ class AllItemsScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -68,6 +85,7 @@ class AllItemsScreen(ctk.CTkFrame):
             header,
             text="Search",
             width=80,
+            **button_style("secondary"),
             command=self.perform_search
         )
         btn_search.grid(row=0, column=2, padx=5, pady=10)
@@ -95,6 +113,12 @@ class AllItemsScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
+            fg_color="white",
+            text_color="black",
+            button_color="white",
+            button_hover_color="white",
+            dropdown_fg_color="white",
+            dropdown_text_color="black",
             command=lambda _: self.refresh()
         )
         self.who_combo.grid(row=0, column=6, padx=5, pady=10)
@@ -104,6 +128,7 @@ class AllItemsScreen(ctk.CTkFrame):
             header,
             text="Collapse" if self.columns_expanded else "Expand",
             width=100,
+            **button_style("secondary"),
             command=self.toggle_columns
         )
         self.expand_collapse_btn.grid(row=0, column=8, padx=5, pady=10)
@@ -112,6 +137,7 @@ class AllItemsScreen(ctk.CTkFrame):
         btn_new = ctk.CTkButton(
             header,
             text="+ New Item",
+            **button_style("primary"),
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=9, padx=10, pady=10)
@@ -130,6 +156,7 @@ class AllItemsScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the list of items."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -138,6 +165,13 @@ class AllItemsScreen(ctk.CTkFrame):
             # Clear current items
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
+
+            # Refresh VPS segment color cache
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
 
             # Get filters
             status_filter = None if self.status_var.get() == "all" else self.status_var.get()
@@ -170,14 +204,14 @@ class AllItemsScreen(ctk.CTkFrame):
                 return
 
             # Create table header
-            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+            header_frame = ctk.CTkFrame(self.scroll_frame, fg_color=self.palette["surface_subtle"])
             header_frame.grid(row=0, column=0, sticky="ew",
                               pady=(0, 5), padx=5)
             header_frame.grid_columnconfigure(1, weight=1)
 
-            headers = ["✓", "Title", "Who", "Start", "Due",
+            headers = ["✓", "Immediate Step", "Context", "Who", "Start", "Due",
                        "Priority", "Est. Time", "Status", "Actions"]
-            col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0]
+            col_weights = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
 
             for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
                 header_frame.grid_columnconfigure(col, weight=weight)
@@ -188,17 +222,30 @@ class AllItemsScreen(ctk.CTkFrame):
                 ).grid(row=0, column=col, padx=5, pady=5, sticky="w")
 
             # Create item rows
+            palette = self.palette
             for idx, item in enumerate(items, start=1):
-                # Background colors: grey for completed, red for critical open items
-                if item.status == Status.COMPLETED:
-                    bg_color = "gray30"
+                segment_color = resolve_segment_color_for_item(
+                    item,
+                    self.segment_colors_by_id,
+                    self.segment_colors_by_name,
+                    self.db_manager,
+                    self._parent_segment_cache,
+                    self._ape_segment_cache,
+                    self._week_action_segment_cache,
+                )
+                if segment_color:
+                    bg_color = segment_color
+                elif item.status == Status.COMPLETED:
+                    bg_color = palette["success_tint"]
                 elif item.importance == 20 or item.urgency == 20:
-                    bg_color = "darkred"
+                    bg_color = palette["critical_tint"]
                 else:
                     bg_color = None
                 item_frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+                apply_segment_accent(item_frame, segment_color)
                 item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
                 item_frame.grid_columnconfigure(1, weight=1)
+                parsed = split_action_item_title(item.title)
 
                 # Checkbox
                 if item.status == Status.OPEN:
@@ -215,16 +262,37 @@ class AllItemsScreen(ctk.CTkFrame):
                     ctk.CTkLabel(item_frame, text="✓").grid(
                         row=0, column=0, padx=5, pady=5)
 
-                # Title
+                # Context
+                title_label = ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(parsed.title, TITLE_COL_CHARS),
+                    width=300,
+                    anchor="w",
+                    text_color="black",
+                    font=list_row_font()
+                )
+                title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+                # Context
                 ctk.CTkLabel(
                     item_frame,
-                    text=item.title,
-                    anchor="w"
-                ).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                    text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
+                    width=140,
+                    anchor="w",
+                    text_color="black",
+                    font=list_row_font()
+                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
                 # Who
-                ctk.CTkLabel(item_frame, text=item.who, width=100).grid(
-                    row=0, column=2, padx=5, pady=5)
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(item.who, CONTACT_COL_CHARS),
+                    width=100,
+                    text_color="black",
+                    font=list_row_font(),
+                ).grid(
+                    row=0, column=3, padx=5, pady=5)
 
                 # Start date
                 start_text = item.start_date or "-"
@@ -235,12 +303,15 @@ class AllItemsScreen(ctk.CTkFrame):
                         start_text = dt.strftime("%m/%d")
                     except:
                         pass
-                ctk.CTkLabel(
+                start_label = ctk.CTkLabel(
                     item_frame,
                     text=start_text,
                     width=60,
-                    text_color="lightblue"
-                ).grid(row=0, column=3, padx=5, pady=5)
+                    text_color="black",
+                    font=list_row_font()
+                )
+                start_label.grid(row=0, column=4, padx=5, pady=5)
+                start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
                 # Due date
                 due_text = item.due_date or "-"
@@ -251,19 +322,29 @@ class AllItemsScreen(ctk.CTkFrame):
                         due_text = dt.strftime("%m/%d")
                     except:
                         pass
-                ctk.CTkLabel(
+                due_label = ctk.CTkLabel(
                     item_frame,
                     text=due_text,
                     width=60,
-                    text_color="orange"
-                ).grid(row=0, column=4, padx=5, pady=5)
+                    text_color="black",
+                    font=list_row_font()
+                )
+                due_label.grid(row=0, column=5, padx=5, pady=5)
+                due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
                 # Priority
-                ctk.CTkLabel(
+                is_priority_critical = item.importance == 20 or item.urgency == 20
+                priority_label = ctk.CTkLabel(
                     item_frame,
                     text=str(item.priority_score),
-                    width=80
-                ).grid(row=0, column=5, padx=5, pady=5)
+                    width=80,
+                    fg_color=palette["danger"] if is_priority_critical else "transparent",
+                    text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+                    corner_radius=6 if is_priority_critical else 0,
+                    font=list_row_font(),
+                )
+                priority_label.grid(row=0, column=6, padx=5, pady=5)
+                priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
                 # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
                 time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -271,61 +352,59 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=time_text,
                     width=60,
-                    text_color="lightyellow"
-                ).grid(row=0, column=6, padx=5, pady=5)
+                    text_color="black",
+                    font=list_row_font()
+                ).grid(row=0, column=7, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
                     factors_frame = ctk.CTkFrame(
                         item_frame, fg_color="transparent")
-                    factors_frame.grid(row=0, column=7, padx=5, pady=5)
-                    factor_col = 0
-                    if item.importance:
-                        ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+                    factors_frame.grid(row=0, column=8, padx=5, pady=5)
+                    columns = [
+                        ("G", item.group, 120),
+                        ("C", item.category, 120),
+                        ("I", item.importance, 40),
+                        ("U", item.urgency, 40),
+                        ("E", item.size, 40),
+                        ("V", item.value, 40),
+                    ]
+                    for factor_col, (label, value, width) in enumerate(columns):
+                        text = f"{label}:{value}" if value not in (None, "") else ""
+                        label_kwargs = {
+                            "text": text,
+                            "width": width,
+                            "anchor": "w",
+                            "font": list_row_font(),
+                            "text_color": "black",
+                        }
+                        if label in ("I", "U") and str(value).strip() == "20":
+                            label_kwargs["fg_color"] = palette["danger"]
+                            label_kwargs["text_color"] = pick_text_color(palette["danger"])
+                            label_kwargs["corner_radius"] = 6
+                        ctk.CTkLabel(factors_frame, **label_kwargs).grid(
                             row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.urgency:
-                        ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.size:
-                        ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
-                    if item.value:
-                        ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
-                            row=0, column=factor_col, padx=2)
-                        factor_col += 1
                     col_offset = 1
 
                 # Status
-                ctk.CTkLabel(item_frame, text=item.status, width=80).grid(
-                    row=0, column=7+col_offset, padx=5, pady=5)
+                ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font(), text_color="black").grid(
+                    row=0, column=8+col_offset, padx=5, pady=5)
 
                 # Action buttons
-                col = 8 + col_offset
+                col = 9 + col_offset
                 # Timer button (only for open items)
                 if item.status == Status.OPEN:
                     btn_timer = ctk.CTkButton(
                         item_frame,
                         text="⏱ Timer",
                         width=70,
-                        fg_color="darkgreen",
-                        hover_color="green",
+                        **button_style("secondary"),
                         command=lambda i=item.id: self.start_timer(i)
                     )
-                    btn_timer.grid(row=0, column=col, padx=2, pady=5)
+                    btn_timer.grid(row=0, column=col, padx=(0, 2), pady=5)
                     col += 1
 
-                # Edit button
-                btn_edit = ctk.CTkButton(
-                    item_frame,
-                    text="Edit",
-                    width=60,
-                    command=lambda i=item.id: self.edit_item(i)
-                )
-                btn_edit.grid(row=0, column=col, padx=2, pady=5)
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
             self.scroll_frame.grid(**grid_info)
@@ -346,11 +425,60 @@ class AllItemsScreen(ctk.CTkFrame):
         from .timer_window import TimerWindow
         timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
-    def edit_item(self, item_id: str):
+    def edit_item(self, item_id: str, focus_tab: str | None = None):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
         ItemEditorDialog(self, self.db_manager, item_id,
-                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
+                         focus_tab=focus_tab)
+
+    def edit_start_date_inline(self, item_id: str):
+        """Edit item start date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = InlineDateDialog(self, "Edit Start Date", item.start_date)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
+            return
+        new_start = dialog.result
+        new_due = item.due_date
+        if new_start and new_due and new_due < new_start:
+            new_due = new_start
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_start_edit")
+        self.refresh()
+
+    def edit_priority_inline(self, item_id: str):
+        """Edit item priority score in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = InlinePriorityDialog(self, item)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
+            return
+        item.importance = dialog.result["importance"]
+        item.urgency = dialog.result["urgency"]
+        item.size = dialog.result["size"]
+        item.value = dialog.result["value"]
+        self.db_manager.update_action_item(item, normalize_week_dates=False)
+        self.refresh()
+
+    def edit_due_date_inline(self, item_id: str):
+        """Edit item due date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = InlineDateDialog(self, "Edit Due Date", item.due_date)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
+            return
+        new_due = dialog.result
+        new_start = item.start_date
+        if new_start and new_due and new_due < new_start:
+            new_due = new_start
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_due_edit")
+        self.refresh()
 
     def create_new_item(self):
         """Open item editor for new item."""

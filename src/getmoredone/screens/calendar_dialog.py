@@ -8,6 +8,7 @@ from typing import Optional, TYPE_CHECKING
 
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
+from ..theme import button_style
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -140,8 +141,7 @@ class CalendarEventDialog(ctk.CTkToplevel):
             btn_frame,
             text="Create Calendar Event",
             command=self.create_event,
-            fg_color="green",
-            hover_color="darkgreen",
+            **button_style("primary"),
             width=180
         )
         btn_create.pack(side="left", padx=5)

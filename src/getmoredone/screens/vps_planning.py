@@ -5,6 +5,8 @@ VPS Planning screen - shows strategic planning hierarchy with collapsible tree v
 import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, Dict, Any, List
 
+from ..theme import button_style
+
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
     from ..app import GetMoreDoneApp
@@ -12,6 +14,16 @@ if TYPE_CHECKING:
 
 class VPSPlanningScreen(ctk.CTkFrame):
     """Screen showing VPS planning hierarchy in collapsible tree view."""
+
+    LEVEL_COLORS = {
+        "TL Vision": "#7C3AED",
+        "Annual Vision": "#2563EB",
+        "Annual Plan": "#0D9488",
+        "Annual Initiative": "#F59E0B",
+        "Quarter": "#EA580C",
+        "Month": "#059669",
+        "Week": "#0284C7",
+    }
 
     def __init__(self, parent, vps_manager: 'VPSManager', app: 'GetMoreDoneApp'):
         super().__init__(parent)
@@ -23,6 +35,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         # Track selected segments for filtering
         self.selected_segments = set()  # Set of segment IDs to display
+        self.segment_colors_by_id: Dict[str, str] = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -43,7 +56,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         """Create header with controls."""
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(1, weight=1)
+        header.grid_columnconfigure(7, weight=1)
 
         # Title
         title = ctk.CTkLabel(
@@ -52,6 +65,26 @@ class VPSPlanningScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=20, weight="bold")
         )
         title.grid(row=0, column=0, padx=10, pady=10)
+
+        subtitle = ctk.CTkLabel(
+            header,
+            text="Color-coded hierarchy for faster planning scans",
+            text_color="#94A3B8"
+        )
+        subtitle.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
+
+        legend = ctk.CTkFrame(header, fg_color="transparent")
+        legend.grid(row=0, column=1, rowspan=2, padx=8, pady=8, sticky="w")
+        for idx, (name, color) in enumerate(self.LEVEL_COLORS.items()):
+            badge = ctk.CTkLabel(
+                legend,
+                text=name,
+                fg_color=color,
+                corner_radius=6,
+                padx=8,
+                pady=3
+            )
+            badge.grid(row=0, column=idx, padx=3, pady=3, sticky="w")
 
         # Segment filter
         ctk.CTkLabel(header, text="Segments:").grid(
@@ -62,7 +95,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="Select Segments...",
             command=self.show_segment_filter_dialog,
-            width=150
+            width=150,
+            **button_style("secondary"),
         )
         self.segment_filter_btn.grid(row=0, column=3, padx=5, pady=10)
 
@@ -71,7 +105,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="Expand All",
             command=self.expand_all,
-            width=100
+            width=100,
+            **button_style("secondary"),
         )
         btn_expand.grid(row=0, column=4, padx=5, pady=10)
 
@@ -79,7 +114,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             header,
             text="Collapse All",
             command=self.collapse_all,
-            width=100
+            width=100,
+            **button_style("secondary"),
         )
         btn_collapse.grid(row=0, column=5, padx=5, pady=10)
 
@@ -87,7 +123,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_new = ctk.CTkButton(
             header,
             text="+ New Vision",
-            command=self.create_new_tl_vision
+            command=self.create_new_tl_vision,
+            **button_style("primary"),
         )
         btn_new.grid(row=0, column=6, padx=10, pady=10)
 
@@ -173,8 +210,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             btn_frame,
             text="Apply",
             command=apply_filter,
-            fg_color="green",
-            width=100
+            width=100,
+            **button_style("primary"),
         )
         btn_apply.pack(side="right", padx=5)
 
@@ -183,8 +220,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
             btn_frame,
             text="Cancel",
             command=dialog.destroy,
-            fg_color="gray",
-            width=100
+            width=100,
+            **button_style("secondary"),
         )
         btn_cancel.pack(side="right", padx=5)
 
@@ -219,6 +256,11 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
             # Get all segments
             segments = self.vps_manager.get_all_segments()
+            self.segment_colors_by_id = {}
+            for segment in segments:
+                color = (segment.get('color_hex') or '').strip()
+                if color:
+                    self.segment_colors_by_id[segment['id']] = color
 
             # Initialize selected_segments if empty
             if not self.selected_segments:
@@ -331,16 +373,38 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
         node_id = f"annual_plan-{plan['id']}"
         if node_id in self.expanded_nodes:
-            initiatives = self.vps_manager.get_quarter_initiatives(
+            initiatives = self.vps_manager.get_annual_initiatives(
                 annual_plan_id=plan['id'])
 
             if not initiatives:
                 row = self.display_empty_message(
-                    row, indent + 1, "No quarter initiatives")
+                    row, indent + 1, "No annual initiatives")
             else:
                 for initiative in initiatives:
-                    row = self.display_quarter_initiative_tree(
+                    row = self.display_annual_initiative_tree(
                         initiative, row, indent + 1)
+
+        return row
+
+    def display_annual_initiative_tree(self, initiative: Dict[str, Any], row: int, indent: int) -> int:
+        """Display an Annual Initiative and its children."""
+        initiative_frame = self.create_annual_initiative_row(initiative, indent)
+        initiative_frame.grid(row=row, column=0, sticky="ew",
+                              pady=2, padx=(indent * 30 + 5, 5))
+        row += 1
+
+        node_id = f"annual_initiative-{initiative['id']}"
+        if node_id in self.expanded_nodes:
+            quarter_initiatives = self.vps_manager.get_quarter_initiatives(
+                annual_initiative_id=initiative['id'])
+
+            if not quarter_initiatives:
+                row = self.display_empty_message(
+                    row, indent + 1, "No quarter initiatives")
+            else:
+                for quarter_initiative in quarter_initiatives:
+                    row = self.display_quarter_initiative_tree(
+                        quarter_initiative, row, indent + 1)
 
         return row
 
@@ -390,7 +454,8 @@ class VPSPlanningScreen(ctk.CTkFrame):
 
     def display_week_action_tree(self, action: Dict[str, Any], row: int, indent: int) -> int:
         """Display a Week Action and its linked action items."""
-        action_frame = self.create_week_action_row(action, indent)
+        segment_color = self._resolve_segment_color(action.get('segment_description_id'))
+        action_frame = self.create_week_action_row(action, indent, segment_color)
         action_frame.grid(row=row, column=0, sticky="ew",
                           pady=2, padx=(indent * 30 + 5, 5))
         row += 1
@@ -405,13 +470,15 @@ class VPSPlanningScreen(ctk.CTkFrame):
                     row, indent + 1, "No action items")
             else:
                 for item in action_items:
-                    row = self.display_action_item(item, row, indent + 1)
+                    row = self.display_action_item(
+                        item, row, indent + 1, segment_color)
 
         return row
 
-    def display_action_item(self, item: Dict[str, Any], row: int, indent: int) -> int:
+    def display_action_item(self, item: Dict[str, Any], row: int, indent: int,
+                            segment_color: Optional[str]) -> int:
         """Display an action item (leaf node)."""
-        item_frame = self.create_action_item_row(item, indent)
+        item_frame = self.create_action_item_row(item, indent, segment_color)
         item_frame.grid(row=row, column=0, sticky="ew",
                         pady=2, padx=(indent * 30 + 5, 5))
         return row + 1
@@ -512,7 +579,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_tl_vision(
-            vision['id']), fg_color="darkred", hover_color="red")
+            vision['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -546,7 +613,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_vision(
-            vision['id']), fg_color="darkred", hover_color="red")
+            vision['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -574,7 +641,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
         btn_add = ctk.CTkButton(
-            frame, text="+", width=25, command=lambda: self.add_quarter_initiative(plan['id']))
+            frame, text="+", width=25, command=lambda: self.add_annual_initiative(plan['id']))
         btn_add.grid(row=0, column=3, padx=2, pady=3)
 
         btn_edit = ctk.CTkButton(
@@ -582,7 +649,42 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_plan(
-            plan['id']), fg_color="darkred", hover_color="red")
+            plan['id']), **button_style("danger"))
+        btn_delete.grid(row=0, column=5, padx=2, pady=3)
+
+        return frame
+
+    def create_annual_initiative_row(self, initiative: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+        """Create a row for an Annual Initiative."""
+        node_id = f"annual_initiative-{initiative['id']}"
+        is_expanded = node_id in self.expanded_nodes
+
+        frame = ctk.CTkFrame(self.scroll_frame)
+        frame.grid_columnconfigure(2, weight=1)
+
+        indent_label = ctk.CTkLabel(
+            frame, text="  " * indent + "└─", font=ctk.CTkFont(family="Courier"))
+        indent_label.grid(row=0, column=0, sticky="w")
+
+        btn_expand = ctk.CTkButton(frame, text="▼" if is_expanded else "▶", width=25,
+                                   command=lambda: self.toggle_node(node_id))
+        btn_expand.grid(row=0, column=1, padx=2, pady=3)
+
+        progress = initiative.get('progress_pct', 0)
+        label = ctk.CTkLabel(frame, text=f"🎯 AI: {initiative['title']} ({progress}%)",
+                             font=ctk.CTkFont(size=11), anchor="w")
+        label.grid(row=0, column=2, sticky="w", padx=5, pady=3)
+
+        btn_add = ctk.CTkButton(
+            frame, text="+", width=25, command=lambda: self.add_quarter_initiative(initiative['id']))
+        btn_add.grid(row=0, column=3, padx=2, pady=3)
+
+        btn_edit = ctk.CTkButton(
+            frame, text="✎", width=25, command=lambda: self.edit_annual_initiative(initiative['id']))
+        btn_edit.grid(row=0, column=4, padx=2, pady=3)
+
+        btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_annual_initiative(
+            initiative['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -617,7 +719,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_quarter_initiative(
-            initiative['id']), fg_color="darkred", hover_color="red")
+            initiative['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
@@ -654,17 +756,21 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_month_tactic(
-            tactic['id']), fg_color="darkred", hover_color="red")
+            tactic['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
 
-    def create_week_action_row(self, action: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+    def create_week_action_row(self, action: Dict[str, Any], indent: int,
+                               segment_color: Optional[str] = None) -> ctk.CTkFrame:
         """Create a row for a Week Action."""
         node_id = f"week_action-{action['id']}"
         is_expanded = node_id in self.expanded_nodes
 
-        frame = ctk.CTkFrame(self.scroll_frame)
+        frame_kwargs = {}
+        if segment_color:
+            frame_kwargs['fg_color'] = segment_color
+        frame = ctk.CTkFrame(self.scroll_frame, **frame_kwargs)
         frame.grid_columnconfigure(2, weight=1)
 
         indent_label = ctk.CTkLabel(
@@ -688,14 +794,18 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=4, padx=2, pady=3)
 
         btn_delete = ctk.CTkButton(frame, text="🗑", width=25, command=lambda: self.delete_week_action(
-            action['id']), fg_color="darkred", hover_color="red")
+            action['id']), **button_style("danger"))
         btn_delete.grid(row=0, column=5, padx=2, pady=3)
 
         return frame
 
-    def create_action_item_row(self, item: Dict[str, Any], indent: int) -> ctk.CTkFrame:
+    def create_action_item_row(self, item: Dict[str, Any], indent: int,
+                               segment_color: Optional[str]) -> ctk.CTkFrame:
         """Create a row for an Action Item."""
-        frame = ctk.CTkFrame(self.scroll_frame)
+        frame_kwargs = {}
+        if segment_color:
+            frame_kwargs['fg_color'] = segment_color
+        frame = ctk.CTkFrame(self.scroll_frame, **frame_kwargs)
         frame.grid_columnconfigure(1, weight=1)
 
         indent_label = ctk.CTkLabel(
@@ -716,6 +826,13 @@ class VPSPlanningScreen(ctk.CTkFrame):
         btn_edit.grid(row=0, column=2, padx=2, pady=3)
 
         return frame
+
+    def _resolve_segment_color(self, segment_id: Optional[str]) -> Optional[str]:
+        """Look up a segment color derived from VPL Life Segment settings."""
+        if not segment_id:
+            return None
+        color = self.segment_colors_by_id.get(segment_id)
+        return color if color else None
 
     # ========================================================================
     # TREE NAVIGATION
@@ -756,26 +873,33 @@ class VPSPlanningScreen(ctk.CTkFrame):
                         self.expanded_nodes.add(
                             f"annual_plan-{annual_plan['id']}")
 
-                        # Expand Quarter Initiatives
-                        quarter_initiatives = self.vps_manager.get_quarter_initiatives(
+                        # Expand Annual Initiatives
+                        annual_initiatives = self.vps_manager.get_annual_initiatives(
                             annual_plan_id=annual_plan['id'])
-                        for quarter_initiative in quarter_initiatives:
+                        for annual_initiative in annual_initiatives:
                             self.expanded_nodes.add(
-                                f"quarter_initiative-{quarter_initiative['id']}")
+                                f"annual_initiative-{annual_initiative['id']}")
 
-                            # Expand Month Tactics
-                            month_tactics = self.vps_manager.get_month_tactics(
-                                quarter_initiative_id=quarter_initiative['id'])
-                            for month_tactic in month_tactics:
+                            # Expand Quarter Initiatives
+                            quarter_initiatives = self.vps_manager.get_quarter_initiatives(
+                                annual_initiative_id=annual_initiative['id'])
+                            for quarter_initiative in quarter_initiatives:
                                 self.expanded_nodes.add(
-                                    f"month_tactic-{month_tactic['id']}")
+                                    f"quarter_initiative-{quarter_initiative['id']}")
 
-                                # Expand Week Actions
-                                week_actions = self.vps_manager.get_week_actions(
-                                    month_tactic_id=month_tactic['id'])
-                                for week_action in week_actions:
+                                # Expand Month Tactics
+                                month_tactics = self.vps_manager.get_month_tactics(
+                                    quarter_initiative_id=quarter_initiative['id'])
+                                for month_tactic in month_tactics:
                                     self.expanded_nodes.add(
-                                        f"week_action-{week_action['id']}")
+                                        f"month_tactic-{month_tactic['id']}")
+
+                                    # Expand Week Actions
+                                    week_actions = self.vps_manager.get_week_actions(
+                                        month_tactic_id=month_tactic['id'])
+                                    for week_action in week_actions:
+                                        self.expanded_nodes.add(
+                                            f"week_action-{week_action['id']}")
         self.refresh()
 
     def collapse_all(self):
@@ -846,7 +970,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             dialog,
             text="Cancel",
             command=dialog.destroy,
-            fg_color="gray"
+            **button_style("secondary"),
         )
         cancel_btn.pack(pady=20)
 
@@ -887,13 +1011,24 @@ class VPSPlanningScreen(ctk.CTkFrame):
             self.wait_window(dialog)
             self.refresh()
 
-    def add_quarter_initiative(self, annual_plan_id: str):
-        """Add a Quarter Initiative to an Annual Plan."""
-        from .vps_editors import QuarterInitiativeEditorDialog
+    def add_annual_initiative(self, annual_plan_id: str):
+        """Add an Annual Initiative to an Annual Plan."""
+        from .vps_editors import AnnualInitiativeEditorDialog
         plan = self.vps_manager.get_annual_plan(annual_plan_id)
         if plan:
-            dialog = QuarterInitiativeEditorDialog(
+            dialog = AnnualInitiativeEditorDialog(
                 self, self.vps_manager, annual_plan_id, plan['segment_description_id']
+            )
+            self.wait_window(dialog)
+            self.refresh()
+
+    def add_quarter_initiative(self, annual_initiative_id: str):
+        """Add a Quarter Initiative to an Annual Initiative."""
+        from .vps_editors import QuarterInitiativeEditorDialog
+        initiative = self.vps_manager.get_annual_initiative(annual_initiative_id)
+        if initiative:
+            dialog = QuarterInitiativeEditorDialog(
+                self, self.vps_manager, annual_initiative_id, initiative['segment_description_id']
             )
             self.wait_window(dialog)
             self.refresh()
@@ -968,13 +1103,33 @@ class VPSPlanningScreen(ctk.CTkFrame):
             self.wait_window(dialog)
             self.refresh()
 
+    def edit_annual_initiative(self, initiative_id: str):
+        """Edit an Annual Initiative."""
+        from .vps_editors import AnnualInitiativeEditorDialog
+        initiative = self.vps_manager.get_annual_initiative(initiative_id)
+        if initiative:
+            dialog = AnnualInitiativeEditorDialog(
+                self, self.vps_manager, initiative['annual_plan_id'],
+                initiative['segment_description_id'], initiative_id
+            )
+            self.wait_window(dialog)
+            self.refresh()
+
     def edit_quarter_initiative(self, initiative_id: str):
         """Edit a Quarter Initiative."""
         from .vps_editors import QuarterInitiativeEditorDialog
         initiative = self.vps_manager.get_quarter_initiative(initiative_id)
         if initiative:
+            annual_initiative_id = initiative.get('annual_initiative_id')
+            if not annual_initiative_id:
+                from tkinter import messagebox
+                messagebox.showerror(
+                    "Missing Annual Initiative Link",
+                    "This quarterly initiative is not linked to an annual initiative."
+                )
+                return
             dialog = QuarterInitiativeEditorDialog(
-                self, self.vps_manager, initiative['annual_plan_id'],
+                self, self.vps_manager, annual_initiative_id,
                 initiative['segment_description_id'], initiative_id
             )
             self.wait_window(dialog)
@@ -1023,6 +1178,46 @@ class VPSPlanningScreen(ctk.CTkFrame):
             icon='warning'
         )
 
+    def _confirm_cascade_delete(self, entity_type: str, entity_name: str, entity_id: str) -> bool:
+        """Show cascade-delete confirmation with child record counts."""
+        from tkinter import messagebox
+
+        preview = self.vps_manager.get_cascade_delete_preview(entity_type, entity_id)
+        label_map = {
+            "tl_visions": "TL Visions",
+            "annual_visions": "Annual Visions",
+            "annual_plans": "Annual Plans",
+            "annual_initiatives": "Annual Initiatives",
+            "quarter_initiatives": "Quarter Initiatives",
+            "month_tactics": "Month Tactics",
+            "week_actions": "Weekly Tactics",
+            "action_items": "Action Items",
+        }
+
+        lines = []
+        for key in [
+            "tl_visions",
+            "annual_visions",
+            "annual_plans",
+            "annual_initiatives",
+            "quarter_initiatives",
+            "month_tactics",
+            "week_actions",
+            "action_items",
+        ]:
+            count = preview.get(key, 0)
+            if count:
+                lines.append(f"- {label_map[key]}: {count}")
+
+        details = "\n".join(lines) if lines else "- No records found"
+        return messagebox.askyesno(
+            "Confirm Cascade Deletion",
+            f"You are deleting: {entity_name}\n\n"
+            f"The following records will be deleted:\n{details}\n\n"
+            "This action cannot be undone. Continue?",
+            icon='warning'
+        )
+
     def _show_error_has_children(self, entity_type: str):
         """Show error message when deletion fails due to child records."""
         from tkinter import messagebox
@@ -1035,65 +1230,54 @@ class VPSPlanningScreen(ctk.CTkFrame):
         """Delete a TL Vision."""
         vision = self.vps_manager.get_tl_vision(vision_id)
         if vision:
-            if self._confirm_delete("TL Vision", vision['title']):
-                result = self.vps_manager.delete_tl_vision(vision_id)
-                if result:
+            if self._confirm_cascade_delete("tl_vision", vision['title'], vision_id):
+                if self.vps_manager.delete_tl_vision(vision_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("TL Vision")
 
     def delete_annual_vision(self, vision_id: str):
         """Delete an Annual Vision."""
         vision = self.vps_manager.get_annual_vision(vision_id)
         if vision:
-            if self._confirm_delete("Annual Vision", vision['title']):
-                result = self.vps_manager.delete_annual_vision(vision_id)
-                if result:
+            if self._confirm_cascade_delete("annual_vision", vision['title'], vision_id):
+                if self.vps_manager.delete_annual_vision(vision_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Annual Vision")
 
     def delete_annual_plan(self, plan_id: str):
         """Delete an Annual Plan."""
         plan = self.vps_manager.get_annual_plan(plan_id)
         if plan:
-            if self._confirm_delete("Annual Plan", plan['theme']):
-                result = self.vps_manager.delete_annual_plan(plan_id)
-                if result:
+            if self._confirm_cascade_delete("annual_plan", plan['theme'], plan_id):
+                if self.vps_manager.delete_annual_plan(plan_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Annual Plan")
+
+    def delete_annual_initiative(self, initiative_id: str):
+        """Delete an Annual Initiative."""
+        initiative = self.vps_manager.get_annual_initiative(initiative_id)
+        if initiative:
+            if self._confirm_cascade_delete("annual_initiative", initiative['title'], initiative_id):
+                if self.vps_manager.delete_annual_initiative(initiative_id):
+                    self.refresh()
 
     def delete_quarter_initiative(self, initiative_id: str):
         """Delete a Quarter Initiative."""
         initiative = self.vps_manager.get_quarter_initiative(initiative_id)
         if initiative:
-            if self._confirm_delete("Quarter Initiative", initiative['title']):
-                result = self.vps_manager.delete_quarter_initiative(
-                    initiative_id)
-                if result:
+            if self._confirm_cascade_delete("quarter_initiative", initiative['title'], initiative_id):
+                if self.vps_manager.delete_quarter_initiative(initiative_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Quarter Initiative")
 
     def delete_month_tactic(self, tactic_id: str):
         """Delete a Month Tactic."""
         tactic = self.vps_manager.get_month_tactic(tactic_id)
         if tactic:
-            if self._confirm_delete("Month Tactic", tactic['priority_focus']):
-                result = self.vps_manager.delete_month_tactic(tactic_id)
-                if result:
+            if self._confirm_cascade_delete("month_tactic", tactic['priority_focus'], tactic_id):
+                if self.vps_manager.delete_month_tactic(tactic_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Month Tactic")
 
     def delete_week_action(self, action_id: str):
         """Delete a Week Action."""
         action = self.vps_manager.get_week_action(action_id)
         if action:
-            if self._confirm_delete("Week Action", action['title']):
-                result = self.vps_manager.delete_week_action(action_id)
-                if result:
+            if self._confirm_cascade_delete("week_action", action['title'], action_id):
+                if self.vps_manager.delete_week_action(action_id):
                     self.refresh()
-                else:
-                    self._show_error_has_children("Week Action")

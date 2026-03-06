@@ -9,7 +9,18 @@ from typing import Optional, TYPE_CHECKING
 from ..db_manager import DatabaseManager
 from ..models import ActionItem
 from ..app_settings import AppSettings
+from ..color_contrast import pick_text_color
 from ..date_utils import increment_date
+from .segment_color_utils import resolve_segment_color_for_item
+from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from .inline_editors import InlineDateDialog, InlinePriorityDialog
+from .title_format import (
+    split_action_item_title,
+    format_column_text,
+    TITLE_COL_CHARS,
+    CONTEXT_COL_CHARS,
+    CONTACT_COL_CHARS,
+)
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -23,10 +34,16 @@ class TodayScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.settings = AppSettings.load()
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
         self.search_query = ""  # Track search query
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -56,6 +73,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Search",
             width=80,
+            **button_style("secondary"),
             command=self.perform_search
         )
         btn_search.grid(row=0, column=2, padx=5)
@@ -65,6 +83,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Collapse" if self.columns_expanded else "Expand",
             width=100,
+            **button_style("secondary"),
             command=self.toggle_columns
         )
         self.expand_collapse_btn.grid(row=0, column=3, padx=5)
@@ -74,8 +93,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Top 3",
             width=100,
-            fg_color="blue",
-            hover_color="darkblue",
+            **button_style("secondary"),
             command=self.toggle_top3
         )
         self.top3_btn.grid(row=0, column=4, padx=5)
@@ -85,8 +103,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="+ New Item",
             width=100,
-            fg_color="green",
-            hover_color="darkgreen",
+            **button_style("primary"),
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=6, padx=5)
@@ -96,6 +113,7 @@ class TodayScreen(ctk.CTkFrame):
             header_frame,
             text="Refresh",
             width=100,
+            **button_style("secondary"),
             command=self.refresh
         )
         btn_refresh.grid(row=0, column=7, padx=5)
@@ -126,6 +144,9 @@ class TodayScreen(ctk.CTkFrame):
         self.show_top_3_only = not self.show_top_3_only
         self.top3_btn.configure(
             text="Show All" if self.show_top_3_only else "Top 3")
+        self.top3_btn.configure(
+            **button_style("primary" if self.show_top_3_only else "secondary")
+        )
         self.load_items()
 
     def refresh(self):
@@ -135,6 +156,7 @@ class TodayScreen(ctk.CTkFrame):
 
     def load_items(self):
         """Load and display today's items."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -146,6 +168,13 @@ class TodayScreen(ctk.CTkFrame):
 
             # Get today's items (start_date <= today, includes completed)
             items = self.get_todays_items()
+
+            # Refresh VPS color caches
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
 
             if not items:
                 label = ctk.CTkLabel(
@@ -174,7 +203,7 @@ class TodayScreen(ctk.CTkFrame):
             # Open items section
             if open_items:
                 open_header = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="gray25")
+                    self.scroll_frame, fg_color=self.palette["surface_subtle"])
                 open_header.grid(row=row, column=0,
                                  sticky="ew", pady=(10, 0), padx=5)
                 ctk.CTkLabel(
@@ -208,14 +237,14 @@ class TodayScreen(ctk.CTkFrame):
                     time_str = f"{total_minutes}m" if total_minutes > 0 else "0m"
 
                 completed_header = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="darkgreen")
+                    self.scroll_frame, fg_color=self.palette["success_strong"])
                 completed_header.grid(
                     row=row, column=0, sticky="ew", pady=(20, 0), padx=5)
                 ctk.CTkLabel(
                     completed_header,
                     text=f"Completed ({len(completed_items)} items | Time: {time_str})",
                     font=ctk.CTkFont(size=14, weight="bold"),
-                    text_color="lightgreen"
+                    text_color=self.palette["on_strong"]
                 ).pack(padx=10, pady=5, anchor="w")
                 row += 1
 
@@ -274,17 +303,30 @@ class TodayScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        # Determine background color: RED for critical items, gray for completed, default otherwise
+        palette = self.palette
+        segment_color = resolve_segment_color_for_item(
+            item,
+            self.segment_colors_by_id,
+            self.segment_colors_by_name,
+            self.db_manager,
+            self._parent_segment_cache,
+            self._ape_segment_cache,
+            self._week_action_segment_cache,
+        )
         is_critical = (item.importance == 20 or item.urgency == 20)
-        if is_critical and not is_completed:
-            bg_color = "darkred"
+        if segment_color:
+            bg_color = segment_color
         elif is_completed:
-            bg_color = "gray20"
+            bg_color = palette["success_tint"]
+        elif is_critical:
+            bg_color = palette["critical_tint"]
         else:
             bg_color = None
 
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+        apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(1, weight=1)
+        parsed = split_action_item_title(item.title)
 
         # Completion indicator
         if is_completed:
@@ -294,7 +336,7 @@ class TodayScreen(ctk.CTkFrame):
                 frame,
                 text=completion_text,
                 font=ctk.CTkFont(size=16),
-                text_color="lightgreen",
+                text_color="black",
                 width=30
             ).grid(row=0, column=0, padx=5, pady=5)
         else:
@@ -309,19 +351,36 @@ class TodayScreen(ctk.CTkFrame):
             )
             checkbox.grid(row=0, column=0, padx=5, pady=5)
 
-        # Title and info
-        info_text = f"{item.title}"
-        if item.who:
-            info_text += f" ({item.who})"
-
         title_label = ctk.CTkLabel(
             frame,
-            text=info_text,
-            font=ctk.CTkFont(size=12),
+            text=format_column_text(parsed.title, TITLE_COL_CHARS),
+            width=300,
+            font=list_row_font(),
             anchor="w",
-            text_color="gray60" if is_completed else None
+            text_color="black"
         )
         title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+        # Context
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
+            width=140,
+            anchor="w",
+            text_color="black",
+            font=list_row_font(),
+        ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+        # Who
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(item.who, CONTACT_COL_CHARS),
+            width=100,
+            anchor="w",
+            text_color="black",
+            font=list_row_font(),
+        ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
         # Start Date
         start_date_text = item.start_date if item.start_date else "-"
@@ -336,9 +395,11 @@ class TodayScreen(ctk.CTkFrame):
             text=f"S:{start_date_text}",
             width=60,
             anchor="w",
-            text_color="lightblue"
+            text_color="black",
+            font=list_row_font()
         )
-        start_label.grid(row=0, column=2, padx=5, pady=5)
+        start_label.grid(row=0, column=4, padx=5, pady=5)
+        start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
         # Due Date
         due_date_text = item.due_date if item.due_date else "-"
@@ -353,18 +414,25 @@ class TodayScreen(ctk.CTkFrame):
             text=f"D:{due_date_text}",
             width=60,
             anchor="w",
-            text_color="orange"
+            text_color="black",
+            font=list_row_font()
         )
-        due_label.grid(row=0, column=3, padx=5, pady=5)
+        due_label.grid(row=0, column=5, padx=5, pady=5)
+        due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
         # Priority score
+        is_priority_critical = item.importance == 20 or item.urgency == 20
         score_label = ctk.CTkLabel(
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color="gray30"
+            fg_color=palette["danger"] if is_priority_critical else "transparent",
+            text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+            corner_radius=6 if is_priority_critical else 0,
+            font=list_row_font(),
         )
-        score_label.grid(row=0, column=4, padx=5, pady=5)
+        score_label.grid(row=0, column=6, padx=5, pady=5)
+        score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
         # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
         time_text = f"{item.planned_minutes}m" if item.planned_minutes else "-"
@@ -373,63 +441,51 @@ class TodayScreen(ctk.CTkFrame):
             text=time_text,
             width=50,
             anchor="w",
-            text_color="lightyellow"
+            text_color="black",
+            font=list_row_font()
         )
-        time_label.grid(row=0, column=5, padx=5, pady=5)
+        time_label.grid(row=0, column=7, padx=5, pady=5)
 
         # Factor chips (I, U, E, V) - only shown when expanded
         factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
         if self.columns_expanded:
-            factors_frame.grid(row=0, column=6, padx=5, pady=5)
-            col = 0
-            if item.importance:
-                ctk.CTkLabel(factors_frame, text=f"I:{item.importance}", width=40).grid(
+            factors_frame.grid(row=0, column=8, padx=5, pady=5)
+            columns = [
+                ("G", item.group, 120),
+                ("C", item.category, 120),
+                ("I", item.importance, 40),
+                ("U", item.urgency, 40),
+                ("E", item.size, 40),
+                ("V", item.value, 40),
+            ]
+            for col, (label, value, width) in enumerate(columns):
+                text = f"{label}:{value}" if value not in (None, "") else ""
+                label_kwargs = {
+                    "text": text,
+                    "width": width,
+                    "anchor": "w",
+                    "font": list_row_font(),
+                    "text_color": "black",
+                }
+                if label in ("I", "U") and str(value).strip() == "20":
+                    label_kwargs["fg_color"] = palette["danger"]
+                    label_kwargs["text_color"] = pick_text_color(palette["danger"])
+                    label_kwargs["corner_radius"] = 6
+                ctk.CTkLabel(factors_frame, **label_kwargs).grid(
                     row=0, column=col, padx=2)
-                col += 1
-            if item.urgency:
-                ctk.CTkLabel(factors_frame, text=f"U:{item.urgency}", width=40).grid(
-                    row=0, column=col, padx=2)
-                col += 1
-            if item.size:
-                ctk.CTkLabel(factors_frame, text=f"E:{item.size}", width=40).grid(
-                    row=0, column=col, padx=2)
-                col += 1
-            if item.value:
-                ctk.CTkLabel(factors_frame, text=f"V:{item.value}", width=40).grid(
-                    row=0, column=col, padx=2)
-                col += 1
 
         # Action buttons (only for open items)
         # Column positions shift based on whether factors are shown
-        btn_col_start = 7 if self.columns_expanded else 6
+        btn_col_start = 9 if self.columns_expanded else 8
         if not is_completed:
             btn_timer = ctk.CTkButton(
                 frame,
                 text="⏱ Timer",
                 width=70,
-                fg_color="darkgreen",
-                hover_color="green",
+                **button_style("secondary"),
                 command=lambda: self.start_timer(item.id)
             )
-            btn_timer.grid(row=0, column=btn_col_start, padx=2, pady=5)
-
-            btn_edit = ctk.CTkButton(
-                frame,
-                text="Edit",
-                width=60,
-                command=lambda: self.edit_item(item.id)
-            )
-            btn_edit.grid(row=0, column=btn_col_start+1, padx=2, pady=5)
-
-            btn_push = ctk.CTkButton(
-                frame,
-                text="Push",
-                width=60,
-                fg_color="orange",
-                hover_color="darkorange",
-                command=lambda item_id=item.id: self.push_item(item_id)
-            )
-            btn_push.grid(row=0, column=btn_col_start+2, padx=2, pady=5)
+            btn_timer.grid(row=0, column=btn_col_start, padx=(0, 2), pady=5)
 
         return frame
 
@@ -449,11 +505,60 @@ class TodayScreen(ctk.CTkFrame):
         from .timer_window import TimerWindow
         timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
 
-    def edit_item(self, item_id: str):
+    def edit_item(self, item_id: str, focus_tab: str | None = None):
         """Open item editor."""
         from .item_editor import ItemEditorDialog
         ItemEditorDialog(self, self.db_manager, item_id,
-                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh)
+                         vps_manager=self.app.vps_manager, on_close_callback=self.refresh,
+                         focus_tab=focus_tab)
+
+    def edit_start_date_inline(self, item_id: str):
+        """Edit item start date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = InlineDateDialog(self, "Edit Start Date", item.start_date)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
+            return
+        new_start = dialog.result
+        new_due = item.due_date
+        if new_start and new_due and new_due < new_start:
+            new_due = new_start
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_start_edit")
+        self.refresh()
+
+    def edit_priority_inline(self, item_id: str):
+        """Edit item priority score in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = InlinePriorityDialog(self, item)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
+            return
+        item.importance = dialog.result["importance"]
+        item.urgency = dialog.result["urgency"]
+        item.size = dialog.result["size"]
+        item.value = dialog.result["value"]
+        self.db_manager.update_action_item(item, normalize_week_dates=False)
+        self.refresh()
+
+    def edit_due_date_inline(self, item_id: str):
+        """Edit item due date in place."""
+        item = self.db_manager.get_action_item(item_id)
+        if not item:
+            return
+        dialog = InlineDateDialog(self, "Edit Due Date", item.due_date)
+        self.wait_window(dialog)
+        if dialog.result == "__cancel__":
+            return
+        new_due = dialog.result
+        new_start = item.start_date
+        if new_start and new_due and new_due < new_start:
+            new_due = new_start
+        self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_due_edit")
+        self.refresh()
 
     def create_new_item(self):
         """Open item editor for new item."""
@@ -470,10 +575,13 @@ class TodayScreen(ctk.CTkFrame):
 
         # Load settings for weekend handling
         settings = AppSettings.load()
+        next_day = increment_date(
+            date.today(), 1, settings.include_saturday, settings.include_sunday
+        ).isoformat()
 
         # Calculate new dates (add 1 day using weekend-aware logic)
-        new_start = None
-        new_due = None
+        new_start = item.start_date
+        new_due = item.due_date
 
         if item.start_date:
             try:
@@ -482,7 +590,7 @@ class TodayScreen(ctk.CTkFrame):
                     start_dt, 1, settings.include_saturday, settings.include_sunday)
                 new_start = new_start_dt.isoformat()
             except ValueError:
-                pass
+                new_start = item.start_date
 
         if item.due_date:
             try:
@@ -491,7 +599,12 @@ class TodayScreen(ctk.CTkFrame):
                     due_dt, 1, settings.include_saturday, settings.include_sunday)
                 new_due = new_due_dt.isoformat()
             except ValueError:
-                pass
+                new_due = item.due_date
+
+        # If item has no dates yet, assign next business day to both.
+        if not item.start_date and not item.due_date:
+            new_start = next_day
+            new_due = next_day
 
         # Push to next day directly (no dialog, no reason)
         self.db_manager.reschedule_item(

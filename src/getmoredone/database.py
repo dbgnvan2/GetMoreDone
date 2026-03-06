@@ -21,18 +21,23 @@ class Database:
         Args:
             db_path: Path to SQLite database file. If None, uses default data/getmoredone.db
         """
-        db_path = resolve_db_path(db_path)
+        resolved_db_path = resolve_db_path(db_path)
+        self.db_uri = False
 
-        # Ensure data directory exists
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        self.db_path = str(db_path)
+        if isinstance(resolved_db_path, Path):
+            # Ensure parent directory exists for file-backed databases.
+            resolved_db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db_path = str(resolved_db_path)
+        else:
+            # Keep SQLite memory targets / URIs untouched.
+            self.db_path = resolved_db_path
+            self.db_uri = resolved_db_path.startswith("file:")
         self.conn: Optional[sqlite3.Connection] = None
 
     def connect(self) -> sqlite3.Connection:
         """Open database connection and enable foreign keys."""
         if self.conn is None:
-            self.conn = sqlite3.connect(self.db_path)
+            self.conn = sqlite3.connect(self.db_path, uri=self.db_uri)
             self.conn.row_factory = sqlite3.Row
             self.conn.execute("PRAGMA foreign_keys = ON")
         return self.conn
@@ -91,6 +96,8 @@ class Database:
                 planned_minutes   INTEGER,
                 status            TEXT NOT NULL DEFAULT 'open',
                 completed_at      TEXT,
+                item_type         TEXT NOT NULL DEFAULT 'daily',
+                annual_plan_element_id TEXT,
 
                 created_at        TEXT NOT NULL,
                 updated_at        TEXT NOT NULL
@@ -257,6 +264,18 @@ class Database:
             conn.execute("""
                 ALTER TABLE action_items
                 ADD COLUMN contact_id INTEGER REFERENCES contacts(id)
+            """)
+
+        if 'item_type' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN item_type TEXT NOT NULL DEFAULT 'daily'
+            """)
+
+        if 'annual_plan_element_id' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN annual_plan_element_id TEXT
             """)
             # Make who nullable for existing items
             # (SQLite doesn't support ALTER COLUMN, handled by new schema)

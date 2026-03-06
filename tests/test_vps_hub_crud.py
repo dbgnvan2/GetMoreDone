@@ -1,0 +1,184 @@
+from pathlib import Path
+
+from src.getmoredone.models import ActionItem
+from src.getmoredone.vps_manager import VPSManager
+
+
+def _manager(tmp_path: Path) -> VPSManager:
+    db_path = tmp_path / "vps_hub_crud.db"
+    return VPSManager(str(db_path))
+
+
+def _seed_segment_and_subsegment(manager: VPSManager, sub_name: str = "Archive") -> tuple[str, str]:
+    seg_name = manager.get_all_segments(active_only=False)[0]["name"]
+    manager.create_vision_subsegment(seg_name, sub_name)
+    return seg_name, sub_name
+
+
+def test_update_vision_element_updates_mirror_rows(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Archive")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Archive")
+        manager.create_annual_records_from_vision_element(2026, ve_id)
+
+        updated = manager.update_vision_element(
+            ve_id,
+            segment_name,
+            sub_name,
+            "Website",
+            "Ship weekly content cadence",
+        )
+        assert updated is True
+
+        row = manager.db.conn.execute(
+            "SELECT key_field, vision_text FROM vision_elements WHERE id = ?",
+            (ve_id,),
+        ).fetchone()
+        assert row and row["key_field"] == f"{segment_name}|{sub_name}|Website"
+        assert row["vision_text"] == "Ship weekly content cadence"
+
+        ave = manager.db.conn.execute(
+            "SELECT key_field FROM annual_vision_elements WHERE year = 2026 AND vision_element_id = ?",
+            (ve_id,),
+        ).fetchone()
+        assert ave and ave["key_field"] == f"{segment_name}|{sub_name}|Website"
+
+        ape = manager.db.conn.execute(
+            "SELECT key_field FROM annual_plan_elements WHERE year = 2026 AND vision_element_id = ?",
+            (ve_id,),
+        ).fetchone()
+        assert ape and ape["key_field"] == f"{segment_name}|{sub_name}|Website"
+    finally:
+        manager.close()
+
+
+def test_delete_annual_records_for_vision_element_clears_links(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Archive")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Archive")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+        ape_id = ids["annual_plan_element_id"]
+
+        weekly = ActionItem(
+            who="VPS",
+            title="Weekly Parent",
+            item_type="week",
+            start_date="2026-02-23",
+            due_date="2026-02-23",
+            annual_plan_element_id=ape_id,
+        )
+        manager.db_manager.create_action_item(weekly, apply_defaults=False)
+
+        deleted = manager.delete_annual_records_for_vision_element(2026, ve_id)
+        assert deleted is True
+
+        ave_count = manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM annual_vision_elements WHERE year = 2026 AND vision_element_id = ?",
+            (ve_id,),
+        ).fetchone()["c"]
+        ape_count = manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM annual_plan_elements WHERE year = 2026 AND vision_element_id = ?",
+            (ve_id,),
+        ).fetchone()["c"]
+        assert ave_count == 0
+        assert ape_count == 0
+
+        linked = manager.db.conn.execute(
+            "SELECT annual_plan_element_id FROM action_items WHERE id = ?",
+            (weekly.id,),
+        ).fetchone()
+        assert linked and linked["annual_plan_element_id"] is None
+    finally:
+        manager.close()
+
+
+def test_delete_weekly_action_item_removes_children(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        weekly = ActionItem(
+            who="VPS",
+            title="Weekly Parent",
+            item_type="week",
+            start_date="2026-02-23",
+            due_date="2026-02-23",
+        )
+        manager.db_manager.create_action_item(weekly, apply_defaults=False)
+
+        child = ActionItem(
+            who="VPS",
+            title="Child Item",
+            parent_id=weekly.id,
+            start_date="2026-02-23",
+            due_date="2026-02-23",
+        )
+        manager.db_manager.create_action_item(child, apply_defaults=False)
+
+        deleted = manager.delete_weekly_action_item(weekly.id)
+        assert deleted is True
+
+        parent_row = manager.db.conn.execute(
+            "SELECT id FROM action_items WHERE id = ?",
+            (weekly.id,),
+        ).fetchone()
+        child_row = manager.db.conn.execute(
+            "SELECT id FROM action_items WHERE id = ?",
+            (child.id,),
+        ).fetchone()
+        assert parent_row is None
+        assert child_row is None
+    finally:
+        manager.close()
+
+
+def test_update_level_vision_texts(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Writing")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "APW Book")
+        row = manager.get_vision_elements()[0]
+        assert row["id"] == ve_id
+
+        assert manager.update_segment_vision_text(row["segment_id"], "Creative long-term vision")
+        assert manager.update_subsegment_vision_text(row["subsegment_id"], "Writing craft vision")
+        assert manager.update_category_vision_text(row["category_id"], "APW Book publishing vision")
+
+        refreshed = manager.get_vision_elements()[0]
+        assert refreshed["segment_vision_text"] == "Creative long-term vision"
+        assert refreshed["subsegment_vision_text"] == "Writing craft vision"
+        assert refreshed["category_vision_text"] == "APW Book publishing vision"
+    finally:
+        manager.close()
+
+
+def test_rename_segment_subsegment_category_propagates_keys(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Writing")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "APW Book")
+        manager.create_annual_records_from_vision_element(2026, ve_id)
+        row = manager.get_vision_elements()[0]
+
+        assert manager.rename_vision_segment(row["segment_id"], "Creative Work")
+        row = manager.get_vision_elements()[0]
+        assert manager.rename_vision_subsegment(row["subsegment_id"], "Writing Studio")
+        row = manager.get_vision_elements()[0]
+        assert manager.rename_vision_category(row["category_id"], "APW Books")
+
+        updated = manager.get_vision_elements()[0]
+        assert updated["segment_name"] == "Creative Work"
+        assert updated["subsegment_name"] == "Writing Studio"
+        assert updated["category_name"] == "APW Books"
+        assert updated["key_field"] == "Creative Work|Writing Studio|APW Books"
+
+        ave = manager.db.conn.execute(
+            "SELECT key_field, segment_name, subsegment_name, category_name FROM annual_vision_elements WHERE vision_element_id = ?",
+            (ve_id,),
+        ).fetchone()
+        assert ave["key_field"] == "Creative Work|Writing Studio|APW Books"
+        assert ave["segment_name"] == "Creative Work"
+        assert ave["subsegment_name"] == "Writing Studio"
+        assert ave["category_name"] == "APW Books"
+    finally:
+        manager.close()

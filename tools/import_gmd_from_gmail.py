@@ -29,8 +29,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--db", help="Optional path to getmoredone.db")
-    ap.add_argument("--label", default="GMD", help="Trigger label name")
-    ap.add_argument("--moved", default="GMD/moved", help="Moved/processed label name")
+    ap.add_argument("--label", default=None, help="Trigger label name (defaults to Settings)")
+    ap.add_argument("--moved", default=None, help="Moved/processed label name (defaults to Settings)")
     args = ap.parse_args()
 
     settings = AppSettings.load()
@@ -40,9 +40,12 @@ def main() -> int:
         print("Gmail import disabled in Settings.")
         return 0
 
+    trigger_label = args.label if args.label is not None else getattr(settings, "gmail_import_trigger_label", "GMD")
+    moved_label = args.moved if args.moved is not None else getattr(settings, "gmail_import_moved_label", "GMD/moved")
+
     cfg = GmailImportConfig(
-        trigger_label_name=(args.label or getattr(settings, "gmail_import_trigger_label", "GMD")),
-        moved_label_name=(args.moved or getattr(settings, "gmail_import_moved_label", "GMD/moved")),
+        trigger_label_name=trigger_label,
+        moved_label_name=moved_label,
         who_value="Email",
         group_value="EMAIL",
         start_offset_days=0,

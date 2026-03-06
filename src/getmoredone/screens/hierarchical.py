@@ -6,6 +6,16 @@ import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, List
 
 from ..models import ActionItem, Status
+from ..color_contrast import pick_text_color
+from .segment_color_utils import resolve_segment_color_for_item
+from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from .title_format import (
+    split_action_item_title,
+    format_column_text,
+    TITLE_COL_CHARS,
+    CONTEXT_COL_CHARS,
+    CONTACT_COL_CHARS,
+)
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -20,6 +30,12 @@ class HierarchicalScreen(ctk.CTkFrame):
         self.db_manager = db_manager
         self.app = app
         self.search_query = ""  # Track search query
+        self.segment_colors_by_id = {}
+        self.segment_colors_by_name = {}
+        self._parent_segment_cache = {}
+        self._ape_segment_cache = {}
+        self._week_action_segment_cache = {}
+        self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -64,6 +80,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             header,
             text="Search",
             width=80,
+            **button_style("secondary"),
             command=self.perform_search
         )
         btn_search.grid(row=0, column=2, padx=5, pady=10)
@@ -86,6 +103,7 @@ class HierarchicalScreen(ctk.CTkFrame):
         btn_new = ctk.CTkButton(
             header,
             text="+ New Item",
+            **button_style("primary"),
             command=self.create_new_item
         )
         btn_new.grid(row=0, column=6, padx=10, pady=10)
@@ -97,6 +115,7 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def refresh(self):
         """Refresh the hierarchical list."""
+        self.palette = semantic_colors()
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -105,6 +124,13 @@ class HierarchicalScreen(ctk.CTkFrame):
             # Clear current items
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
+
+            # Refresh VPS segment color cache
+            self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
+            self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
+            self._parent_segment_cache = {}
+            self._ape_segment_cache = {}
+            self._week_action_segment_cache = {}
 
             # Get status filter
             status = self.status_var.get()
@@ -177,62 +203,98 @@ class HierarchicalScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem, indent_level: int) -> ctk.CTkFrame:
         """Create a row for an action item."""
-        # Background colors: grey for completed, red for critical open items
+        palette = self.palette
+        segment_color = resolve_segment_color_for_item(
+            item,
+            self.segment_colors_by_id,
+            self.segment_colors_by_name,
+            self.db_manager,
+            self._parent_segment_cache,
+            self._ape_segment_cache,
+            self._week_action_segment_cache,
+        )
         if item.status == Status.COMPLETED:
-            bg_color = "gray30"
+            bg_color = palette["success_tint"]
         elif item.importance == 20 or item.urgency == 20:
-            bg_color = "darkred"
+            bg_color = palette["critical_tint"]
         else:
             bg_color = None
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
+        apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(0, weight=1)
+        parsed = split_action_item_title(item.title)
 
         # Calculate left padding for indentation
         indent_padding = (indent_level * 30, 5)
 
-        # Title with indentation (left-aligned for main items, indented for children)
-        info_text = f"{item.title}"
-        if item.who:
-            info_text += f" ({item.who})"
+        # Title with indentation indicator for child rows.
+        title_text = parsed.title
         if item.group:
-            info_text += f" [{item.group}]"
+            title_text += f" [{item.group}]"
 
         # Add indentation indicator for child items
         if indent_level > 0:
             indicator = "└─ "
-            info_text = indicator + info_text
+            title_text = indicator + title_text
 
         title_label = ctk.CTkLabel(
             frame,
-            text=info_text,
+            text=format_column_text(title_text, TITLE_COL_CHARS),
+            width=300,
             font=ctk.CTkFont(
-                size=12, family="Courier" if indent_level > 0 else None),
-            anchor="w"
+                size=14, family="Courier" if indent_level > 0 else None),
+            anchor="w",
+            text_color="black",
         )
         title_label.grid(row=0, column=0, sticky="w",
                          padx=indent_padding, pady=5)
+        title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
+            width=140,
+            anchor="w",
+            text_color="black",
+            font=list_row_font(),
+        ).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(item.who, CONTACT_COL_CHARS),
+            width=100,
+            anchor="w",
+            text_color="black",
+            font=list_row_font(),
+        ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
         # Priority score
+        is_priority_critical = item.importance == 20 or item.urgency == 20
         score_label = ctk.CTkLabel(
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color="gray30"
+            fg_color=palette["danger"] if is_priority_critical else "transparent",
+            text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+            corner_radius=6 if is_priority_critical else 0,
+            font=list_row_font()
         )
-        score_label.grid(row=0, column=1, padx=5, pady=5)
+        score_label.grid(row=0, column=3, padx=5, pady=5)
 
         # Due date
         if item.due_date:
             due_label = ctk.CTkLabel(
                 frame,
                 text=f"Due: {item.due_date}",
-                width=110
+                width=110,
+                text_color="black",
+                font=list_row_font()
             )
-            due_label.grid(row=0, column=2, padx=5, pady=5)
+            due_label.grid(row=0, column=4, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=110).grid(
-                row=0, column=2, padx=5, pady=5)
+                row=0, column=4, padx=5, pady=5)
 
         # Child count
         children = self.db_manager.get_children(item.id)
@@ -241,22 +303,14 @@ class HierarchicalScreen(ctk.CTkFrame):
                 frame,
                 text=f"({len(children)} sub)",
                 width=70,
-                text_color="lightblue"
+                text_color="black",
+                font=list_row_font()
             )
-            child_count_label.grid(row=0, column=3, padx=5, pady=5)
+            child_count_label.grid(row=0, column=5, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=70).grid(
-                row=0, column=3, padx=5, pady=5)
-
-        # Edit button
-        btn_edit = ctk.CTkButton(
-            frame,
-            text="Edit",
-            width=60,
-            command=lambda: self.edit_item(item.id)
-        )
-        btn_edit.grid(row=0, column=4, padx=5, pady=5)
+                row=0, column=5, padx=5, pady=5)
 
         return frame
 

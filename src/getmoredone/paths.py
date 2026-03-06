@@ -27,7 +27,7 @@ APP_AUTHOR = "GetMoreDone"
 def project_root() -> Path:
     """Project root when running from source (repo root)."""
     # src/getmoredone/paths.py -> src/getmoredone -> src -> repo root
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def resource_root() -> Path:
@@ -51,19 +51,33 @@ def default_db_path() -> Path:
     return app_data_dir_path() / "getmoredone.db"
 
 
-def env_db_path() -> Path | None:
+def _is_memory_db_target(value: str) -> bool:
+    """Return True for SQLite in-memory DB targets."""
+    v = (value or "").strip().lower()
+    if v == ":memory:":
+        return True
+    if v.startswith("file::memory:"):
+        return True
+    return v.startswith("file:") and "mode=memory" in v
+
+
+def env_db_path() -> Path | str | None:
     """Optional override DB path via env var GETMOREDONE_DB."""
     import os
 
     v = os.environ.get("GETMOREDONE_DB")
     if not v:
         return None
+    if _is_memory_db_target(v):
+        return v
     return Path(v).expanduser().resolve()
 
 
-def resolve_db_path(db_path: str | None = None) -> Path:
+def resolve_db_path(db_path: str | None = None) -> Path | str:
     """Resolve DB path using (1) explicit arg, (2) env override, (3) default."""
     if db_path:
+        if _is_memory_db_target(db_path):
+            return db_path
         return Path(db_path).expanduser().resolve()
     env = env_db_path()
     if env is not None:
@@ -73,6 +87,21 @@ def resolve_db_path(db_path: str | None = None) -> Path:
 
 def default_settings_path() -> Path:
     return app_data_dir_path() / "settings.json"
+
+
+def bundled_themes_dir() -> Path:
+    """Directory containing app theme JSON files."""
+    return resource_root() / "themes"
+
+
+def resolve_theme_path(theme_name: str) -> Path:
+    """Resolve a named theme file from bundled themes, fallback to apple_grey."""
+    slug = (theme_name or "").strip().lower() or "apple_grey"
+    themes_dir = bundled_themes_dir()
+    candidate = themes_dir / f"{slug}.json"
+    if candidate.exists():
+        return candidate
+    return themes_dir / "apple_grey.json"
 
 
 def legacy_dot_dir() -> Path:

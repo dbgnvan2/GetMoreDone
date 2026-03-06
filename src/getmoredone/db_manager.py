@@ -4,14 +4,16 @@ Provides CRUD operations and business logic for all entities.
 """
 
 from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import sqlite3
+import re
 
 from .database import Database
 from .models import (
     ActionItem, ItemLink, ContactLink, Defaults, RescheduleHistory,
     TimeBlock, WorkLog, Status, Contact
 )
+from .app_settings import AppSettings
 
 
 class DatabaseManager:
@@ -55,6 +57,10 @@ class DatabaseManager:
         if apply_defaults:
             self._apply_defaults(item)
 
+        # Stamp segment ID from linked structures when missing
+        self._stamp_segment_from_relationships(item)
+        self._normalize_week_item_dates(item)
+
         # Validate and adjust dates
         item.validate_and_adjust_dates()
 
@@ -68,9 +74,9 @@ class DatabaseManager:
                 original_due_date, is_meeting, meeting_start_time,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
-                week_action_id, segment_description_id, is_habit, percent_complete,
+                week_action_id, annual_plan_element_id, item_type, segment_description_id, is_habit, percent_complete,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.next_action,
@@ -79,7 +85,7 @@ class DatabaseManager:
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
-            item.week_action_id, item.segment_description_id, 1 if item.is_habit else 0,
+            item.week_action_id, item.annual_plan_element_id, item.item_type, item.segment_description_id, 1 if item.is_habit else 0,
             item.percent_complete,
             item.created_at, item.updated_at
         ))
@@ -98,8 +104,15 @@ class DatabaseManager:
             return self._row_to_action_item(row)
         return None
 
-    def update_action_item(self, item: ActionItem):
-        """Update an existing action item."""
+    def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True):
+        """Update an existing action item.
+
+        Args:
+            item: Action item to persist.
+            normalize_week_dates: When True, week-typed items are snapped to week bounds.
+                Inline list edits and quick reschedules can disable this to preserve
+                user-entered day-level dates.
+        """
         # Get existing item to preserve original_due_date if it exists
         existing = self.get_action_item(item.id)
         if existing and existing.original_due_date:
@@ -116,6 +129,10 @@ class DatabaseManager:
         item.update_priority_score()
         item.updated_at = datetime.now().isoformat()
 
+        self._stamp_segment_from_relationships(item)
+        if normalize_week_dates:
+            self._normalize_week_item_dates(item)
+
         self.db.conn.execute("""
             UPDATE action_items SET
                 who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?, next_action = ?,
@@ -123,7 +140,7 @@ class DatabaseManager:
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
                 planned_minutes = ?, status = ?, completed_at = ?,
-                week_action_id = ?, segment_description_id = ?, is_habit = ?, percent_complete = ?,
+                week_action_id = ?, annual_plan_element_id = ?, item_type = ?, segment_description_id = ?, is_habit = ?, percent_complete = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
@@ -133,7 +150,7 @@ class DatabaseManager:
             item.importance, item.urgency, item.size, item.value,
             item.priority_score, item.group, item.category,
             item.planned_minutes, item.status, item.completed_at,
-            item.week_action_id, item.segment_description_id, 1 if item.is_habit else 0,
+            item.week_action_id, item.annual_plan_element_id, item.item_type, item.segment_description_id, 1 if item.is_habit else 0,
             item.percent_complete,
             item.updated_at, item.id
         ))
@@ -158,7 +175,7 @@ class DatabaseManager:
 
         item.status = Status.COMPLETED
         item.completed_at = datetime.now().isoformat()
-        self.update_action_item(item)
+        self.update_action_item(item, normalize_week_dates=False)
         return True
 
     def uncomplete_action_item(self, item_id: str) -> bool:
@@ -655,10 +672,46 @@ class DatabaseManager:
             history.to_start, history.to_due, history.reason, history.created_at
         ))
 
+        # Weekly linked items should update the shared week_action date range.
+        if item.item_type == "week" and item.week_action_id:
+            target_start = new_start
+            target_due = new_due
+
+            wa = self.db.conn.execute(
+                "SELECT week_start_date, week_end_date FROM week_actions WHERE id = ?",
+                (item.week_action_id,),
+            ).fetchone()
+            if wa:
+                target_start = target_start or wa["week_start_date"]
+                target_due = target_due or wa["week_end_date"]
+
+            target_start = target_start or item.start_date
+            target_due = target_due or item.due_date
+            now = datetime.now().isoformat()
+
+            self.db.conn.execute(
+                """
+                UPDATE week_actions
+                SET week_start_date = ?, week_end_date = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (target_start, target_due, now, item.week_action_id),
+            )
+            self.db.conn.execute(
+                """
+                UPDATE action_items
+                SET start_date = ?, due_date = ?, updated_at = ?
+                WHERE week_action_id = ? AND item_type = 'week'
+                """,
+                (target_start, target_due, now, item.week_action_id),
+            )
+            self.db.conn.commit()
+            return
+
         # Update item
         item.start_date = new_start
         item.due_date = new_due
-        self.update_action_item(item)
+        self.update_action_item(item, normalize_week_dates=False)
 
     # ==================== LINKS ====================
 
@@ -917,6 +970,199 @@ class DatabaseManager:
         rows = self.db.conn.execute(query).fetchall()
         return [self._row_to_contact(row) for row in rows]
 
+    # ==================== INTERNAL HELPERS ====================
+
+    def _stamp_segment_from_relationships(self, item: ActionItem):
+        """Ensure segment_description_id is set based on week action or parent links."""
+        if item.segment_description_id:
+            return
+
+        segment_id = self._derive_segment_id(
+            item.week_action_id, item.parent_id, item.annual_plan_element_id
+        )
+
+        if segment_id:
+            item.segment_description_id = segment_id
+
+    def _normalize_week_item_dates(self, item: ActionItem):
+        """Force weekly items to align with the configured first-day-of-week."""
+        if item.item_type != "week":
+            return
+
+        bounds = self._compute_week_bounds(item.start_date, item.due_date, self._get_first_day_of_week())
+        if not bounds:
+            return
+
+        item.start_date, item.due_date = bounds
+
+    def _segment_from_week_action(self, week_action_id: Optional[str]) -> Optional[str]:
+        if not week_action_id:
+            return None
+        row = self.db.conn.execute(
+            "SELECT segment_description_id FROM week_actions WHERE id = ?",
+            (week_action_id,),
+        ).fetchone()
+        segment_id = row["segment_description_id"] if row else None
+        return segment_id
+
+    def _segment_from_annual_plan(self, annual_plan_element_id: Optional[str]) -> Optional[str]:
+        if not annual_plan_element_id:
+            return None
+        row = self.db.conn.execute(
+            "SELECT segment_name FROM annual_plan_elements WHERE id = ?",
+            (annual_plan_element_id,),
+        ).fetchone()
+        if not row:
+            return None
+        segment_name = (row["segment_name"] or "").strip()
+        if not segment_name:
+            return None
+        seg_row = self.db.conn.execute(
+            "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+            (segment_name,)
+        ).fetchone()
+        return seg_row["id"] if seg_row else None
+
+    def _get_first_day_of_week(self) -> int:
+        try:
+            settings = AppSettings.load()
+            return int(getattr(settings, "first_day_of_week", 0))
+        except Exception:
+            return 0
+
+    def _derive_segment_id(
+        self,
+        week_action_id: Optional[str],
+        parent_id: Optional[str],
+        annual_plan_element_id: Optional[str],
+    ) -> Optional[str]:
+        segment_id = self._segment_from_week_action(week_action_id)
+        if segment_id:
+            return segment_id
+
+        if parent_id:
+            row = self.db.conn.execute(
+                "SELECT segment_description_id, week_action_id, annual_plan_element_id FROM action_items WHERE id = ?",
+                (parent_id,),
+            ).fetchone()
+            if row:
+                if row["segment_description_id"]:
+                    return row["segment_description_id"]
+                segment_id = self._segment_from_week_action(row["week_action_id"])
+                if segment_id:
+                    return segment_id
+                segment_id = self._segment_from_annual_plan(row["annual_plan_element_id"])
+                if segment_id:
+                    return segment_id
+
+        return self._segment_from_annual_plan(annual_plan_element_id)
+
+    def backfill_action_item_segments(self) -> int:
+        """Populate missing segment ids and normalize weekly dates on historical action items."""
+        rows = self.db.conn.execute(
+            """
+            SELECT id, week_action_id, parent_id, annual_plan_element_id,
+                   item_type, start_date, due_date, segment_description_id
+            FROM action_items
+            """
+        ).fetchall()
+
+        updated = 0
+        now = datetime.now().isoformat()
+        first_day = self._get_first_day_of_week()
+        for row in rows:
+            updates: Dict[str, Any] = {}
+
+            if not row["segment_description_id"]:
+                segment_id = self._derive_segment_id(
+                    row["week_action_id"],
+                    row["parent_id"],
+                    row["annual_plan_element_id"],
+                )
+                if segment_id:
+                    updates["segment_description_id"] = segment_id
+
+            if row["item_type"] == "week":
+                bounds = self._compute_week_bounds(row["start_date"], row["due_date"], first_day)
+                if bounds:
+                    start_date, due_date = bounds
+                    if start_date != row["start_date"]:
+                        updates["start_date"] = start_date
+                    if due_date != row["due_date"]:
+                        updates["due_date"] = due_date
+
+            if updates:
+                updates["updated_at"] = now
+                set_clause = ", ".join(f"{key} = ?" for key in updates.keys())
+                values = list(updates.values()) + [row["id"]]
+                self.db.conn.execute(
+                    f"UPDATE action_items SET {set_clause} WHERE id = ?",
+                    values,
+                )
+                updated += 1
+
+        if updated:
+            self.db.conn.commit()
+        return updated
+
+    def normalize_title_who_fields(self) -> int:
+        """Move trailing parenthetical who text into `who` when who is blank.
+
+        Example: ``"Task name (Creative)"`` -> title ``"Task name"``, who ``"Creative"``.
+        """
+        rows = self.db.conn.execute(
+            "SELECT id, title, who FROM action_items"
+        ).fetchall()
+        updated = 0
+        now = datetime.now().isoformat()
+        pattern = re.compile(r"^(?P<title>.+?)\s*\((?P<who>[^()]{2,40})\)\s*$")
+
+        for row in rows:
+            who = (row["who"] or "").strip()
+            if who:
+                continue
+            title = (row["title"] or "").strip()
+            if not title:
+                continue
+            match = pattern.match(title)
+            if not match:
+                continue
+
+            clean_title = match.group("title").strip()
+            parsed_who = match.group("who").strip()
+            if not clean_title or not parsed_who:
+                continue
+
+            self.db.conn.execute(
+                "UPDATE action_items SET title = ?, who = ?, updated_at = ? WHERE id = ?",
+                (clean_title, parsed_who, now, row["id"]),
+            )
+            updated += 1
+
+        if updated:
+            self.db.conn.commit()
+        return updated
+
+    def _compute_week_bounds(
+        self,
+        start_date: Optional[str],
+        due_date: Optional[str],
+        first_day: int,
+    ) -> Optional[Tuple[str, str]]:
+        source_date = start_date or due_date
+        if not source_date:
+            return None
+
+        try:
+            start_dt = date.fromisoformat(source_date)
+        except ValueError:
+            return None
+
+        offset = (start_dt.weekday() - first_day) % 7
+        week_start = start_dt - timedelta(days=offset)
+        week_end = week_start + timedelta(days=6)
+        return week_start.isoformat(), week_end.isoformat()
+
     def update_contact(self, contact: Contact):
         """Update an existing contact."""
         contact.updated_at = datetime.now().isoformat()
@@ -1025,6 +1271,16 @@ class DatabaseManager:
             week_action_id = None
 
         try:
+            annual_plan_element_id = row["annual_plan_element_id"]
+        except (KeyError, IndexError):
+            annual_plan_element_id = None
+
+        try:
+            item_type = row["item_type"] or "daily"
+        except (KeyError, IndexError):
+            item_type = "daily"
+
+        try:
             segment_description_id = row["segment_description_id"]
         except (KeyError, IndexError):
             segment_description_id = None
@@ -1068,6 +1324,8 @@ class DatabaseManager:
             status=row["status"],
             completed_at=row["completed_at"],
             week_action_id=week_action_id,
+            annual_plan_element_id=annual_plan_element_id,
+            item_type=item_type,
             segment_description_id=segment_description_id,
             is_habit=is_habit,
             percent_complete=percent_complete,

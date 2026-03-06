@@ -8,7 +8,11 @@ from typing import Optional, TYPE_CHECKING
 
 from ..models import ActionItem
 from ..app_settings import AppSettings
+from ..color_contrast import pick_text_color
 from ..date_utils import future_date_targets
+from ..theme import semantic_colors
+from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
+from .title_format import split_action_item_title, format_column_text
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -29,6 +33,18 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.drag_hover_frame = None
         self.drag_hover_base_color = None
         self.date_box_colors = {}
+        self.date_box_font_size = int(round(14 * 1.3))  # 30% larger
+        self.date_box_height = 86
+        self.item_row_height = 86
+        self._sync_ui_sizing_from_settings()
+        self.palette = semantic_colors()
+
+        self.segment_colors = {}
+        self.subsegment_colors = {}
+        self.category_colors = {}
+        self._ape_lineage_cache = {}
+        self._week_segment_cache = {}
+        self._item_lineage_cache = {}
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -36,6 +52,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.create_header()
         self.create_body()
         self.refresh()
+
+    def _sync_ui_sizing_from_settings(self):
+        """Sync Drag Schedule sizing options from persisted settings."""
+        box_height = max(20, int(getattr(self.settings, "drag_schedule_box_height_px", 86)))
+        self.date_box_height = box_height
+        self.item_row_height = box_height
 
     def create_header(self):
         header = ctk.CTkFrame(self)
@@ -126,6 +148,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.dates_frame.grid_columnconfigure(0, weight=1)
 
     def refresh(self):
+        # Re-load settings so size/color changes from Settings screen apply immediately.
+        self.settings = AppSettings.load()
+        self._sync_ui_sizing_from_settings()
+        self.palette = semantic_colors()
+        self._reload_lineage_maps()
+
         for widget in self.items_frame.winfo_children():
             widget.destroy()
         for widget in self.dates_frame.winfo_children():
@@ -142,13 +170,50 @@ class DragScheduleScreen(ctk.CTkFrame):
                 font=ctk.CTkFont(size=14)
             ).grid(row=0, column=0, pady=20)
         else:
-            row = 0
+            header = ctk.CTkFrame(self.items_frame, fg_color=self.palette["surface_subtle"])
+            header.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 4))
+            header.grid_columnconfigure(0, minsize=280)
+            header.grid_columnconfigure(1, minsize=120)
+            header.grid_columnconfigure(2, minsize=120)
+            header.grid_columnconfigure(3, minsize=120)
+            header.grid_columnconfigure(4, weight=1)
+            ctk.CTkLabel(header, text="Title", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=0, sticky="w", padx=(10, 4), pady=5
+            )
+            ctk.CTkLabel(header, text="Segment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=1, sticky="w", padx=4, pady=5
+            )
+            ctk.CTkLabel(header, text="SubSegment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=2, sticky="w", padx=4, pady=5
+            )
+            ctk.CTkLabel(header, text="Category", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=3, sticky="w", padx=4, pady=5
+            )
+            ctk.CTkLabel(header, text="Date", anchor="e", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=4, sticky="e", padx=(4, 10), pady=5
+            )
+
+            row = 1
             for item in items:
                 item_row = self.create_item_row(item)
-                item_row.grid(row=row, column=0, sticky="ew", pady=4, padx=4)
+                item_row.grid(row=row, column=0, sticky="ew", pady=2, padx=2)
                 row += 1
 
         self.build_date_boxes()
+
+    def _reload_lineage_maps(self):
+        self.segment_colors, self.subsegment_colors = load_latest_lineage_color_maps(self.app.vps_manager)
+        self.category_colors = {
+            (
+                (row.get("segment_name", "") or "").strip().lower(),
+                (row.get("subsegment_name", "") or "").strip().lower(),
+                (row.get("name", "") or "").strip().lower(),
+            ): (row.get("color_hex") or "").strip()
+            for row in self.app.vps_manager.get_vision_categories()
+        }
+        self._ape_lineage_cache.clear()
+        self._week_segment_cache.clear()
+        self._item_lineage_cache.clear()
 
     def load_items(self):
         n_days = int(self.days_var.get())
@@ -170,29 +235,207 @@ class DragScheduleScreen(ctk.CTkFrame):
                 items.append(item)
         return items
 
-    def create_item_row(self, item: ActionItem):
-        frame = ctk.CTkFrame(self.items_frame)
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_columnconfigure(1, weight=0)
+    @staticmethod
+    def _lineage_from_structured_title(item: ActionItem) -> tuple[str, str, str]:
+        parsed = split_action_item_title(item.title)
+        context_parts = [part.strip() for part in parsed.context.split("|") if part.strip()]
+        if len(context_parts) >= 3:
+            category = context_parts[2].split(" - ", 1)[0].strip()
+            return context_parts[0], context_parts[1], category
+        return "", "", ""
 
-        date_text = item.start_date or item.due_date or ""
+    def _lineage_from_ape_id(self, ape_id: str | None) -> tuple[str, str, str]:
+        if not ape_id:
+            return "", "", ""
+        if ape_id in self._ape_lineage_cache:
+            return self._ape_lineage_cache[ape_id]
+
+        lineage = ("", "", "")
+        conn = getattr(getattr(self.db_manager, "db", None), "conn", None)
+        if conn:
+            row = conn.execute(
+                """
+                SELECT segment_name, subsegment_name, category_name
+                FROM annual_plan_elements
+                WHERE id = ?
+                """,
+                (ape_id,),
+            ).fetchone()
+            if row:
+                lineage = (
+                    (row["segment_name"] or "").strip(),
+                    (row["subsegment_name"] or "").strip(),
+                    (row["category_name"] or "").strip(),
+                )
+        self._ape_lineage_cache[ape_id] = lineage
+        return lineage
+
+    def _segment_from_week_action(self, week_action_id: str | None) -> str:
+        if not week_action_id:
+            return ""
+        if week_action_id in self._week_segment_cache:
+            return self._week_segment_cache[week_action_id]
+
+        segment_name = ""
+        conn = getattr(getattr(self.db_manager, "db", None), "conn", None)
+        if conn:
+            row = conn.execute(
+                """
+                SELECT sd.name AS segment_name
+                FROM week_actions wa
+                LEFT JOIN segment_descriptions sd ON sd.id = wa.segment_description_id
+                WHERE wa.id = ?
+                """,
+                (week_action_id,),
+            ).fetchone()
+            if row:
+                segment_name = (row["segment_name"] or "").strip()
+        self._week_segment_cache[week_action_id] = segment_name
+        return segment_name
+
+    def _lineage_for_item(self, item: ActionItem, depth: int = 0) -> tuple[str, str, str]:
+        item_id = getattr(item, "id", "") or ""
+        if item_id and item_id in self._item_lineage_cache:
+            return self._item_lineage_cache[item_id]
+
+        lineage = self._lineage_from_ape_id(getattr(item, "annual_plan_element_id", None))
+        if any(lineage):
+            if item_id:
+                self._item_lineage_cache[item_id] = lineage
+            return lineage
+
+        if depth < 2:
+            parent_id = getattr(item, "parent_id", None)
+            if parent_id:
+                parent_item = self.db_manager.get_action_item(parent_id)
+                if parent_item:
+                    parent_lineage = self._lineage_for_item(parent_item, depth + 1)
+                    if any(parent_lineage):
+                        if item_id:
+                            self._item_lineage_cache[item_id] = parent_lineage
+                        return parent_lineage
+
+        structured_lineage = self._lineage_from_structured_title(item)
+        if any(structured_lineage):
+            if item_id:
+                self._item_lineage_cache[item_id] = structured_lineage
+            return structured_lineage
+
+        week_segment = self._segment_from_week_action(getattr(item, "week_action_id", None))
+        lineage = (week_segment, "", "")
+        if item_id:
+            self._item_lineage_cache[item_id] = lineage
+        return lineage
+
+    def create_item_row(self, item: ActionItem):
+        frame = ctk.CTkFrame(self.items_frame, height=self.item_row_height)
+        frame.grid_propagate(False)
+        frame.grid_columnconfigure(0, minsize=280)
+        frame.grid_columnconfigure(1, minsize=120)
+        frame.grid_columnconfigure(2, minsize=112)
+        frame.grid_columnconfigure(3, minsize=112)
+        frame.grid_columnconfigure(4, weight=1)
+
+        parsed = split_action_item_title(item.title)
+        segment_name, subsegment_name, category_name = self._lineage_for_item(item)
+        segment_name = segment_name or "-"
+        subsegment_name = subsegment_name or "-"
+        category_name = category_name or "-"
+
+        segment_color, subsegment_color = resolve_lineage_colors(
+            segment_name if segment_name != "-" else "",
+            subsegment_name if subsegment_name != "-" else "",
+            self.app.vps_manager,
+            self.segment_colors,
+            self.subsegment_colors,
+        )
+        category_color = self.category_colors.get(
+            (
+                segment_name.strip().lower(),
+                subsegment_name.strip().lower(),
+                category_name.strip().lower(),
+            ),
+            "",
+        ) or subsegment_color
+        frame.configure(fg_color=category_color)
+
+        title_text = parsed.title or (item.title or "")
+        title_bg = category_color
 
         title_label = ctk.CTkLabel(
             frame,
-            text=item.title,
-            anchor="w"
+            text=f" {format_column_text(title_text, 44)} ",
+            anchor="w",
+            fg_color=title_bg,
+            text_color=pick_text_color(title_bg),
+            corner_radius=6,
+            font=ctk.CTkFont(size=14),
         )
-        title_label.grid(row=0, column=0, sticky="ew", padx=10, pady=6)
+        title_label.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=2)
 
+        segment_label = ctk.CTkLabel(
+            frame,
+            text=f" {format_column_text(segment_name, 16)} ",
+            anchor="w",
+            fg_color=segment_color,
+            text_color=pick_text_color(segment_color),
+            corner_radius=6,
+            font=ctk.CTkFont(size=14),
+        )
+        segment_label.grid(row=0, column=1, sticky="w", padx=4, pady=2)
+
+        subsegment_label = ctk.CTkLabel(
+            frame,
+            text=f" {format_column_text(subsegment_name, 15)} ",
+            anchor="w",
+            fg_color=category_color,
+            text_color=pick_text_color(category_color),
+            corner_radius=6,
+            font=ctk.CTkFont(size=14),
+        )
+        subsegment_label.grid(row=0, column=2, sticky="w", padx=4, pady=2)
+
+        category_label = ctk.CTkLabel(
+            frame,
+            text=f" {format_column_text(category_name, 15)} ",
+            anchor="w",
+            fg_color=category_color,
+            text_color=pick_text_color(category_color),
+            corner_radius=6,
+            font=ctk.CTkFont(size=14),
+        )
+        category_label.grid(row=0, column=3, sticky="w", padx=4, pady=2)
+
+        date_text = item.start_date or item.due_date or ""
+        date_bg = "transparent"
+        if date_text:
+            try:
+                target_date = datetime.strptime(date_text, "%Y-%m-%d").date()
+                today = datetime.now().date()
+                if target_date < today:
+                    date_bg = "#FBCFE8"  # pink
+                elif target_date == today:
+                    date_bg = "#FEF08A"  # yellow
+                else:
+                    date_bg = "#BBF7D0"  # light green
+            except ValueError:
+                date_bg = "transparent"
         date_label = ctk.CTkLabel(
             frame,
             text=date_text,
-            text_color="gray70"
+            text_color="black" if date_bg != "transparent" else "gray40",
+            anchor="e",
+            fg_color=date_bg,
+            corner_radius=6,
+            font=ctk.CTkFont(size=14),
         )
-        date_label.grid(row=0, column=1, sticky="e", padx=10, pady=6)
+        date_label.grid(row=0, column=4, sticky="e", padx=(8, 10), pady=2)
 
         self.bind_drag_handlers(frame, item)
         self.bind_drag_handlers(title_label, item)
+        self.bind_drag_handlers(segment_label, item)
+        self.bind_drag_handlers(subsegment_label, item)
+        self.bind_drag_handlers(category_label, item)
         self.bind_drag_handlers(date_label, item)
         return frame
 
@@ -236,39 +479,45 @@ class DragScheduleScreen(ctk.CTkFrame):
             day = datetime.strptime(date_str, "%Y-%m-%d").date()
             count, total_minutes = date_stats.get(date_str, (0, 0))
             label_text = (
-                f"{day.strftime('%a')}\n"
-                f"{day.strftime('%b %d, %Y')}\n"
+                f"{day.strftime('%a')} - "
+                f"{day.strftime('%m/%d')} - "
                 f"{self.format_day_stats_text(count, total_minutes)}"
             )
             color = self.color_for_day_stats(count, total_minutes)
 
-            frame = ctk.CTkFrame(self.dates_frame, height=86, fg_color=color)
-            frame.grid(row=i, column=0, sticky="ew", padx=6, pady=6)
+            frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
+            frame.grid_propagate(False)
+            frame.grid(row=i, column=0, sticky="ew", padx=2, pady=2)
             frame.grid_columnconfigure(0, weight=1)
 
             label = ctk.CTkLabel(
                 frame,
                 text=label_text,
                 justify="center",
-                text_color="#0B3D91"
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=self._get_date_text_color()
             )
-            label.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+            label.grid(row=0, column=0, sticky="ew", padx=6, pady=2)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
 
         for idx, (title, subtitle, date_str, color) in enumerate(future_options):
-            frame = ctk.CTkFrame(self.dates_frame, height=70, fg_color=color)
-            frame.grid(row=options_start_row + idx, column=0, sticky="ew", padx=6, pady=6)
+            short_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%m/%d")
+            future_text = f"{title} - {short_date}"
+            frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
+            frame.grid_propagate(False)
+            frame.grid(row=options_start_row + idx, column=0, sticky="ew", padx=2, pady=2)
             frame.grid_columnconfigure(0, weight=1)
 
             label = ctk.CTkLabel(
                 frame,
-                text=f"{title}\n{subtitle}",
+                text=future_text,
                 justify="center",
-                text_color="#0B3D91"
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=self._get_date_text_color()
             )
-            label.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+            label.grid(row=0, column=0, sticky="ew", padx=6, pady=2)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
@@ -306,7 +555,15 @@ class DragScheduleScreen(ctk.CTkFrame):
         item_label = "item" if count == 1 else "items"
         hours = total_minutes // 60
         minutes = total_minutes % 60
-        return f"{count} {item_label} • {hours}h {minutes}m"
+        return f"{count} {item_label} - {hours}h {minutes}m"
+
+    def _get_date_text_color(self) -> str:
+        color = str(getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF") or "#FFFFFF").strip()
+        if not color.startswith("#"):
+            color = f"#{color}"
+        if len(color) != 7:
+            return "#FFFFFF"
+        return color
 
     def color_for_day_stats(self, count: int, total_minutes: int) -> str:
         """

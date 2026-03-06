@@ -98,7 +98,7 @@ class StatsScreen(ctk.CTkFrame):
         header_frame.grid(row=1, column=0, sticky="ew", pady=(10, 2), padx=5)
         header_frame.grid_columnconfigure(0, weight=1)
 
-        headers = ["Title", "Who", "Category", "Effort-Cost", "Planned", "Actual", "Variance"]
+        headers = ["Immediate Step", "Who", "Category", "Effort-Cost", "Planned", "Actual", "Variance"]
         for col, header_text in enumerate(headers):
             ctk.CTkLabel(
                 header_frame,

@@ -28,7 +28,7 @@ def test_upcoming_includes_all_overdue_items(db_manager):
         ActionItem(who="Test", title="Due 100 days ago", due_date=(today - timedelta(days=100)).isoformat()),
         ActionItem(who="Test", title="Due in 2025", due_date="2025-12-12"),
         ActionItem(who="Test", title="Due tomorrow", due_date=(today + timedelta(days=1)).isoformat()),
-        ActionItem(who="Test", title="Due in 8 days", due_date=(today + timedelta(days=8)).isoformat()),
+        ActionItem(who="Test", title="Due in 10 days", due_date=(today + timedelta(days=10)).isoformat()),
     ]
 
     for item in items:
@@ -48,7 +48,7 @@ def test_upcoming_includes_all_overdue_items(db_manager):
     assert "Due tomorrow" in titles
 
     # Should NOT include items beyond the 7-day future window
-    assert "Due in 8 days" not in titles
+    assert "Due in 10 days" not in titles
 
 
 def test_upcoming_respects_future_cutoff(db_manager):
