@@ -110,14 +110,14 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_vps_planning.grid(row=5, column=0, padx=20, pady=10)
 
-        self.btn_vision_planning = ctk.CTkButton(
+        self.btn_vision_planning_hub = ctk.CTkButton(
             self.sidebar,
             text="Vision Planning",
-            command=self.show_vision_planning,
-            fg_color="#5B2D8E",
-            hover_color="#7B4DBE"
+            command=self.show_vision_planning_hub,
+            fg_color="#0E7490",
+            hover_color="#0891B2"
         )
-        self.btn_vision_planning.grid(row=6, column=0, padx=20, pady=10)
+        self.btn_vision_planning_hub.grid(row=6, column=0, padx=20, pady=10)
 
         self.btn_plan = ctk.CTkButton(
             self.sidebar,
@@ -168,15 +168,6 @@ class GetMoreDoneApp(ctk.CTk):
         )
         self.btn_settings.grid(row=13, column=0, padx=20, pady=10)
 
-        self.btn_vision_planning_hub = ctk.CTkButton(
-            self.sidebar,
-            text="Vision Planning",
-            command=self.show_vision_planning_hub,
-            fg_color="#0E7490",
-            hover_color="#0891B2"
-        )
-        self.btn_vision_planning_hub.grid(row=13, column=0, padx=20, pady=10)
-
     def clear_content(self):
         """Clear current screen from content area."""
         if self.current_screen:
@@ -218,12 +209,6 @@ class GetMoreDoneApp(ctk.CTk):
         self.current_screen = VPSPlanningScreen(self.content_frame, self.vps_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 
-    def show_vision_planning(self):
-        """Show Vision Planning screen."""
-        from .screens.vision_planning import VisionPlanningScreen
-        self.clear_content()
-        self.current_screen = VisionPlanningScreen(self.content_frame, self.vps_manager, self)
-        self.current_screen.grid(row=0, column=0, sticky="nsew")
 
     def show_plan(self):
         """Show Plan screen."""
