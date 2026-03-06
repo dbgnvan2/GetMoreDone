@@ -11,9 +11,11 @@ from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
 from ..models import ActionItem, PriorityFactors, ItemLink
 from ..validation import Validator
 from ..app_settings import AppSettings
+from ..color_contrast import pick_text_color
 from ..date_utils import increment_date
 from ..paths import app_data_dir_path
-from ..theme import button_style
+from ..theme import button_style, semantic_colors
+from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 from .title_format import split_action_item_title, build_action_item_title
 
 if TYPE_CHECKING:
@@ -117,6 +119,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         main_frame.grid_columnconfigure(
             1, weight=0)  # Right column - fixed width
         main_frame.grid_rowconfigure(0, weight=1)
+        main_frame.grid_rowconfigure(2, weight=1)
 
         # Left column
         left_col = ctk.CTkFrame(main_frame)
@@ -127,6 +130,16 @@ class ItemEditorDialog(ctk.CTkToplevel):
         right_col = ctk.CTkFrame(main_frame)
         right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         right_col.grid_columnconfigure(1, weight=1)
+        right_col.grid_rowconfigure(0, weight=1)
+
+        # Resizable separator between panel 1 (top form) and panel 2 (tabs)
+        self.separator_frame = ctk.CTkFrame(
+            main_frame, height=5, fg_color="gray40", cursor="sb_v_double_arrow")
+        self.separator_frame.bind("<Button-1>", self.start_resize)
+        self.separator_frame.bind("<B1-Motion>", self.do_resize)
+        self.resizing = False
+        self.resize_start_y = 0
+        self.is_single_column = False
 
         # === LEFT COLUMN ===
         row_l = 0
@@ -234,7 +247,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.title_context_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
-        ctk.CTkLabel(left_col, text="* Title:").grid(row=row_l,
+        ctk.CTkLabel(left_col, text="* Immediate Step:").grid(row=row_l,
                                                      column=0, sticky="w", padx=10, pady=5)
         self.title_entry = ctk.CTkEntry(left_col, width=320, placeholder_text="write blog 3")
         self.title_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
@@ -249,26 +262,6 @@ class ItemEditorDialog(ctk.CTkToplevel):
         left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
         row_l += 1
 
-        # Next Action
-        ctk.CTkLabel(left_col, text="Next Action:").grid(
-            row=row_l, column=0, sticky="nw", padx=10, pady=5)
-        self.next_action_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.next_action_text.grid(
-            row=row_l, column=1, sticky="nsew", padx=10, pady=5)
-        left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
-        row_l += 1
-
-        # Resizable separator between Description and Next Action
-        self.separator_frame = ctk.CTkFrame(
-            left_col, height=5, fg_color="gray40", cursor="sb_v_double_arrow")
-        self.separator_frame.grid(
-            row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=2)
-        self.separator_frame.bind("<Button-1>", self.start_resize)
-        self.separator_frame.bind("<B1-Motion>", self.do_resize)
-        self.resizing = False
-        self.resize_start_y = 0
-        row_l += 1
-
         # Planned Minutes (keep in left column for now)
         ctk.CTkLabel(left_col, text="Planned Minutes:").grid(
             row=row_l, column=0, sticky="w", padx=10, pady=5)
@@ -278,13 +271,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
             row=row_l, column=1, sticky="w", padx=10, pady=5)
         row_l += 1
 
+        # Next Action
+        ctk.CTkLabel(left_col, text="Next Action:").grid(
+            row=row_l, column=0, sticky="nw", padx=10, pady=5)
+        self.next_action_text = ctk.CTkTextbox(left_col, height=120, width=320)
+        self.next_action_text.grid(
+            row=row_l, column=1, sticky="nsew", padx=10, pady=5)
+        left_col.grid_rowconfigure(row_l, weight=1)  # Bottom section grows with window
+        row_l += 1
+
         # === RIGHT COLUMN with TABS ===
         row_r = 0
 
         # Create tabview for right column with fixed height
         self.tabview = ctk.CTkTabview(right_col, width=380, height=400)
         self.tabview.grid(row=row_r, column=0, columnspan=2,
-                          sticky="new", padx=10, pady=10)
+                          sticky="nsew", padx=10, pady=10)
         row_r += 1
 
         # Create tabs (Dates tab first as default)
@@ -373,19 +375,31 @@ class ItemEditorDialog(ctk.CTkToplevel):
         btn_due_clear.pack(side="left", padx=2)
         tab0_row += 1
 
-        # Is Meeting checkbox
+        # Is Meeting + Calendar
         ctk.CTkLabel(self.tab_dates, text="Is Meeting:").grid(
             row=tab0_row, column=0, sticky="w", padx=10, pady=5)
         self.is_meeting_var = ctk.BooleanVar(value=False)
+        meeting_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
+        meeting_frame.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        meeting_frame.grid_columnconfigure(0, minsize=150)
+
         self.is_meeting_checkbox = ctk.CTkCheckBox(
-            self.tab_dates,
+            meeting_frame,
             text="",
             variable=self.is_meeting_var,
             onvalue=True,
             offvalue=False
         )
-        self.is_meeting_checkbox.grid(
-            row=tab0_row, column=1, sticky="w", padx=10, pady=5)
+        self.is_meeting_checkbox.grid(row=0, column=0, sticky="w")
+
+        btn_calendar = ctk.CTkButton(
+            meeting_frame,
+            text="📅 Calendar",
+            command=self.create_calendar_event,
+            width=100,
+            **button_style("secondary"),
+        )
+        btn_calendar.grid(row=0, column=1, sticky="w", padx=(5, 0))
         tab0_row += 1
 
         # Meeting Start Time (read-only, set when calendar event is created)
@@ -455,23 +469,25 @@ class ItemEditorDialog(ctk.CTkToplevel):
         tab1_row += 1
 
         # Priority Score Display (more compact)
-        score_frame = ctk.CTkFrame(
-            self.tab_priority, fg_color="gray25", corner_radius=8)
+        score_frame = ctk.CTkFrame(self.tab_priority, corner_radius=8)
         score_frame.grid(row=tab1_row, column=0, columnspan=2,
                          sticky="ew", padx=10, pady=(15, 5))
+        score_frame.grid_columnconfigure(0, weight=1)
+        score_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
             score_frame,
             text="Priority Score:",
             font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(side="left", padx=10, pady=8)
+        ).grid(row=0, column=0, sticky="w", padx=10, pady=8)
 
         self.priority_label = ctk.CTkLabel(
             score_frame,
             text="0 (0×0×0×0)",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=12, weight="bold"),
+            anchor="e",
         )
-        self.priority_label.pack(side="left", padx=10, pady=8)
+        self.priority_label.grid(row=0, column=1, sticky="e", padx=10, pady=8)
         tab1_row += 1
 
         # === TAB 2: ORGANIZATION ===
@@ -542,7 +558,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
         tab3_row = 0
 
         # Notes list frame
-        self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=280)
+        self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=180)
         self.notes_frame.grid(row=tab3_row, column=0,
                               sticky="new", padx=10, pady=5)
         self.notes_frame.grid_columnconfigure(0, weight=1)
@@ -590,56 +606,34 @@ class ItemEditorDialog(ctk.CTkToplevel):
         top_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
         top_row.pack(fill="x", pady=(0, 5))
 
+        action_btn_width = 110
+
         btn_save = ctk.CTkButton(top_row, text="Save",
-                                 command=self.save_item, width=100)
-        btn_save.pack(side="left", padx=5)
+                                 command=self.save_item, width=action_btn_width)
+        btn_save.pack(side="left", padx=2)
 
         btn_save_close = ctk.CTkButton(
-            top_row, text="Save & Close", command=self.save_and_close, width=120)
-        btn_save_close.pack(side="left", padx=5)
+            top_row, text="Save & Close", command=self.save_and_close, width=action_btn_width)
+        btn_save_close.pack(side="left", padx=2)
 
         if not self.item_id:
             btn_save_new = ctk.CTkButton(
-                top_row, text="Save + New", command=self.save_and_new, width=100)
-            btn_save_new.pack(side="left", padx=5)
+                top_row, text="Save + New", command=self.save_and_new, width=action_btn_width)
+            btn_save_new.pack(side="left", padx=2)
 
         if self.item_id:
             btn_duplicate = ctk.CTkButton(
-                top_row, text="Duplicate", command=self.duplicate_item, width=100)
-            btn_duplicate.pack(side="left", padx=5)
+                top_row, text="Duplicate", command=self.duplicate_item, width=action_btn_width)
+            btn_duplicate.pack(side="left", padx=2)
 
             btn_followup = ctk.CTkButton(
-                top_row, text="Create Follow-up", command=self.create_followup, width=120)
-            btn_followup.pack(side="left", padx=5)
-
-            btn_complete = ctk.CTkButton(
-                top_row, text="Complete", command=self.complete_item, width=100)
-            btn_complete.pack(side="left", padx=5)
-
-        # Calendar button (available for both new and existing items)
-        btn_calendar = ctk.CTkButton(top_row, text="📅 Calendar", command=self.create_calendar_event,
-                                     width=100, **button_style("secondary"))
-        btn_calendar.pack(side="left", padx=5)
+                top_row, text="Add Follow-up", command=self.create_followup, width=action_btn_width)
+            btn_followup.pack(side="left", padx=2)
 
         # Error label
         self.error_label = ctk.CTkLabel(
             top_row, text="", text_color="red", wraplength=600)
         self.error_label.pack(side="left", expand=True, padx=10)
-
-        btn_cancel = ctk.CTkButton(
-            top_row, text="Cancel", command=self.destroy, width=100)
-        btn_cancel.pack(side="right", padx=5)
-
-        # Delete button (only for existing items)
-        if self.item_id:
-            btn_delete = ctk.CTkButton(
-                top_row,
-                text="Delete",
-                command=self.delete_item,
-                width=100,
-                **button_style("danger"),
-            )
-            btn_delete.pack(side="right", padx=5)
 
         # Row 2: Secondary actions (only for existing items)
         if self.item_id:
@@ -647,20 +641,48 @@ class ItemEditorDialog(ctk.CTkToplevel):
             bottom_row.pack(fill="x")
 
             btn_create_tasks = ctk.CTkButton(
-                bottom_row, text="+ Create Tasks", command=self.create_sub_item, width=120)
-            btn_create_tasks.pack(side="left", padx=5)
+                bottom_row, text="Add Tasks", command=self.create_sub_item, width=action_btn_width)
+            btn_create_tasks.pack(side="left", padx=2)
 
             btn_show_related = ctk.CTkButton(
-                bottom_row, text="Show Related", command=self.show_related, width=110)
-            btn_show_related.pack(side="left", padx=5)
+                bottom_row, text="Show Related", command=self.show_related, width=action_btn_width)
+            btn_show_related.pack(side="left", padx=2)
 
             btn_set_parent = ctk.CTkButton(
-                bottom_row, text="Set Parent", command=self.set_parent, width=100)
-            btn_set_parent.pack(side="left", padx=5)
+                bottom_row, text="Set Parent", command=self.set_parent, width=action_btn_width)
+            btn_set_parent.pack(side="left", padx=2)
 
             btn_set_weekly = ctk.CTkButton(
-                bottom_row, text="Set Weekly Tactic", command=self.set_weekly_tactic, width=140)
-            btn_set_weekly.pack(side="left", padx=5)
+                bottom_row, text="Set Wk Tactic", command=self.set_weekly_tactic, width=action_btn_width)
+            btn_set_weekly.pack(side="left", padx=2)
+
+        # Row 3: Completion actions
+        third_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
+        third_row.pack(fill="x", pady=(5, 0))
+
+        if self.item_id:
+            btn_complete = ctk.CTkButton(
+                third_row,
+                text="Complete",
+                command=self.complete_item,
+                width=action_btn_width,
+                **button_style("danger"),
+            )
+            btn_complete.pack(side="left", padx=2)
+
+        btn_cancel = ctk.CTkButton(
+            third_row, text="Cancel", command=self.destroy, width=action_btn_width)
+        btn_cancel.pack(side="left", padx=2)
+
+        if self.item_id:
+            btn_delete = ctk.CTkButton(
+                third_row,
+                text="Delete",
+                command=self.delete_item,
+                width=action_btn_width,
+                **button_style("danger"),
+            )
+            btn_delete.pack(side="left", padx=2)
 
         # Store references for responsive layout
         self.left_col = left_col
@@ -1623,24 +1645,26 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.resize_start_y = event.y_root
 
     def do_resize(self, event):
-        """Handle the resizing of text fields."""
+        """Handle the resizing between panel 1 (top form) and panel 2 (tabs)."""
         if not self.resizing:
+            return
+        if not self.is_single_column:
             return
 
         delta = event.y_root - self.resize_start_y
         self.resize_start_y = event.y_root
 
-        # Get current heights
-        desc_height = self.description_text.cget("height")
-        next_height = self.next_action_text.cget("height")
+        top_height = self.left_col.cget("height") or self.left_col.winfo_height()
+        middle_height = self.right_col.cget("height") or self.right_col.winfo_height()
 
-        # Calculate new heights
-        new_desc_height = max(50, desc_height + delta)
-        new_next_height = max(50, next_height - delta)
+        new_top_height = max(260, int(top_height + delta))
+        new_middle_height = max(220, int(middle_height - delta))
 
-        # Update heights
-        self.description_text.configure(height=new_desc_height)
-        self.next_action_text.configure(height=new_next_height)
+        self.left_col.grid_propagate(False)
+        self.right_col.grid_propagate(False)
+        self.left_col.configure(height=new_top_height)
+        self.right_col.configure(height=new_middle_height)
+        self.tabview.configure(height=max(180, new_middle_height - 24))
 
     def on_resize(self, event):
         """Handle window resize to switch between 2-column and 1-column layout."""
@@ -1657,12 +1681,20 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Switch to single column if window is narrow
         if width < 900:
             # Single column layout
+            self.is_single_column = True
             self.left_col.grid(row=0, column=0, columnspan=2,
                                sticky="nsew", padx=0, pady=(0, 5))
-            self.right_col.grid(row=1, column=0, columnspan=2,
-                                sticky="nsew", padx=0, pady=(5, 0))
+            self.separator_frame.grid(
+                row=1, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 5)
+            )
+            self.right_col.grid(row=2, column=0, columnspan=2,
+                                sticky="nsew", padx=0, pady=(0, 0))
         else:
             # Two column layout
+            self.is_single_column = False
+            self.separator_frame.grid_forget()
+            self.left_col.grid_propagate(True)
+            self.right_col.grid_propagate(True)
             self.left_col.grid(
                 row=0, column=0, sticky="nsew", padx=(0, 5), pady=0)
             self.right_col.grid(
@@ -2108,6 +2140,7 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         self.current_title = current_title
         self.vps_manager = vps_manager
         self.on_close_callback = on_close_callback
+        self.palette = semantic_colors()
 
         self.title(f"Related Items: {current_title}")
         self.geometry("900x700")
@@ -2147,7 +2180,7 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         btn_frame.pack(fill="x", padx=10, pady=10)
 
         btn_close = ctk.CTkButton(
-            btn_frame, text="Close", command=self.destroy, width=100)
+            btn_frame, text="Close", command=self.destroy, width=100, **button_style("primary"))
         btn_close.pack(side="right", padx=5)
 
     def refresh(self):
@@ -2168,14 +2201,14 @@ class ShowRelatedDialog(ctk.CTkToplevel):
             if parent_item:
                 # Parent section header
                 parent_header = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="gray20")
+                    self.scroll_frame, fg_color=self.palette["primary"])
                 parent_header.grid(row=current_row, column=0,
                                    sticky="ew", pady=(0, 5), padx=5)
                 ctk.CTkLabel(
                     parent_header,
                     text="PARENT ITEM",
                     font=ctk.CTkFont(size=14, weight="bold"),
-                    text_color="cyan"
+                    text_color=self.palette["on_primary"]
                 ).pack(pady=5)
                 current_row += 1
 
@@ -2199,14 +2232,14 @@ class ShowRelatedDialog(ctk.CTkToplevel):
         if children:
             # Children section header
             children_header = ctk.CTkFrame(
-                self.scroll_frame, fg_color="gray20")
+                self.scroll_frame, fg_color=self.palette["primary"])
             children_header.grid(row=current_row, column=0,
                                  sticky="ew", pady=(0, 5), padx=5)
             ctk.CTkLabel(
                 children_header,
                 text="CHILD ITEMS",
                 font=ctk.CTkFont(size=14, weight="bold"),
-                text_color="yellow"
+                text_color=self.palette["on_primary"]
             ).pack(pady=5)
             current_row += 1
 
@@ -2224,47 +2257,55 @@ class ShowRelatedDialog(ctk.CTkToplevel):
                 ctk.CTkLabel(
                     self.scroll_frame,
                     text="No related items found",
-                    font=ctk.CTkFont(size=14)
+                    font=ctk.CTkFont(size=14),
+                    text_color=self.palette["body_text"],
                 ).grid(row=current_row, column=0, pady=20)
             elif current_row > 0:
                 # There is a parent but no children
                 children_header = ctk.CTkFrame(
-                    self.scroll_frame, fg_color="gray20")
+                    self.scroll_frame, fg_color=self.palette["primary"])
                 children_header.grid(
                     row=current_row, column=0, sticky="ew", pady=(0, 5), padx=5)
                 ctk.CTkLabel(
                     children_header,
                     text="CHILD ITEMS",
                     font=ctk.CTkFont(size=14, weight="bold"),
-                    text_color="yellow"
+                    text_color=self.palette["on_primary"]
                 ).pack(pady=5)
                 current_row += 1
 
                 ctk.CTkLabel(
                     self.scroll_frame,
                     text="No child items found",
-                    font=ctk.CTkFont(size=12)
+                    font=ctk.CTkFont(size=12),
+                    text_color=self.palette["body_text"],
                 ).grid(row=current_row, column=0, pady=10)
 
     def create_header_row(self, row: int):
         """Create a header row for items."""
-        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color=self.palette["surface_subtle"])
         header_frame.grid(row=row, column=0, sticky="ew", pady=(0, 5), padx=5)
         header_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(header_frame, text="Title (Who)", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(
+            header_frame,
+            text="Immediate Step (Who)",
+            anchor="w",
+            font=ctk.CTkFont(weight="bold"),
+            text_color=self.palette["body_text"],
+        ).grid(
             row=0, column=0, sticky="w", padx=10, pady=5
         )
-        ctk.CTkLabel(header_frame, text="Priority", width=70, font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(header_frame, text="Priority", width=70, font=ctk.CTkFont(weight="bold"), text_color=self.palette["body_text"]).grid(
             row=0, column=1, padx=5, pady=5
         )
-        ctk.CTkLabel(header_frame, text="Due Date", width=110, font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(header_frame, text="Due Date", width=110, font=ctk.CTkFont(weight="bold"), text_color=self.palette["body_text"]).grid(
             row=0, column=2, padx=5, pady=5
         )
-        ctk.CTkLabel(header_frame, text="Status", width=80, font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(header_frame, text="Status", width=80, font=ctk.CTkFont(weight="bold"), text_color=self.palette["body_text"]).grid(
             row=0, column=3, padx=5, pady=5
         )
-        ctk.CTkLabel(header_frame, text="Actions", width=80, font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(header_frame, text="Actions", width=80, font=ctk.CTkFont(weight="bold"), text_color=self.palette["body_text"]).grid(
             row=0, column=4, padx=5, pady=5
         )
 
@@ -2283,7 +2324,8 @@ class ShowRelatedDialog(ctk.CTkToplevel):
             frame,
             text=info_text,
             anchor="w",
-            font=ctk.CTkFont(size=12)
+            font=ctk.CTkFont(size=12),
+            text_color=self.palette["body_text"],
         )
         title_label.grid(row=0, column=0, sticky="w", padx=10, pady=5)
 
@@ -2292,13 +2334,14 @@ class ShowRelatedDialog(ctk.CTkToplevel):
             frame,
             text=f"P:{item.priority_score}",
             width=70,
-            fg_color="gray30"
+            fg_color=self.palette["surface_subtle"],
+            text_color=self.palette["body_text"],
         )
         priority_label.grid(row=0, column=1, padx=5, pady=5)
 
         # Due date
         due_text = item.due_date if item.due_date else "-"
-        due_label = ctk.CTkLabel(frame, text=due_text, width=110)
+        due_label = ctk.CTkLabel(frame, text=due_text, width=110, text_color=self.palette["body_text"])
         due_label.grid(row=0, column=2, padx=5, pady=5)
 
         # Status
@@ -2306,7 +2349,7 @@ class ShowRelatedDialog(ctk.CTkToplevel):
             frame,
             text=item.status.capitalize(),
             width=80,
-            text_color="green" if item.status == "completed" else "white"
+            text_color=self.palette["success_strong"] if item.status == "completed" else self.palette["body_text"]
         )
         status_label.grid(row=0, column=3, padx=5, pady=5)
 
@@ -2315,7 +2358,8 @@ class ShowRelatedDialog(ctk.CTkToplevel):
             frame,
             text="Edit",
             width=80,
-            command=lambda: self.edit_item(item.id)
+            command=lambda: self.edit_item(item.id),
+            **button_style("primary"),
         )
         btn_edit.grid(row=0, column=4, padx=5, pady=5)
 
@@ -2430,7 +2474,7 @@ class SetParentDialog(ctk.CTkToplevel):
         header_frame.grid(row=0, column=0, sticky="ew", pady=(0, 5), padx=5)
         header_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(header_frame, text="Title (Who)", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+        ctk.CTkLabel(header_frame, text="Immediate Step (Who)", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
             row=0, column=0, sticky="w", padx=10, pady=5
         )
         ctk.CTkLabel(header_frame, text="Priority", width=70, font=ctk.CTkFont(weight="bold")).grid(
@@ -2627,9 +2671,20 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         self._set_rolling_window_range()
 
         self.segment_filter_var = ctk.StringVar(value="All Segments")
+        self.subsegment_filter_var = ctk.StringVar(value="All SubSegments")
         self.segments = self.vps_manager.get_all_segments()
         self.segment_options = ["All Segments"] + [seg["name"] for seg in self.segments]
+        self.subsegment_options = ["All SubSegments"]
         self.segment_colors_by_id = self.vps_manager.get_segment_colors_by_id()
+        self.segment_colors, self.subsegment_colors = load_latest_lineage_color_maps(self.vps_manager)
+        self.category_colors = {
+            (
+                (row.get("segment_name", "") or "").strip().lower(),
+                (row.get("subsegment_name", "") or "").strip().lower(),
+                (row.get("name", "") or "").strip().lower(),
+            ): (row.get("color_hex") or "").strip()
+            for row in self.vps_manager.get_vision_categories()
+        }
 
         self.create_ui()
         self.logger.info(
@@ -2649,7 +2704,7 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
     def create_ui(self):
         header = ctk.CTkFrame(self)
         header.pack(fill="x", padx=10, pady=10)
-        header.grid_columnconfigure(4, weight=1)
+        header.grid_columnconfigure(7, weight=1)
 
         ctk.CTkLabel(
             header,
@@ -2673,9 +2728,19 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             values=self.segment_options,
             variable=self.segment_filter_var,
             width=200,
-            command=lambda _: self.refresh_actions()
+            command=lambda _: self._on_segment_filter_change()
         )
         self.segment_combo.grid(row=0, column=4, sticky="e", padx=5)
+
+        ctk.CTkLabel(header, text="SubSegment Filter:").grid(row=0, column=5, sticky="e", padx=5)
+        self.subsegment_combo = ctk.CTkComboBox(
+            header,
+            values=self.subsegment_options,
+            variable=self.subsegment_filter_var,
+            width=200,
+            command=lambda _: self.refresh_actions()
+        )
+        self.subsegment_combo.grid(row=0, column=6, sticky="e", padx=5)
 
         self.list_frame = ctk.CTkScrollableFrame(self, height=360)
         self.list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -2739,19 +2804,53 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             ).grid(row=0, column=0, pady=20, padx=5)
             return
 
+        self._refresh_subsegment_options(week_items)
+        selected_subsegment = self.subsegment_filter_var.get()
+        if selected_subsegment != "All SubSegments":
+            week_items = [
+                action for action in week_items
+                if (action.get("ape_subsegment_name") or "").strip() == selected_subsegment
+            ]
+
+        if not week_items:
+            ctk.CTkLabel(
+                self.list_frame,
+                text="No weekly tactics found for the selected filters.",
+                text_color="gray"
+            ).grid(row=0, column=0, pady=20, padx=5)
+            return
+
         header = ctk.CTkFrame(self.list_frame, fg_color="gray25")
         header.grid(row=0, column=0, sticky="ew", padx=5, pady=(0, 5))
         header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(header, text="Week", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=10, pady=5, sticky="w")
         ctk.CTkLabel(header, text="Segment", width=150, font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=5, pady=5)
-        ctk.CTkLabel(header, text="Title", font=ctk.CTkFont(weight="bold")).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="Immediate Step", font=ctk.CTkFont(weight="bold")).grid(row=0, column=2, padx=5, pady=5, sticky="w")
         ctk.CTkLabel(header, text="Action", font=ctk.CTkFont(weight="bold")).grid(row=0, column=3, padx=5, pady=5)
 
         row = 1
         for week_item in week_items:
             segment_id = week_item.get("segment_description_id")
-            row_color = self.segment_colors_by_id.get(segment_id, "gray20")
-            text_color = self._text_color_for_background(row_color)
+            segment_name = (week_item.get("ape_segment_name") or self.segment_name_map.get(segment_id) or "").strip()
+            subsegment_name = (week_item.get("ape_subsegment_name") or "").strip()
+            category_name = (week_item.get("ape_category_name") or "").strip()
+
+            segment_color, subsegment_color = resolve_lineage_colors(
+                segment_name,
+                subsegment_name,
+                self.vps_manager,
+                self.segment_colors,
+                self.subsegment_colors,
+            )
+            row_color = self.category_colors.get(
+                (
+                    segment_name.lower(),
+                    subsegment_name.lower(),
+                    category_name.lower(),
+                ),
+                "",
+            ) or subsegment_color or self.segment_colors_by_id.get(segment_id, "gray20")
+            text_color = pick_text_color(row_color)
 
             frame = ctk.CTkFrame(self.list_frame, fg_color=row_color)
             frame.grid(row=row, column=0, sticky="ew", padx=5, pady=2)
@@ -2775,6 +2874,26 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             )
             btn.grid(row=0, column=3, padx=5, pady=5)
             row += 1
+
+    def _on_segment_filter_change(self):
+        self.subsegment_filter_var.set("All SubSegments")
+        self.refresh_actions()
+
+    def _refresh_subsegment_options(self, week_items: List[Dict[str, Any]]):
+        subsegments = sorted(
+            {
+                (item.get("ape_subsegment_name") or "").strip()
+                for item in week_items
+                if (item.get("ape_subsegment_name") or "").strip()
+            },
+            key=str.casefold,
+        )
+        options = ["All SubSegments"] + subsegments
+        current = self.subsegment_filter_var.get()
+        if current not in options:
+            self.subsegment_filter_var.set("All SubSegments")
+        self.subsegment_options = options
+        self.subsegment_combo.configure(values=self.subsegment_options)
 
     def _select_week_action(self, week_item: Dict[str, Any], display: str):
         self.on_select(

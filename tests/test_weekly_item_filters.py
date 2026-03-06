@@ -9,6 +9,7 @@ actually returns records for the picker.
 from datetime import datetime
 
 from src.getmoredone.models import ActionItem
+from src.getmoredone.screens.segment_color_utils import resolve_segment_color_for_item
 from src.getmoredone.vps_manager import VPSManager
 
 
@@ -41,17 +42,17 @@ def _seed_weekly_item(manager: VPSManager) -> None:
     )
     conn.execute(
         """
-        INSERT INTO vision_subsegments (id, segment_id, name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO vision_subsegments (id, segment_id, name, color_hex, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (vision_subsegment_id, vision_segment_id, "Books", now, now),
+        (vision_subsegment_id, vision_segment_id, "Books", "#44AA66", now, now),
     )
     conn.execute(
         """
-        INSERT INTO vision_categories (id, subsegment_id, name, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO vision_categories (id, subsegment_id, name, color_hex, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (vision_category_id, vision_subsegment_id, "Learning", now, now),
+        (vision_category_id, vision_subsegment_id, "Learning", "#CC8844", now, now),
     )
     conn.execute(
         """
@@ -128,5 +129,20 @@ def test_weekly_item_helpers_return_records(tmp_path):
 
         catalog = manager.get_weekly_action_items(ape_only=True)
         assert len(catalog) == 1
+        assert catalog[0]["ape_segment_name"] == "Creative"
+        assert catalog[0]["ape_subsegment_name"] == "Books"
+        assert catalog[0]["ape_category_name"] == "Learning"
+
+        weekly_item = manager.db_manager.get_action_item(catalog[0]["id"])
+        color = resolve_segment_color_for_item(
+            weekly_item,
+            manager.get_segment_colors_by_id(),
+            manager.get_segment_color_map(),
+            manager.db_manager,
+            {},
+            {},
+            {},
+        )
+        assert color == "#CC8844"
     finally:
         manager.close()

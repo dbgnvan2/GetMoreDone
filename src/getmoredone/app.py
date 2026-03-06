@@ -159,34 +159,14 @@ class GetMoreDoneApp(ctk.CTk):
         self.btn_hierarchical.grid(row=4, column=0, padx=20, pady=10)
         self.nav_buttons["hierarchical"] = self.btn_hierarchical
 
-        self.btn_vps_planning = ctk.CTkButton(
-            self.sidebar,
-            text="Vision Planning",
-            command=self.show_vision_planning_hub,
-            fg_color="transparent",
-            border_width=1
-        )
-        self.btn_vps_planning.grid(row=5, column=0, padx=20, pady=10)
-        self.nav_buttons["vision_planning"] = self.btn_vps_planning
-
-        self.btn_plan = ctk.CTkButton(
-            self.sidebar,
-            text="Plan",
-            command=self.show_plan,
-            fg_color="transparent",
-            border_width=1
-        )
-        self.btn_plan.grid(row=6, column=0, padx=20, pady=10)
-        self.nav_buttons["plan"] = self.btn_plan
-
         self.btn_drag_schedule = ctk.CTkButton(
             self.sidebar,
-            text="Drag Schedule",
+            text="Schedule",
             command=self.show_drag_schedule,
             fg_color="transparent",
             border_width=1
         )
-        self.btn_drag_schedule.grid(row=7, column=0, padx=20, pady=10)
+        self.btn_drag_schedule.grid(row=5, column=0, padx=20, pady=10)
         self.nav_buttons["drag_schedule"] = self.btn_drag_schedule
 
         self.btn_completed = ctk.CTkButton(
@@ -196,8 +176,18 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_completed.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=6, column=0, padx=20, pady=10)
         self.nav_buttons["completed"] = self.btn_completed
+
+        self.btn_stats = ctk.CTkButton(
+            self.sidebar,
+            text="Status",
+            command=self.show_stats,
+            fg_color="transparent",
+            border_width=1
+        )
+        self.btn_stats.grid(row=8, column=0, padx=20, pady=10)
+        self.nav_buttons["stats"] = self.btn_stats
 
         self.btn_contacts = ctk.CTkButton(
             self.sidebar,
@@ -209,6 +199,26 @@ class GetMoreDoneApp(ctk.CTk):
         self.btn_contacts.grid(row=9, column=0, padx=20, pady=10)
         self.nav_buttons["contacts"] = self.btn_contacts
 
+        self.btn_vps_planning = ctk.CTkButton(
+            self.sidebar,
+            text="VPS Plan",
+            command=self.show_vision_planning_hub,
+            fg_color="transparent",
+            border_width=1
+        )
+        self.btn_vps_planning.grid(row=10, column=0, padx=20, pady=10)
+        self.nav_buttons["vision_planning"] = self.btn_vps_planning
+
+        self.btn_plan = ctk.CTkButton(
+            self.sidebar,
+            text="Plan",
+            command=self.show_plan,
+            fg_color="transparent",
+            border_width=1
+        )
+        self.btn_plan.grid(row=11, column=0, padx=20, pady=10)
+        self.nav_buttons["plan"] = self.btn_plan
+
         self.btn_defaults = ctk.CTkButton(
             self.sidebar,
             text="Defaults",
@@ -216,18 +226,8 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_defaults.grid(row=10, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=12, column=0, padx=20, pady=10)
         self.nav_buttons["defaults"] = self.btn_defaults
-
-        self.btn_stats = ctk.CTkButton(
-            self.sidebar,
-            text="Stats",
-            command=self.show_stats,
-            fg_color="transparent",
-            border_width=1
-        )
-        self.btn_stats.grid(row=11, column=0, padx=20, pady=10)
-        self.nav_buttons["stats"] = self.btn_stats
 
         self.btn_settings = ctk.CTkButton(
             self.sidebar,
@@ -236,7 +236,7 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_settings.grid(row=12, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=13, column=0, padx=20, pady=10)
         self.nav_buttons["settings"] = self.btn_settings
         self._apply_sidebar_button_styles()
 

@@ -10,6 +10,8 @@ _STRUCTURED_TITLE_RE = re.compile(
     r"^\s*(?P<context>.+?\bW\s*\d+\b)\s*[-–—]\s*(?P<title>.+?)\s*$",
     flags=re.IGNORECASE,
 )
+_DATE_ONLY_RE = re.compile(r"^\(?\d{4}-\d{2}-\d{2}\)?$")
+_LEADING_DATE_STUB_RE = re.compile(r"^\(?\d{4}-\d{2}-\d{2}\)?\s*[-–—:]\s*")
 
 TITLE_COL_CHARS = 30
 CONTEXT_COL_CHARS = 14
@@ -38,8 +40,19 @@ def split_action_item_title(raw_title: str | None) -> ParsedTitle:
         return ParsedTitle(context="", title=title)
 
     context = (match.group("context") or "").strip()
-    body = (match.group("title") or "").strip()
-    return ParsedTitle(context=context, title=body or title)
+    body = _normalize_title_body(match.group("title"))
+    return ParsedTitle(context=context, title=body)
+
+
+def _normalize_title_body(value: str | None) -> str:
+    """Strip legacy weekly date stubs from title body text."""
+    body = (value or "").strip()
+    if not body:
+        return ""
+    body = _LEADING_DATE_STUB_RE.sub("", body).strip()
+    if _DATE_ONLY_RE.fullmatch(body):
+        return ""
+    return body
 
 
 def build_action_item_title(context: str | None, title: str | None) -> str:

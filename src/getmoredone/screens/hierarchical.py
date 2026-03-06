@@ -6,6 +6,7 @@ import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, List
 
 from ..models import ActionItem, Status
+from ..color_contrast import pick_text_color
 from .segment_color_utils import resolve_segment_color_for_item
 from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
 from .title_format import (
@@ -242,7 +243,8 @@ class HierarchicalScreen(ctk.CTkFrame):
             width=300,
             font=ctk.CTkFont(
                 size=14, family="Courier" if indent_level > 0 else None),
-            anchor="w"
+            anchor="w",
+            text_color="black",
         )
         title_label.grid(row=0, column=0, sticky="w",
                          padx=indent_padding, pady=5)
@@ -253,7 +255,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
             width=140,
             anchor="w",
-            text_color=palette["muted_text"],
+            text_color="black",
             font=list_row_font(),
         ).grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
@@ -262,16 +264,19 @@ class HierarchicalScreen(ctk.CTkFrame):
             text=format_column_text(item.who, CONTACT_COL_CHARS),
             width=100,
             anchor="w",
+            text_color="black",
             font=list_row_font(),
         ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
         # Priority score
+        is_priority_critical = item.importance == 20 or item.urgency == 20
         score_label = ctk.CTkLabel(
             frame,
             text=f"P:{item.priority_score}",
             width=60,
-            fg_color=palette["chip_bg"],
-            text_color=palette["body_text"],
+            fg_color=palette["danger"] if is_priority_critical else "transparent",
+            text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+            corner_radius=6 if is_priority_critical else 0,
             font=list_row_font()
         )
         score_label.grid(row=0, column=3, padx=5, pady=5)
@@ -282,6 +287,7 @@ class HierarchicalScreen(ctk.CTkFrame):
                 frame,
                 text=f"Due: {item.due_date}",
                 width=110,
+                text_color="black",
                 font=list_row_font()
             )
             due_label.grid(row=0, column=4, padx=5, pady=5)
@@ -297,7 +303,7 @@ class HierarchicalScreen(ctk.CTkFrame):
                 frame,
                 text=f"({len(children)} sub)",
                 width=70,
-                text_color=palette["body_text"],
+                text_color="black",
                 font=list_row_font()
             )
             child_count_label.grid(row=0, column=5, padx=5, pady=5)

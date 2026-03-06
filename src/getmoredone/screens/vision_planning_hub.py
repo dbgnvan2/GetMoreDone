@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 
 class VisionPlanningHubScreen(ctk.CTkFrame):
     """Single entrypoint for Vision Planning screens."""
+    NAV_BUTTON_WIDTH = 140
+    NAV_BUTTON_HEIGHT = 32
 
     def __init__(self, parent, vps_manager: "VPSManager", app: "GetMoreDoneApp"):
         super().__init__(parent)
@@ -25,7 +27,7 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
         self.grid_rowconfigure(2, weight=1)
 
         self.create_ui()
-        self.open_screen("vision_elements")
+        self.open_screen("vision_segments")
 
     def create_ui(self):
         palette = semantic_colors()
@@ -49,7 +51,7 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
         nav.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
 
         buttons = [
-            ("Vision Elements", "vision_elements"),
+            ("Vision Segments", "vision_segments"),
             ("Annual Vision Segments", "annual_vision_segments"),
             ("APE Assignment", "ape_assignment"),
             ("APE Period View", "ape_period_view"),
@@ -61,10 +63,11 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
                 nav,
                 text=label,
                 command=lambda k=key: self.open_screen(k),
-                width=170,
+                width=self.NAV_BUTTON_WIDTH,
+                height=self.NAV_BUTTON_HEIGHT,
                 **button_style("secondary"),
             )
-            btn.grid(row=0, column=i, padx=6, pady=8)
+            btn.grid(row=0, column=i, padx=4, pady=8)
             self.nav_buttons[key] = btn
 
         self.content = ctk.CTkFrame(self)
@@ -77,20 +80,20 @@ class VisionPlanningHubScreen(ctk.CTkFrame):
             self.current_screen.destroy()
             self.current_screen = None
 
-        from .vision_elements import VisionElementsScreen
+        from .vision_segments import VisionSegmentsScreen
         from .annual_vision_segments import AnnualVisionSegmentsScreen
         from .ape_assignment import APEAssignmentScreen
         from .ape_period_view import APEPeriodViewScreen
         from .weekly_items import WeeklyItemsScreen
 
         mapping = {
-            "vision_elements": VisionElementsScreen,
+            "vision_segments": VisionSegmentsScreen,
             "annual_vision_segments": AnnualVisionSegmentsScreen,
             "ape_assignment": APEAssignmentScreen,
             "ape_period_view": APEPeriodViewScreen,
             "ape_weekly": WeeklyItemsScreen,
         }
-        screen_cls = mapping.get(key, VisionElementsScreen)
+        screen_cls = mapping.get(key, VisionSegmentsScreen)
         self.current_screen = screen_cls(self.content, self.vps_manager, self.app)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
 

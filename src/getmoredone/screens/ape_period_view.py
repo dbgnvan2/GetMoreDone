@@ -3,10 +3,13 @@
 import customtkinter as ctk
 from datetime import datetime
 from tkinter import messagebox
+import tkinter as tk
 from typing import TYPE_CHECKING, Optional
 
 from ..app_settings import AppSettings
-from ..theme import apply_segment_accent, button_style, semantic_colors
+from ..theme import button_style, semantic_colors
+from ..color_contrast import pick_text_color
+from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -26,9 +29,15 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         self.m_var = ctk.StringVar(value=str(datetime.now().month))
 
         self.ape_rows = []
+        self.all_ape_rows = []
         self.selected_ape_id: Optional[str] = None
         self.week_vars = {}
         self.segment_colors = {}
+        self.subsegment_colors = {}
+        self.category_colors = {}
+        self.segment_filter_var = ctk.StringVar(value="All")
+        self.subsegment_filter_var = ctk.StringVar(value="All")
+        self.category_filter_var = ctk.StringVar(value="All")
         self.selected_idx: Optional[int] = None
 
         self.grid_columnconfigure(0, weight=1)
@@ -40,44 +49,76 @@ class APEPeriodViewScreen(ctk.CTkFrame):
     def create_ui(self):
         top = ctk.CTkFrame(self)
         top.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
+        top.grid_columnconfigure(10, weight=1)
 
-        ctk.CTkLabel(top, text="APE by Quarter/Month", font=ctk.CTkFont(size=20, weight="bold")).pack(
-            side="left", padx=8, pady=8
+        ctk.CTkLabel(top, text="APE by Quarter/Month", font=ctk.CTkFont(size=20, weight="bold")).grid(
+            row=0, column=0, columnspan=11, padx=8, pady=(8, 6), sticky="w"
         )
-
-        ctk.CTkLabel(top, text="Year").pack(side="left", padx=(20, 4))
-        ctk.CTkEntry(top, width=90, textvariable=self.year_var).pack(side="left", padx=4)
-
-        ctk.CTkLabel(top, text="Quarter").pack(side="left", padx=(12, 4))
-        ctk.CTkComboBox(top, width=80, values=["1", "2", "3", "4"], variable=self.q_var).pack(side="left", padx=4)
-
-        ctk.CTkLabel(top, text="Month").pack(side="left", padx=(12, 4))
-        ctk.CTkComboBox(top, width=80, values=[str(i) for i in range(1, 13)], variable=self.m_var).pack(side="left", padx=4)
-
-        ctk.CTkButton(top, text="Load", width=90, command=self.refresh, **button_style("secondary")).pack(side="left", padx=10)
+        ctk.CTkLabel(top, text="Year").grid(row=1, column=0, padx=(8, 4), pady=(0, 8), sticky="e")
+        ctk.CTkEntry(top, width=86, textvariable=self.year_var).grid(row=1, column=1, padx=4, pady=(0, 8), sticky="w")
+        ctk.CTkLabel(top, text="Quarter").grid(row=1, column=2, padx=(8, 4), pady=(0, 8), sticky="e")
+        ctk.CTkComboBox(top, width=74, values=["1", "2", "3", "4"], variable=self.q_var).grid(
+            row=1, column=3, padx=4, pady=(0, 8), sticky="w"
+        )
+        ctk.CTkLabel(top, text="Month").grid(row=1, column=4, padx=(8, 4), pady=(0, 8), sticky="e")
+        ctk.CTkComboBox(top, width=74, values=[str(i) for i in range(1, 13)], variable=self.m_var).grid(
+            row=1, column=5, padx=4, pady=(0, 8), sticky="w"
+        )
+        ctk.CTkButton(top, text="Load", width=88, command=self.refresh, **button_style("secondary")).grid(
+            row=1, column=6, padx=(8, 12), pady=(0, 8), sticky="w"
+        )
+        ctk.CTkLabel(top, text="Segment").grid(row=1, column=7, padx=(0, 4), pady=(0, 8), sticky="e")
+        self.segment_filter_combo = ctk.CTkComboBox(
+            top, width=156, values=["All"], variable=self.segment_filter_var, command=lambda _v: self.on_filters_changed()
+        )
+        self.segment_filter_combo.grid(row=1, column=8, padx=4, pady=(0, 8), sticky="w")
+        ctk.CTkLabel(top, text="SubSegment").grid(row=1, column=9, padx=(10, 4), pady=(0, 8), sticky="e")
+        self.subsegment_filter_combo = ctk.CTkComboBox(
+            top, width=156, values=["All"], variable=self.subsegment_filter_var, command=lambda _v: self.on_filters_changed()
+        )
+        self.subsegment_filter_combo.grid(row=1, column=10, padx=4, pady=(0, 8), sticky="w")
+        ctk.CTkLabel(top, text="Category").grid(row=1, column=11, padx=(10, 4), pady=(0, 8), sticky="e")
+        self.category_filter_combo = ctk.CTkComboBox(
+            top, width=156, values=["All"], variable=self.category_filter_var, command=lambda _v: self.on_filters_changed()
+        )
+        self.category_filter_combo.grid(row=1, column=12, padx=4, pady=(0, 8), sticky="w")
 
         body = ctk.CTkFrame(self)
         body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         body.grid_columnconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(1, weight=1)
+        palette = semantic_colors()
 
-        ctk.CTkLabel(body, text="APEs In Period", font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=0, sticky="w", padx=8, pady=(8, 4)
+        labels = ctk.CTkFrame(body, fg_color="transparent")
+        labels.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
+        labels.grid_columnconfigure(0, weight=1)
+        labels.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(labels, text="APEs In Period", font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=0, sticky="w"
         )
-        ctk.CTkLabel(body, text="Select Weeks", font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=1, sticky="w", padx=8, pady=(8, 4)
+        ctk.CTkLabel(labels, text="Select Weeks", font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=1, sticky="w", padx=(8, 0)
         )
 
-        left = ctk.CTkFrame(body)
-        left.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=(0, 8))
+        self.splitter = tk.PanedWindow(
+            body,
+            orient=tk.HORIZONTAL,
+            sashwidth=8,
+            sashrelief=tk.RAISED,
+            bd=0,
+            bg=palette["surface_subtle"],
+        )
+        self.splitter.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
+
+        left = ctk.CTkFrame(self.splitter)
         left.grid_rowconfigure(0, weight=1)
         left.grid_columnconfigure(0, weight=1)
 
-        right = ctk.CTkFrame(body)
-        right.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=(0, 8))
+        right = ctk.CTkFrame(self.splitter)
         right.grid_rowconfigure(1, weight=1)
         right.grid_columnconfigure(0, weight=1)
+        self.splitter.add(left, minsize=320)
+        self.splitter.add(right, minsize=300)
 
         self.ape_list = ctk.CTkScrollableFrame(left)
         self.ape_list.grid(row=0, column=0, sticky="nsew")
@@ -105,6 +146,17 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         self.status_label = ctk.CTkLabel(actions, text="", text_color="gray")
         self.status_label.grid(row=0, column=1, sticky="w", padx=10)
 
+        self.after(100, self._init_splitter_position)
+
+    def _init_splitter_position(self):
+        if not hasattr(self, "splitter"):
+            return
+        width = self.splitter.winfo_width()
+        if width <= 0:
+            self.after(100, self._init_splitter_position)
+            return
+        self.splitter.sash_place(0, int(width * 0.62), 0)
+
     def _parse_period(self):
         try:
             year = int(self.year_var.get().strip())
@@ -126,13 +178,72 @@ class APEPeriodViewScreen(ctk.CTkFrame):
             return
         year, quarter, month = parsed
 
-        self.segment_colors = self.vps_manager.get_segment_color_map()
-        self.ape_rows = self.vps_manager.get_annual_plan_elements_for_period(year, quarter, month)
+        self.segment_colors, self.subsegment_colors = load_latest_lineage_color_maps(self.vps_manager)
+        self.category_colors = {
+            (
+                (r.get("segment_name", "") or "").strip().lower(),
+                (r.get("subsegment_name", "") or "").strip().lower(),
+                (r.get("name", "") or "").strip().lower(),
+            ): (r.get("color_hex") or "")
+            for r in self.vps_manager.get_vision_categories()
+        }
+        self.all_ape_rows = self.vps_manager.get_annual_plan_elements_for_period(year, quarter, month)
+        self._refresh_filter_options()
+        self.ape_rows = self._filtered_rows()
         self.selected_idx = None
         self._render_ape_rows()
 
         self.selected_ape_id = None
         self.render_week_options()
+        self.status_label.configure(text=f"Loaded {len(self.ape_rows)} APE record(s).", text_color="gray")
+
+    def _filtered_rows(self):
+        seg = self.segment_filter_var.get().strip()
+        sub = self.subsegment_filter_var.get().strip()
+        cat = self.category_filter_var.get().strip()
+        rows = self.all_ape_rows
+        if seg and seg != "All":
+            rows = [r for r in rows if (r.get("segment_name") or "").strip() == seg]
+        if sub and sub != "All":
+            rows = [r for r in rows if (r.get("subsegment_name") or "").strip() == sub]
+        if cat and cat != "All":
+            rows = [r for r in rows if (r.get("category_name") or "").strip() == cat]
+        return rows
+
+    def _refresh_filter_options(self):
+        rows = self.all_ape_rows
+        seg_values = sorted({(r.get("segment_name") or "").strip() for r in rows if (r.get("segment_name") or "").strip()}, key=str.lower)
+        seg_combo_values = ["All"] + seg_values
+        current_seg = self.segment_filter_var.get().strip() or "All"
+        if current_seg not in seg_combo_values:
+            current_seg = "All"
+            self.segment_filter_var.set(current_seg)
+        self.segment_filter_combo.configure(values=seg_combo_values)
+
+        sub_rows = rows if current_seg == "All" else [r for r in rows if (r.get("segment_name") or "").strip() == current_seg]
+        sub_values = sorted({(r.get("subsegment_name") or "").strip() for r in sub_rows if (r.get("subsegment_name") or "").strip()}, key=str.lower)
+        sub_combo_values = ["All"] + sub_values
+        current_sub = self.subsegment_filter_var.get().strip() or "All"
+        if current_sub not in sub_combo_values:
+            current_sub = "All"
+            self.subsegment_filter_var.set(current_sub)
+        self.subsegment_filter_combo.configure(values=sub_combo_values)
+
+        cat_rows = sub_rows if current_sub == "All" else [r for r in sub_rows if (r.get("subsegment_name") or "").strip() == current_sub]
+        cat_values = sorted({(r.get("category_name") or "").strip() for r in cat_rows if (r.get("category_name") or "").strip()}, key=str.lower)
+        cat_combo_values = ["All"] + cat_values
+        current_cat = self.category_filter_var.get().strip() or "All"
+        if current_cat not in cat_combo_values:
+            current_cat = "All"
+            self.category_filter_var.set(current_cat)
+        self.category_filter_combo.configure(values=cat_combo_values)
+
+    def on_filters_changed(self):
+        self._refresh_filter_options()
+        self.ape_rows = self._filtered_rows()
+        self.selected_ape_id = None
+        self.selected_idx = None
+        self._render_ape_rows()
         self.status_label.configure(text=f"Loaded {len(self.ape_rows)} APE record(s).", text_color="gray")
 
     def render_week_options(self):
@@ -181,21 +292,125 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         for w in self.ape_list.winfo_children():
             w.destroy()
         palette = semantic_colors()
+        col_widths = {
+            "index": 34,
+            "segment": 135,
+            "subsegment": 155,
+            "category": 125,
+            "actions": 150,
+        }
+
+        header = ctk.CTkFrame(self.ape_list, fg_color=palette["surface_subtle"])
+        header.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 4))
+        header.grid_columnconfigure(0, minsize=col_widths["index"])
+        header.grid_columnconfigure(1, minsize=col_widths["segment"])
+        header.grid_columnconfigure(2, minsize=col_widths["subsegment"])
+        header.grid_columnconfigure(3, minsize=col_widths["category"])
+        header.grid_columnconfigure(4, weight=1)
+        header.grid_columnconfigure(5, minsize=col_widths["actions"])
+        ctk.CTkLabel(header, text="#", width=col_widths["index"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
+            row=0, column=0, padx=5, pady=5, sticky="w"
+        )
+        ctk.CTkLabel(header, text="Segment", width=col_widths["segment"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
+            row=0, column=1, padx=5, pady=5, sticky="w"
+        )
+        ctk.CTkLabel(header, text="SubSegment", width=col_widths["subsegment"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
+            row=0, column=2, padx=5, pady=5, sticky="w"
+        )
+        ctk.CTkLabel(header, text="Category", width=col_widths["category"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
+            row=0, column=3, padx=5, pady=5, sticky="w"
+        )
+        ctk.CTkLabel(header, text="Actions", width=col_widths["actions"], font=ctk.CTkFont(weight="bold"), anchor="e").grid(
+            row=0, column=5, padx=5, pady=5, sticky="e"
+        )
+
         for idx, row in enumerate(self.ape_rows):
             segment_name = row.get("segment_name", "")
-            color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
+            subsegment_raw = row.get("subsegment_name") or "-"
+            category_raw = row.get("category_name") or "-"
+            color, subsegment_color = resolve_lineage_colors(
+                segment_name,
+                subsegment_raw,
+                self.vps_manager,
+                self.segment_colors,
+                self.subsegment_colors,
+            )
+            category_color = self.category_colors.get(
+                (
+                    segment_name.strip().lower(),
+                    subsegment_raw.strip().lower(),
+                    category_raw.strip().lower(),
+                ),
+                "",
+            ) or subsegment_color
             bg = palette["selected_tint"] if idx == self.selected_idx else None
-            item = ctk.CTkFrame(self.ape_list, fg_color=bg)
-            item.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
-            item.grid_columnconfigure(1, weight=1)
-            apply_segment_accent(item, color)
+            item = ctk.CTkFrame(
+                self.ape_list,
+                fg_color=bg,
+                border_width=2,
+                border_color=color,
+            )
+            item.grid(row=idx + 1, column=0, sticky="ew", padx=4, pady=2)
+            item.grid_columnconfigure(0, minsize=col_widths["index"])
+            item.grid_columnconfigure(1, minsize=col_widths["segment"])
+            item.grid_columnconfigure(2, minsize=col_widths["subsegment"])
+            item.grid_columnconfigure(3, minsize=col_widths["category"])
+            item.grid_columnconfigure(4, weight=1)
+            item.grid_columnconfigure(5, minsize=col_widths["actions"])
 
-            ctk.CTkLabel(item, text=str(idx + 1), width=30).grid(row=0, column=0, padx=5, pady=5)
-            lbl = ctk.CTkLabel(item, text=row.get("key_field", ""), anchor="w")
-            lbl.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-            chip = ctk.CTkLabel(item, text=f" {segment_name} ", fg_color=color, text_color="white", corner_radius=6)
-            chip.grid(row=0, column=2, padx=5, pady=5)
-            for widget in (item, lbl):
+            idx_label = ctk.CTkLabel(item, text=str(idx + 1), width=col_widths["index"], anchor="w")
+            idx_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+            seg_chip = ctk.CTkLabel(
+                item,
+                text=f" {self._clip_label(segment_name, 15)} ",
+                fg_color=color,
+                text_color=pick_text_color(color),
+                corner_radius=6,
+                width=col_widths["segment"] - 12,
+                anchor="w",
+            )
+            seg_chip.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+            sub_chip = ctk.CTkLabel(
+                item,
+                text=f" {self._clip_label(subsegment_raw, 15)} ",
+                fg_color=subsegment_color,
+                text_color=pick_text_color(subsegment_color),
+                corner_radius=6,
+                width=col_widths["subsegment"] - 12,
+                anchor="w",
+            )
+            sub_chip.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+            cat_chip = ctk.CTkLabel(
+                item,
+                text=f" {self._clip_label(category_raw, 15)} ",
+                fg_color=category_color,
+                text_color=pick_text_color(category_color),
+                corner_radius=6,
+                anchor="w",
+                width=col_widths["category"] - 12,
+            )
+            cat_chip.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+
+            actions = ctk.CTkFrame(item, fg_color="transparent")
+            actions.grid(row=0, column=5, padx=5, pady=5, sticky="e")
+            ctk.CTkButton(
+                actions,
+                text="Edit",
+                width=64,
+                command=lambda r=row: self.edit_ape_row(r),
+                **button_style("secondary"),
+            ).pack(side="left", padx=(0, 2))
+            ctk.CTkButton(
+                actions,
+                text="Delete",
+                width=64,
+                command=lambda r=row: self.delete_ape_row(r),
+                **button_style("danger"),
+            ).pack(side="left", padx=(2, 0))
+            for widget in (item, idx_label, seg_chip, sub_chip, cat_chip):
                 widget.bind("<Button-1>", lambda _e, i=idx: self.on_select_ape(i))
 
     def on_select_ape(self, index: int):
@@ -215,7 +430,10 @@ class APEPeriodViewScreen(ctk.CTkFrame):
         for week_start, var in self.week_vars.items():
             var.set(week_start in existing)
 
-        self.status_label.configure(text=f"Selected: {row['key_field']}", text_color="gray")
+        self.status_label.configure(
+            text=f"Selected: {row.get('segment_name', '')} | {row.get('subsegment_name', '')} | {row.get('category_name', '')}",
+            text_color="gray",
+        )
 
     def create_week_items_for_selected_ape(self):
         row = self._find_selected_ape()
@@ -248,3 +466,114 @@ class APEPeriodViewScreen(ctk.CTkFrame):
 
     def _apply_row_color(self, index: int, segment_name: str):
         return
+
+    @staticmethod
+    def _clip_label(value: str, limit: int) -> str:
+        text = (value or "").strip()
+        if len(text) <= limit:
+            return text
+        return text[:limit - 1].rstrip() + "…"
+
+    def edit_ape_row(self, row: dict):
+        vision_element_id = row.get("vision_element_id")
+        if not vision_element_id:
+            messagebox.showerror("Missing Source", "This APE record is missing its source Vision Element.")
+            return
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Edit APE Record")
+        dialog.geometry("620x220")
+        dialog.transient(self)
+        dialog.grab_set()
+
+        segment_var = ctk.StringVar(value=row.get("segment_name") or "")
+        subsegment_var = ctk.StringVar(value=row.get("subsegment_name") or "")
+        category_var = ctk.StringVar(value=row.get("category_name") or "")
+
+        frame = ctk.CTkFrame(dialog)
+        frame.pack(fill="both", expand=True, padx=12, pady=12)
+        frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(frame, text="Segment:").grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        segment_combo = ctk.CTkComboBox(frame, variable=segment_var, values=[])
+        segment_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
+
+        ctk.CTkLabel(frame, text="SubSegment:").grid(row=1, column=0, sticky="w", padx=8, pady=6)
+        subsegment_combo = ctk.CTkComboBox(frame, variable=subsegment_var, values=[])
+        subsegment_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+
+        ctk.CTkLabel(frame, text="Category:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
+        category_combo = ctk.CTkComboBox(frame, variable=category_var, values=[])
+        category_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
+
+        status_label = ctk.CTkLabel(frame, text="", text_color="red")
+        status_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 6))
+
+        def load_segments():
+            values = [r["name"] for r in self.vps_manager.get_vision_segments()]
+            segment_combo.configure(values=values or [""])
+
+        def load_subsegments():
+            seg = segment_var.get().strip() or None
+            values = [r["name"] for r in self.vps_manager.get_vision_subsegments(segment_name=seg)]
+            subsegment_combo.configure(values=values or [""])
+
+        def load_categories():
+            seg = segment_var.get().strip() or None
+            sub = subsegment_var.get().strip() or None
+            values = [r["name"] for r in self.vps_manager.get_vision_categories(segment_name=seg, subsegment_name=sub)]
+            category_combo.configure(values=values or [""])
+
+        segment_combo.configure(command=lambda _v: (load_subsegments(), load_categories()))
+        subsegment_combo.configure(command=lambda _v: load_categories())
+        load_segments()
+        load_subsegments()
+        load_categories()
+
+        actions = ctk.CTkFrame(frame, fg_color="transparent")
+        actions.grid(row=4, column=0, columnspan=2, sticky="e", padx=8, pady=(8, 4))
+        ctk.CTkButton(actions, text="Cancel", width=90, command=dialog.destroy, **button_style("secondary")).pack(
+            side="right", padx=4
+        )
+
+        def on_save():
+            seg = segment_var.get().strip()
+            sub = subsegment_var.get().strip()
+            cat = category_var.get().strip()
+            if not seg or not sub or not cat:
+                status_label.configure(text="Segment, SubSegment, and Category are required.")
+                return
+            try:
+                self.vps_manager.update_vision_element(vision_element_id, seg, sub, cat)
+            except Exception as exc:
+                status_label.configure(text=f"Unable to save: {exc}")
+                return
+            dialog.destroy()
+            self.refresh()
+
+        ctk.CTkButton(actions, text="Save", width=90, command=on_save, **button_style("primary")).pack(
+            side="right", padx=4
+        )
+
+    def delete_ape_row(self, row: dict):
+        parsed = self._parse_period()
+        if not parsed:
+            return
+        year, _quarter, _month = parsed
+        vision_element_id = row.get("vision_element_id")
+        if not vision_element_id:
+            messagebox.showerror("Missing Source", "This APE record is missing its source Vision Element.")
+            return
+        key = row.get("key_field") or "this APE record"
+        if not messagebox.askyesno(
+            "Delete APE Record",
+            f"Delete {key} from {year}?",
+            icon="warning",
+        ):
+            return
+
+        deleted = self.vps_manager.delete_annual_records_for_vision_element(year, vision_element_id)
+        if deleted:
+            self.refresh()
+        else:
+            messagebox.showerror("Delete Failed", "APE record could not be deleted.")

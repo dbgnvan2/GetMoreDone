@@ -85,6 +85,7 @@ def semantic_colors() -> Dict[str, str]:
         "time_text": "#FFD8A8",
         "success_tint": "#E8F5EE" if mode == "light" else "#1F2B24",
         "critical_tint": "#FDECEC" if mode == "light" else "#3A2328",
+        "danger": "#B91C1C",
         "selected_tint": "#E6EEF8" if mode == "light" else "#223247",
         "success_strong": "#166534" if mode == "light" else "#14532D",
         "on_strong": "#ECFDF5" if mode == "light" else "#DCFCE7",

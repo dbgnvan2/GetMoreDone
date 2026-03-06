@@ -121,6 +121,7 @@ class VPSSchema:
             CREATE TABLE IF NOT EXISTS vision_segments (
                 id               TEXT PRIMARY KEY,
                 name             TEXT NOT NULL UNIQUE,
+                vision_text      TEXT,
                 created_at       TEXT NOT NULL,
                 updated_at       TEXT NOT NULL
             )
@@ -131,6 +132,9 @@ class VPSSchema:
                 id               TEXT PRIMARY KEY,
                 segment_id       TEXT NOT NULL REFERENCES vision_segments(id) ON DELETE CASCADE,
                 name             TEXT NOT NULL,
+                color_hex        TEXT,
+                description      TEXT,
+                vision_text      TEXT,
                 created_at       TEXT NOT NULL,
                 updated_at       TEXT NOT NULL,
                 UNIQUE(segment_id, name)
@@ -142,6 +146,9 @@ class VPSSchema:
                 id               TEXT PRIMARY KEY,
                 subsegment_id    TEXT NOT NULL REFERENCES vision_subsegments(id) ON DELETE CASCADE,
                 name             TEXT NOT NULL,
+                color_hex        TEXT,
+                description      TEXT,
+                vision_text      TEXT,
                 created_at       TEXT NOT NULL,
                 updated_at       TEXT NOT NULL,
                 UNIQUE(subsegment_id, name)
@@ -155,6 +162,7 @@ class VPSSchema:
                 subsegment_id    TEXT NOT NULL REFERENCES vision_subsegments(id) ON DELETE CASCADE,
                 category_id      TEXT NOT NULL REFERENCES vision_categories(id) ON DELETE CASCADE,
                 key_field        TEXT NOT NULL UNIQUE,
+                vision_text      TEXT,
                 is_active        INTEGER DEFAULT 1,
                 created_at       TEXT NOT NULL,
                 updated_at       TEXT NOT NULL
@@ -300,6 +308,18 @@ class VPSSchema:
         VPSSchema._extend_annual_plan_elements(conn)
 
         # ========================================================================
+        # EXTEND VISION_SUBSEGMENTS for color support
+        # ========================================================================
+        VPSSchema._extend_vision_subsegments(conn)
+
+        # ========================================================================
+        # EXTEND VISION_ELEMENTS for editable vision text
+        # ========================================================================
+        VPSSchema._extend_vision_elements(conn)
+        VPSSchema._extend_vision_master_text_fields(conn)
+        VPSSchema._extend_vision_master_metadata(conn)
+
+        # ========================================================================
         # EXTEND WEEK_ACTIONS for Step/Key Result fields
         # ========================================================================
         VPSSchema._extend_week_actions(conn)
@@ -401,6 +421,55 @@ class VPSSchema:
             col = f"m{i}"
             if col not in columns:
                 conn.execute(f"ALTER TABLE annual_plan_elements ADD COLUMN {col} INTEGER DEFAULT 0")
+
+    @staticmethod
+    def _extend_vision_subsegments(conn: sqlite3.Connection):
+        """Add optional color to vision_subsegments."""
+        cursor = conn.execute("PRAGMA table_info(vision_subsegments)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "color_hex" not in columns:
+            conn.execute("""
+                ALTER TABLE vision_subsegments
+                ADD COLUMN color_hex TEXT
+            """)
+
+    @staticmethod
+    def _extend_vision_elements(conn: sqlite3.Connection):
+        """Add optional vision text to vision_elements."""
+        cursor = conn.execute("PRAGMA table_info(vision_elements)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "vision_text" not in columns:
+            conn.execute("""
+                ALTER TABLE vision_elements
+                ADD COLUMN vision_text TEXT
+            """)
+
+    @staticmethod
+    def _extend_vision_master_text_fields(conn: sqlite3.Connection):
+        """Add vision_text columns to segment/subsegment/category master tables."""
+        for table in ("vision_segments", "vision_subsegments", "vision_categories"):
+            cursor = conn.execute(f"PRAGMA table_info({table})")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "vision_text" not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN vision_text TEXT")
+
+    @staticmethod
+    def _extend_vision_master_metadata(conn: sqlite3.Connection):
+        """Add optional metadata fields for subsegment/category management."""
+        table_columns = {}
+        for table in ("vision_subsegments", "vision_categories"):
+            cursor = conn.execute(f"PRAGMA table_info({table})")
+            table_columns[table] = [row[1] for row in cursor.fetchall()]
+
+        if "description" not in table_columns["vision_subsegments"]:
+            conn.execute("ALTER TABLE vision_subsegments ADD COLUMN description TEXT")
+
+        if "description" not in table_columns["vision_categories"]:
+            conn.execute("ALTER TABLE vision_categories ADD COLUMN description TEXT")
+        if "color_hex" not in table_columns["vision_categories"]:
+            conn.execute("ALTER TABLE vision_categories ADD COLUMN color_hex TEXT")
 
     @staticmethod
     def _extend_week_actions(conn: sqlite3.Connection):

@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 from tkinter import messagebox
 
+from ..color_contrast import pick_text_color
 from ..widgets.date_picker import DatePickerButton
 
 if TYPE_CHECKING:
@@ -64,6 +65,7 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
                 main_frame,
                 text=segment['name'],
                 fg_color=segment['color_hex'],
+                text_color=pick_text_color(segment['color_hex']),
                 corner_radius=5
             ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
             row += 1
@@ -501,6 +503,7 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
                 main_frame,
                 text=segment['name'],
                 fg_color=segment['color_hex'],
+                text_color=pick_text_color(segment['color_hex']),
                 corner_radius=5
             ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
             row += 1
@@ -687,6 +690,7 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
                 main_frame,
                 text=segment['name'],
                 fg_color=segment['color_hex'],
+                text_color=pick_text_color(segment['color_hex']),
                 corner_radius=5
             ).grid(row=row, column=1, sticky="w", padx=10, pady=5)
             row += 1

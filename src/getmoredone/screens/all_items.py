@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..models import Status
 from ..app_settings import AppSettings
+from ..color_contrast import pick_text_color
 from .segment_color_utils import resolve_segment_color_for_item
 from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
@@ -112,6 +113,12 @@ class AllItemsScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
+            fg_color="white",
+            text_color="black",
+            button_color="white",
+            button_hover_color="white",
+            dropdown_fg_color="white",
+            dropdown_text_color="black",
             command=lambda _: self.refresh()
         )
         self.who_combo.grid(row=0, column=6, padx=5, pady=10)
@@ -202,7 +209,7 @@ class AllItemsScreen(ctk.CTkFrame):
                               pady=(0, 5), padx=5)
             header_frame.grid_columnconfigure(1, weight=1)
 
-            headers = ["✓", "Title", "Context", "Who", "Start", "Due",
+            headers = ["✓", "Immediate Step", "Context", "Who", "Start", "Due",
                        "Priority", "Est. Time", "Status", "Actions"]
             col_weights = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
 
@@ -226,7 +233,9 @@ class AllItemsScreen(ctk.CTkFrame):
                     self._ape_segment_cache,
                     self._week_action_segment_cache,
                 )
-                if item.status == Status.COMPLETED:
+                if segment_color:
+                    bg_color = segment_color
+                elif item.status == Status.COMPLETED:
                     bg_color = palette["success_tint"]
                 elif item.importance == 20 or item.urgency == 20:
                     bg_color = palette["critical_tint"]
@@ -259,7 +268,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     text=format_column_text(parsed.title, TITLE_COL_CHARS),
                     width=300,
                     anchor="w",
-                    text_color=segment_color,
+                    text_color="black",
                     font=list_row_font()
                 )
                 title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
@@ -271,7 +280,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
                     width=140,
                     anchor="w",
-                    text_color=palette["muted_text"],
+                    text_color="black",
                     font=list_row_font()
                 ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
@@ -280,6 +289,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=format_column_text(item.who, CONTACT_COL_CHARS),
                     width=100,
+                    text_color="black",
                     font=list_row_font(),
                 ).grid(
                     row=0, column=3, padx=5, pady=5)
@@ -297,7 +307,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=start_text,
                     width=60,
-                    text_color=palette["body_text"],
+                    text_color="black",
                     font=list_row_font()
                 )
                 start_label.grid(row=0, column=4, padx=5, pady=5)
@@ -316,20 +326,21 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=due_text,
                     width=60,
-                    text_color=palette["body_text"],
+                    text_color="black",
                     font=list_row_font()
                 )
                 due_label.grid(row=0, column=5, padx=5, pady=5)
                 due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
                 # Priority
+                is_priority_critical = item.importance == 20 or item.urgency == 20
                 priority_label = ctk.CTkLabel(
                     item_frame,
                     text=str(item.priority_score),
                     width=80,
-                    fg_color=palette["chip_bg"],
-                    text_color=palette["chip_text"],
-                    corner_radius=6,
+                    fg_color=palette["danger"] if is_priority_critical else "transparent",
+                    text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+                    corner_radius=6 if is_priority_critical else 0,
                     font=list_row_font(),
                 )
                 priority_label.grid(row=0, column=6, padx=5, pady=5)
@@ -341,7 +352,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=time_text,
                     width=60,
-                    text_color=palette["body_text"],
+                    text_color="black",
                     font=list_row_font()
                 ).grid(row=0, column=7, padx=5, pady=5)
 
@@ -361,12 +372,23 @@ class AllItemsScreen(ctk.CTkFrame):
                     ]
                     for factor_col, (label, value, width) in enumerate(columns):
                         text = f"{label}:{value}" if value not in (None, "") else ""
-                        ctk.CTkLabel(factors_frame, text=text, width=width, anchor="w", font=list_row_font()).grid(
+                        label_kwargs = {
+                            "text": text,
+                            "width": width,
+                            "anchor": "w",
+                            "font": list_row_font(),
+                            "text_color": "black",
+                        }
+                        if label in ("I", "U") and str(value).strip() == "20":
+                            label_kwargs["fg_color"] = palette["danger"]
+                            label_kwargs["text_color"] = pick_text_color(palette["danger"])
+                            label_kwargs["corner_radius"] = 6
+                        ctk.CTkLabel(factors_frame, **label_kwargs).grid(
                             row=0, column=factor_col, padx=2)
                     col_offset = 1
 
                 # Status
-                ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font()).grid(
+                ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font(), text_color="black").grid(
                     row=0, column=8+col_offset, padx=5, pady=5)
 
                 # Action buttons
