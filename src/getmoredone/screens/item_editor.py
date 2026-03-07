@@ -4,6 +4,7 @@ Item editor dialog for creating and editing action items.
 
 import calendar
 import logging
+import re
 import customtkinter as ctk
 from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
@@ -73,7 +74,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         # Load item if editing
         if item_id:
             self.item = db_manager.get_action_item(item_id)
-            self.title("Edit Action Item")
+            if self.item and self.item.item_type == "week":
+                self.title("Edit Weekly Tactic")
+            else:
+                self.title("Edit Action Item")
         else:
             self.title("New Action Item")
 
@@ -87,6 +91,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Create form
         self.create_form()
+        self._apply_record_type_ui()
 
         # Load item data if editing, or apply defaults if new
         if self.item:
@@ -176,7 +181,14 @@ class ItemEditorDialog(ctk.CTkToplevel):
             left_col,
             text="Basic Information",
             font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=row_l, column=0, columnspan=2, sticky="w", padx=10, pady=(5, 10))
+        ).grid(row=row_l, column=0, sticky="w", padx=10, pady=(5, 10))
+        self.record_type_badge = ctk.CTkLabel(
+            left_col,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            corner_radius=8,
+        )
+        self.record_type_badge.grid(row=row_l, column=1, sticky="e", padx=10, pady=(5, 10))
         row_l += 1
 
         # Who (with contact lookup)
@@ -240,8 +252,8 @@ class ItemEditorDialog(ctk.CTkToplevel):
         row_l += 1
 
         # Context + Title
-        ctk.CTkLabel(left_col, text="Context:").grid(row=row_l,
-                                                     column=0, sticky="w", padx=10, pady=5)
+        self.context_label = ctk.CTkLabel(left_col, text="Context:")
+        self.context_label.grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
         self.title_context_entry = ctk.CTkEntry(
             left_col, width=320, placeholder_text="PW|LS|Blog - W8")
         self.title_context_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
@@ -785,6 +797,59 @@ class ItemEditorDialog(ctk.CTkToplevel):
         seg_suffix = f" [{seg_name}]" if seg_name else ""
         return f"Weekly Tactic {week_action['week_start_date']}: {week_action['title']}{seg_suffix}"
 
+    def _is_weekly_tactic_record(self) -> bool:
+        return bool(self.item and self.item.item_type == "week")
+
+    def _canonical_weekly_tactic_title(self, raw_title: str, annual_plan_element_id: Optional[str], start_date: Optional[str]) -> str:
+        title = (raw_title or "").strip()
+        if not title:
+            return title
+
+        if self.vps_manager and annual_plan_element_id and start_date:
+            try:
+                ape = self.vps_manager.db.conn.execute(
+                    "SELECT key_field FROM annual_plan_elements WHERE id = ?",
+                    (annual_plan_element_id,),
+                ).fetchone()
+                if ape and (ape["key_field"] or "").strip():
+                    ws = date.fromisoformat(start_date)
+                    week_of_year = ws.isocalendar().week
+                    prefix = self.vps_manager.normalize_week_token(
+                        self.vps_manager.shorten_pipe_prefix(ape["key_field"])
+                    )
+                    if prefix:
+                        return f"{prefix} - W{week_of_year}"
+            except Exception:
+                pass
+
+        parsed = split_action_item_title(title)
+        if parsed.context and parsed.title:
+            if "|" in parsed.title and re.search(r"\bW\s*\d+\b", parsed.title, flags=re.IGNORECASE):
+                return parsed.title
+        return title
+
+    def _apply_record_type_ui(self):
+        palette = semantic_colors()
+        if self._is_weekly_tactic_record():
+            self.record_type_badge.configure(
+                text="Weekly Tactic",
+                fg_color=palette["success_strong"],
+                text_color=palette["on_strong"],
+            )
+            self.context_label.configure(text="Context (unused for Weekly Tactic):")
+            self.title_context_entry.configure(state="normal")
+            self.title_context_entry.delete(0, "end")
+            self.title_context_entry.configure(state="disabled")
+            return
+
+        self.record_type_badge.configure(
+            text="Action Item",
+            fg_color=palette["surface_subtle"],
+            text_color=palette["body_text"],
+        )
+        self.context_label.configure(text="Context:")
+        self.title_context_entry.configure(state="normal")
+
     def load_item_data(self):
         """Load item data into form fields."""
         if not self.item:
@@ -792,10 +857,22 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         self.who_var.set(self.item.who)
         self.selected_contact_id = self.item.contact_id
+        self._apply_record_type_ui()
         parsed = split_action_item_title(self.item.title)
-        if parsed.context:
-            self.title_context_entry.insert(0, parsed.context)
-        self.title_entry.insert(0, parsed.title or self.item.title)
+        if self._is_weekly_tactic_record():
+            canonical_title = self._canonical_weekly_tactic_title(
+                self.item.title,
+                self.item.annual_plan_element_id,
+                self.item.start_date,
+            )
+            if canonical_title and canonical_title != (self.item.title or "").strip():
+                self.item.title = canonical_title
+                self.db_manager.update_action_item(self.item, normalize_week_dates=False)
+            self.title_entry.insert(0, canonical_title)
+        else:
+            if parsed.context:
+                self.title_context_entry.insert(0, parsed.context)
+            self.title_entry.insert(0, parsed.title or self.item.title)
 
         if self.item.description:
             self.description_text.insert("1.0", self.item.description)
@@ -1441,6 +1518,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 self.title_context_entry.get(),
                 self.title_entry.get(),
             ).strip()
+            if item.item_type == "week":
+                item.title = self._canonical_weekly_tactic_title(
+                    item.title,
+                    item.annual_plan_element_id,
+                    item.start_date,
+                )
             item.description = self.description_text.get(
                 "1.0", "end").strip() or None
             item.next_action = self.next_action_text.get(
@@ -1892,6 +1975,15 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 if week_action_id:
                     current_item.week_action_id = week_action_id
                 current_item.segment_description_id = segment_id or current_item.segment_description_id
+                if current_item.item_type == "week":
+                    selected_week_item = self.db_manager.get_action_item(week_item_id) if week_item_id else None
+                    if selected_week_item:
+                        current_item.title = selected_week_item.title
+                    current_item.title = self._canonical_weekly_tactic_title(
+                        current_item.title,
+                        current_item.annual_plan_element_id,
+                        current_item.start_date,
+                    )
                 self.db_manager.update_action_item(current_item)
 
             self.destroy()
@@ -2014,6 +2106,12 @@ class ItemEditorDialog(ctk.CTkToplevel):
                 self.title_context_entry.get(),
                 self.title_entry.get(),
             ).strip()
+            if item.item_type == "week":
+                item.title = self._canonical_weekly_tactic_title(
+                    item.title,
+                    item.annual_plan_element_id,
+                    item.start_date,
+                )
             item.description = self.description_text.get(
                 "1.0", "end").strip() or None
             item.next_action = self.next_action_text.get(
