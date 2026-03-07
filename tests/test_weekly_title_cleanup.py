@@ -117,11 +117,12 @@ def test_create_week_items_no_date_in_title(tmp_path):
         assert result["created_count"] == 1
 
         row = manager.db.conn.execute(
-            "SELECT title FROM action_items WHERE id = ?", (result["created_ids"][0],)
+            "SELECT title, \"group\" AS group_name FROM action_items WHERE id = ?", (result["created_ids"][0],)
         ).fetchone()
         assert row is not None
         assert row["title"] == "C|W|APW Book - W9"
         assert "(" not in row["title"]
+        assert row["group_name"] == "Weekly Tactic"
     finally:
         manager.close()
 
@@ -144,7 +145,7 @@ def test_create_week_items_uses_system_priority_defaults(tmp_path):
         assert result["created_count"] == 1
 
         row = manager.db.conn.execute(
-            "SELECT importance, urgency, size, value, priority_score FROM action_items WHERE id = ?",
+            "SELECT importance, urgency, size, value, priority_score, \"group\" AS group_name FROM action_items WHERE id = ?",
             (result["created_ids"][0],),
         ).fetchone()
         assert row is not None
@@ -153,5 +154,6 @@ def test_create_week_items_uses_system_priority_defaults(tmp_path):
         assert row["size"] == 4
         assert row["value"] == 8
         assert row["priority_score"] == 6400
+        assert row["group_name"] == "Weekly Tactic"
     finally:
         manager.close()

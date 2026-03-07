@@ -351,15 +351,27 @@ class TodayScreen(ctk.CTkFrame):
             )
             checkbox.grid(row=0, column=0, padx=5, pady=5)
 
+        title_cell = ctk.CTkFrame(frame, fg_color="transparent")
+        title_cell.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        if item.item_type == "week":
+            ctk.CTkLabel(
+                title_cell,
+                text="WT",
+                width=28,
+                corner_radius=6,
+                fg_color=palette["success_strong"],
+                text_color=palette["on_strong"],
+                font=ctk.CTkFont(size=11, weight="bold"),
+            ).pack(side="left", padx=(0, 6))
         title_label = ctk.CTkLabel(
-            frame,
+            title_cell,
             text=format_column_text(parsed.title, TITLE_COL_CHARS),
             width=300,
             font=list_row_font(),
             anchor="w",
             text_color="black"
         )
-        title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        title_label.pack(side="left")
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
         # Context

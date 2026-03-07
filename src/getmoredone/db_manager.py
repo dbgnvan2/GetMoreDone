@@ -60,6 +60,7 @@ class DatabaseManager:
         # Stamp segment ID from linked structures when missing
         self._stamp_segment_from_relationships(item)
         self._normalize_week_item_dates(item)
+        self._normalize_week_item_group(item)
 
         # Validate and adjust dates
         item.validate_and_adjust_dates()
@@ -132,6 +133,7 @@ class DatabaseManager:
         self._stamp_segment_from_relationships(item)
         if normalize_week_dates:
             self._normalize_week_item_dates(item)
+        self._normalize_week_item_group(item)
 
         self.db.conn.execute("""
             UPDATE action_items SET
@@ -994,6 +996,11 @@ class DatabaseManager:
             return
 
         item.start_date, item.due_date = bounds
+
+    def _normalize_week_item_group(self, item: ActionItem):
+        """Reserve group label for weekly tactics so they are easy to filter/report."""
+        if item.item_type == "week":
+            item.group = "Weekly Tactic"
 
     def _segment_from_week_action(self, week_action_id: Optional[str]) -> Optional[str]:
         if not week_action_id:

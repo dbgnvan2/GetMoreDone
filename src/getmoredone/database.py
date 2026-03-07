@@ -287,6 +287,14 @@ class Database:
                 ADD COLUMN parent_id TEXT REFERENCES action_items(id) ON DELETE SET NULL
             """)
 
+        # Keep weekly tactics grouped consistently for filtering/reporting.
+        conn.execute("""
+            UPDATE action_items
+            SET "group" = 'Weekly Tactic'
+            WHERE item_type = 'week'
+              AND COALESCE("group", '') <> 'Weekly Tactic'
+        """)
+
         # Check if contact_id column exists in defaults
         cursor = conn.execute("PRAGMA table_info(defaults)")
         columns = [row[1] for row in cursor.fetchall()]
