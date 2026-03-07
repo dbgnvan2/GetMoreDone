@@ -2657,6 +2657,9 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         self.rolling_mode = True
 
         self.month_default_label = "Rolling Window (Prev/Current/Next)"
+        self.month_past_week_label = "Past Week"
+        self.month_current_week_label = "Current Week"
+        self.month_next_week_label = "Next Week"
         self.month_all_label = "All Weeks"
         self.month_filter_var = ctk.StringVar(value=self.month_default_label)
         self.month_lookup: Dict[str, Tuple[int, int]] = {}
@@ -2672,9 +2675,11 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
 
         self.segment_filter_var = ctk.StringVar(value="All Segments")
         self.subsegment_filter_var = ctk.StringVar(value="All SubSegments")
+        self.category_filter_var = ctk.StringVar(value="All Categories")
         self.segments = self.vps_manager.get_all_segments()
         self.segment_options = ["All Segments"] + [seg["name"] for seg in self.segments]
         self.subsegment_options = ["All SubSegments"]
+        self.category_options = ["All Categories"]
         self.segment_colors_by_id = self.vps_manager.get_segment_colors_by_id()
         self.segment_colors, self.subsegment_colors = load_latest_lineage_color_maps(self.vps_manager)
         self.category_colors = {
@@ -2704,15 +2709,15 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
     def create_ui(self):
         header = ctk.CTkFrame(self)
         header.pack(fill="x", padx=10, pady=10)
-        header.grid_columnconfigure(7, weight=1)
+        header.grid_columnconfigure(5, weight=1)
 
         ctk.CTkLabel(
             header,
             text="Select a Weekly Tactic",
             font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=0, column=0, sticky="w", padx=5)
+        ).grid(row=0, column=0, rowspan=2, sticky="w", padx=(5, 12))
 
-        ctk.CTkLabel(header, text="Month Filter:").grid(row=0, column=1, sticky="e", padx=5)
+        ctk.CTkLabel(header, text="Month Filter:").grid(row=0, column=1, sticky="e", padx=5, pady=3)
         self.month_combo = ctk.CTkComboBox(
             header,
             values=self.month_options,
@@ -2720,9 +2725,9 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             width=220,
             command=lambda _: self._on_month_filter_change()
         )
-        self.month_combo.grid(row=0, column=2, sticky="e", padx=5)
+        self.month_combo.grid(row=0, column=2, sticky="w", padx=5, pady=3)
 
-        ctk.CTkLabel(header, text="Segment Filter:").grid(row=0, column=3, sticky="e", padx=5)
+        ctk.CTkLabel(header, text="Segment Filter:").grid(row=0, column=3, sticky="e", padx=5, pady=3)
         self.segment_combo = ctk.CTkComboBox(
             header,
             values=self.segment_options,
@@ -2730,17 +2735,27 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             width=200,
             command=lambda _: self._on_segment_filter_change()
         )
-        self.segment_combo.grid(row=0, column=4, sticky="e", padx=5)
+        self.segment_combo.grid(row=0, column=4, sticky="w", padx=5, pady=3)
 
-        ctk.CTkLabel(header, text="SubSegment Filter:").grid(row=0, column=5, sticky="e", padx=5)
+        ctk.CTkLabel(header, text="SubSegment Filter:").grid(row=1, column=1, sticky="e", padx=5, pady=3)
         self.subsegment_combo = ctk.CTkComboBox(
             header,
             values=self.subsegment_options,
             variable=self.subsegment_filter_var,
             width=200,
+            command=lambda _: self._on_subsegment_filter_change()
+        )
+        self.subsegment_combo.grid(row=1, column=2, sticky="w", padx=5, pady=3)
+
+        ctk.CTkLabel(header, text="Category Filter:").grid(row=1, column=3, sticky="e", padx=5, pady=3)
+        self.category_combo = ctk.CTkComboBox(
+            header,
+            values=self.category_options,
+            variable=self.category_filter_var,
+            width=200,
             command=lambda _: self.refresh_actions()
         )
-        self.subsegment_combo.grid(row=0, column=6, sticky="e", padx=5)
+        self.category_combo.grid(row=1, column=4, sticky="w", padx=5, pady=3)
 
         self.list_frame = ctk.CTkScrollableFrame(self, height=360)
         self.list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
@@ -2771,11 +2786,16 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         )
         week_items = self._get_week_items_for_current_window(segment_ids)
         self.logger.info("[set_weekly_dialog:refresh] initial_count=%d", len(week_items))
+        allow_auto_fallback = self.month_filter_var.get() == self.month_default_label
 
         if not week_items:
             # Auto-switch to the latest defined month if the rolling window is empty.
-            if self.month_filter_var.get() == self.month_default_label and len(self.month_options) > 2:
-                latest_label = self.month_options[2]
+            if allow_auto_fallback:
+                month_labels = [option for option in self.month_options if option in self.month_lookup]
+                latest_label = month_labels[0] if month_labels else None
+            else:
+                latest_label = None
+            if latest_label:
                 self.month_filter_var.set(latest_label)
                 self._set_month_range(*self.month_lookup[latest_label])
                 week_items = self._get_week_items_for_current_window(segment_ids)
@@ -2785,7 +2805,7 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
                     len(week_items),
                 )
 
-        if not week_items and self.month_filter_var.get() != self.month_all_label:
+        if not week_items and allow_auto_fallback and self.month_filter_var.get() != self.month_all_label:
             # Fall back to showing the entire archive.
             self.month_filter_var.set(self.month_all_label)
             if self._set_all_weeks_range():
@@ -2810,6 +2830,13 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             week_items = [
                 action for action in week_items
                 if (action.get("ape_subsegment_name") or "").strip() == selected_subsegment
+            ]
+        self._refresh_category_options(week_items)
+        selected_category = self.category_filter_var.get()
+        if selected_category != "All Categories":
+            week_items = [
+                action for action in week_items
+                if (action.get("ape_category_name") or "").strip() == selected_category
             ]
 
         if not week_items:
@@ -2877,6 +2904,11 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
 
     def _on_segment_filter_change(self):
         self.subsegment_filter_var.set("All SubSegments")
+        self.category_filter_var.set("All Categories")
+        self.refresh_actions()
+
+    def _on_subsegment_filter_change(self):
+        self.category_filter_var.set("All Categories")
         self.refresh_actions()
 
     def _refresh_subsegment_options(self, week_items: List[Dict[str, Any]]):
@@ -2894,6 +2926,22 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
             self.subsegment_filter_var.set("All SubSegments")
         self.subsegment_options = options
         self.subsegment_combo.configure(values=self.subsegment_options)
+
+    def _refresh_category_options(self, week_items: List[Dict[str, Any]]):
+        categories = sorted(
+            {
+                (item.get("ape_category_name") or "").strip()
+                for item in week_items
+                if (item.get("ape_category_name") or "").strip()
+            },
+            key=str.casefold,
+        )
+        options = ["All Categories"] + categories
+        current = self.category_filter_var.get()
+        if current not in options:
+            self.category_filter_var.set("All Categories")
+        self.category_options = options
+        self.category_combo.configure(values=self.category_options)
 
     def _select_week_action(self, week_item: Dict[str, Any], display: str):
         self.on_select(
@@ -2946,7 +2994,14 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         return "white"
 
     def _build_month_options(self) -> list:
-        options = [self.month_default_label, self.month_all_label]
+        self.month_lookup = {}
+        options = [
+            self.month_default_label,
+            self.month_past_week_label,
+            self.month_current_week_label,
+            self.month_next_week_label,
+            self.month_all_label,
+        ]
         try:
             months = self.vps_manager.get_weekly_action_item_months()
         except Exception:
@@ -2992,6 +3047,12 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         self.range_start = self._align_to_week_start(month_start)
         self.range_end = self._align_to_week_end(month_end)
 
+    def _set_specific_week_range(self, week_start: date):
+        self.rolling_mode = True
+        aligned_start = self._align_to_week_start(week_start)
+        self.range_start = aligned_start
+        self.range_end = aligned_start + timedelta(days=6)
+
     def _set_all_weeks_range(self) -> bool:
         self.rolling_mode = False
         bounds = self.vps_manager.get_weekly_action_item_bounds()
@@ -3007,6 +3068,12 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         selection = self.month_filter_var.get()
         if selection == self.month_default_label:
             self._set_rolling_window_range()
+        elif selection == self.month_past_week_label:
+            self._set_specific_week_range(self.prev_start)
+        elif selection == self.month_current_week_label:
+            self._set_specific_week_range(self.current_start)
+        elif selection == self.month_next_week_label:
+            self._set_specific_week_range(self.next_start)
         elif selection == self.month_all_label:
             if not self._set_all_weeks_range():
                 self.month_filter_var.set(self.month_default_label)
