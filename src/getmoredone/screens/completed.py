@@ -11,7 +11,6 @@ from ..theme import apply_segment_accent, semantic_colors, button_style, list_ro
 from .title_format import (
     split_action_item_title,
     format_column_text,
-    TITLE_COL_CHARS,
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
@@ -212,15 +211,27 @@ class CompletedScreen(ctk.CTkFrame):
                 ctk.CTkLabel(item_frame, text="✓", width=30, text_color="black").grid(
                     row=0, column=0, padx=5, pady=5)
 
+                title_cell = ctk.CTkFrame(item_frame, fg_color="transparent")
+                title_cell.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+                title_cell.grid_columnconfigure(1, weight=1)
+                if item.item_type == "week":
+                    ctk.CTkLabel(
+                        title_cell,
+                        text="WT",
+                        width=28,
+                        corner_radius=6,
+                        fg_color=palette["success_strong"],
+                        text_color=palette["on_strong"],
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                    ).grid(row=0, column=0, padx=(0, 6), sticky="w")
                 title_label = ctk.CTkLabel(
-                    item_frame,
-                    text=format_column_text(parsed.title, TITLE_COL_CHARS),
-                    width=300,
+                    title_cell,
+                    text=parsed.title,
                     font=list_row_font(),
                     anchor="w",
                     text_color="black",
                 )
-                title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                title_label.grid(row=0, column=1, sticky="ew")
                 title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
                 # Context

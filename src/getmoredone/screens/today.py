@@ -17,7 +17,6 @@ from .inline_editors import InlineDateDialog, InlinePriorityDialog
 from .title_format import (
     split_action_item_title,
     format_column_text,
-    TITLE_COL_CHARS,
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
@@ -352,7 +351,8 @@ class TodayScreen(ctk.CTkFrame):
             checkbox.grid(row=0, column=0, padx=5, pady=5)
 
         title_cell = ctk.CTkFrame(frame, fg_color="transparent")
-        title_cell.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        title_cell.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        title_cell.grid_columnconfigure(1, weight=1)
         if item.item_type == "week":
             ctk.CTkLabel(
                 title_cell,
@@ -362,16 +362,15 @@ class TodayScreen(ctk.CTkFrame):
                 fg_color=palette["success_strong"],
                 text_color=palette["on_strong"],
                 font=ctk.CTkFont(size=11, weight="bold"),
-            ).pack(side="left", padx=(0, 6))
+            ).grid(row=0, column=0, padx=(0, 6), sticky="w")
         title_label = ctk.CTkLabel(
             title_cell,
-            text=format_column_text(parsed.title, TITLE_COL_CHARS),
-            width=300,
+            text=parsed.title,
             font=list_row_font(),
             anchor="w",
             text_color="black"
         )
-        title_label.pack(side="left")
+        title_label.grid(row=0, column=1, sticky="ew")
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
         # Context
