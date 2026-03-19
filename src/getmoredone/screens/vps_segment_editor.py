@@ -1,5 +1,5 @@
 """
-VPS Segment Editor Dialog for creating and editing life segments.
+VSP Segment Editor Dialog for creating and editing life segments.
 """
 
 import customtkinter as ctk
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 class VPSSegmentEditorDialog(ctk.CTkToplevel):
-    """Dialog for creating/editing VPS life segments with color picker."""
+    """Dialog for creating/editing VSP life segments with color picker."""
 
     def __init__(self, parent, vps_manager: 'VPSManager', segment: Optional[dict] = None):
         super().__init__(parent)
@@ -123,7 +123,7 @@ class VPSSegmentEditorDialog(ctk.CTkToplevel):
             value=True if not self.segment else self.segment['is_active'])
         self.active_checkbox = ctk.CTkCheckBox(
             main_frame,
-            text="Active (visible in VPS Planning)",
+            text="Active (visible in VSP Planning)",
             variable=self.active_var
         )
         self.active_checkbox.grid(

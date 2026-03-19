@@ -2,7 +2,7 @@
 
 This guide explains what each screen, button, and workflow does, and why you might use it. It is aligned to the current UI and screen code in `src/getmoredone/screens`.
 
-Last updated: 2026-02-19
+Last updated: 2026-03-18
 
 ---
 
@@ -16,6 +16,11 @@ GetMoreDone is a desktop task manager focused on prioritization and execution.
 ---
 
 ## 2) Core concepts
+
+### List Views
+- What: In this project, `List Views` refers specifically to the `Today`, `Upcoming`, `All Items`, and `Hierarchical` screens.
+- Why: These four screens share list-style browsing, filtering, and row presentation patterns, so they are treated as one UI family in planning and implementation discussions.
+- Layout note: The current List Views show `Title`, `SubSegment`, and `Category` as stable columns and keep `Immediate Step` readable as the window narrows; lower-priority columns compress first.
 
 ### Action Items (tasks)
 - What: The central record you work with. Required fields: `Who` and `Title`.
@@ -50,7 +55,7 @@ GetMoreDone is a desktop task manager focused on prioritization and execution.
 - What: Any item can have child items.
 - Why: Useful for breaking large work into smaller next actions.
 
-### VPS (Visionary Planning System)
+### VSP (Vision Strategy Plan)
 - What: A planning hierarchy from long-term vision down to weekly actions, grouped by life segment.
 - Why: Connects long-term goals to day-to-day tasks.
 
@@ -74,6 +79,10 @@ Row controls (open items):
 - **Timer** — What: Opens the focused timer window. Why: Work in a time block and log actual time.
 - **Edit** — What: Opens the Item Editor. Why: Adjust details or add context.
 - **Push** — What: Moves start/due dates forward by 1 day using weekend settings. Why: Reschedule quickly.
+
+Completion feedback:
+- **Completion badge** — What: Completed rows can show a large green check mark or a user-uploaded badge image. Why: Make completion more visible and customizable.
+- **Confetti threshold** — What: Optional celebration every N completions in the current session. Why: Add lightweight positive feedback without changing completion logic.
 
 ### Upcoming
 - What: Shows open items due within the next N days, grouped by date.
@@ -120,27 +129,63 @@ Behavior:
 - Without search: shows roots and children indented.
 - With search: shows a flat list of matching items.
 
-### Drag Schedule
-- What: A drag-and-drop rescheduling view. Left column shows Next Items; right column shows date boxes.
+### Scheduler
+- What: A drag-and-drop rescheduling view. Left side shows Action Items; right side shows Date Boxes and a Calendar tab.
 - Why: Quickly drag tasks onto a specific date and reschedule in one move.
 
 Header controls:
 - **Next N days** — What: Sets how many date boxes to show. Why: Adjust your planning horizon.
 - **Who** — What: Filters the left list by Who. Why: Focus on one client or context.
+- **Segment / SubSegment** — What: Filters the Scheduler by APE lineage. Why: Focus scheduling on one planning area.
+- **Refresh** — What: Reloads the full visible range using the current `Next N days` and `Who` filters and clears any clicked date filter. Why: Reset back to the full scheduling set.
 
 Main area:
-- **Next Items list (left)** — What: Open items with no dates plus upcoming items in the selected window. Why: A short list of items worth scheduling.
-- **Date boxes (right)** — What: Drop targets for dates. Why: Reschedule by drag-and-drop.
-  - Date label format: `Day - MM/DD - N items - Nh Mm`
-  - Date label style: font is 30% larger than previous baseline.
+- **Action Items list (left)** — What: Open items with no dates plus upcoming items in the selected window. Why: A short list of items worth scheduling.
+  - Columns: `Title`, `Segment`, `SubSegment`, `Category`
+- **Date Boxes (right)** — What: Drop targets for dates. Why: Reschedule by drag-and-drop.
+  - Date box columns: `Day`, `Date`, `Items`, `Time`
+  - Weekday names use the full day name.
+  - Start-date color rule on the left list: overdue = red, today = green, future = yellow.
   - Date/future box height: controlled by setting (`Drag Schedule box height (px)`).
 - **Next item rows (left)** — What: draggable source records. Why: schedule items quickly.
   - Row height: uses the same `Drag Schedule box height (px)` setting for visual alignment with right-side boxes.
-- **Future options (bottom)** — What: Mid Term, Long Term, 1st Next Month, 1st Next Quarter boxes. Why: Fast scheduling to common future anchors.
+- **Calendar tab** — What: Month-style calendar with clickable/drop-target day boxes. Why: Schedule by calendar instead of date list.
+- **Future options (bottom)** — What: `Next Month`, `Next Quarter`, `Near Term`, `Long Term` boxes. Why: Fast scheduling to common future anchors.
 
 Drag behavior:
 - What: Drag an item title onto a date box.
 - Why: Sets both Start Date and Due Date to the drop date in one action.
+
+Filtering behavior:
+- **Click a date box or calendar day** — What: Filters the left list to that specific date. Why: Inspect what is already scheduled there.
+- **Click the same date again** — What: Clears the date filter. Why: Return to the full view quickly.
+- **Resize divider** — What: Drag the center divider between left and right panels. Why: Give more space to either the item list or the date/calendar panel.
+
+### Projects
+- What: A board of project notes, with one note per Annual Plan Element (APE).
+- Why: Gives you a visual project layer between planning and individual action items.
+
+Board behavior:
+- **One note per APE** — What: Each APE automatically creates one project note. Why: Keep strategic work visible on the board without manual setup.
+- **Color** — What: Note color comes from the APE category color. Why: Preserve planning lineage visually.
+- **Top title** — What: Each note shows `SubSegment - Category`. Why: Keep the planning context visible at a glance.
+- **Body** — What: Shows the project title and next step. Why: Keep the board readable when many notes are visible.
+- **Click a note** — What: Opens the Edit Project dialog. Why: Make the note itself the main edit affordance.
+- **Drag notes** — What: Reorders notes left-to-right, top-to-bottom. Why: Let you organize the board visually.
+- **Board divider** — What: Drag the vertical divider between the board and detail panel. Why: Make the board wider or narrower.
+- **Note Size slider** — What: Resizes all notes together. Why: Fit more notes on the board or make them easier to read.
+- **Compact Height** — What: Reduces note height. Why: Fit more notes vertically.
+
+Note actions:
+- **Pencil** — What: Edit project. Why: Update title, next step, notes, or status.
+- **Plus** — What: Create and link a new action item. Why: Turn project planning into execution.
+- **Page** — What: Create/link/open Obsidian notes using the same workflow as action items. Why: Reuse the existing note-linking model.
+- **Clock** — What: Set project note to Pending. Why: Hide it from the active board without deleting it.
+- **Check mark** — What: Set project note to Completed. Why: Remove it from the active board when finished.
+- **Trash can** — What: Delete the project note. Why: Remove obsolete project records when appropriate.
+
+Filters:
+- **Show Pending / Show Complete** — What: Toggles those note states onto the board. Why: Review inactive work without mixing it into the default active board.
 
 ### Plan (Time Blocks)
 - What: A time block planning view with a backlog of open items and a day plan.
@@ -217,6 +262,7 @@ Database Management:
 - **Database Path** — What: Shows the current DB file. Why: Know where your data lives.
 - **Backup Database** — What: Creates a timestamped backup. Why: Protect against loss.
 - **Load Demo Data** — What: Adds sample items to the current DB. Why: See how the app works.
+- **Business year starts (MM-DD)** — What: Sets the first day of the business year used by Scheduler/plan-oriented date logic. Why: Align quarter and annual planning to your real operating year.
 
 Obsidian Integration:
 - **Vault Path** — What: Path to your Obsidian vault. Why: Enable note linking.
@@ -225,10 +271,12 @@ Obsidian Integration:
 - **Test Connection** — What: Validates vault path and subfolder. Why: Confirm setup is correct.
 
 Date Increment Settings:
-- **First day of week (VPS)** — What: Sets week start day for APE Period week generation. Why: Keep weekly planning aligned with your calendar.
+- **First day of week (VSP)** — What: Sets week start day for APE Period week generation. Why: Keep weekly planning aligned with your calendar.
 - **Drag Schedule date text color** — What: Hex color for date-box text (default `#FFFFFF`). Why: Improve readability across box colors.
   - Includes **Pick Color** button for visual selection.
 - **Drag Schedule box height (px)** — What: Controls the height of all Drag Schedule date/future boxes. Why: Match readability and spacing preferences.
+- **Completion Badge** — What: Optional image shown on completed Today items. Why: Replace the default large green check mark with your preferred badge.
+- **Confetti Every N Completions** — What: Controls how often confetti triggers on Today completions. Why: Tune or disable celebration feedback.
 
 ### Vision Planning (Unified Hub)
 - What: A single workspace with top navigation for all vision-planning flows.
@@ -236,10 +284,14 @@ Date Increment Settings:
 
 Top buttons:
 - **Vision Elements** — Create and maintain Segment|SubSegment|Category keys.
-- **Annual Vision Segments** — Promote Vision Elements into Annual Vision/Plan records.
-- **APE Assignment** — Assign Annual Plan Elements to quarters and months.
-- **APE Period View** — Select weeks within a month and create weekly parent records.
+- **Annual Plan Elements** — Promote Vision Elements into annual records for a selected year.
+- **APE Assignment** — Assign Annual Plan Elements into a selected quarter.
+- **APE Period View** — Assign quarter-selected APEs into a selected month.
 - **APE Weekly** — Work weekly parent records and their daily child Action Items.
+
+APE assignment behavior:
+- **Checkbox + Save** — What: The assignment screens still support explicit checkbox selection and save. Why: Keep the existing bulk workflow available.
+- **Drag and drop** — What: The APE screens also support dragging left-side records onto the right-side assignment panel. Why: Speed up planning when working item by item.
 
 APE Weekly behavior:
 - Left list shows weekly parent records (weekly tactics).
@@ -282,24 +334,24 @@ Email Import (Gmail):
 - **Open Logs** — What: Opens importer logs. Why: Debug or confirm imports.
 - **Gmail account** — What: Uses the Gmail account authorized on this machine. Why: Keeps imports tied to the correct inbox.
 
-VPS Life Segments:
-- **+ New Segment** — What: Creates a new life segment. Why: Organize VPS plans by life area.
+VSP Life Segments:
+- **+ New Segment** — What: Creates a new life segment. Why: Organize VSP plans by life area.
 - **Refresh** — What: Reloads the list. Why: See recent changes.
 - **Edit** — What: Modify segment details. Why: Keep segments accurate.
-- **Delete** — What: Deletes a segment if no linked VPS records exist. Why: Clean up unused segments.
-- **Deletion protection** — What: If linked VPS records exist, deletion is blocked and you are guided to remove child records first. Why: Prevent accidental data loss.
+- **Delete** — What: Deletes a segment if no linked VSP records exist. Why: Clean up unused segments.
+- **Deletion protection** — What: If linked VSP records exist, deletion is blocked and you are guided to remove child records first. Why: Prevent accidental data loss.
 
 Future Date Options:
 - **Near Term / Long Term** — What: Offsets from today. Why: Quick scheduling targets for Drag Schedule.
 - **1st Next Month / 1st Next Quarter** — What: Offsets from the 1st of next month/quarter. Why: Align with month/quarter starts.
 
-### VPS Planning
-- What: The Visionary Planning System hierarchy.
+### VSP Planning
+- What: The Vision Strategy Plan hierarchy.
 - Why: Turn long-term vision into concrete actions.
 
 Common controls:
 - **Expand All / Collapse** — What: Opens or collapses all nodes. Why: Fast navigation.
-- **Segment filter** — What: Filter by VPS segment. Why: Focus on a life area.
+- **Segment filter** — What: Filter by VSP segment. Why: Focus on a life area.
 - **Add buttons** — What: Create new TL Vision, Annual Vision, Annual Plan, Quarter Initiative, Month Tactic, Week Action. Why: Build the planning tree.
 - **Edit** — What: Modify a plan node. Why: Keep planning current.
 - **Delete** — What: Remove a node (with safety checks). Why: Clean up or reorganize.
@@ -405,7 +457,7 @@ Buttons:
 ## 7) Common workflows (Why you would use them)
 
 - **Daily focus**: Today screen + Top 3 to focus on the highest priority items.
-- **Weekly planning**: Upcoming and Drag Schedule to place tasks on dates.
+- **Weekly planning**: Upcoming and Scheduler to place tasks on dates.
 - **Time blocking**: Plan screen to translate tasks into a daily schedule.
 - **Meetings**: Item Editor + Calendar dialog to schedule and link meetings.
 - **Hierarchy**: Next Action + Create Tasks to break down large projects.
@@ -434,4 +486,4 @@ Backups:
 - **Planned minutes**: Your estimated duration for the task.
 - **Work log**: A record created by the Timer when you finish or continue.
 - **Item link**: A stored URL/reference tied to an item (Obsidian note, Google Calendar event, etc.).
-- **VPS Segment**: A life area bucket for VPS planning.
+- **VSP Segment**: A life area bucket for VSP planning.

@@ -19,6 +19,8 @@ class AppSettings:
     obsidian_notes_subfolder: str = "GetMoreDone"
     # Default green checkmark, can be customized to image path or emoji
     completion_icon: str = "✓"
+    completion_badge_path: Optional[str] = None
+    completion_confetti_threshold: int = 0
     appearance_mode: str = "dark"  # system | dark | light
     theme_name: str = "apple_grey"
     list_row_font_size: int = 14
@@ -51,12 +53,14 @@ class AppSettings:
     include_saturday: bool = True
     # Include Sunday in date calculations (push, +/-)
     include_sunday: bool = True
-    # First day of week for VPS week generation (0=Monday .. 6=Sunday)
+    # First day of week for VSP week generation (0=Monday .. 6=Sunday)
     first_day_of_week: int = 0
 
     # List view settings
     # Default state for list views (Today, Upcoming, All Items)
     default_columns_expanded: bool = False
+    # First day of business year in MM-DD format
+    business_year_start_mmdd: str = "01-01"
     # Drag Schedule date box text color (hex)
     drag_schedule_date_text_color: str = "#FFFFFF"
     # Drag Schedule date/future box height in pixels
@@ -99,6 +103,12 @@ class AppSettings:
                 settings.list_row_font_size = cls._normalize_list_row_font_size(
                     getattr(settings, "list_row_font_size", 14)
                 )
+                settings.completion_confetti_threshold = cls._normalize_completion_confetti_threshold(
+                    getattr(settings, "completion_confetti_threshold", 0)
+                )
+                settings.business_year_start_mmdd = cls._normalize_business_year_start_mmdd(
+                    getattr(settings, "business_year_start_mmdd", "01-01")
+                )
                 return settings
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -114,6 +124,12 @@ class AppSettings:
         self.theme_name = self._normalize_theme_name(self.theme_name)
         self.list_row_font_size = self._normalize_list_row_font_size(
             self.list_row_font_size
+        )
+        self.completion_confetti_threshold = self._normalize_completion_confetti_threshold(
+            self.completion_confetti_threshold
+        )
+        self.business_year_start_mmdd = self._normalize_business_year_start_mmdd(
+            self.business_year_start_mmdd
         )
 
         # Ensure data directory exists
@@ -144,6 +160,35 @@ class AppSettings:
         except (TypeError, ValueError):
             size = 14
         return max(10, min(24, size))
+
+    @staticmethod
+    def _normalize_business_year_start_mmdd(value: Optional[str]) -> str:
+        text = (value or "").strip()
+        if len(text) != 5 or text[2] != "-":
+            return "01-01"
+        month_text, day_text = text.split("-", 1)
+        try:
+            month = int(month_text)
+            day = int(day_text)
+        except ValueError:
+            return "01-01"
+        if month < 1 or month > 12:
+            return "01-01"
+        max_days = {
+            1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30,
+            7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31,
+        }[month]
+        if day < 1 or day > max_days:
+            return "01-01"
+        return f"{month:02d}-{day:02d}"
+
+    @staticmethod
+    def _normalize_completion_confetti_threshold(value: Optional[int]) -> int:
+        try:
+            threshold = int(value)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, threshold)
 
     def validate_vault_path(self) -> bool:
         """Check if vault path exists."""

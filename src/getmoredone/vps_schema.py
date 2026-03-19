@@ -1,5 +1,5 @@
 """
-VPS (Visionary Planning System) Database Schema
+VSP (Vision Strategy Plan) Database Schema
 Extends GetMoreDone with strategic planning hierarchy.
 
 Based on simplified architecture where:
@@ -14,11 +14,11 @@ from typing import List, Optional, Tuple
 
 
 class VPSSchema:
-    """Manages VPS table creation and migrations."""
+    """Manages VSP table creation and migrations."""
 
     @staticmethod
     def initialize_vps_schema(conn: sqlite3.Connection):
-        """Create all VPS tables and extend GMD tables."""
+        """Create all VSP tables and extend GMD tables."""
         legacy_assignment_tables = VPSSchema._prepare_legacy_vision_schema_migration(conn)
 
         # ========================================================================
@@ -295,7 +295,7 @@ class VPSSchema:
         """)
 
         # ========================================================================
-        # EXTEND ACTION_ITEMS for VPS Integration
+        # EXTEND ACTION_ITEMS for VSP Integration
         # ========================================================================
         VPSSchema._extend_action_items(conn)
 
@@ -634,7 +634,7 @@ class VPSSchema:
 
     @staticmethod
     def _extend_action_items(conn: sqlite3.Connection):
-        """Add VPS-related columns to existing action_items table."""
+        """Add VSP-related columns to existing action_items table."""
         # Check which columns already exist
         cursor = conn.execute("PRAGMA table_info(action_items)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -779,7 +779,7 @@ class VPSSchema:
 
     @staticmethod
     def _create_indexes(conn: sqlite3.Connection):
-        """Create performance indexes for VPS tables."""
+        """Create performance indexes for VSP tables."""
 
         # Segment descriptions
         conn.execute("""
@@ -933,7 +933,7 @@ class VPSSchema:
             ON week_actions(status)
         """)
 
-        # Action Items VPS extensions
+        # Action Items VSP extensions
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_action_items_week_action
             ON action_items(week_action_id)

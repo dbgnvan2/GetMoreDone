@@ -9,8 +9,17 @@ from datetime import datetime
 
 from src.getmoredone.database import Database
 from src.getmoredone.db_manager import DatabaseManager
-from src.getmoredone.models import ActionItem, Contact, Defaults, PriorityFactors
+from src.getmoredone.models import (
+    ActionItem,
+    Contact,
+    Defaults,
+    PriorityFactors,
+    ProjectBoard,
+    ProjectBoardLink,
+    ProjectBoardStatus,
+)
 from src.getmoredone.paths import resolve_db_path
+from src.getmoredone.vps_manager import VPSManager
 
 
 @pytest.fixture
@@ -24,6 +33,18 @@ def temp_db():
 
     db_manager.close()
     os.unlink(temp_file.name)
+
+
+def _seed_ape(db_path: str) -> str:
+    manager = VPSManager(db_path)
+    try:
+        segment_name = manager.get_all_segments(active_only=False)[0]["name"]
+        manager.create_vision_subsegment(segment_name, "Board Test")
+        ve_id = manager.create_or_get_vision_element(segment_name, "Board Test", "Project Board Category")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+        return ids["annual_plan_element_id"]
+    finally:
+        manager.close()
 
 
 def test_database_initialization(temp_db):
@@ -258,11 +279,186 @@ def test_delete_action_item_cascades_links(temp_db):
     # Delete item
     temp_db.delete_action_item(item_id)
 
-    # Verify links and logs are gone (cascaded)
     links_after = temp_db.get_item_links(item_id)
     logs_after = temp_db.get_work_logs(item_id)
-    assert len(links_after) == 0
-    assert len(logs_after) == 0
+    assert links_after == []
+    assert logs_after == []
+
+
+def test_project_board_crud_and_filters(tmp_path):
+    db_path = tmp_path / "project_boards.db"
+    db = DatabaseManager(str(db_path))
+    try:
+        ape_id = _seed_ape(str(db_path))
+
+        board = ProjectBoard(
+            title="Board One",
+            annual_plan_element_id=ape_id,
+            importance=PriorityFactors.IMPORTANCE["High"],
+            next_step="Ship the first next step",
+            notes="Initial note body",
+        )
+        board_id = db.ensure_project_board_for_ape(ape_id)
+        board.id = board_id
+        db.update_project_board(board)
+
+        fetched = db.get_project_board(board_id)
+        assert fetched is not None
+        assert fetched.title == "Board One"
+        assert fetched.importance == PriorityFactors.IMPORTANCE["High"]
+
+        fetched.title = "Board One Updated"
+        fetched.status = ProjectBoardStatus.PENDING
+        db.update_project_board(fetched)
+
+        active_only = db.get_project_boards()
+        assert active_only == []
+
+        with_pending = db.get_project_boards(show_pending=True)
+        assert len(with_pending) == 1
+        assert with_pending[0]["title"] == "Board One Updated"
+
+        db.set_project_board_status(board_id, ProjectBoardStatus.COMPLETED)
+        completed = db.get_project_boards(show_completed=True)
+        assert len(completed) == 1
+        assert completed[0]["status"] == ProjectBoardStatus.COMPLETED
+        assert completed[0]["completed_at"] is not None
+    finally:
+        db.close()
+
+
+def test_project_board_links_action_items(tmp_path):
+    db_path = tmp_path / "project_board_links.db"
+    db = DatabaseManager(str(db_path))
+    try:
+        ape_id = _seed_ape(str(db_path))
+        board_id = db.ensure_project_board_for_ape(ape_id)
+        board = db.get_project_board(board_id)
+        assert board is not None
+        board.title = "Project Link Test"
+        board.next_step = "Create linked task"
+        db.update_project_board(board)
+
+        item = ActionItem(
+            who="Creative",
+            title="Linked Task",
+            annual_plan_element_id=ape_id,
+        )
+        item_id = db.create_action_item(item, apply_defaults=False)
+        db.link_action_item_to_project_board(board_id, item_id)
+
+        linked = db.get_project_board_items(board_id)
+        assert len(linked) == 1
+        assert linked[0].id == item_id
+
+        board_rows = db.get_project_boards()
+        assert len(board_rows) == 1
+        assert board_rows[0]["linked_item_count"] == 1
+        assert board_rows[0]["open_item_count"] == 1
+
+        db.complete_action_item(item_id)
+        board_rows = db.get_project_boards()
+        assert board_rows[0]["completed_item_count"] == 1
+
+        db.unlink_action_item_from_project_board(board_id, item_id)
+        assert db.get_project_board_items(board_id) == []
+    finally:
+        db.close()
+
+
+def test_ape_creation_auto_creates_project_board(tmp_path):
+    db_path = tmp_path / "ape_auto_project.db"
+    manager = VPSManager(str(db_path))
+    try:
+        segment_name = manager.get_all_segments(active_only=False)[0]["name"]
+        manager.create_vision_subsegment(segment_name, "Auto Project")
+        ve_id = manager.create_or_get_vision_element(segment_name, "Auto Project", "Auto Category")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+
+        boards = manager.db_manager.get_project_boards()
+        assert len(boards) == 1
+        assert boards[0]["annual_plan_element_id"] == ids["annual_plan_element_id"]
+        assert boards[0]["title"] == f"{segment_name}|Auto Project|Auto Category"
+    finally:
+        manager.close()
+
+
+def test_project_board_links_crud(tmp_path):
+    db_path = tmp_path / "project_board_note_links.db"
+    db = DatabaseManager(str(db_path))
+    try:
+        ape_id = _seed_ape(str(db_path))
+        board_id = db.ensure_project_board_for_ape(ape_id)
+        link = ProjectBoardLink(
+            project_board_id=board_id,
+            url="/tmp/test-note.md",
+            label="Test Note",
+            link_type="obsidian_note",
+        )
+        db.add_project_board_link(link)
+
+        links = db.get_project_board_links(board_id)
+        assert len(links) == 1
+        assert links[0].label == "Test Note"
+
+        db.delete_project_board_link(link.id)
+        assert db.get_project_board_links(board_id) == []
+    finally:
+        db.close()
+
+
+def test_project_board_backfill_for_existing_apes(tmp_path):
+    db_path = tmp_path / "project_board_backfill.db"
+    manager = VPSManager(str(db_path))
+    try:
+        segment_name = manager.get_all_segments(active_only=False)[0]["name"]
+        manager.create_vision_subsegment(segment_name, "Backfill One")
+        manager.create_vision_subsegment(segment_name, "Backfill Two")
+        ve1 = manager.create_or_get_vision_element(segment_name, "Backfill One", "Category One")
+        ve2 = manager.create_or_get_vision_element(segment_name, "Backfill Two", "Category Two")
+        ids1 = manager.create_annual_records_from_vision_element(2026, ve1)
+        manager.create_annual_records_from_vision_element(2026, ve2)
+
+        manager.db_manager.db.conn.execute(
+            "DELETE FROM project_boards WHERE annual_plan_element_id = ?",
+            (ids1["annual_plan_element_id"],),
+        )
+        manager.db_manager.db.conn.commit()
+
+        created = manager.db_manager.ensure_project_boards_for_all_apes()
+        assert created >= 1
+
+        boards = manager.db_manager.get_project_boards()
+        assert len(boards) == 2
+    finally:
+        manager.close()
+
+
+def test_project_board_order_persists(tmp_path):
+    db_path = tmp_path / "project_board_order.db"
+    manager = VPSManager(str(db_path))
+    try:
+        segment_name = manager.get_all_segments(active_only=False)[0]["name"]
+        manager.create_vision_subsegment(segment_name, "Order One")
+        manager.create_vision_subsegment(segment_name, "Order Two")
+        manager.create_vision_subsegment(segment_name, "Order Three")
+        ve_ids = [
+            manager.create_or_get_vision_element(segment_name, "Order One", "Cat One"),
+            manager.create_or_get_vision_element(segment_name, "Order Two", "Cat Two"),
+            manager.create_or_get_vision_element(segment_name, "Order Three", "Cat Three"),
+        ]
+        for ve_id in ve_ids:
+            manager.create_annual_records_from_vision_element(2026, ve_id)
+
+        rows = manager.db_manager.get_project_boards()
+        original_ids = [row["id"] for row in rows]
+        reordered = [original_ids[2], original_ids[0], original_ids[1]]
+        manager.db_manager.set_project_board_order(reordered)
+
+        refreshed_ids = [row["id"] for row in manager.db_manager.get_project_boards()]
+        assert refreshed_ids == reordered
+    finally:
+        manager.close()
 
 
 def test_get_children_returns_empty_for_deleted_parent(temp_db):

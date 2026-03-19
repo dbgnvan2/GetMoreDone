@@ -1,5 +1,5 @@
 """
-VPS entity editor dialogs for creating and editing strategic planning items.
+VSP entity editor dialogs for creating and editing strategic planning items.
 """
 
 import customtkinter as ctk

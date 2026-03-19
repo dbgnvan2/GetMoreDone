@@ -527,7 +527,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             row=tab2_row, column=1, sticky="w", padx=10, pady=5)
         tab2_row += 1
 
-        # Weekly Tactic (VPS Integration)
+        # Weekly Tactic (VSP Integration)
         ctk.CTkLabel(self.tab_organization, text="Weekly Tactic:").grid(
             row=tab2_row, column=0, sticky="w", padx=10, pady=5)
         self.week_action_var = ctk.StringVar(value="")
@@ -702,10 +702,10 @@ class ItemEditorDialog(ctk.CTkToplevel):
         self.main_frame = main_frame
 
     def load_week_actions(self):
-        """Load week actions into the dropdown if vps_manager is available."""
+        """Load week actions into the dropdown if the VSP manager is available."""
         if not self.vps_manager:
             self.week_action_combo.configure(
-                values=["(VPS Manager not available)"], state="disabled")
+                values=["(VSP Manager not available)"], state="disabled")
             return
 
         try:
@@ -1547,7 +1547,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
             planned_text = self.planned_minutes_entry.get().strip()
             item.planned_minutes = int(planned_text) if planned_text else None
 
-            # VPS fields
+            # VSP fields
             # Week Action (from dropdown if available, otherwise from constructor)
             week_action_display = self.week_action_var.get().strip()
             if week_action_display and week_action_display != "(None)" and hasattr(self, 'week_action_options'):
@@ -1933,7 +1933,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
     def set_weekly_tactic(self):
         """Open dialog to set/change the weekly tactic association."""
         if not self.vps_manager:
-            messagebox.showinfo("Weekly Tactic", "VPS data is not available.")
+            messagebox.showinfo("Weekly Tactic", "VSP data is not available.")
             return
 
         current_title = self.item.title if self.item else (self.title_entry.get().strip() or "Action Item")
@@ -3303,7 +3303,7 @@ class CreateNoteDialog(ctk.CTkToplevel):
         """Create the note file and link it."""
         from ..app_settings import AppSettings
         from ..obsidian_utils import create_obsidian_note, open_in_obsidian
-        from ..models import ItemLink, ContactLink
+        from ..models import ItemLink, ContactLink, ProjectBoardLink
 
         title = self.title_var.get().strip()
         if not title:
@@ -3332,6 +3332,10 @@ class CreateNoteDialog(ctk.CTkToplevel):
                     who = item.who
                     due_date = item.due_date
                     priority_score = item.priority_score
+            elif self.entity_type == "project_board":
+                board = self.db_manager.get_project_board(self.entity_id)
+                if board and board.importance is not None:
+                    priority_score = board.importance
 
             # Create note file
             file_path = create_obsidian_note(
@@ -3363,6 +3367,14 @@ class CreateNoteDialog(ctk.CTkToplevel):
                     link_type="obsidian_note"
                 )
                 self.db_manager.add_contact_link(link)
+            elif self.entity_type == "project_board":
+                link = ProjectBoardLink(
+                    project_board_id=self.entity_id,
+                    url=file_path,
+                    label=title,
+                    link_type="obsidian_note"
+                )
+                self.db_manager.add_project_board_link(link)
 
             # Open in Obsidian
             open_in_obsidian(file_path, settings.obsidian_vault_path)
@@ -3635,7 +3647,7 @@ class LinkNoteDialog(ctk.CTkToplevel):
 
     def link_note_file(self, file_path: str, default_label: str):
         """Link the selected note file."""
-        from ..models import ItemLink, ContactLink
+        from ..models import ItemLink, ContactLink, ProjectBoardLink
         from pathlib import Path
 
         # Get label (use custom if provided, otherwise use note title)
@@ -3659,6 +3671,14 @@ class LinkNoteDialog(ctk.CTkToplevel):
                     link_type="obsidian_note"
                 )
                 self.db_manager.add_contact_link(link)
+            elif self.entity_type == "project_board":
+                link = ProjectBoardLink(
+                    project_board_id=self.entity_id,
+                    url=file_path,
+                    label=label,
+                    link_type="obsidian_note"
+                )
+                self.db_manager.add_project_board_link(link)
 
             # Close dialog and refresh parent
             self.destroy()

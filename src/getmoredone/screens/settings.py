@@ -91,7 +91,7 @@ class SettingsScreen(ctk.CTkFrame):
         email_tab.grid_columnconfigure(0, weight=1)
         self.create_email_import_section(email_tab)
 
-        # VPS segment management moved into VPS Plan -> Vision Elements.
+        # VSP segment management moved into VSP Plan -> Vision Elements.
 
     def create_database_section(self, parent=None):
         """Create database management section."""
@@ -132,20 +132,53 @@ class SettingsScreen(ctk.CTkFrame):
         )
         btn_demo.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
+        ctk.CTkLabel(section, text="Business year starts (MM-DD):").grid(
+            row=3, column=0, sticky="w", padx=10, pady=5
+        )
+        self.business_year_start_var = ctk.StringVar(
+            value=getattr(self.settings, "business_year_start_mmdd", "01-01")
+        )
+        self.business_year_start_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.business_year_start_var,
+            width=120,
+        )
+        self.business_year_start_entry.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
+        self.db_save_btn = ctk.CTkButton(
+            section,
+            text="Save Database Settings",
+            command=self.save_database_settings,
+            width=180,
+            **button_style("secondary"),
+        )
+        self.db_save_btn.grid(row=4, column=0, sticky="w", padx=10, pady=10)
+
         # Status label
         self.db_status_label = ctk.CTkLabel(
             section, text="", text_color="green")
         self.db_status_label.grid(
-            row=3, column=1, sticky="w", padx=10, pady=10)
+            row=4, column=1, sticky="w", padx=10, pady=10)
 
         # Info
         info_text = (
             "Backups are saved in the data/ directory with timestamps.\n"
-            "Database file: getmoredone.db\n\n"
+            "Database file: getmoredone.db\n"
+            "Business year start uses recurring MM-DD format.\n\n"
             "Demo Data: adds a small set of sample items to the CURRENT database (no deletion)."
         )
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray").grid(
-            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5
+            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        )
+
+    def save_database_settings(self):
+        """Save database-related preferences."""
+        self.settings.business_year_start_mmdd = self.business_year_start_var.get().strip()
+        self.settings.save()
+        self.business_year_start_var.set(self.settings.business_year_start_mmdd)
+        self.db_status_label.configure(
+            text="✓ Database settings saved",
+            text_color="green",
         )
 
     def create_obsidian_section(self, parent=None):
@@ -324,24 +357,58 @@ class SettingsScreen(ctk.CTkFrame):
         )
         self.list_row_font_size_combo.grid(row=3, column=1, sticky="w", padx=10, pady=5)
 
+        ctk.CTkLabel(section, text="Completion Badge:").grid(
+            row=4, column=0, sticky="w", padx=10, pady=5)
+        self.completion_badge_path_var = ctk.StringVar(
+            value=getattr(self.settings, "completion_badge_path", "") or ""
+        )
+        self.completion_badge_path_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.completion_badge_path_var,
+            width=260,
+        )
+        self.completion_badge_path_entry.grid(row=4, column=1, sticky="w", padx=10, pady=5)
+        self.completion_badge_browse_btn = ctk.CTkButton(
+            section,
+            text="Browse",
+            width=90,
+            command=self.browse_completion_badge,
+            **button_style("secondary"),
+        )
+        self.completion_badge_browse_btn.grid(row=4, column=2, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(section, text="Confetti Every N Completions:").grid(
+            row=5, column=0, sticky="w", padx=10, pady=5)
+        self.completion_confetti_threshold_var = ctk.StringVar(
+            value=str(getattr(self.settings, "completion_confetti_threshold", 0))
+        )
+        self.completion_confetti_threshold_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.completion_confetti_threshold_var,
+            width=180,
+        )
+        self.completion_confetti_threshold_entry.grid(row=5, column=1, sticky="w", padx=10, pady=5)
+
         self.theme_apply_btn = ctk.CTkButton(
             section,
-            text="Apply Theme",
+            text="Apply / Save",
             command=self.apply_theme_preferences,
             width=120
         )
-        self.theme_apply_btn.grid(row=1, column=2, rowspan=3, sticky="w", padx=10, pady=5)
+        self.theme_apply_btn.grid(row=1, column=3, rowspan=5, sticky="w", padx=10, pady=5)
 
         self.appearance_status_label = ctk.CTkLabel(section, text="", text_color="green")
-        self.appearance_status_label.grid(row=4, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 4))
+        self.appearance_status_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
 
         info_text = (
             "Appearance mode controls system/dark/light rendering.\n"
             "Color theme switches between bundled CustomTkinter palettes.\n"
-            "Row Text Size controls font size in item listing rows."
+            "Row Text Size controls font size in item listing rows.\n"
+            "Completion Badge can be an uploaded image shown on Today completed items.\n"
+            "Set Confetti Every N Completions to 0 to disable confetti."
         )
         ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=5, column=0, columnspan=3, sticky="w", padx=10, pady=5
+            row=7, column=0, columnspan=4, sticky="w", padx=10, pady=5
         )
 
     def on_theme_preference_changed(self, _choice=None):
@@ -356,14 +423,28 @@ class SettingsScreen(ctk.CTkFrame):
             self.settings.list_row_font_size = int(self.list_row_font_size_var.get().strip())
         except ValueError:
             self.settings.list_row_font_size = 14
+        self.settings.completion_badge_path = self.completion_badge_path_var.get().strip() or None
+        self.settings.completion_confetti_threshold = self._parse_positive_or_zero_int(
+            self.completion_confetti_threshold_var.get(),
+            default=getattr(self.settings, "completion_confetti_threshold", 0),
+        )
         self.settings.save()
 
         self.app.settings = self.settings
         self.app.apply_theme_preferences()
         self.appearance_status_label.configure(
-            text=f"✓ Applied {self.settings.appearance_mode}/{self.settings.theme_name} (row text {self.settings.list_row_font_size})",
+            text=f"✓ Saved appearance and completion badge settings",
             text_color="green",
         )
+
+    def browse_completion_badge(self):
+        """Pick an image file for the completion badge."""
+        path = filedialog.askopenfilename(
+            title="Select Completion Badge",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.gif *.webp"), ("All Files", "*.*")],
+        )
+        if path:
+            self.completion_badge_path_var.set(path)
 
     def create_date_increment_section(self, parent=None):
         """Create date increment settings section."""
@@ -413,8 +494,8 @@ class SettingsScreen(ctk.CTkFrame):
         columns_expanded_checkbox.grid(row=3, column=0, columnspan=2,
                                        sticky="w", padx=10, pady=5)
 
-        # First day of week selector (used by VPS week generation)
-        ctk.CTkLabel(section, text="First day of week (VPS):").grid(
+        # First day of week selector (used by VSP week generation)
+        ctk.CTkLabel(section, text="First day of week (VSP):").grid(
             row=4, column=0, sticky="w", padx=10, pady=5
         )
         first_day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -532,6 +613,13 @@ class SettingsScreen(ctk.CTkFrame):
         try:
             parsed = int(str(value).strip())
             return parsed if parsed > 0 else default
+        except Exception:
+            return default
+
+    def _parse_positive_or_zero_int(self, value: str, default: int) -> int:
+        try:
+            parsed = int(str(value).strip())
+            return parsed if parsed >= 0 else default
         except Exception:
             return default
 
@@ -1333,7 +1421,7 @@ class SettingsScreen(ctk.CTkFrame):
         threading.Thread(target=work, daemon=True).start()
 
     def create_vps_segments_section(self, parent=None):
-        """Create VPS Life Segments management section."""
+        """Create VSP Life Segments management section."""
         if parent is None:
             parent = self
 
@@ -1350,13 +1438,13 @@ class SettingsScreen(ctk.CTkFrame):
 
         ctk.CTkLabel(
             title_frame,
-            text="VPS Life Segments",
+            text="VSP Life Segments",
             font=ctk.CTkFont(size=16, weight="bold")
         ).pack(side="left", padx=10)
 
         ctk.CTkLabel(
             title_frame,
-            text="Manage your life segments for Visionary Planning System",
+            text="Manage your life segments for Vision Strategy Plan",
             font=ctk.CTkFont(size=11),
             text_color="gray"
         ).pack(side="left", padx=10)
@@ -1792,7 +1880,7 @@ class SettingsScreen(ctk.CTkFrame):
                         messagebox.showwarning(
                             "Manual Deletion Required",
                             f"To delete segment '{segment['name']}':\n\n"
-                            f"1. Go to VPS Planning screen\n"
+                            f"1. Go to VSP Planning screen\n"
                             f"2. Delete all {total} records in this segment\n"
                             f"   (Start with Week Actions, work up to TL Visions)\n"
                             f"3. Return here to delete the empty segment\n\n"

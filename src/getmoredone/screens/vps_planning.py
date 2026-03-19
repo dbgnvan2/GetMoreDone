@@ -1,5 +1,5 @@
 """
-VPS Planning screen - shows strategic planning hierarchy with collapsible tree view.
+VSP Planning screen - shows strategic planning hierarchy with collapsible tree view.
 """
 
 import customtkinter as ctk
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 class VPSPlanningScreen(ctk.CTkFrame):
-    """Screen showing VPS planning hierarchy in collapsible tree view."""
+    """Screen showing VSP planning hierarchy in collapsible tree view."""
 
     LEVEL_COLORS = {
         "TL Vision": "#7C3AED",
@@ -61,7 +61,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         # Title
         title = ctk.CTkLabel(
             header,
-            text="Visionary Planning System",
+            text="Vision Strategy Plan",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         title.grid(row=0, column=0, padx=10, pady=10)

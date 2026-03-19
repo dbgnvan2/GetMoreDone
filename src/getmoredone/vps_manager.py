@@ -1,6 +1,6 @@
 """
-VPS (Visionary Planning System) Database Manager
-Provides CRUD operations for all VPS entities.
+VSP (Vision Strategy Plan) Database Manager
+Provides CRUD operations for all VSP entities.
 """
 
 import sqlite3
@@ -32,10 +32,10 @@ def _get_weekly_debug_logger() -> logging.Logger:
 
 
 class VPSManager:
-    """Manages all VPS database operations."""
+    """Manages all VSP database operations."""
 
     def __init__(self, db_path: Optional[str] = None, db_manager: Optional[DatabaseManager] = None):
-        """Initialize VPS manager with database connection."""
+        """Initialize VSP manager with database connection."""
         self.db = Database(db_path)
         self.db.connect()
         self.db.initialize_schema()
@@ -299,7 +299,7 @@ class VPSManager:
         ).fetchone()
         if not settings_row:
             raise ValueError(
-                f"Segment '{norm}' does not exist in Vision Elements. Create it in VPS Plan -> Vision Elements first."
+                f"Segment '{norm}' does not exist in Vision Elements. Create it in VSP Plan -> Vision Elements first."
             )
         norm = settings_row["name"]
         row = self.db.conn.execute(
@@ -402,7 +402,7 @@ class VPSManager:
         if not sub_id:
             raise ValueError(
                 f"SubSegment '{subsegment_name}' does not exist under '{segment_name}'. "
-                "Create it in VPS Plan -> Vision Elements first."
+                "Create it in VSP Plan -> Vision Elements first."
             )
         cat_id = self._create_or_get_vision_category(sub_id, category_name)
 
@@ -489,7 +489,7 @@ class VPSManager:
         if not sub_id:
             raise ValueError(
                 f"SubSegment '{subsegment_name}' does not exist under '{segment_name}'. "
-                "Create it in VPS Plan -> Vision Elements first."
+                "Create it in VSP Plan -> Vision Elements first."
             )
         cat_id = self._create_or_get_vision_category(sub_id, category_name)
         key_field = f"{segment_name}|{subsegment_name}|{category_name}"
@@ -965,6 +965,10 @@ class VPSManager:
 
         if ape_id:
             self.db.conn.execute(
+                "DELETE FROM project_boards WHERE annual_plan_element_id = ?",
+                (ape_id,),
+            )
+            self.db.conn.execute(
                 "UPDATE action_items SET annual_plan_element_id = NULL WHERE annual_plan_element_id = ?",
                 (ape_id,),
             )
@@ -1031,6 +1035,10 @@ class VPSManager:
             ))
 
         self.db.conn.commit()
+        try:
+            self.db_manager.ensure_project_board_for_ape(ape_id)
+        except Exception:
+            pass
         return {"annual_vision_element_id": ave_id, "annual_plan_element_id": ape_id}
 
     def get_annual_vision_elements(self, year: int) -> List[Dict[str, Any]]:
@@ -1046,6 +1054,18 @@ class VPSManager:
         cursor = self.db.conn.execute("""
             SELECT * FROM annual_plan_elements
             WHERE year = ?
+            ORDER BY segment_name COLLATE NOCASE ASC, subsegment_name COLLATE NOCASE ASC, category_name COLLATE NOCASE ASC
+        """, (year,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_annual_plan_elements_for_quarter(self, year: int, quarter: int) -> List[Dict[str, Any]]:
+        if quarter not in (1, 2, 3, 4):
+            return []
+        q_col = f"q{quarter}"
+        cursor = self.db.conn.execute(f"""
+            SELECT * FROM annual_plan_elements
+            WHERE year = ?
+              AND {q_col} = 1
             ORDER BY segment_name COLLATE NOCASE ASC, subsegment_name COLLATE NOCASE ASC, category_name COLLATE NOCASE ASC
         """, (year,))
         return [dict(row) for row in cursor.fetchall()]
@@ -1085,6 +1105,247 @@ class VPSManager:
             ORDER BY segment_name COLLATE NOCASE ASC, subsegment_name COLLATE NOCASE ASC, category_name COLLATE NOCASE ASC
         """, (year,))
         return [dict(row) for row in cursor.fetchall()]
+
+    def assign_ape_to_quarter(self, ape_id: str, quarter: int) -> bool:
+        if quarter not in (1, 2, 3, 4):
+            return False
+        ape = self._get_annual_plan_element_row(ape_id)
+        if not ape:
+            return False
+
+        self.set_annual_plan_element_quarter(ape_id, quarter, True)
+        annual_initiative_id = self._get_or_create_annual_initiative_for_ape(ape)
+        existing = self.get_quarter_initiatives(
+            annual_initiative_id=annual_initiative_id,
+            quarter=quarter,
+            year=int(ape["year"]),
+            active_only=False,
+        )
+        if not existing:
+            segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+            if not segment_id:
+                raise ValueError(f"Segment '{ape['segment_name']}' not found.")
+            self.create_quarter_initiative(
+                annual_initiative_id=annual_initiative_id,
+                segment_description_id=segment_id,
+                quarter=quarter,
+                year=int(ape["year"]),
+                title=f"{ape['key_field']} Q{quarter}",
+                auto_create_chain=False,
+            )
+        return True
+
+    def unassign_ape_from_quarter(self, ape_id: str, quarter: int) -> bool:
+        if quarter not in (1, 2, 3, 4):
+            return False
+        ape = self._get_annual_plan_element_row(ape_id)
+        if not ape:
+            return False
+
+        self.set_annual_plan_element_quarter(ape_id, quarter, False)
+        self._clear_quarter_month_flags(ape_id, quarter)
+        annual_initiative = self._find_annual_initiative_for_ape(ape)
+        if annual_initiative:
+            matches = self.get_quarter_initiatives(
+                annual_initiative_id=annual_initiative["id"],
+                quarter=quarter,
+                year=int(ape["year"]),
+                active_only=False,
+            )
+            for row in matches:
+                self.delete_quarter_initiative(row["id"])
+        return True
+
+    def assign_ape_to_month(self, ape_id: str, quarter: int, month: int) -> bool:
+        if quarter not in (1, 2, 3, 4) or month < 1 or month > 12:
+            return False
+        ape = self._get_annual_plan_element_row(ape_id)
+        if not ape:
+            return False
+
+        self.assign_ape_to_quarter(ape_id, quarter)
+        self.set_annual_plan_element_month(ape_id, month, True)
+
+        annual_initiative = self._find_annual_initiative_for_ape(ape)
+        if not annual_initiative:
+            return False
+        quarter_rows = self.get_quarter_initiatives(
+            annual_initiative_id=annual_initiative["id"],
+            quarter=quarter,
+            year=int(ape["year"]),
+            active_only=False,
+        )
+        if not quarter_rows:
+            return False
+        quarter_id = quarter_rows[0]["id"]
+        month_rows = self.get_month_tactics(
+            quarter_initiative_id=quarter_id,
+            month=month,
+            year=int(ape["year"]),
+            active_only=False,
+        )
+        if not month_rows:
+            segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+            if not segment_id:
+                raise ValueError(f"Segment '{ape['segment_name']}' not found.")
+            self.create_month_tactic(
+                quarter_initiative_id=quarter_id,
+                segment_description_id=segment_id,
+                month=month,
+                year=int(ape["year"]),
+                priority_focus=ape["key_field"],
+                description="",
+                auto_create_weeks=False,
+            )
+        return True
+
+    def unassign_ape_from_month(self, ape_id: str, quarter: int, month: int) -> bool:
+        if quarter not in (1, 2, 3, 4) or month < 1 or month > 12:
+            return False
+        ape = self._get_annual_plan_element_row(ape_id)
+        if not ape:
+            return False
+
+        self.set_annual_plan_element_month(ape_id, month, False)
+        annual_initiative = self._find_annual_initiative_for_ape(ape)
+        if annual_initiative:
+            quarter_rows = self.get_quarter_initiatives(
+                annual_initiative_id=annual_initiative["id"],
+                quarter=quarter,
+                year=int(ape["year"]),
+                active_only=False,
+            )
+            if quarter_rows:
+                month_rows = self.get_month_tactics(
+                    quarter_initiative_id=quarter_rows[0]["id"],
+                    month=month,
+                    year=int(ape["year"]),
+                    active_only=False,
+                )
+                for row in month_rows:
+                    self.delete_month_tactic(row["id"])
+        return True
+
+    def _get_annual_plan_element_row(self, ape_id: str) -> Optional[Dict[str, Any]]:
+        row = self.db.conn.execute(
+            "SELECT * FROM annual_plan_elements WHERE id = ?",
+            (ape_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def _find_annual_initiative_for_ape(self, ape: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+        if not segment_id:
+            return None
+        row = self.db.conn.execute(
+            """
+            SELECT ai.*
+            FROM annual_initiatives ai
+            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
+            WHERE ai.year = ?
+              AND ai.segment_description_id = ?
+              AND LOWER(ai.title) = LOWER(?)
+              AND ap.year = ?
+            ORDER BY ai.created_at ASC
+            LIMIT 1
+            """,
+            (int(ape["year"]), segment_id, ape["key_field"], int(ape["year"])),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def _get_or_create_annual_initiative_for_ape(self, ape: Dict[str, Any]) -> str:
+        existing = self._find_annual_initiative_for_ape(ape)
+        if existing:
+            return existing["id"]
+
+        annual_plan_id, segment_id = self._get_or_create_annual_plan_for_ape(ape)
+        return self.create_annual_initiative(
+            annual_plan_id=annual_plan_id,
+            segment_description_id=segment_id,
+            year=int(ape["year"]),
+            title=ape["key_field"],
+            description="",
+            outcome_statement="",
+            auto_create_chain=False,
+        )
+
+    def _get_or_create_annual_plan_for_ape(self, ape: Dict[str, Any]) -> tuple[str, str]:
+        year = int(ape["year"])
+        segment_name = ape["segment_name"]
+        segment_id = self.resolve_segment_id_by_name(segment_name)
+        if not segment_id:
+            raise ValueError(f"Segment '{segment_name}' not found.")
+
+        existing_plan = self.db.conn.execute(
+            """
+            SELECT * FROM annual_plans
+            WHERE year = ?
+              AND segment_description_id = ?
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (year, segment_id),
+        ).fetchone()
+        if existing_plan:
+            return existing_plan["id"], segment_id
+
+        tl_visions = self.get_tl_visions(segment_id=segment_id, active_only=False)
+        tl_vision = next(
+            (row for row in tl_visions if int(row.get("start_year") or year) <= year <= int(row.get("end_year") or year)),
+            tl_visions[0] if tl_visions else None,
+        )
+        if not tl_vision:
+            tl_vision_id = self.create_tl_vision(
+                segment_description_id=segment_id,
+                start_year=year,
+                end_year=year + 5,
+                title=f"{segment_name} Vision",
+                vision_statement="",
+                success_metrics="[]",
+            )
+            tl_vision = self.get_tl_vision(tl_vision_id)
+
+        annual_visions = self.get_annual_visions(
+            tl_vision_id=tl_vision["id"],
+            year=year,
+            active_only=False,
+        )
+        annual_vision = annual_visions[0] if annual_visions else None
+        if not annual_vision:
+            annual_vision_id = self.create_annual_vision(
+                tl_vision_id=tl_vision["id"],
+                segment_description_id=segment_id,
+                year=year,
+                title=f"{segment_name} {year}",
+                vision_statement="",
+                key_priorities="[]",
+            )
+            annual_vision = self.get_annual_vision(annual_vision_id)
+
+        plan_id = self.create_annual_plan(
+            annual_vision_id=annual_vision["id"],
+            segment_description_id=segment_id,
+            year=year,
+            theme=f"{segment_name} {year} Plan",
+            objective="",
+            description="",
+        )
+        return plan_id, segment_id
+
+    def _clear_quarter_month_flags(self, ape_id: str, quarter: int) -> None:
+        quarter_months = {
+            1: (1, 2, 3),
+            2: (4, 5, 6),
+            3: (7, 8, 9),
+            4: (10, 11, 12),
+        }[quarter]
+        now = datetime.now().isoformat()
+        assignments = ", ".join(f"m{month} = 0" for month in quarter_months)
+        self.db.conn.execute(
+            f"UPDATE annual_plan_elements SET {assignments}, updated_at = ? WHERE id = ?",
+            (now, ape_id),
+        )
+        self.db.conn.commit()
 
     def get_month_week_starts(self, year: int, month: int, first_day_of_week: int = 0) -> List[Dict[str, Any]]:
         """
@@ -1160,7 +1421,7 @@ class VPSManager:
         created_ids: List[str] = []
         skipped_count = 0
         key_field = ape["key_field"]
-        who_value = ape["segment_name"] or "VPS"
+        who_value = ape["segment_name"] or "VSP"
         segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
 
         for week_start in week_start_dates:
@@ -1182,7 +1443,7 @@ class VPSManager:
                 urgency=system_defaults.urgency if system_defaults else None,
                 size=system_defaults.size if system_defaults else None,
                 value=system_defaults.value if system_defaults else None,
-                category="VPS",
+                category="VSP",
                 status="open",
                 annual_plan_element_id=ape_id,
                 item_type="week",
@@ -2419,7 +2680,7 @@ class VPSManager:
         return created_item_ids
 
     # ========================================================================
-    # ACTION ITEMS (VPS Extensions)
+    # ACTION ITEMS (VSP Extensions)
     # ========================================================================
 
     def link_action_item_to_week_action(self, action_item_id: str,
@@ -2728,7 +2989,7 @@ class VPSManager:
 
     def _collect_cascade_ids(self, entity_type: str, entity_id: str) -> Dict[str, List[str]]:
         """
-        Collect all descendant IDs that will be deleted for a given VPS entity.
+        Collect all descendant IDs that will be deleted for a given VSP entity.
         """
         ids: Dict[str, List[str]] = {
             "tl_visions": [],
@@ -2865,9 +3126,9 @@ class VPSManager:
         - (True, {}) if deleted successfully
         - (False, {table: count, ...}) if deletion failed due to linked records
 
-        Checks ALL VPS tables to prevent silent data loss via cascade deletion.
+        Checks ALL VSP tables to prevent silent data loss via cascade deletion.
         """
-        # Check ALL VPS tables for related records
+        # Check ALL VSP tables for related records
         counts = {}
 
         tables = [

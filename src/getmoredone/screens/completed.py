@@ -141,7 +141,7 @@ class CompletedScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
-            # Refresh VPS segment color cache
+            # Refresh VSP segment color cache
             self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
             self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
             self._parent_segment_cache = {}

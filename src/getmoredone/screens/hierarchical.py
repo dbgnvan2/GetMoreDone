@@ -7,11 +7,13 @@ from typing import Optional, TYPE_CHECKING, List
 
 from ..models import ActionItem, Status
 from ..color_contrast import pick_text_color
+from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
 from .segment_color_utils import resolve_segment_color_for_item
 from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
 from .title_format import (
     split_action_item_title,
     format_column_text,
+    responsive_column_chars,
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
@@ -33,7 +35,9 @@ class HierarchicalScreen(ctk.CTkFrame):
         self.segment_colors_by_name = {}
         self._parent_segment_cache = {}
         self._ape_segment_cache = {}
+        self._ape_lineage_cache = {}
         self._week_action_segment_cache = {}
+        self._item_lineage_cache = {}
         self.palette = semantic_colors()
 
         self.grid_columnconfigure(0, weight=1)
@@ -124,12 +128,14 @@ class HierarchicalScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
-            # Refresh VPS segment color cache
+            # Refresh VSP segment color cache
             self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
             self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
             self._parent_segment_cache = {}
             self._ape_segment_cache = {}
+            self._ape_lineage_cache = {}
             self._week_action_segment_cache = {}
+            self._item_lineage_cache = {}
 
             # Get status filter
             status = self.status_var.get()
@@ -221,7 +227,15 @@ class HierarchicalScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(0, weight=1)
+        limits = responsive_column_chars(max(self.winfo_width(), self.scroll_frame.winfo_width()))
         parsed = split_action_item_title(item.title)
+        _segment_name, subsegment_name, category_name = lineage_for_item(
+            item,
+            self.db_manager,
+            self._item_lineage_cache,
+            self._ape_lineage_cache,
+            self._week_action_segment_cache,
+        )
 
         # Calculate left padding for indentation
         indent_padding = (indent_level * 30, 5)
@@ -250,8 +264,8 @@ class HierarchicalScreen(ctk.CTkFrame):
 
         ctk.CTkLabel(
             frame,
-            text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
-            width=140,
+            text=format_column_text(subsegment_name or "-", limits["subsegment"]),
+            width=max(56, limits["subsegment"] * 8),
             anchor="w",
             text_color="black",
             font=list_row_font(),
@@ -259,12 +273,30 @@ class HierarchicalScreen(ctk.CTkFrame):
 
         ctk.CTkLabel(
             frame,
-            text=format_column_text(item.who, CONTACT_COL_CHARS),
-            width=100,
+            text=format_column_text(category_name or "-", limits["category"]),
+            width=max(56, limits["category"] * 8),
             anchor="w",
             text_color="black",
             font=list_row_font(),
         ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(parsed.context, limits["context"]),
+            width=max(90, limits["context"] * 8),
+            anchor="w",
+            text_color="black",
+            font=list_row_font(),
+        ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(item.who, limits["who"]),
+            width=max(52, limits["who"] * 8),
+            anchor="w",
+            text_color="black",
+            font=list_row_font(),
+        ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
 
         # Priority score
         is_priority_critical = item.importance == 20 or item.urgency == 20
@@ -277,7 +309,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             corner_radius=6 if is_priority_critical else 0,
             font=list_row_font()
         )
-        score_label.grid(row=0, column=3, padx=5, pady=5)
+        score_label.grid(row=0, column=5, padx=5, pady=5)
 
         # Due date
         if item.due_date:
@@ -288,11 +320,11 @@ class HierarchicalScreen(ctk.CTkFrame):
                 text_color="black",
                 font=list_row_font()
             )
-            due_label.grid(row=0, column=4, padx=5, pady=5)
+            due_label.grid(row=0, column=6, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=110).grid(
-                row=0, column=4, padx=5, pady=5)
+                row=0, column=6, padx=5, pady=5)
 
         # Child count
         children = self.db_manager.get_children(item.id)
@@ -304,11 +336,11 @@ class HierarchicalScreen(ctk.CTkFrame):
                 text_color="black",
                 font=list_row_font()
             )
-            child_count_label.grid(row=0, column=5, padx=5, pady=5)
+            child_count_label.grid(row=0, column=7, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=70).grid(
-                row=0, column=5, padx=5, pady=5)
+                row=0, column=7, padx=5, pady=5)
 
         return frame
 

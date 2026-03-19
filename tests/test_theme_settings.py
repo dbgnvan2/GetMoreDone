@@ -29,6 +29,8 @@ def test_app_settings_load_normalizes_theme_fields(tmp_path, monkeypatch):
         "appearance_mode": "INVALID",
         "theme_name": "UNKNOWN",
         "music_volume": 0.4,
+        "business_year_start_mmdd": "13-77",
+        "completion_confetti_threshold": -4,
     }))
 
     monkeypatch.setattr(AppSettings, "get_settings_path", classmethod(lambda cls: settings_path))
@@ -37,3 +39,5 @@ def test_app_settings_load_normalizes_theme_fields(tmp_path, monkeypatch):
     assert settings.appearance_mode == "dark"
     assert settings.theme_name == "apple_grey"
     assert settings.music_volume == 0.4
+    assert settings.business_year_start_mmdd == "01-01"
+    assert settings.completion_confetti_threshold == 0
