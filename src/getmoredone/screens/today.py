@@ -14,7 +14,7 @@ from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from ..theme import apply_segment_accent, celebration_colors, semantic_colors, button_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
 from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
 from ..utils.icon_loader import IconLoader
@@ -326,6 +326,7 @@ class TodayScreen(ctk.CTkFrame):
             self._week_action_segment_cache,
         )
         is_critical = (item.importance == 20 or item.urgency == 20)
+        row_text = palette["row_text"]
         if segment_color:
             bg_color = segment_color
         elif is_completed:
@@ -364,7 +365,7 @@ class TodayScreen(ctk.CTkFrame):
                     frame,
                     text=completion_text,
                     font=ctk.CTkFont(size=28, weight="bold"),
-                    text_color="#00C800",
+                    text_color=palette["success_strong"],
                     width=44
                 ).grid(row=0, column=0, padx=5, pady=5)
         else:
@@ -397,7 +398,7 @@ class TodayScreen(ctk.CTkFrame):
             text=parsed.title,
             font=list_row_font(),
             anchor="w",
-            text_color="black"
+            text_color=row_text
         )
         title_label.grid(row=0, column=1, sticky="ew")
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
@@ -407,7 +408,7 @@ class TodayScreen(ctk.CTkFrame):
             text=format_column_text(subsegment_name or "-", limits["subsegment"]),
             width=max(56, limits["subsegment"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
@@ -416,7 +417,7 @@ class TodayScreen(ctk.CTkFrame):
             text=format_column_text(category_name or "-", limits["category"]),
             width=max(56, limits["category"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
@@ -426,7 +427,7 @@ class TodayScreen(ctk.CTkFrame):
             text=format_column_text(parsed.context, limits["context"]),
             width=max(90, limits["context"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
 
@@ -436,7 +437,7 @@ class TodayScreen(ctk.CTkFrame):
             text=format_column_text(item.who, limits["who"]),
             width=max(52, limits["who"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=5, padx=5, pady=5, sticky="w")
 
@@ -453,7 +454,7 @@ class TodayScreen(ctk.CTkFrame):
             text=f"S:{start_date_text}",
             width=60,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
         start_label.grid(row=0, column=6, padx=5, pady=5)
@@ -472,7 +473,7 @@ class TodayScreen(ctk.CTkFrame):
             text=f"D:{due_date_text}",
             width=60,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
         due_label.grid(row=0, column=7, padx=5, pady=5)
@@ -485,7 +486,7 @@ class TodayScreen(ctk.CTkFrame):
             text=f"P:{item.priority_score}",
             width=60,
             fg_color=palette["danger"] if is_priority_critical else "transparent",
-            text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+            text_color=pick_text_color(palette["danger"]) if is_priority_critical else row_text,
             corner_radius=6 if is_priority_critical else 0,
             font=list_row_font(),
         )
@@ -499,7 +500,7 @@ class TodayScreen(ctk.CTkFrame):
             text=time_text,
             width=50,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
         time_label.grid(row=0, column=9, padx=5, pady=5)
@@ -523,7 +524,7 @@ class TodayScreen(ctk.CTkFrame):
                     "width": width,
                     "anchor": "w",
                     "font": list_row_font(),
-                    "text_color": "black",
+                    "text_color": row_text,
                 }
                 if label in ("I", "U") and str(value).strip() == "20":
                     label_kwargs["fg_color"] = palette["danger"]
@@ -585,7 +586,7 @@ class TodayScreen(ctk.CTkFrame):
 
         width = max(1, self.winfo_width())
         height = max(1, self.winfo_height())
-        colors = ["#00C800", "#FFD54F", "#3B82F6", "#EF4444", "#A855F7", "#F97316"]
+        colors = celebration_colors()
         pieces = []
         for _ in range(36):
             x = random.randint(0, width)

@@ -10,9 +10,15 @@ from typing import Optional, TYPE_CHECKING
 
 from ..models import ActionItem
 from ..app_settings import AppSettings
-from ..color_contrast import pick_text_color, pick_text_color_with_meta
-from ..date_utils import future_date_targets
-from ..theme import semantic_colors
+from ..color_contrast import pick_text_color
+from ..theme import button_style, combo_box_style, semantic_colors
+from .drag_schedule_support import (
+    color_for_day_stats,
+    date_background_for,
+    date_text_color_for,
+    format_day_stats_text,
+    future_options_for,
+)
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 from .title_format import split_action_item_title, format_column_text
 
@@ -32,6 +38,10 @@ class DragScheduleScreen(ctk.CTkFrame):
     DATE_BOX_DATE_MIN_WIDTH = 84
     DATE_BOX_ITEMS_MIN_WIDTH = 84
     DATE_BOX_TIME_MIN_WIDTH = 84
+    ITEM_TITLE_CHARS = 20
+    ITEM_META_CHARS = 15
+    ITEM_TITLE_COL_WIDTH = 220
+    ITEM_META_COL_WIDTH = 170
 
     def __init__(self, parent, db_manager: 'DatabaseManager', app: 'GetMoreDoneApp'):
         super().__init__(parent)
@@ -58,6 +68,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         self._item_lineage_cache = {}
         self.selected_date_filter: Optional[str] = None
         self.selected_date_frames: dict[str, list[ctk.CTkFrame]] = {}
+        self.date_frame_dates: dict[ctk.CTkFrame, str] = {}
         self.segment_filter_var = ctk.StringVar(value="All")
         self.subsegment_filter_var = ctk.StringVar(value="All")
 
@@ -95,6 +106,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             values=["1", "3", "7", "14", "30"],
             variable=self.days_var,
             width=80,
+            **combo_box_style(),
         )
         self.days_combo.grid(row=0, column=2, padx=5, pady=10)
 
@@ -106,6 +118,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             text="Refresh",
             width=88,
             command=self.refresh_all_dates,
+            **button_style("secondary"),
         )
         self.refresh_btn.grid(row=0, column=4, padx=(10, 5), pady=10)
 
@@ -119,6 +132,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
+            **combo_box_style(),
             command=lambda _: self.refresh()
         )
         self.who_combo.grid(row=0, column=6, padx=5, pady=10)
@@ -131,6 +145,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             values=["All"],
             variable=self.segment_filter_var,
             width=160,
+            **combo_box_style(),
             command=lambda _v: self.on_segment_filter_changed(),
         )
         self.segment_filter_combo.grid(row=0, column=8, padx=5, pady=10)
@@ -143,6 +158,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             values=["All"],
             variable=self.subsegment_filter_var,
             width=160,
+            **combo_box_style(),
             command=lambda _v: self.on_subsegment_filter_changed(),
         )
         self.subsegment_filter_combo.grid(row=0, column=10, padx=5, pady=10)
@@ -181,7 +197,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         ctk.CTkLabel(
             left_title,
             text="(Click and drag an Item to the Date Box to set the Start Date)",
-            text_color="gray45",
+            text_color=palette["muted_text"],
         ).grid(row=0, column=1, sticky="w", padx=(10, 0))
 
         self.items_frame = ctk.CTkScrollableFrame(left_frame, label_text="")
@@ -244,6 +260,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.date_boxes = []
         self.date_box_colors = {}
         self.selected_date_frames = {}
+        self.date_frame_dates = {}
 
         items = self.load_items()
         if not items:
@@ -463,10 +480,11 @@ class DragScheduleScreen(ctk.CTkFrame):
     def create_item_row(self, item: ActionItem):
         frame = ctk.CTkFrame(self.items_frame, height=self.item_row_height)
         frame.grid_propagate(False)
-        frame.grid_columnconfigure(0, minsize=self.TITLE_COL_MIN_WIDTH)
-        frame.grid_columnconfigure(1, minsize=self.LINEAGE_COL_MIN_WIDTH)
-        frame.grid_columnconfigure(2, minsize=self.LINEAGE_COL_MIN_WIDTH)
-        frame.grid_columnconfigure(3, minsize=self.LINEAGE_COL_MIN_WIDTH, weight=1)
+        frame.grid_columnconfigure(0, minsize=self.ITEM_TITLE_COL_WIDTH)
+        frame.grid_columnconfigure(1, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(2, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(3, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(4, minsize=self.ITEM_META_COL_WIDTH, weight=1)
 
         parsed = split_action_item_title(item.title)
         segment_name, subsegment_name, category_name = self._lineage_for_item(item)
@@ -489,76 +507,78 @@ class DragScheduleScreen(ctk.CTkFrame):
             ),
             "",
         ) or subsegment_color
-        frame.configure(fg_color=category_color)
 
         title_text = parsed.title or (item.title or "")
         title_bg = category_color
+        start_date_text = item.start_date or "-"
 
         title_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(title_text, self.TITLE_COL_CHARS)} ",
+            text=f" {format_column_text(title_text, self.ITEM_TITLE_CHARS)} ",
             anchor="w",
             fg_color=title_bg,
             text_color=pick_text_color(title_bg),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_TITLE_COL_WIDTH,
         )
         title_label.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=2)
 
         segment_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(segment_name, self.LINEAGE_COL_CHARS)} ",
+            text=f" {format_column_text(segment_name, self.ITEM_META_CHARS)} ",
             anchor="w",
             fg_color=segment_color,
             text_color=pick_text_color(segment_color),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
         segment_label.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
 
         subsegment_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(subsegment_name, self.LINEAGE_COL_CHARS)} ",
+            text=f" {format_column_text(subsegment_name, self.ITEM_META_CHARS)} ",
             anchor="w",
-            fg_color=category_color,
-            text_color=pick_text_color(category_color),
+            fg_color=subsegment_color,
+            text_color=pick_text_color(subsegment_color),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
         subsegment_label.grid(row=0, column=2, sticky="ew", padx=4, pady=2)
 
         category_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(category_name, self.LINEAGE_COL_CHARS)} ",
+            text=f" {format_column_text(category_name, self.ITEM_META_CHARS)} ",
             anchor="w",
             fg_color=category_color,
             text_color=pick_text_color(category_color),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
         category_label.grid(row=0, column=3, sticky="ew", padx=4, pady=2)
+
+        start_label = ctk.CTkLabel(
+            frame,
+            text=f" {format_column_text(start_date_text, self.ITEM_META_CHARS)} ",
+            anchor="w",
+            fg_color=self.palette["surface_subtle"],
+            text_color=self.palette["body_text"],
+            corner_radius=6,
+            font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
+        )
+        start_label.grid(row=0, column=4, sticky="ew", padx=4, pady=2)
 
         self.bind_drag_handlers(frame, item)
         self.bind_drag_handlers(title_label, item)
         self.bind_drag_handlers(segment_label, item)
         self.bind_drag_handlers(subsegment_label, item)
         self.bind_drag_handlers(category_label, item)
+        self.bind_drag_handlers(start_label, item)
         return frame
-
-    def _date_background_for(self, date_text: str) -> str:
-        if not date_text:
-            return "transparent"
-        try:
-            target_date = datetime.strptime(date_text, "%Y-%m-%d").date()
-        except ValueError:
-            return "transparent"
-
-        today = datetime.now().date()
-        if target_date < today:
-            return "#FCA5A5"  # red
-        if target_date == today:
-            return "#86EFAC"  # green
-        return "#FDE68A"  # yellow
 
     def build_date_boxes(self):
         n_days = int(self.days_var.get())
@@ -573,14 +593,14 @@ class DragScheduleScreen(ctk.CTkFrame):
             for i in range(n_days)
         ]
 
-        future_options = self._future_options_for(today)
+        future_options = future_options_for(today, self.settings)
 
         date_stats, _items_by_date = self.build_date_stats(day_dates, who_filter)
 
         for i, date_str in enumerate(day_dates):
             day = datetime.strptime(date_str, "%Y-%m-%d").date()
             count, total_minutes = date_stats.get(date_str, (0, 0))
-            color = self.color_for_day_stats(count, total_minutes)
+            color = color_for_day_stats(count, total_minutes)
 
             frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
             frame.grid_propagate(False)
@@ -593,7 +613,7 @@ class DragScheduleScreen(ctk.CTkFrame):
                 date_short,
                 items_text,
                 time_text,
-                self._date_text_color_for(color),
+                date_text_color_for(color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")),
                 date_str,
             )
 
@@ -613,7 +633,7 @@ class DragScheduleScreen(ctk.CTkFrame):
                 short_date,
                 "",
                 "",
-                self._date_text_color_for(color),
+                date_text_color_for(color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")),
                 date_str,
             )
 
@@ -731,7 +751,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         future_frame.grid(row=2, column=0, sticky="ew", padx=4, pady=(10, 0))
         for col in range(4):
             future_frame.grid_columnconfigure(col, weight=1, uniform="sched-future")
-        for idx, (title, date_str, color) in enumerate(self._future_options_for(today)):
+        for idx, (title, date_str, color) in enumerate(future_options_for(today, self.settings)):
             short_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%m/%d")
             box = ctk.CTkFrame(future_frame, fg_color=color, corner_radius=8)
             box.grid(row=0, column=idx, sticky="ew", padx=4, pady=4)
@@ -742,7 +762,7 @@ class DragScheduleScreen(ctk.CTkFrame):
                 justify="center",
                 anchor="center",
                 font=ctk.CTkFont(weight="bold"),
-                text_color=self._date_text_color_for(color),
+                text_color=date_text_color_for(color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")),
             )
             label.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
             self._bind_date_filter_target(label, date_str)
@@ -754,7 +774,7 @@ class DragScheduleScreen(ctk.CTkFrame):
     def _render_calendar_day(self, parent, row_idx: int, col_idx: int, day, today, date_stats, items_by_date):
         date_str = day.isoformat()
         count, total_minutes = date_stats.get(date_str, (0, 0))
-        cell_color = self.color_for_day_stats(count, total_minutes) if count or total_minutes else self.palette["surface_subtle"]
+        cell_color = color_for_day_stats(count, total_minutes) if count or total_minutes else self.palette["surface_subtle"]
         if day.month != today.month:
             cell_color = self.palette["surface_subtle"]
 
@@ -814,22 +834,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         return pick_text_color(bg_color)
 
     def _future_options_for(self, today) -> list[tuple[str, str, str]]:
-        mid_days = max(1, int(self.settings.mid_term_offset_days))
-        long_days = max(1, int(self.settings.long_term_offset_days))
-        next_month_offset = int(self.settings.next_month_offset_days)
-        next_quarter_offset = int(self.settings.next_quarter_offset_days)
-        near_date, long_date_obj, next_month_obj, next_quarter_obj = future_date_targets(
-            today, mid_days, long_days, next_month_offset, next_quarter_offset
-        )
-        return sorted(
-            [
-                ("Near Term", near_date.strftime("%Y-%m-%d"), "#F4D35E"),
-                ("Long Term", long_date_obj.strftime("%Y-%m-%d"), "#E9C6CF"),
-                ("Next Month", next_month_obj.strftime("%Y-%m-%d"), "#EFE6A7"),
-                ("Next Quarter", next_quarter_obj.strftime("%Y-%m-%d"), "#E9CAA0"),
-            ],
-            key=lambda option: option[1],
-        )
+        return future_options_for(today, self.settings)
 
     def _bind_date_filter_target(self, widget, date_str: str):
         widget.bind("<ButtonPress-1>", lambda _event, d=date_str: self.on_date_target_click(d), add="+")
@@ -843,6 +848,7 @@ class DragScheduleScreen(ctk.CTkFrame):
 
     def _register_date_frame(self, date_str: str, frame):
         self.selected_date_frames.setdefault(date_str, []).append(frame)
+        self.date_frame_dates[frame] = date_str
         self._apply_selected_date_style(frame, date_str)
 
     def _apply_selected_date_style(self, frame, date_str: str):
@@ -853,84 +859,18 @@ class DragScheduleScreen(ctk.CTkFrame):
         )
 
     def format_day_stats_text(self, count: int, total_minutes: int) -> str:
-        item_label = "item" if count == 1 else "items"
-        hours = total_minutes // 60
-        minutes = total_minutes % 60
-        return f"{count} {item_label} - {hours}h {minutes}m"
+        return format_day_stats_text(count, total_minutes)
 
     def _get_date_text_color(self) -> str:
-        color = str(getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF") or "#FFFFFF").strip()
-        if not color.startswith("#"):
-            color = f"#{color}"
-        if len(color) != 7:
-            return "#FFFFFF"
-        return color
+        from .drag_schedule_support import normalized_date_text_color
+
+        return normalized_date_text_color(getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF"))
 
     def _date_text_color_for(self, bg_color: str) -> str:
-        configured = self._get_date_text_color()
-        try:
-            meta = pick_text_color_with_meta(bg_color, light=configured, dark=pick_text_color(bg_color), large_text=True)
-        except ValueError:
-            return pick_text_color(bg_color)
-        return configured if meta.meets_threshold else meta.text_color
+        return date_text_color_for(bg_color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF"))
 
-    def color_for_day_stats(self, count: int, total_minutes: int) -> str:
-        """
-        Color ramp sequence:
-        green (<2h / equivalent load) -> light orange -> darker orange ->
-        light pink -> darker pink -> reddish
-        based on 12 items or 6 hours (360 min), whichever is higher.
-        """
-        count_ratio = min(max(count / 12.0, 0.0), 1.0)
-        time_ratio = min(max(total_minutes / 360.0, 0.0), 1.0)
-        intensity = max(count_ratio, time_ratio)
-
-        # Keep all low-load days green until one-third of max load
-        # (equivalent to <2h out of 6h, or <4 items out of 12).
-        if intensity < (1.0 / 3.0):
-            return "#6BCB77"
-
-        # After green zone, transition from orange -> pink -> red.
-        post_green_t = (intensity - (1.0 / 3.0)) / (2.0 / 3.0)
-        palette = [
-            "#FFD8A8",  # light orange
-            "#FFB347",  # darker orange
-            "#F5A6BE",  # light pink
-            "#EF7292",  # darker pink
-            "#D94B66",  # muted red
-        ]
-        return self.interpolate_palette(palette, post_green_t)
-
-    def interpolate_palette(self, colors, t: float) -> str:
-        """Interpolate across a palette of 2+ colors."""
-        t = min(max(t, 0.0), 1.0)
-        if len(colors) < 2:
-            return colors[0] if colors else "#DFF8D8"
-        if t == 1.0:
-            return colors[-1]
-
-        segments = len(colors) - 1
-        pos = t * segments
-        left_idx = int(pos)
-        right_idx = min(left_idx + 1, len(colors) - 1)
-        local_t = pos - left_idx
-        return self.interpolate_hex_color(colors[left_idx], colors[right_idx], local_t)
-
-    def interpolate_hex_color(self, start_hex: str, end_hex: str, t: float) -> str:
-        """Linearly interpolate between two hex colors."""
-        t = min(max(t, 0.0), 1.0)
-
-        s = start_hex.lstrip("#")
-        e = end_hex.lstrip("#")
-
-        sr, sg, sb = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-        er, eg, eb = int(e[0:2], 16), int(e[2:4], 16), int(e[4:6], 16)
-
-        r = round(sr + (er - sr) * t)
-        g = round(sg + (eg - sg) * t)
-        b = round(sb + (eb - sb) * t)
-
-        return f"#{r:02X}{g:02X}{b:02X}"
+    def _date_background_for(self, date_text: str) -> str:
+        return date_background_for(date_text)
 
     def bind_drag_handlers(self, widget, item: ActionItem):
         widget.bind("<ButtonPress-1>", lambda e: self.start_drag(e, item))
@@ -939,12 +879,13 @@ class DragScheduleScreen(ctk.CTkFrame):
 
     def start_drag(self, event, item: ActionItem):
         self.drag_item = item
+        palette = self.palette
         if self.drag_label is None:
             self.drag_label = ctk.CTkLabel(
                 self,
                 text=item.title,
-                fg_color="gray30",
-                text_color="white",
+                fg_color=palette["chip_bg"],
+                text_color=palette["chip_text"],
                 corner_radius=6,
                 padx=8,
                 pady=4
@@ -1028,12 +969,16 @@ class DragScheduleScreen(ctk.CTkFrame):
 
         self.clear_hover_target()
         if hovered:
-            hovered.configure(fg_color="gray35")
+            hovered.configure(border_width=2, border_color=self.palette["primary_hover"])
             self.drag_hover_frame = hovered
-            self.drag_hover_base_color = self.date_box_colors.get(hovered, "gray20")
+            self.drag_hover_base_color = self.date_box_colors.get(hovered, self.palette["surface_subtle"])
 
     def clear_hover_target(self):
         if self.drag_hover_frame:
-            self.drag_hover_frame.configure(fg_color=self.drag_hover_base_color or "gray20")
+            date_str = self.date_frame_dates.get(self.drag_hover_frame)
+            if date_str:
+                self._apply_selected_date_style(self.drag_hover_frame, date_str)
+            else:
+                self.drag_hover_frame.configure(border_width=0, border_color=self.palette["border"])
             self.drag_hover_frame = None
             self.drag_hover_base_color = None

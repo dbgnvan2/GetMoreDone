@@ -169,8 +169,9 @@ Board behavior:
 - **One note per APE** — What: Each APE automatically creates one project note. Why: Keep strategic work visible on the board without manual setup.
 - **Color** — What: Note color comes from the APE category color. Why: Preserve planning lineage visually.
 - **Top title** — What: Each note shows `SubSegment - Category`. Why: Keep the planning context visible at a glance.
+- **Rank box** — What: A prominent number in the upper-left shows the board order position. Why: Make manual ordering obvious after dragging cards.
 - **Body** — What: Shows the project title and next step. Why: Keep the board readable when many notes are visible.
-- **Click a note** — What: Opens the Edit Project dialog. Why: Make the note itself the main edit affordance.
+- **Click a note** — What: Selects the note and loads its detail panel. Why: Prevent accidental opens while still supporting drag reordering.
 - **Drag notes** — What: Reorders notes left-to-right, top-to-bottom. Why: Let you organize the board visually.
 - **Board divider** — What: Drag the vertical divider between the board and detail panel. Why: Make the board wider or narrower.
 - **Note Size slider** — What: Resizes all notes together. Why: Fit more notes on the board or make them easier to read.
@@ -186,6 +187,7 @@ Note actions:
 
 Filters:
 - **Show Pending / Show Complete** — What: Toggles those note states onto the board. Why: Review inactive work without mixing it into the default active board.
+- **Link Action Item button color** — What: In the detail panel, the button uses the Category color. Why: Keep the project-to-action workflow visually tied to planning lineage.
 
 ### Plan (Time Blocks)
 - What: A time block planning view with a backlog of open items and a day plan.
@@ -294,8 +296,11 @@ APE assignment behavior:
 - **Drag and drop** — What: The APE screens also support dragging left-side records onto the right-side assignment panel. Why: Speed up planning when working item by item.
 
 APE Weekly behavior:
-- Left list shows weekly parent records (weekly tactics).
-- Right list shows child daily Action Items linked by parent.
+- Left list shows Annual Plan Elements already assigned to the selected month.
+- Right list shows weekly tactics for the selected Week Start.
+- **Week Start selector** — What: Always includes the current week plus up to 3 future week starts, even when no weekly tactics exist there yet. Why: Lets you create a weekly tactic for the current or near-future week without being limited to existing records.
+- **Create weekly assignments** — What: Check month-assigned APEs on the left and click `Save`, or drag a left-side row onto the right panel. Why: Mirrors the same assignment pattern used by Year → Quarter and Quarter → Month screens.
+- **Weekly tactic actions** — What: Edit, delete, or create a related Action Item from a selected weekly tactic on the right. Why: Keep weekly planning and execution steps close together.
 - New daily item title format: `Weekly Title Prefix - Action Item Title`.
 - Prefix shortening rule: first two pipe-delimited parts become initials.
   - Example: `Purposeful Work|Living Systems|Blog` → `PW|LS|Blog`.

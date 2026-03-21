@@ -4,17 +4,19 @@ Provides a countdown timer with pause/resume and completion workflows.
 """
 
 import customtkinter as ctk
+import tkinter as tk
 from datetime import datetime, timedelta, date
 from typing import Optional, Callable
 import random
-import os
 from pathlib import Path
 from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
-from ..theme import button_style
+from ..theme import button_style, semantic_colors, status_text_color
+from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.icon_loader import load_music_note_icon
+from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow, NextStepsDialog
 
 
 class TimerWindow(ctk.CTkToplevel):
@@ -98,6 +100,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def create_widgets(self):
         """Create all UI widgets."""
+        palette = semantic_colors()
         # Main container
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
@@ -137,7 +140,7 @@ class TimerWindow(ctk.CTkToplevel):
             time_frame,
             text=self.format_time(self.work_seconds_remaining),
             font=ctk.CTkFont(size=20, weight="bold"),
-            text_color="green"
+            text_color=status_text_color("success")
         )
         self.time_remaining_label.grid(
             row=1, column=1, columnspan=2, padx=5, pady=3, sticky="w")
@@ -167,6 +170,7 @@ class TimerWindow(ctk.CTkToplevel):
             controls_frame,
             text="Pause",
             command=self.pause_timer,
+            **button_style("secondary"),
             state="disabled"
         )
         self.pause_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
@@ -218,7 +222,7 @@ class TimerWindow(ctk.CTkToplevel):
             main_frame,
             text="Ready to start",
             font=ctk.CTkFont(size=11),
-            text_color="gray"
+            text_color=palette["muted_text"]
         )
         self.status_label.grid(row=4, column=0, pady=5, padx=10)
 
@@ -318,6 +322,25 @@ class TimerWindow(ctk.CTkToplevel):
             traceback.print_exc()
             import tkinter.messagebox as messagebox
             messagebox.showerror("Error", f"Failed to save notes: {e}")
+
+    def _show_error_dialog(self, message: str):
+        """Best-effort error dialog for UI flows that may race window teardown."""
+        try:
+            import tkinter.messagebox as messagebox
+
+            messagebox.showerror("Error", message)
+        except tk.TclError as exc:
+            print(f"[ERROR] Could not show error dialog: {exc}")
+
+    def _cancel_pending_timer(self):
+        """Cancel any queued timer callback if it still exists."""
+        if not self.update_timer_id:
+            return
+        try:
+            self.after_cancel(self.update_timer_id)
+        except tk.TclError:
+            pass
+        self.update_timer_id = None
 
     def refresh_notes(self):
         """Refresh notes textbox from the current item data."""
@@ -521,14 +544,14 @@ class TimerWindow(ctk.CTkToplevel):
         if self.timer_state == "in_break":
             self.time_remaining_label.configure(
                 text=self.format_time(self.break_seconds_remaining),
-                text_color="blue"
+                text_color=status_text_color("info")
             )
         else:
             # Color based on time remaining
             if self.work_seconds_remaining < self.settings.timer_warning_minutes * 60:
-                color = "green"
+                color = status_text_color("success")
             else:
-                color = "white"
+                color = status_text_color("body")
 
             self.time_remaining_label.configure(
                 text=self.format_time(self.work_seconds_remaining),
@@ -606,14 +629,7 @@ class TimerWindow(ctk.CTkToplevel):
             print(f"[ERROR] Finished action failed: {e}")
             import traceback
             traceback.print_exc()
-            # Show error to user - only if window still exists
-            try:
-                import tkinter.messagebox as messagebox
-                messagebox.showerror(
-                    "Error", f"Failed to complete action: {e}")
-            except:
-                # Window might be destroyed, just log the error
-                print(f"[ERROR] Could not show error dialog: {e}")
+            self._show_error_dialog(f"Failed to complete action: {e}")
 
     def continue_action(self):
         """Handle Continue workflow: update current, duplicate, complete, show Next Action screen, present editor."""
@@ -779,14 +795,7 @@ class TimerWindow(ctk.CTkToplevel):
             print(f"[ERROR] Continue action failed: {e}")
             import traceback
             traceback.print_exc()
-            # Show error to user - only if window still exists
-            try:
-                import tkinter.messagebox as messagebox
-                messagebox.showerror(
-                    "Error", f"Failed to continue action: {e}")
-            except:
-                # Window might be destroyed, just log the error
-                print(f"[ERROR] Could not show error dialog: {e}")
+            self._show_error_dialog(f"Failed to continue action: {e}")
 
     def save_work_log(self, note: Optional[str] = None):
         """Save work log entry to database."""
@@ -821,12 +830,7 @@ class TimerWindow(ctk.CTkToplevel):
         self._stop_music()
 
         # Cancel any pending timer callbacks
-        if self.update_timer_id:
-            try:
-                self.after_cancel(self.update_timer_id)
-            except:
-                pass
-            self.update_timer_id = None
+        self._cancel_pending_timer()
 
         # Destroy the window
         try:
@@ -869,7 +873,7 @@ class TimerWindow(ctk.CTkToplevel):
                 if os.path.exists(sound_file):
                     self._play_wav_file(sound_file)
                     return
-            except Exception:
+            except OSError:
                 pass  # Fall through to system beep
 
         # Fall back to system beep
@@ -877,24 +881,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def _play_wav_file(self, file_path: str):
         """Play a WAV file using platform-appropriate method."""
-        import sys
-        import os
-
-        try:
-            if sys.platform == "win32":
-                # Windows
-                import winsound
-                winsound.PlaySound(
-                    file_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
-            elif sys.platform == "darwin":
-                # macOS
-                os.system(f'afplay "{file_path}" &')
-            else:
-                # Linux
-                os.system(f'aplay "{file_path}" &')
-        except Exception as e:
-            print(f"Error playing sound file: {e}")
-            # Fall back to system beep on error
+        if not play_audio_file_async(file_path):
             self._play_system_beep()
 
     def _flash_window(self):
@@ -904,7 +891,7 @@ class TimerWindow(ctk.CTkToplevel):
             original_bg = self._fg_color
 
             def flash_on():
-                self.configure(fg_color="orange")
+                self.configure(fg_color=status_text_color("warning"))
                 self.after(300, flash_off)
 
             def flash_off():
@@ -912,7 +899,7 @@ class TimerWindow(ctk.CTkToplevel):
                 self.after(300, flash_on2)
 
             def flash_on2():
-                self.configure(fg_color="orange")
+                self.configure(fg_color=status_text_color("warning"))
                 self.after(300, flash_off2)
 
             def flash_off2():
@@ -933,12 +920,13 @@ class TimerWindow(ctk.CTkToplevel):
             display_text = f"{text}\n♫ {self.current_track_name}"
         else:
             display_text = text
+        resolved_color = status_text_color(color)
         # Reset font to normal unless it's a break notification
         if "BREAK" in text.upper():
-            self.status_label.configure(text=display_text, text_color=color)
+            self.status_label.configure(text=display_text, text_color=resolved_color)
         else:
             self.status_label.configure(
-                text=display_text, text_color=color, font=ctk.CTkFont(size=11))
+                text=display_text, text_color=resolved_color, font=ctk.CTkFont(size=11))
 
     def _update_status_with_track(self):
         """Update the current status to include track information."""
@@ -955,46 +943,7 @@ class TimerWindow(ctk.CTkToplevel):
 
     def _play_system_beep(self):
         """Play system beep/alert sound."""
-        import sys
-        import os
-
-        try:
-            if sys.platform == "win32":
-                # Windows system beep
-                import winsound
-                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
-            elif sys.platform == "darwin":
-                # macOS system beep
-                os.system('afplay /System/Library/Sounds/Glass.aiff &')
-            else:
-                # Linux - try multiple methods
-                # Try paplay first (PulseAudio)
-                result = os.system('which paplay > /dev/null 2>&1')
-                if result == 0:
-                    os.system(
-                        'paplay /usr/share/sounds/freedesktop/stereo/complete.oga 2>/dev/null &')
-                else:
-                    # Try aplay (ALSA)
-                    result = os.system('which aplay > /dev/null 2>&1')
-                    if result == 0:
-                        os.system(
-                            'aplay /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null &')
-                    else:
-                        # Try beep command
-                        result = os.system('which beep > /dev/null 2>&1')
-                        if result == 0:
-                            os.system('beep -f 800 -l 500 2>/dev/null &')
-                        else:
-                            # Last resort: terminal bell
-                            print('\a')
-        except Exception as e:
-            print(f"Error playing system beep: {e}")
-            # Try terminal bell as last resort
-            try:
-                print('\a')  # Terminal bell
-            except:
-                pass  # Silently fail if nothing works
-                pass  # Give up silently
+        play_system_beep()
 
     def _get_random_music_file(self) -> Optional[str]:
         """Get a random music file from the configured music folder."""
@@ -1209,402 +1158,3 @@ class TimerWindow(ctk.CTkToplevel):
             print("[INFO] pygame not installed - music control disabled")
         except Exception as e:
             print(f"[ERROR] Error controlling music: {e}")
-
-
-class CompletionNoteDialog(ctk.CTkToplevel):
-    """Simple dialog for entering completion notes."""
-
-    def __init__(self, parent, title: str):
-        super().__init__(parent)
-
-        self.result = None
-
-        self.title(title)
-        self.geometry("400x250")
-        self.transient(parent)
-        # Appear above always-on-top timer window
-        self.attributes('-topmost', True)
-        self.grab_set()
-
-        # Center on parent if it still exists
-        try:
-            self.update_idletasks()
-            if parent.winfo_exists():
-                x = parent.winfo_x() + (parent.winfo_width() - 400) // 2
-                y = parent.winfo_y() + (parent.winfo_height() - 250) // 2
-                self.geometry(f"+{x}+{y}")
-        except Exception as e:
-            # If parent is destroyed, just use default position
-            print(f"[DEBUG] Could not center dialog on parent: {e}")
-
-        # Widgets
-        label = ctk.CTkLabel(
-            self, text=title, font=ctk.CTkFont(size=14, weight="bold"))
-        label.pack(pady=10, padx=10)
-
-        self.textbox = ctk.CTkTextbox(self, height=120)
-        self.textbox.pack(pady=10, padx=10, fill="both", expand=True)
-        self.textbox.focus()
-
-        button_frame = ctk.CTkFrame(self)
-        button_frame.pack(pady=10, padx=10, fill="x")
-
-        ctk.CTkButton(
-            button_frame,
-            text="Save",
-            command=self.save,
-            **button_style("primary"),
-        ).pack(side="left", expand=True, padx=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="Skip",
-            command=self.skip
-        ).pack(side="left", expand=True, padx=5)
-
-    def save(self):
-        """Save the note and close."""
-        self.result = self.textbox.get("1.0", "end-1c").strip()
-        if not self.result:
-            self.result = None
-        self.destroy()
-
-    def skip(self):
-        """Skip note and close."""
-        self.result = None
-        self.destroy()
-
-
-class NextActionWindow(ctk.CTkToplevel):
-    """Floating window for viewing/editing action item notes independently."""
-
-    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem, parent_window=None):
-        super().__init__(parent)
-
-        self.db_manager = db_manager
-        self.item = item
-        self.parent_window = parent_window  # Reference to TimerWindow for sync
-        self.settings = AppSettings.load()
-
-        self.setup_window()
-        self.create_widgets()
-
-        # Handle window close
-        self.protocol("WM_DELETE_WINDOW", self.on_window_close)
-
-    def setup_window(self):
-        """Configure window properties."""
-        self.title(f"Notes: {self.item.title}")
-
-        # Set size from settings (or defaults)
-        width = getattr(self.settings, 'next_action_window_width', 500)
-        height = getattr(self.settings, 'next_action_window_height', 400)
-
-        # Set position if saved, otherwise offset from center
-        next_action_x = getattr(self.settings, 'next_action_window_x', None)
-        next_action_y = getattr(self.settings, 'next_action_window_y', None)
-
-        if next_action_x and next_action_y:
-            self.geometry(f"{width}x{height}+{next_action_x}+{next_action_y}")
-        else:
-            # Offset from center
-            screen_width = self.winfo_screenwidth()
-            screen_height = self.winfo_screenheight()
-            x = (screen_width - width) // 2 + 50
-            y = (screen_height - height) // 2 + 50
-            self.geometry(f"{width}x{height}+{x}+{y}")
-
-        # Make window stay on top
-        self.attributes('-topmost', True)
-
-        # Make window resizable
-        self.minsize(300, 200)
-        self.resizable(True, True)
-
-        # Grid configuration
-        self.grid_rowconfigure(0, weight=1)
-        self.grid_columnconfigure(0, weight=1)
-
-    def create_widgets(self):
-        """Create all UI widgets."""
-        # Main container
-        main_frame = ctk.CTkFrame(self)
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        main_frame.grid_rowconfigure(2, weight=1)
-        main_frame.grid_columnconfigure(0, weight=1)
-
-        # Action title
-        title_label = ctk.CTkLabel(
-            main_frame,
-            text=self.item.title,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            wraplength=450
-        )
-        title_label.grid(row=0, column=0, pady=(10, 5), padx=10, sticky="ew")
-
-        # Header with Save button
-        header_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
-        header_frame.grid(row=1, column=0, pady=(10, 5), padx=10, sticky="ew")
-        header_frame.grid_columnconfigure(0, weight=1)
-
-        notes_label = ctk.CTkLabel(
-            header_frame,
-            text="Notes:",
-            font=ctk.CTkFont(size=14, weight="bold")
-        )
-        notes_label.grid(row=0, column=0, sticky="w")
-
-        # Save button
-        self.save_button = ctk.CTkButton(
-            header_frame,
-            text="Save Notes",
-            width=100,
-            command=self.save_notes,
-            **button_style("primary"),
-        )
-        self.save_button.grid(row=0, column=1, padx=5)
-
-        # Notes textbox
-        self.notes_text = ctk.CTkTextbox(
-            main_frame,
-            wrap="word"
-        )
-        self.notes_text.grid(row=2, column=0, pady=5, padx=10, sticky="nsew")
-
-        # Populate notes
-        description = self.item.description or ""
-        self.notes_text.insert("1.0", description)
-        self.notes_text.focus()
-
-    def save_notes(self):
-        """Save the edited notes back to the action item."""
-        try:
-            # Get the text from the textbox
-            notes = self.notes_text.get("1.0", "end-1c").strip()
-
-            # Update the item's description
-            self.item.description = notes if notes else None
-
-            # Save to database
-            self.db_manager.update_action_item(self.item)
-
-            print(f"[DEBUG] Notes saved for item: {self.item.id}")
-
-            # Refresh the parent window (TimerWindow) if it exists
-            if self.parent_window and self.parent_window.winfo_exists():
-                self.parent_window.refresh_notes()
-
-            # Visual feedback - briefly change button color
-            self.save_button.configure(text="✓ Saved")
-            self.after(2000, lambda: self.save_button.configure(
-                text="Save Notes"))
-        except Exception as e:
-            print(f"[ERROR] Failed to save notes: {e}")
-            import traceback
-            traceback.print_exc()
-            import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to save notes: {e}")
-
-    def refresh_notes(self):
-        """Refresh notes textbox from the current item data."""
-        try:
-            # Clear and update the textbox with current item description
-            self.notes_text.delete("1.0", "end")
-            description = self.item.description or ""
-            self.notes_text.insert("1.0", description)
-            print(
-                f"[DEBUG] Notes refreshed in NextActionWindow for item: {self.item.id}")
-        except Exception as e:
-            print(f"[ERROR] Failed to refresh notes in NextActionWindow: {e}")
-
-    def on_window_close(self):
-        """Handle window close event."""
-        # Clear the parent's reference to this window
-        if self.parent_window and self.parent_window.winfo_exists():
-            self.parent_window.next_action_window = None
-
-        self.save_window_settings()
-        self.destroy()
-
-    def save_window_settings(self):
-        """Save window position and size to settings."""
-        # Store in settings
-        self.settings.next_action_window_width = self.winfo_width()
-        self.settings.next_action_window_height = self.winfo_height()
-        self.settings.next_action_window_x = self.winfo_x()
-        self.settings.next_action_window_y = self.winfo_y()
-        self.settings.save()
-
-
-class NextStepsDialog(ctk.CTkToplevel):
-    """Dialog for entering next steps note with date selection."""
-
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.result = None  # Will be dict with 'note', 'start_date', 'due_date'
-
-        self.title("Next Steps Note")
-        self.geometry("450x400")
-        self.transient(parent)
-        # Appear above always-on-top timer window
-        self.attributes('-topmost', True)
-        self.grab_set()
-
-        # Center on parent if it still exists
-        try:
-            self.update_idletasks()
-            if parent.winfo_exists():
-                x = parent.winfo_x() + (parent.winfo_width() - 450) // 2
-                y = parent.winfo_y() + (parent.winfo_height() - 400) // 2
-                self.geometry(f"+{x}+{y}")
-        except Exception as e:
-            # If parent is destroyed, just use default position
-            print(f"[DEBUG] Could not center dialog on parent: {e}")
-
-        # Main container
-        main_frame = ctk.CTkFrame(self)
-        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Title label
-        label = ctk.CTkLabel(main_frame, text="Next Steps Note",
-                             font=ctk.CTkFont(size=14, weight="bold"))
-        label.pack(pady=(5, 10), padx=10)
-
-        # Note textbox
-        self.textbox = ctk.CTkTextbox(main_frame, height=120)
-        self.textbox.pack(pady=5, padx=10, fill="both", expand=True)
-        self.textbox.focus()
-
-        # Date selection frame
-        date_frame = ctk.CTkFrame(main_frame)
-        date_frame.pack(pady=10, padx=10, fill="x")
-        date_frame.grid_columnconfigure(1, weight=1)
-
-        # Default to tomorrow
-        from datetime import date, timedelta
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
-
-        # Start Date
-        ctk.CTkLabel(date_frame, text="Start Date:", width=80).grid(
-            row=0, column=0, padx=5, pady=5, sticky="w")
-        self.start_date_entry = ctk.CTkEntry(date_frame, width=120)
-        self.start_date_entry.insert(0, tomorrow)
-        self.start_date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-
-        # Start date quick buttons
-        btn_frame_start = ctk.CTkFrame(date_frame)
-        btn_frame_start.grid(row=0, column=2, padx=5, pady=5)
-        ctk.CTkButton(btn_frame_start, text="Today", width=60, command=lambda: self.set_date(
-            self.start_date_entry, 0)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame_start, text="+1", width=50, command=lambda: self.adjust_date(
-            self.start_date_entry, 1)).pack(side="left", padx=2)
-
-        # Due Date
-        ctk.CTkLabel(date_frame, text="Due Date:", width=80).grid(
-            row=1, column=0, padx=5, pady=5, sticky="w")
-        self.due_date_entry = ctk.CTkEntry(date_frame, width=120)
-        self.due_date_entry.insert(0, tomorrow)
-        self.due_date_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
-
-        # Due date quick buttons
-        btn_frame_due = ctk.CTkFrame(date_frame)
-        btn_frame_due.grid(row=1, column=2, padx=5, pady=5)
-        ctk.CTkButton(btn_frame_due, text="Today", width=60, command=lambda: self.set_date(
-            self.due_date_entry, 0)).pack(side="left", padx=2)
-        ctk.CTkButton(btn_frame_due, text="+1", width=50, command=lambda: self.adjust_date(
-            self.due_date_entry, 1)).pack(side="left", padx=2)
-
-        # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red")
-        self.error_label.pack(pady=5)
-
-        # Buttons
-        button_frame = ctk.CTkFrame(main_frame)
-        button_frame.pack(pady=10, padx=10, fill="x")
-
-        ctk.CTkButton(
-            button_frame,
-            text="Save",
-            command=self.save,
-            **button_style("primary"),
-        ).pack(side="left", expand=True, padx=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="Skip",
-            command=self.skip
-        ).pack(side="left", expand=True, padx=5)
-
-    def set_date(self, entry: ctk.CTkEntry, days_offset: int):
-        """Set date to today + offset using weekend-aware logic."""
-        settings = AppSettings.load()
-        new_date = increment_date(
-            date.today(), days_offset, settings.include_saturday, settings.include_sunday)
-        entry.delete(0, "end")
-        entry.insert(0, new_date.isoformat())
-
-    def adjust_date(self, entry: ctk.CTkEntry, days: int):
-        """Adjust current date by days using weekend-aware logic."""
-        from datetime import datetime
-        settings = AppSettings.load()
-
-        current = entry.get().strip()
-        if not current:
-            self.set_date(entry, days)
-            return
-
-        try:
-            current_date = datetime.strptime(current, "%Y-%m-%d").date()
-            new_date = increment_date(
-                current_date, days, settings.include_saturday, settings.include_sunday)
-            entry.delete(0, "end")
-            entry.insert(0, new_date.isoformat())
-        except ValueError:
-            # Invalid date, reset to today + days
-            self.set_date(entry, days)
-
-    def save(self):
-        """Save the note and dates, with validation."""
-        note = self.textbox.get("1.0", "end-1c").strip()
-        start_date = self.start_date_entry.get().strip()
-        due_date = self.due_date_entry.get().strip()
-
-        # Validate dates
-        if not start_date or not due_date:
-            self.error_label.configure(text="Both dates are required")
-            return
-
-        from datetime import datetime
-        try:
-            start = datetime.strptime(start_date, "%Y-%m-%d").date()
-            due = datetime.strptime(due_date, "%Y-%m-%d").date()
-
-            if due < start:
-                self.error_label.configure(
-                    text="Due date must be >= Start date")
-                return
-
-        except ValueError:
-            self.error_label.configure(
-                text="Invalid date format (use YYYY-MM-DD)")
-            return
-
-        self.result = {
-            'note': note if note else None,
-            'start_date': start_date,
-            'due_date': due_date
-        }
-        self.destroy()
-
-    def skip(self):
-        """Skip and use defaults."""
-        from datetime import date, timedelta
-        tomorrow = (date.today() + timedelta(days=1)).isoformat()
-
-        self.result = {
-            'note': None,
-            'start_date': tomorrow,
-            'due_date': tomorrow
-        }
-        self.destroy()

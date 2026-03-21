@@ -1,0 +1,415 @@
+"""Supporting dialogs extracted from timer_window.py."""
+
+from __future__ import annotations
+
+import customtkinter as ctk
+from datetime import date, timedelta
+from typing import Optional, TYPE_CHECKING
+
+from ..app_settings import AppSettings
+from ..date_utils import increment_date
+from ..models import ActionItem
+from ..theme import button_style, status_text_color
+
+if TYPE_CHECKING:
+    from ..db_manager import DatabaseManager
+
+class CompletionNoteDialog(ctk.CTkToplevel):
+    """Simple dialog for entering completion notes."""
+
+    def __init__(self, parent, title: str):
+        super().__init__(parent)
+
+        self.result = None
+
+        self.title(title)
+        self.geometry("400x250")
+        self.transient(parent)
+        # Appear above always-on-top timer window
+        self.attributes('-topmost', True)
+        self.grab_set()
+
+        # Center on parent if it still exists
+        try:
+            self.update_idletasks()
+            if parent.winfo_exists():
+                x = parent.winfo_x() + (parent.winfo_width() - 400) // 2
+                y = parent.winfo_y() + (parent.winfo_height() - 250) // 2
+                self.geometry(f"+{x}+{y}")
+        except Exception as e:
+            # If parent is destroyed, just use default position
+            print(f"[DEBUG] Could not center dialog on parent: {e}")
+
+        # Widgets
+        label = ctk.CTkLabel(
+            self, text=title, font=ctk.CTkFont(size=14, weight="bold"))
+        label.pack(pady=10, padx=10)
+
+        self.textbox = ctk.CTkTextbox(self, height=120)
+        self.textbox.pack(pady=10, padx=10, fill="both", expand=True)
+        self.textbox.focus()
+
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=10, padx=10, fill="x")
+
+        ctk.CTkButton(
+            button_frame,
+            text="Save",
+            command=self.save,
+            **button_style("primary"),
+        ).pack(side="left", expand=True, padx=5)
+
+        ctk.CTkButton(
+            button_frame,
+            text="Skip",
+            command=self.skip,
+            **button_style("secondary"),
+        ).pack(side="left", expand=True, padx=5)
+
+    def save(self):
+        """Save the note and close."""
+        self.result = self.textbox.get("1.0", "end-1c").strip()
+        if not self.result:
+            self.result = None
+        self.destroy()
+
+    def skip(self):
+        """Skip note and close."""
+        self.result = None
+        self.destroy()
+
+
+class NextActionWindow(ctk.CTkToplevel):
+    """Floating window for viewing/editing action item notes independently."""
+
+    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem, parent_window=None):
+        super().__init__(parent)
+
+        self.db_manager = db_manager
+        self.item = item
+        self.parent_window = parent_window  # Reference to TimerWindow for sync
+        self.settings = AppSettings.load()
+
+        self.setup_window()
+        self.create_widgets()
+
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self.on_window_close)
+
+    def setup_window(self):
+        """Configure window properties."""
+        self.title(f"Notes: {self.item.title}")
+
+        # Set size from settings (or defaults)
+        width = getattr(self.settings, 'next_action_window_width', 500)
+        height = getattr(self.settings, 'next_action_window_height', 400)
+
+        # Set position if saved, otherwise offset from center
+        next_action_x = getattr(self.settings, 'next_action_window_x', None)
+        next_action_y = getattr(self.settings, 'next_action_window_y', None)
+
+        if next_action_x and next_action_y:
+            self.geometry(f"{width}x{height}+{next_action_x}+{next_action_y}")
+        else:
+            # Offset from center
+            screen_width = self.winfo_screenwidth()
+            screen_height = self.winfo_screenheight()
+            x = (screen_width - width) // 2 + 50
+            y = (screen_height - height) // 2 + 50
+            self.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Make window stay on top
+        self.attributes('-topmost', True)
+
+        # Make window resizable
+        self.minsize(300, 200)
+        self.resizable(True, True)
+
+        # Grid configuration
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+    def create_widgets(self):
+        """Create all UI widgets."""
+        # Main container
+        main_frame = ctk.CTkFrame(self)
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        main_frame.grid_rowconfigure(2, weight=1)
+        main_frame.grid_columnconfigure(0, weight=1)
+
+        # Action title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text=self.item.title,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            wraplength=450
+        )
+        title_label.grid(row=0, column=0, pady=(10, 5), padx=10, sticky="ew")
+
+        # Header with Save button
+        header_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        header_frame.grid(row=1, column=0, pady=(10, 5), padx=10, sticky="ew")
+        header_frame.grid_columnconfigure(0, weight=1)
+
+        notes_label = ctk.CTkLabel(
+            header_frame,
+            text="Notes:",
+            font=ctk.CTkFont(size=14, weight="bold")
+        )
+        notes_label.grid(row=0, column=0, sticky="w")
+
+        # Save button
+        self.save_button = ctk.CTkButton(
+            header_frame,
+            text="Save Notes",
+            width=100,
+            command=self.save_notes,
+            **button_style("primary"),
+        )
+        self.save_button.grid(row=0, column=1, padx=5)
+
+        # Notes textbox
+        self.notes_text = ctk.CTkTextbox(
+            main_frame,
+            wrap="word"
+        )
+        self.notes_text.grid(row=2, column=0, pady=5, padx=10, sticky="nsew")
+
+        # Populate notes
+        description = self.item.description or ""
+        self.notes_text.insert("1.0", description)
+        self.notes_text.focus()
+
+    def save_notes(self):
+        """Save the edited notes back to the action item."""
+        try:
+            # Get the text from the textbox
+            notes = self.notes_text.get("1.0", "end-1c").strip()
+
+            # Update the item's description
+            self.item.description = notes if notes else None
+
+            # Save to database
+            self.db_manager.update_action_item(self.item)
+
+            print(f"[DEBUG] Notes saved for item: {self.item.id}")
+
+            # Refresh the parent window (TimerWindow) if it exists
+            if self.parent_window and self.parent_window.winfo_exists():
+                self.parent_window.refresh_notes()
+
+            # Visual feedback - briefly change button color
+            self.save_button.configure(text="✓ Saved")
+            self.after(2000, lambda: self.save_button.configure(
+                text="Save Notes"))
+        except Exception as e:
+            print(f"[ERROR] Failed to save notes: {e}")
+            import traceback
+            traceback.print_exc()
+            import tkinter.messagebox as messagebox
+            messagebox.showerror("Error", f"Failed to save notes: {e}")
+
+    def refresh_notes(self):
+        """Refresh notes textbox from the current item data."""
+        try:
+            # Clear and update the textbox with current item description
+            self.notes_text.delete("1.0", "end")
+            description = self.item.description or ""
+            self.notes_text.insert("1.0", description)
+            print(
+                f"[DEBUG] Notes refreshed in NextActionWindow for item: {self.item.id}")
+        except Exception as e:
+            print(f"[ERROR] Failed to refresh notes in NextActionWindow: {e}")
+
+    def on_window_close(self):
+        """Handle window close event."""
+        # Clear the parent's reference to this window
+        if self.parent_window and self.parent_window.winfo_exists():
+            self.parent_window.next_action_window = None
+
+        self.save_window_settings()
+        self.destroy()
+
+    def save_window_settings(self):
+        """Save window position and size to settings."""
+        # Store in settings
+        self.settings.next_action_window_width = self.winfo_width()
+        self.settings.next_action_window_height = self.winfo_height()
+        self.settings.next_action_window_x = self.winfo_x()
+        self.settings.next_action_window_y = self.winfo_y()
+        self.settings.save()
+
+
+class NextStepsDialog(ctk.CTkToplevel):
+    """Dialog for entering next steps note with date selection."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.result = None  # Will be dict with 'note', 'start_date', 'due_date'
+
+        self.title("Next Steps Note")
+        self.geometry("450x400")
+        self.transient(parent)
+        # Appear above always-on-top timer window
+        self.attributes('-topmost', True)
+        self.grab_set()
+
+        # Center on parent if it still exists
+        try:
+            self.update_idletasks()
+            if parent.winfo_exists():
+                x = parent.winfo_x() + (parent.winfo_width() - 450) // 2
+                y = parent.winfo_y() + (parent.winfo_height() - 400) // 2
+                self.geometry(f"+{x}+{y}")
+        except Exception as e:
+            # If parent is destroyed, just use default position
+            print(f"[DEBUG] Could not center dialog on parent: {e}")
+
+        # Main container
+        main_frame = ctk.CTkFrame(self)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Title label
+        label = ctk.CTkLabel(main_frame, text="Next Steps Note",
+                             font=ctk.CTkFont(size=14, weight="bold"))
+        label.pack(pady=(5, 10), padx=10)
+
+        # Note textbox
+        self.textbox = ctk.CTkTextbox(main_frame, height=120)
+        self.textbox.pack(pady=5, padx=10, fill="both", expand=True)
+        self.textbox.focus()
+
+        # Date selection frame
+        date_frame = ctk.CTkFrame(main_frame)
+        date_frame.pack(pady=10, padx=10, fill="x")
+        date_frame.grid_columnconfigure(1, weight=1)
+
+        # Default to tomorrow
+        from datetime import date, timedelta
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+        # Start Date
+        ctk.CTkLabel(date_frame, text="Start Date:", width=80).grid(
+            row=0, column=0, padx=5, pady=5, sticky="w")
+        self.start_date_entry = ctk.CTkEntry(date_frame, width=120)
+        self.start_date_entry.insert(0, tomorrow)
+        self.start_date_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        # Start date quick buttons
+        btn_frame_start = ctk.CTkFrame(date_frame)
+        btn_frame_start.grid(row=0, column=2, padx=5, pady=5)
+        ctk.CTkButton(btn_frame_start, text="Today", width=60, command=lambda: self.set_date(
+            self.start_date_entry, 0), **button_style("secondary")).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_start, text="+1", width=50, command=lambda: self.adjust_date(
+            self.start_date_entry, 1), **button_style("secondary")).pack(side="left", padx=2)
+
+        # Due Date
+        ctk.CTkLabel(date_frame, text="Due Date:", width=80).grid(
+            row=1, column=0, padx=5, pady=5, sticky="w")
+        self.due_date_entry = ctk.CTkEntry(date_frame, width=120)
+        self.due_date_entry.insert(0, tomorrow)
+        self.due_date_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        # Due date quick buttons
+        btn_frame_due = ctk.CTkFrame(date_frame)
+        btn_frame_due.grid(row=1, column=2, padx=5, pady=5)
+        ctk.CTkButton(btn_frame_due, text="Today", width=60, command=lambda: self.set_date(
+            self.due_date_entry, 0), **button_style("secondary")).pack(side="left", padx=2)
+        ctk.CTkButton(btn_frame_due, text="+1", width=50, command=lambda: self.adjust_date(
+            self.due_date_entry, 1), **button_style("secondary")).pack(side="left", padx=2)
+
+        # Error label
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color=status_text_color("error"))
+        self.error_label.pack(pady=5)
+
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=10, padx=10, fill="x")
+
+        ctk.CTkButton(
+            button_frame,
+            text="Save",
+            command=self.save,
+            **button_style("primary"),
+        ).pack(side="left", expand=True, padx=5)
+
+        ctk.CTkButton(
+            button_frame,
+            text="Skip",
+            command=self.skip,
+            **button_style("secondary"),
+        ).pack(side="left", expand=True, padx=5)
+
+    def set_date(self, entry: ctk.CTkEntry, days_offset: int):
+        """Set date to today + offset using weekend-aware logic."""
+        settings = AppSettings.load()
+        new_date = increment_date(
+            date.today(), days_offset, settings.include_saturday, settings.include_sunday)
+        entry.delete(0, "end")
+        entry.insert(0, new_date.isoformat())
+
+    def adjust_date(self, entry: ctk.CTkEntry, days: int):
+        """Adjust current date by days using weekend-aware logic."""
+        from datetime import datetime
+        settings = AppSettings.load()
+
+        current = entry.get().strip()
+        if not current:
+            self.set_date(entry, days)
+            return
+
+        try:
+            current_date = datetime.strptime(current, "%Y-%m-%d").date()
+            new_date = increment_date(
+                current_date, days, settings.include_saturday, settings.include_sunday)
+            entry.delete(0, "end")
+            entry.insert(0, new_date.isoformat())
+        except ValueError:
+            # Invalid date, reset to today + days
+            self.set_date(entry, days)
+
+    def save(self):
+        """Save the note and dates, with validation."""
+        note = self.textbox.get("1.0", "end-1c").strip()
+        start_date = self.start_date_entry.get().strip()
+        due_date = self.due_date_entry.get().strip()
+
+        # Validate dates
+        if not start_date or not due_date:
+            self.error_label.configure(text="Both dates are required")
+            return
+
+        from datetime import datetime
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            due = datetime.strptime(due_date, "%Y-%m-%d").date()
+
+            if due < start:
+                self.error_label.configure(
+                    text="Due date must be >= Start date")
+                return
+
+        except ValueError:
+            self.error_label.configure(
+                text="Invalid date format (use YYYY-MM-DD)")
+            return
+
+        self.result = {
+            'note': note if note else None,
+            'start_date': start_date,
+            'due_date': due_date
+        }
+        self.destroy()
+
+    def skip(self):
+        """Skip and use defaults."""
+        from datetime import date, timedelta
+        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+        self.result = {
+            'note': None,
+            'start_date': tomorrow,
+            'due_date': tomorrow
+        }
+        self.destroy()

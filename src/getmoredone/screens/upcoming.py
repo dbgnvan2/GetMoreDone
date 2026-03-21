@@ -11,7 +11,7 @@ from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from ..theme import apply_segment_accent, semantic_colors, button_style, combo_box_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
 from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
 from .title_format import (
@@ -123,12 +123,7 @@ class UpcomingScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
-            fg_color="white",
-            text_color="black",
-            button_color="white",
-            button_hover_color="white",
-            dropdown_fg_color="white",
-            dropdown_text_color="black",
+            **combo_box_style(),
             command=lambda _: self.refresh()
         )
         self.who_combo.grid(row=0, column=7, padx=5, pady=10)
@@ -278,6 +273,7 @@ class UpcomingScreen(ctk.CTkFrame):
     def create_item_row(self, item: ActionItem) -> ctk.CTkFrame:
         """Create a row for an action item."""
         palette = self.palette
+        row_text = palette["row_text"]
         segment_color = resolve_segment_color_for_item(
             item,
             self.segment_colors_by_id,
@@ -336,7 +332,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=parsed.title,
             font=list_row_font(),
             anchor="w",
-            text_color="black"
+            text_color=row_text
         )
         title_label.grid(row=0, column=1, sticky="ew")
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
@@ -346,7 +342,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=format_column_text(subsegment_name or "-", limits["subsegment"]),
             width=max(56, limits["subsegment"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
@@ -355,7 +351,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=format_column_text(category_name or "-", limits["category"]),
             width=max(56, limits["category"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
@@ -365,7 +361,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=format_column_text(parsed.context, limits["context"]),
             width=max(90, limits["context"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
 
@@ -375,7 +371,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=format_column_text(item.who, limits["who"]),
             width=max(52, limits["who"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
         ).grid(row=0, column=5, padx=5, pady=5, sticky="w")
 
@@ -392,7 +388,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=f"S:{start_date_text}",
             width=60,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
         start_label.grid(row=0, column=6, padx=5, pady=5)
@@ -411,7 +407,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=f"D:{due_date_text}",
             width=60,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
         due_label.grid(row=0, column=7, padx=5, pady=5)
@@ -424,7 +420,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=f"P:{item.priority_score}",
             width=60,
             fg_color=palette["danger"] if is_priority_critical else "transparent",
-            text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+            text_color=pick_text_color(palette["danger"]) if is_priority_critical else row_text,
             corner_radius=6 if is_priority_critical else 0,
             font=list_row_font(),
         )
@@ -438,7 +434,7 @@ class UpcomingScreen(ctk.CTkFrame):
             text=time_text,
             width=50,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
         time_label.grid(row=0, column=9, padx=5, pady=5)
@@ -463,7 +459,7 @@ class UpcomingScreen(ctk.CTkFrame):
                     "width": width,
                     "anchor": "w",
                     "font": list_row_font(),
-                    "text_color": "black",
+                    "text_color": row_text,
                 }
                 if label in ("I", "U") and str(value).strip() == "20":
                     label_kwargs["fg_color"] = palette["danger"]

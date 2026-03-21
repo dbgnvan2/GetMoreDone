@@ -5,7 +5,7 @@ from tkinter import messagebox
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from ..theme import button_style, semantic_colors
+from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
@@ -94,7 +94,13 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         left_frame.grid_columnconfigure(0, weight=1)
         self.left_frame = left_frame
 
-        divider = ctk.CTkFrame(body, width=self.SPLITTER_WIDTH, fg_color=semantic_colors()["border"], corner_radius=2)
+        divider = ctk.CTkFrame(
+            body,
+            width=self.SPLITTER_WIDTH,
+            fg_color=semantic_colors()["border"],
+            corner_radius=2,
+            cursor="sb_h_double_arrow",
+        )
         divider.grid(row=1, column=1, sticky="ns", padx=0, pady=(0, 8))
         divider.bind("<ButtonPress-1>", self._on_divider_press)
         divider.bind("<B1-Motion>", self._on_divider_drag)
@@ -424,14 +430,14 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         segment_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
 
         ctk.CTkLabel(frame, text="SubSegment:").grid(row=1, column=0, sticky="w", padx=8, pady=6)
-        subsegment_combo = ctk.CTkComboBox(frame, variable=subsegment_var, values=[])
+        subsegment_combo = ctk.CTkComboBox(frame, variable=subsegment_var, values=[], **combo_box_style())
         subsegment_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
 
         ctk.CTkLabel(frame, text="Category:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-        category_combo = ctk.CTkComboBox(frame, variable=category_var, values=[])
+        category_combo = ctk.CTkComboBox(frame, variable=category_var, values=[], **combo_box_style())
         category_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
 
-        status_label = ctk.CTkLabel(frame, text="", text_color="red")
+        status_label = ctk.CTkLabel(frame, text="", text_color=status_text_color("error"))
         status_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 6))
 
         def load_segments():

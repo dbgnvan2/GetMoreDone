@@ -4,7 +4,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 from typing import TYPE_CHECKING
 
-from ..theme import apply_segment_accent, button_style, semantic_colors
+from ..theme import apply_segment_accent, button_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
@@ -310,7 +310,7 @@ class VisionElementsScreen(ctk.CTkFrame):
             vision_text.insert("1.0", vision_text_var.get())
         frame.grid_rowconfigure(3, weight=1)
 
-        status_label = ctk.CTkLabel(frame, text="", text_color="red")
+        status_label = ctk.CTkLabel(frame, text="", text_color=status_text_color("error"))
         status_label.grid(row=4, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 6))
 
         def load_segments():
@@ -438,7 +438,7 @@ class VisionElementsScreen(ctk.CTkFrame):
             status_row = 3
             action_row = 4
 
-        status_label = ctk.CTkLabel(frame, text="", text_color="red")
+        status_label = ctk.CTkLabel(frame, text="", text_color=status_text_color("error"))
         status_label.grid(row=status_row, column=0, sticky="w", padx=8, pady=(2, 4))
 
         actions = ctk.CTkFrame(frame, fg_color="transparent")

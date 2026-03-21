@@ -6,6 +6,24 @@ Complete index of all documentation files for the GetMoreDone task management ap
 
 ## Primary Documentation
 
+### `codex.md`
+
+Repository maintainability policy used during code review and refactoring:
+
+- File responsibility and cohesion rules
+- Refactor triggers and decision heuristics
+- Testability and dependency-load guidance
+- Default expectations for ongoing development work
+
+### `docs/changes/`
+
+Agent handoff notes and implementation summaries:
+
+- One note per substantial agent change
+- Verification commands and outcomes
+- Risks / known gaps
+- Follow-up guidance for subsequent agents
+
 ### README.md (27KB)
 
 Main project documentation including:
@@ -63,6 +81,15 @@ Starter operational guide for multi-agent delivery:
 - Worktree bootstrap command and branch model
 - Required handoff note workflow
 - PR template and CI docs-gate behavior
+
+### `.github/pull_request_template.md`
+
+Pull request template used for multi-agent delivery:
+
+- Summary / validation sections
+- Agent handoff reference
+- Docs sync checklist
+- Maintainability checklist aligned with `codex.md`
 
 ## VSP (Vision Strategy Plan) Documentation
 

@@ -10,7 +10,7 @@ import customtkinter as ctk
 
 from ..color_contrast import pick_text_color
 from ..models import ActionItem, PriorityFactors, ProjectBoard, ProjectBoardStatus
-from ..theme import button_style, semantic_colors
+from ..theme import button_style, combo_box_style, semantic_colors
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -76,7 +76,12 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
         if not selected_label and ape_labels:
             selected_label = ape_labels[0]
         self.ape_var = ctk.StringVar(value=selected_label)
-        self.ape_combo = ctk.CTkComboBox(root, values=ape_labels or ["No Annual Plan Elements"], variable=self.ape_var)
+        self.ape_combo = ctk.CTkComboBox(
+            root,
+            values=ape_labels or ["No Annual Plan Elements"],
+            variable=self.ape_var,
+            **combo_box_style(),
+        )
         self.ape_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=8)
         if not ape_labels:
             self.ape_combo.configure(state="disabled")
@@ -93,6 +98,7 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
             width=160,
             values=IMPORTANCE_OPTIONS,
             variable=self.priority_var,
+            **combo_box_style(),
         ).grid(row=0, column=1, sticky="w", padx=8, pady=8)
 
         ctk.CTkLabel(top_row, text="Status").grid(row=0, column=2, sticky="w", padx=8, pady=8)
@@ -106,6 +112,7 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
                 ProjectBoardStatus.COMPLETED,
             ],
             variable=self.status_var,
+            **combo_box_style(),
         ).grid(row=0, column=3, sticky="w", padx=8, pady=8)
 
         ctk.CTkLabel(root, text="Next Step").grid(row=3, column=0, sticky="w", padx=8, pady=8)
@@ -275,7 +282,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
     ACTION_BUTTON_WIDTH = 38
     ACTION_BUTTON_HEIGHT = 34
     ACTION_ICON_FONT_SIZE = 22
-    ICON_EDIT = "✎"
+    ICON_EDIT = "✐"
     ICON_COMPLETE = "✓"
     ICON_PENDING = "◷"
     ICON_DELETE = "🗑"
@@ -510,7 +517,9 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         color = (row.get("category_color_hex") or "").strip() or semantic_colors()["selected_tint"]
         text_color = pick_text_color(color)
         selected = row["id"] == self.selected_board_id
-        border_color = "#111111" if selected else semantic_colors()["border"]
+        border_color = semantic_colors()["primary"] if selected else semantic_colors()["border"]
+        rank = int(row.get("display_order") or 0) + 1
+        palette = semantic_colors()
 
         card = ctk.CTkFrame(
             parent,
@@ -526,8 +535,18 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         card.grid_rowconfigure(2, weight=1)
 
         top = ctk.CTkFrame(card, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=metrics["pad_x"], pady=(metrics["pad_top"], 2))
-        top.grid_columnconfigure(0, weight=1)
+        top.grid(row=0, column=0, sticky="ew", padx=(max(4, metrics["pad_x"] - 8), metrics["pad_x"]), pady=(metrics["pad_top"], 2))
+        top.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            top,
+            text=str(rank),
+            width=self.ACTION_BUTTON_WIDTH,
+            height=self.ACTION_BUTTON_HEIGHT,
+            corner_radius=8,
+            fg_color=palette["surface_subtle"],
+            text_color=palette["body_text"],
+            font=ctk.CTkFont(size=max(13, self.ACTION_ICON_FONT_SIZE - 4), weight="bold"),
+        ).grid(row=0, column=0, padx=(0, 4), sticky="w")
         ctk.CTkLabel(
             top,
             text=f"{row.get('subsegment_name') or '-'} - {row.get('category_name') or '-'}",
@@ -535,7 +554,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             text_color=text_color,
             anchor="center",
             justify="center",
-        ).grid(row=0, column=0, sticky="ew")
+        ).grid(row=0, column=1, sticky="ew")
 
         ctk.CTkLabel(
             card,
@@ -657,13 +676,22 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 f"Next Step: {row.get('next_step') or '-'}"
             )
         )
+        category_color = (row.get("category_color_hex") or "").strip() or semantic_colors()["surface_subtle"]
 
         toolbar = ctk.CTkFrame(self.items_frame, fg_color="transparent")
         toolbar.grid(row=0, column=0, sticky="ew", padx=2, pady=(2, 8))
         ctk.CTkButton(toolbar, text="Create Action Item", command=lambda: self.create_action_item(board.id), **button_style("primary")).pack(
             side="left", padx=4
         )
-        ctk.CTkButton(toolbar, text="Link Action Item", command=lambda: self.link_existing_action_item(board.id), **button_style("secondary")).pack(
+        ctk.CTkButton(
+            toolbar,
+            text="Link Action Item",
+            command=lambda: self.link_existing_action_item(board.id),
+            fg_color=category_color,
+            hover_color=category_color,
+            text_color=pick_text_color(category_color),
+            border_width=0,
+        ).pack(
             side="left", padx=4
         )
         ctk.CTkButton(toolbar, text="Edit Project", command=lambda: self.edit_project(board.id), **button_style("secondary")).pack(
@@ -803,7 +831,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 self._reorder_cards(source_id, target_id)
             return
 
-        self.open_project_from_note(board_id)
+        self.select_project(board_id)
 
     def _board_id_at_pointer(self) -> Optional[str]:
         x, y = self.winfo_pointerxy()

@@ -4,7 +4,7 @@ from tkinter import colorchooser, messagebox
 import customtkinter as ctk
 from typing import TYPE_CHECKING, Optional
 
-from ..theme import button_style
+from ..theme import button_style, status_text_color
 from ..color_contrast import pick_text_color
 
 if TYPE_CHECKING:
@@ -333,7 +333,7 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         if vision.get():
             vision_box.insert("1.0", vision.get())
         f.grid_rowconfigure(4, weight=1)
-        msg = ctk.CTkLabel(f, text="", text_color="red")
+        msg = ctk.CTkLabel(f, text="", text_color=status_text_color("error"))
         msg.grid(row=5, column=0, columnspan=2, sticky="w", padx=8)
         act = ctk.CTkFrame(f, fg_color="transparent")
         act.grid(row=6, column=0, columnspan=2, sticky="e", padx=8, pady=8)
@@ -401,7 +401,7 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         if (row or {}).get("vision_text"):
             vision_box.insert("1.0", row["vision_text"])
         f.grid_rowconfigure(4, weight=1)
-        msg = ctk.CTkLabel(f, text="", text_color="red")
+        msg = ctk.CTkLabel(f, text="", text_color=status_text_color("error"))
         msg.grid(row=5, column=0, columnspan=2, sticky="w", padx=8)
         act = ctk.CTkFrame(f, fg_color="transparent")
         act.grid(row=6, column=0, columnspan=2, sticky="e", padx=8, pady=8)
@@ -471,7 +471,7 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         if (row or {}).get("vision_text"):
             vision_box.insert("1.0", row["vision_text"])
         f.grid_rowconfigure(5, weight=1)
-        msg = ctk.CTkLabel(f, text="", text_color="red")
+        msg = ctk.CTkLabel(f, text="", text_color=status_text_color("error"))
         msg.grid(row=6, column=0, columnspan=2, sticky="w", padx=8)
         act = ctk.CTkFrame(f, fg_color="transparent")
         act.grid(row=7, column=0, columnspan=2, sticky="e", padx=8, pady=8)

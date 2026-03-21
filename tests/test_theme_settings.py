@@ -3,7 +3,16 @@
 import json
 
 from src.getmoredone.app_settings import AppSettings
-from src.getmoredone.theme import normalize_appearance_mode, normalize_theme_name, theme_path_for
+from src.getmoredone.theme import (
+    celebration_colors,
+    combo_box_style,
+    normalize_appearance_mode,
+    normalize_theme_name,
+    schedule_colors,
+    status_text_color,
+    theme_path_for,
+    vps_level_colors,
+)
 
 
 def test_normalize_appearance_mode():
@@ -41,3 +50,40 @@ def test_app_settings_load_normalizes_theme_fields(tmp_path, monkeypatch):
     assert settings.music_volume == 0.4
     assert settings.business_year_start_mmdd == "01-01"
     assert settings.completion_confetti_threshold == 0
+
+
+def test_combo_box_style_exposes_theme_keys():
+    style = combo_box_style()
+
+    assert set(style) == {
+        "fg_color",
+        "text_color",
+        "button_color",
+        "button_hover_color",
+        "dropdown_fg_color",
+        "dropdown_text_color",
+    }
+
+
+def test_status_text_color_maps_legacy_names():
+    assert status_text_color("green")
+    assert status_text_color("red")
+    assert status_text_color("gray")
+    assert status_text_color("blue")
+
+
+def test_schedule_and_vps_palettes_are_available():
+    schedule = schedule_colors()
+    levels = vps_level_colors()
+
+    assert schedule["date_today"].startswith("#")
+    assert len(schedule["load_gradient"]) >= 3
+    assert levels["Week"].startswith("#")
+    assert levels["Annual Vision"].startswith("#")
+
+
+def test_celebration_colors_present():
+    colors = celebration_colors()
+
+    assert len(colors) >= 4
+    assert all(color.startswith("#") for color in colors)

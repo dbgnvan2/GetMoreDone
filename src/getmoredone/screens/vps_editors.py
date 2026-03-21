@@ -8,6 +8,7 @@ from typing import Optional, TYPE_CHECKING
 from tkinter import messagebox
 
 from ..color_contrast import pick_text_color
+from ..theme import status_text_color
 from ..widgets.date_picker import DatePickerButton
 
 if TYPE_CHECKING:
@@ -111,7 +112,7 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Success Metrics:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
-        ctk.CTkLabel(main_frame, text="(one per line)", font=ctk.CTkFont(size=10), text_color="gray").grid(
+        ctk.CTkLabel(main_frame, text="(one per line)", font=ctk.CTkFont(size=10), text_color=status_text_color("muted")).grid(
             row=row, column=1, sticky="w", padx=10, pady=(0, 2)
         )
         row += 1
@@ -541,7 +542,7 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
         ctk.CTkLabel(main_frame, text="Key Priorities:", font=ctk.CTkFont(weight="bold")).grid(
             row=row, column=0, sticky="nw", padx=10, pady=5
         )
-        ctk.CTkLabel(main_frame, text="(one per line)", font=ctk.CTkFont(size=10), text_color="gray").grid(
+        ctk.CTkLabel(main_frame, text="(one per line)", font=ctk.CTkFont(size=10), text_color=status_text_color("muted")).grid(
             row=row, column=1, sticky="w", padx=10, pady=(0, 2)
         )
         row += 1

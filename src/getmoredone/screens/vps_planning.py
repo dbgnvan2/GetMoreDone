@@ -5,7 +5,7 @@ VSP Planning screen - shows strategic planning hierarchy with collapsible tree v
 import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING, Dict, Any, List
 
-from ..theme import button_style
+from ..theme import button_style, status_text_color, vps_level_colors
 
 if TYPE_CHECKING:
     from ..vps_manager import VPSManager
@@ -15,15 +15,7 @@ if TYPE_CHECKING:
 class VPSPlanningScreen(ctk.CTkFrame):
     """Screen showing VSP planning hierarchy in collapsible tree view."""
 
-    LEVEL_COLORS = {
-        "TL Vision": "#7C3AED",
-        "Annual Vision": "#2563EB",
-        "Annual Plan": "#0D9488",
-        "Annual Initiative": "#F59E0B",
-        "Quarter": "#EA580C",
-        "Month": "#059669",
-        "Week": "#0284C7",
-    }
+    LEVEL_COLORS = vps_level_colors()
 
     def __init__(self, parent, vps_manager: 'VPSManager', app: 'GetMoreDoneApp'):
         super().__init__(parent)
@@ -69,7 +61,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         subtitle = ctk.CTkLabel(
             header,
             text="Color-coded hierarchy for faster planning scans",
-            text_color="#94A3B8"
+            text_color=status_text_color("muted")
         )
         subtitle.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
 
@@ -310,7 +302,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
                     empty_frame,
                     text="   └─ No visions yet. Click '+' to create.",
                     font=ctk.CTkFont(size=11),
-                    text_color="gray"
+                    text_color=status_text_color("muted")
                 )
                 empty_label.pack(anchor="w", padx=10, pady=5)
                 empty_frame.grid(row=row, column=0,
@@ -490,7 +482,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             empty_frame,
             text=f"{'  ' * indent}└─ {message}",
             font=ctk.CTkFont(size=10),
-            text_color="gray"
+            text_color=status_text_color("muted")
         )
         empty_label.pack(anchor="w", padx=10, pady=3)
         empty_frame.grid(row=row, column=0, sticky="ew",

@@ -17,6 +17,8 @@ if TYPE_CHECKING:
 
 class APEAssignmentScreen(ctk.CTkFrame):
     """Assign Annual Plan Elements to a selected quarter."""
+    SPLITTER_WIDTH = 8
+    MIN_PANEL_WIDTH = 420
 
     def __init__(self, parent, vps_manager: "VPSManager", app: "GetMoreDoneApp"):
         super().__init__(parent)
@@ -35,6 +37,9 @@ class APEAssignmentScreen(ctk.CTkFrame):
         self.subsegment_colors = {}
         self.category_colors = {}
         self.left_checks: dict[str, ctk.BooleanVar] = {}
+        self._split_ratio = 0.5
+        self._drag_start_x: Optional[int] = None
+        self._drag_start_left: Optional[int] = None
         self.dragged_row: Optional[dict] = None
 
         self.grid_columnconfigure(0, weight=1)
@@ -90,22 +95,50 @@ class APEAssignmentScreen(ctk.CTkFrame):
 
         body = ctk.CTkFrame(self)
         body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
-        body.grid_columnconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=1)
+        body.grid_columnconfigure(0, weight=0, minsize=520)
+        body.grid_columnconfigure(1, weight=0, minsize=self.SPLITTER_WIDTH)
+        body.grid_columnconfigure(2, weight=0, minsize=520)
         body.grid_rowconfigure(1, weight=1)
+        self.body = body
 
         self.left_title_label = ctk.CTkLabel(body, text="", font=ctk.CTkFont(weight="bold"))
         self.left_title_label.grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
         self.right_title_label = ctk.CTkLabel(body, text="", font=ctk.CTkFont(weight="bold"))
-        self.right_title_label.grid(row=0, column=1, sticky="w", padx=8, pady=(8, 4))
+        self.right_title_label.grid(row=0, column=2, sticky="w", padx=8, pady=(8, 4))
 
-        self.left_list = ctk.CTkScrollableFrame(body)
-        self.left_list.grid(row=1, column=0, sticky="nsew", padx=(8, 4), pady=(0, 8))
+        left_frame = ctk.CTkFrame(body)
+        left_frame.grid(row=1, column=0, sticky="nsew", padx=(8, 2), pady=(0, 8))
+        left_frame.grid_rowconfigure(0, weight=1)
+        left_frame.grid_columnconfigure(0, weight=1)
+        self.left_frame = left_frame
+
+        divider = ctk.CTkFrame(
+            body,
+            width=self.SPLITTER_WIDTH,
+            fg_color=semantic_colors()["border"],
+            corner_radius=2,
+            cursor="sb_h_double_arrow",
+        )
+        divider.grid(row=1, column=1, sticky="ns", padx=0, pady=(0, 8))
+        divider.bind("<ButtonPress-1>", self._on_divider_press)
+        divider.bind("<B1-Motion>", self._on_divider_drag)
+        divider.bind("<ButtonRelease-1>", self._on_divider_release)
+        self.divider = divider
+
+        right_frame = ctk.CTkFrame(body)
+        right_frame.grid(row=1, column=2, sticky="nsew", padx=(2, 8), pady=(0, 8))
+        right_frame.grid_rowconfigure(0, weight=1)
+        right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame = right_frame
+
+        self.left_list = ctk.CTkScrollableFrame(left_frame)
+        self.left_list.grid(row=0, column=0, sticky="nsew")
         self.left_list.grid_columnconfigure(0, weight=1)
 
-        self.right_list = ctk.CTkScrollableFrame(body)
-        self.right_list.grid(row=1, column=1, sticky="nsew", padx=(4, 8), pady=(0, 8))
+        self.right_list = ctk.CTkScrollableFrame(right_frame)
+        self.right_list.grid(row=0, column=0, sticky="nsew")
         self.right_list.grid_columnconfigure(0, weight=1)
+        body.bind("<Configure>", self._on_body_resize)
 
     def _parse_period(self) -> Optional[tuple[int, int]]:
         try:
@@ -353,6 +386,41 @@ class APEAssignmentScreen(ctk.CTkFrame):
                 _year, quarter = parsed
                 self.vps_manager.assign_ape_to_quarter(row["id"], quarter)
                 self.refresh_lists()
+
+    def _on_body_resize(self, _event):
+        if self._drag_start_x is None:
+            self._apply_split_ratio()
+
+    def _on_divider_press(self, event):
+        self._drag_start_x = event.x_root
+        self._drag_start_left = self.left_frame.winfo_width()
+
+    def _on_divider_drag(self, event):
+        if self._drag_start_x is None or self._drag_start_left is None:
+            return
+        total = self.body.winfo_width() - self.SPLITTER_WIDTH
+        if total <= 0:
+            return
+        left = self._drag_start_left + (event.x_root - self._drag_start_x)
+        max_left = max(self.MIN_PANEL_WIDTH, total - self.MIN_PANEL_WIDTH)
+        left = max(self.MIN_PANEL_WIDTH, min(max_left, left))
+        self._split_ratio = left / total
+        self._apply_split_ratio()
+
+    def _on_divider_release(self, _event):
+        self._drag_start_x = None
+        self._drag_start_left = None
+
+    def _apply_split_ratio(self):
+        total = self.body.winfo_width() - self.SPLITTER_WIDTH
+        if total <= 0:
+            return
+        max_left = max(self.MIN_PANEL_WIDTH, total - self.MIN_PANEL_WIDTH)
+        left = int(total * self._split_ratio)
+        left = max(self.MIN_PANEL_WIDTH, min(max_left, left))
+        right = total - left
+        self.body.grid_columnconfigure(0, minsize=left)
+        self.body.grid_columnconfigure(2, minsize=right)
 
     def _is_descendant(self, widget, ancestor) -> bool:
         current = widget

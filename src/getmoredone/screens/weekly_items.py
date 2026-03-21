@@ -1,24 +1,33 @@
-"""APE Weekly screen: weekly action items on the left and related actions on the right."""
+"""APE Weekly assignment screen with month-to-week workflow."""
 
-import customtkinter as ctk
+from __future__ import annotations
+
 from datetime import date, timedelta
 from tkinter import messagebox
-import tkinter as tk
-from typing import TYPE_CHECKING, List, Dict, Any, Optional
-import re
+from typing import TYPE_CHECKING, Dict, List, Optional
 
-from ..theme import button_style, semantic_colors
+import customtkinter as ctk
+import tkinter as tk
+
+from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
+from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
-from .title_format import split_action_item_title, build_action_item_title
 
 if TYPE_CHECKING:
-    from ..vps_manager import VPSManager
     from ..app import GetMoreDoneApp
+    from ..vps_manager import VPSManager
 
 
 class WeeklyItemsScreen(ctk.CTkFrame):
-    """Show APE weekly action items for a selected week and related actions."""
+    """Assign month-selected Annual Plan Elements into weekly tactics."""
+
+    SPLITTER_WIDTH = 8
+    MIN_PANEL_WIDTH = 420
+    INDEX_COL_WIDTH = 34
+    SEGMENT_COL_WIDTH = 180
+    SUBSEGMENT_COL_WIDTH = 180
+    CATEGORY_COL_WIDTH = 180
 
     def __init__(self, parent, vps_manager: "VPSManager", app: "GetMoreDoneApp"):
         super().__init__(parent)
@@ -27,20 +36,23 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
         self.week_options: List[str] = []
         self.week_var = ctk.StringVar(value="")
-
-        self.weekly_items: List[Dict[str, Any]] = []
-        self.all_weekly_items: List[Dict[str, Any]] = []
-        self.selected_weekly_item: Optional[Dict[str, Any]] = None
-
-        self.related_actions: List[Dict[str, Any]] = []
-        self.segment_colors = {}
-        self.subsegment_colors = {}
-        self.category_colors = {}
         self.segment_filter_var = ctk.StringVar(value="All")
         self.subsegment_filter_var = ctk.StringVar(value="All")
         self.category_filter_var = ctk.StringVar(value="All")
+
+        self.left_items: List[Dict[str, object]] = []
+        self.right_items: List[Dict[str, object]] = []
+        self.left_checks: dict[str, ctk.BooleanVar] = {}
+        self.segment_colors = {}
+        self.subsegment_colors = {}
+        self.category_colors = {}
+
         self.selected_weekly_idx: Optional[int] = None
-        self.selected_action_idx: Optional[int] = None
+        self.selected_weekly_item: Optional[Dict[str, object]] = None
+        self._split_ratio = 0.5
+        self._drag_start_x: Optional[int] = None
+        self._drag_start_left: Optional[int] = None
+        self.dragged_row: Optional[Dict[str, object]] = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -50,280 +62,333 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
     def create_ui(self):
         header = ctk.CTkFrame(self)
-        header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        header.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         header.grid_columnconfigure(12, weight=1)
 
         ctk.CTkLabel(
             header,
-            text="APE Weekly",
+            text="APE Weekly Assignment",
             font=ctk.CTkFont(size=20, weight="bold"),
         ).grid(row=0, column=0, columnspan=13, padx=(10, 20), pady=(8, 6), sticky="w")
 
-        ctk.CTkLabel(header, text="Week Start:").grid(row=1, column=0, padx=(8, 5), pady=(0, 10), sticky="e")
-
-        self.week_combo = ctk.CTkComboBox(header, width=136, values=[""], variable=self.week_var)
-        self.week_combo.grid(row=1, column=1, padx=5, pady=(0, 10), sticky="w")
+        ctk.CTkLabel(header, text="Week Start:").grid(row=1, column=0, padx=(8, 5), pady=(0, 8), sticky="e")
+        self.week_combo = ctk.CTkComboBox(header, width=136, values=[""], variable=self.week_var, **combo_box_style())
+        self.week_combo.grid(row=1, column=1, padx=5, pady=(0, 8), sticky="w")
 
         ctk.CTkButton(header, text="Load", width=76, command=self.load_selected_week, **button_style("secondary")).grid(
-            row=1, column=2, padx=5, pady=(0, 10), sticky="w"
+            row=1, column=2, padx=5, pady=(0, 8), sticky="w"
+        )
+        ctk.CTkButton(header, text="This Week", width=86, command=self.jump_to_current_week, **button_style("secondary")).grid(
+            row=1, column=3, padx=5, pady=(0, 8), sticky="w"
+        )
+        ctk.CTkButton(header, text="Save", width=76, command=self.add_selected, **button_style("primary")).grid(
+            row=1, column=4, padx=(8, 5), pady=(0, 8), sticky="w"
+        )
+        ctk.CTkButton(header, text="Refresh", width=86, command=self.refresh, **button_style("secondary")).grid(
+            row=1, column=5, padx=5, pady=(0, 8), sticky="w"
         )
 
-        ctk.CTkButton(header, text="This Week", width=76, command=self.jump_to_current_week, **button_style("secondary")).grid(
-            row=1, column=3, padx=5, pady=(0, 10), sticky="w"
-        )
-        ctk.CTkLabel(header, text="Segment:").grid(row=1, column=4, padx=(10, 4), pady=(0, 10), sticky="e")
+        ctk.CTkLabel(header, text="Segment:").grid(row=1, column=6, padx=(10, 4), pady=(0, 8), sticky="e")
         self.segment_filter_combo = ctk.CTkComboBox(
-            header, width=150, values=["All"], variable=self.segment_filter_var, command=lambda _v: self.on_filters_changed()
+            header,
+            width=150,
+            values=["All"],
+            variable=self.segment_filter_var,
+            command=lambda _v: self.on_filters_changed(),
+            **combo_box_style(),
         )
-        self.segment_filter_combo.grid(row=1, column=5, padx=4, pady=(0, 10), sticky="w")
-        ctk.CTkLabel(header, text="Sub:").grid(row=1, column=6, padx=(8, 4), pady=(0, 10), sticky="e")
-        self.subsegment_filter_combo = ctk.CTkComboBox(
-            header, width=150, values=["All"], variable=self.subsegment_filter_var, command=lambda _v: self.on_filters_changed()
-        )
-        self.subsegment_filter_combo.grid(row=1, column=7, padx=4, pady=(0, 10), sticky="w")
-        ctk.CTkLabel(header, text="Cat:").grid(row=1, column=8, padx=(8, 4), pady=(0, 10), sticky="e")
-        self.category_filter_combo = ctk.CTkComboBox(
-            header, width=150, values=["All"], variable=self.category_filter_var, command=lambda _v: self.on_filters_changed()
-        )
-        self.category_filter_combo.grid(row=1, column=9, padx=4, pady=(0, 10), sticky="w")
+        self.segment_filter_combo.grid(row=1, column=7, padx=4, pady=(0, 8), sticky="w")
 
-        self.status_label = ctk.CTkLabel(header, text="", text_color="gray")
-        self.status_label.grid(row=1, column=10, columnspan=3, sticky="w", padx=10, pady=(0, 10))
+        ctk.CTkLabel(header, text="Sub:").grid(row=1, column=8, padx=(8, 4), pady=(0, 8), sticky="e")
+        self.subsegment_filter_combo = ctk.CTkComboBox(
+            header,
+            width=150,
+            values=["All"],
+            variable=self.subsegment_filter_var,
+            command=lambda _v: self.on_filters_changed(),
+            **combo_box_style(),
+        )
+        self.subsegment_filter_combo.grid(row=1, column=9, padx=4, pady=(0, 8), sticky="w")
+
+        ctk.CTkLabel(header, text="Cat:").grid(row=1, column=10, padx=(8, 4), pady=(0, 8), sticky="e")
+        self.category_filter_combo = ctk.CTkComboBox(
+            header,
+            width=150,
+            values=["All"],
+            variable=self.category_filter_var,
+            command=lambda _v: self.on_filters_changed(),
+            **combo_box_style(),
+        )
+        self.category_filter_combo.grid(row=1, column=11, padx=4, pady=(0, 8), sticky="w")
+
+        self.status_label = ctk.CTkLabel(header, text="", text_color=status_text_color("muted"))
+        self.status_label.grid(row=1, column=12, sticky="w", padx=10, pady=(0, 8))
 
         body = ctk.CTkFrame(self)
-        body.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
-        body.grid_columnconfigure(0, weight=1)
+        body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        body.grid_columnconfigure(0, weight=0, minsize=520)
+        body.grid_columnconfigure(1, weight=0, minsize=self.SPLITTER_WIDTH)
+        body.grid_columnconfigure(2, weight=0, minsize=520)
         body.grid_rowconfigure(1, weight=1)
-        palette = semantic_colors()
+        self.body = body
 
-        labels = ctk.CTkFrame(body, fg_color="transparent")
-        labels.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
-        labels.grid_columnconfigure(0, weight=1)
-        labels.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(labels, text="Weekly Tactics", font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=0, sticky="w"
+        self.left_title_label = ctk.CTkLabel(body, text="Month-assigned Annual Plan Elements", font=ctk.CTkFont(weight="bold"))
+        self.left_title_label.grid(row=0, column=0, sticky="w", padx=8, pady=(8, 4))
+        self.right_title_label = ctk.CTkLabel(body, text="Weekly Tactics", font=ctk.CTkFont(weight="bold"))
+        self.right_title_label.grid(row=0, column=2, sticky="w", padx=8, pady=(8, 4))
+
+        self.left_frame = ctk.CTkScrollableFrame(body, label_text="")
+        self.left_frame.grid(row=1, column=0, sticky="nsew")
+        self.left_frame.grid_columnconfigure(0, weight=1)
+
+        divider = ctk.CTkFrame(body, width=self.SPLITTER_WIDTH, corner_radius=999, fg_color=semantic_colors()["border"])
+        divider.grid(row=1, column=1, sticky="ns", padx=4, pady=4)
+        divider.bind("<ButtonPress-1>", self._on_divider_press)
+        divider.bind("<B1-Motion>", self._on_divider_drag)
+        divider.bind("<ButtonRelease-1>", self._on_divider_release)
+
+        self.right_frame = ctk.CTkFrame(body)
+        self.right_frame.grid(row=1, column=2, sticky="nsew")
+        self.right_frame.grid_columnconfigure(0, weight=1)
+        self.right_frame.grid_rowconfigure(0, weight=1)
+
+        self.right_list = ctk.CTkScrollableFrame(self.right_frame, label_text="")
+        self.right_list.grid(row=0, column=0, sticky="nsew")
+        self.right_list.grid_columnconfigure(0, weight=1)
+
+        right_actions = ctk.CTkFrame(self.right_frame)
+        right_actions.grid(row=1, column=0, sticky="w", padx=4, pady=(6, 4))
+        ctk.CTkButton(right_actions, text="Edit Weekly Tactic", command=self.open_selected_weekly_item, width=150, **button_style("secondary")).pack(
+            side="left", padx=6, pady=6
         )
-        ctk.CTkLabel(labels, text="Related Action Items", font=ctk.CTkFont(weight="bold")).grid(
-            row=0, column=1, sticky="w", padx=(8, 0)
+        ctk.CTkButton(right_actions, text="Delete Weekly", command=self.delete_selected_weekly_item, width=130, **button_style("danger")).pack(
+            side="left", padx=6, pady=6
+        )
+        ctk.CTkButton(right_actions, text="Add Action Item", command=self.create_action_item_for_selected_weekly, width=130, **button_style("primary")).pack(
+            side="left", padx=6, pady=6
         )
 
-        self.splitter = tk.PanedWindow(
-            body,
-            orient=tk.HORIZONTAL,
-            sashwidth=8,
-            sashrelief=tk.RAISED,
-            bd=0,
-            bg=palette["surface_subtle"],
-        )
-        self.splitter.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-
-        left = ctk.CTkFrame(self.splitter)
-        left.grid_rowconfigure(0, weight=1)
-        left.grid_columnconfigure(0, weight=1)
-
-        right = ctk.CTkFrame(self.splitter)
-        right.grid_rowconfigure(0, weight=1)
-        right.grid_columnconfigure(0, weight=1)
-        self.splitter.add(left, minsize=320)
-        self.splitter.add(right, minsize=320)
-
-        self.weekly_list = ctk.CTkScrollableFrame(left, label_text="")
-        self.weekly_list.grid(row=0, column=0, sticky="nsew")
-        self.weekly_list.grid_columnconfigure(0, weight=1)
-
-        self.actions_list = ctk.CTkScrollableFrame(right, label_text="")
-        self.actions_list.grid(row=0, column=0, sticky="nsew")
-        self.actions_list.grid_columnconfigure(0, weight=1)
-
-        left_actions = ctk.CTkFrame(left)
-        left_actions.grid(row=1, column=0, sticky="w", padx=4, pady=(4, 4))
-
-        ctk.CTkButton(
-            left_actions,
-            text="Edit Week Tactic",
-            command=self.open_selected_weekly_item,
-            width=140,
-            **button_style("secondary"),
-        ).pack(side="left", padx=6, pady=6)
-
-        ctk.CTkButton(
-            left_actions,
-            text="Delete Weekly",
-            command=self.delete_selected_weekly_item,
-            width=130,
-            **button_style("danger"),
-        ).pack(side="left", padx=6, pady=6)
-
-        right_actions = ctk.CTkFrame(right)
-        right_actions.grid(row=1, column=0, sticky="w", padx=4, pady=(4, 4))
-
-        ctk.CTkButton(
-            right_actions,
-            text="Add Action Item",
-            command=self.create_action_item_for_selected_weekly,
-            width=130,
-            **button_style("primary"),
-        ).pack(side="left", padx=6, pady=6)
-
-        ctk.CTkButton(
-            right_actions,
-            text="Open Action",
-            command=self.open_selected_action_item,
-            width=120,
-            **button_style("secondary"),
-        ).pack(side="left", padx=6, pady=6)
-
-        self.after(100, self._init_splitter_position)
-
-    def _init_splitter_position(self):
-        if not hasattr(self, "splitter"):
-            return
-        width = self.splitter.winfo_width()
-        if width <= 0:
-            self.after(100, self._init_splitter_position)
-            return
-        self.splitter.sash_place(0, int(width * 0.58), 0)
+        self.body.bind("<Configure>", self._on_body_resize)
+        self.after(100, self._apply_split_ratio)
 
     def refresh(self):
         self.segment_colors, self.subsegment_colors = load_latest_lineage_color_maps(self.vps_manager)
         self.category_colors = {
-            (
-                (r.get("segment_name", "") or "").strip().lower(),
-                (r.get("subsegment_name", "") or "").strip().lower(),
-                (r.get("name", "") or "").strip().lower(),
-            ): (r.get("color_hex") or "")
+            ((r.get("segment_name", "") or "").strip().lower(), (r.get("subsegment_name", "") or "").strip().lower(), (r.get("name", "") or "").strip().lower()): (r.get("color_hex") or "")
             for r in self.vps_manager.get_vision_categories()
         }
         weekly_items = self.vps_manager.get_weekly_action_items(ape_only=True)
-        unique_starts = sorted({wi["start_date"] for wi in weekly_items if wi.get("start_date")})
-        unique_starts.reverse()
-        self.week_options = unique_starts
-
-        if not self.week_options:
-            self.week_combo.configure(values=[""])
-            self.week_var.set("")
-            self._clear_scroll(self.weekly_list)
-            self._clear_scroll(self.actions_list)
-            self.status_label.configure(text="No weekly action items found.")
-            return
-
-        self.week_combo.configure(values=self.week_options)
+        existing_starts = sorted({wi["start_date"] for wi in weekly_items if wi.get("start_date")}, reverse=True)
+        self.week_options = self._build_selectable_week_options(existing_starts)
+        self.week_combo.configure(values=self.week_options or [""])
         if self.week_var.get() not in self.week_options:
-            self.week_var.set(self.week_options[0])
-
+            self.week_var.set(self.week_options[0] if self.week_options else "")
         self.load_selected_week()
 
-    def jump_to_current_week(self):
-        today = date.today()
-        current_week_start = (today - timedelta(days=today.weekday())).isoformat()
+    def load_selected_week(self):
+        parsed = self._selected_week_context()
+        if not parsed:
+            self.left_items = []
+            self.right_items = []
+            self._render_lists()
+            self.status_label.configure(text="Choose a Week Start.")
+            return
 
+        week_start, year, quarter, month = parsed
+        self.left_items = self.vps_manager.get_annual_plan_elements_for_period(year, quarter, month)
+        all_weekly_items = self.vps_manager.get_weekly_action_items(week_start_date=week_start, ape_only=True)
+
+        self._refresh_filter_options(self.left_items, all_weekly_items)
+        self.left_items = [row for row in self.left_items if self._ape_matches_filters(row)]
+        self.right_items = [row for row in all_weekly_items if self._weekly_matches_filters(row)]
+
+        self.selected_weekly_idx = None
+        self.selected_weekly_item = None
+        self._render_lists()
+        self.left_title_label.configure(text=f"Month-assigned APEs for {year}-{month:02d}")
+        self.right_title_label.configure(text=f"Weekly Tactics for {week_start}")
+        self.status_label.configure(text=f"{len(self.left_items)} month item(s) on left, {len(self.right_items)} weekly tactic(s) on right")
+
+    def jump_to_current_week(self):
+        current_week_start = self._week_start_for(date.today()).isoformat()
         if current_week_start in self.week_options:
             self.week_var.set(current_week_start)
             self.load_selected_week()
-        else:
-            messagebox.showinfo("Week Not Found", "No weekly items exist for the current week.")
 
-    def load_selected_week(self):
+    def _selected_week_context(self) -> Optional[tuple[str, int, int, int]]:
         week_start = self.week_var.get().strip()
         if not week_start:
-            return
+            return None
+        week_date = date.fromisoformat(week_start)
+        year = week_date.year
+        month = week_date.month
+        quarter = ((month - 1) // 3) + 1
+        return week_start, year, quarter, month
 
-        self.all_weekly_items = self.vps_manager.get_weekly_action_items(
-            week_start_date=week_start,
-            ape_only=True,
-        )
-        self._refresh_filter_options()
-        self.weekly_items = self._filtered_weekly_items()
+    def _first_day_of_week(self) -> int:
+        try:
+            settings = getattr(self.app, "settings", None) or AppSettings.load()
+            value = int(getattr(settings, "first_day_of_week", 0))
+        except Exception:
+            value = 0
+        return value if 0 <= value <= 6 else 0
 
-        self._clear_scroll(self.weekly_list)
-        self._clear_scroll(self.actions_list)
-        self.related_actions = []
-        self.selected_weekly_item = None
-        self.selected_weekly_idx = None
-        self.selected_action_idx = None
+    def _week_start_for(self, target_date: date) -> date:
+        first_day = self._first_day_of_week()
+        offset = (target_date.weekday() - first_day) % 7
+        return target_date - timedelta(days=offset)
 
-        self._render_weekly_rows(week_start)
+    def _build_selectable_week_options(self, existing_starts: List[str]) -> List[str]:
+        current_start = self._week_start_for(date.today())
+        options = [(current_start + timedelta(days=7 * index)).isoformat() for index in range(4)]
+        for week_start in existing_starts:
+            if week_start not in options:
+                options.append(week_start)
+        return options
 
-        self.status_label.configure(
-            text=f"{len(self.weekly_items)} weekly item(s) for {week_start}"
-        )
+    def _refresh_filter_options(self, left_rows: List[Dict[str, object]], right_rows: List[Dict[str, object]]):
+        combined_parts = [self._ape_parts(row) for row in left_rows] + [self._weekly_parts(row) for row in right_rows]
+        seg_values = sorted({part[0] for part in combined_parts if part[0] and part[0] != "-"}, key=str.lower)
+        sub_values = sorted({part[1] for part in combined_parts if part[1] and part[1] != "-"}, key=str.lower)
+        cat_values = sorted({part[2] for part in combined_parts if part[2] and part[2] != "-"}, key=str.lower)
+        self._configure_filter_combo(self.segment_filter_combo, self.segment_filter_var, ["All"] + seg_values)
+        self._configure_filter_combo(self.subsegment_filter_combo, self.subsegment_filter_var, ["All"] + sub_values)
+        self._configure_filter_combo(self.category_filter_combo, self.category_filter_var, ["All"] + cat_values)
 
-    def _filtered_weekly_items(self) -> List[Dict[str, Any]]:
-        seg = self.segment_filter_var.get().strip()
-        sub = self.subsegment_filter_var.get().strip()
-        cat = self.category_filter_var.get().strip()
-        rows = self.all_weekly_items
-        if seg and seg != "All":
-            rows = [r for r in rows if self._weekly_parts(r)[0] == seg]
-        if sub and sub != "All":
-            rows = [r for r in rows if self._weekly_parts(r)[1] == sub]
-        if cat and cat != "All":
-            rows = [r for r in rows if self._weekly_parts(r)[2] == cat]
-        return rows
-
-    def _refresh_filter_options(self):
-        rows = self.all_weekly_items
-        parts = [self._weekly_parts(r) for r in rows]
-        seg_values = sorted({p[0] for p in parts if p[0] and p[0] != "-"}, key=str.lower)
-        seg_combo_values = ["All"] + seg_values
-        current_seg = self.segment_filter_var.get().strip() or "All"
-        if current_seg not in seg_combo_values:
-            current_seg = "All"
-            self.segment_filter_var.set(current_seg)
-        self.segment_filter_combo.configure(values=seg_combo_values)
-
-        sub_source = [p for p in parts if current_seg == "All" or p[0] == current_seg]
-        sub_values = sorted({p[1] for p in sub_source if p[1] and p[1] != "-"}, key=str.lower)
-        sub_combo_values = ["All"] + sub_values
-        current_sub = self.subsegment_filter_var.get().strip() or "All"
-        if current_sub not in sub_combo_values:
-            current_sub = "All"
-            self.subsegment_filter_var.set(current_sub)
-        self.subsegment_filter_combo.configure(values=sub_combo_values)
-
-        cat_source = [p for p in sub_source if current_sub == "All" or p[1] == current_sub]
-        cat_values = sorted({p[2] for p in cat_source if p[2] and p[2] != "-"}, key=str.lower)
-        cat_combo_values = ["All"] + cat_values
-        current_cat = self.category_filter_var.get().strip() or "All"
-        if current_cat not in cat_combo_values:
-            current_cat = "All"
-            self.category_filter_var.set(current_cat)
-        self.category_filter_combo.configure(values=cat_combo_values)
+    @staticmethod
+    def _configure_filter_combo(combo: ctk.CTkComboBox, variable: ctk.StringVar, values: List[str]):
+        current = variable.get().strip() or "All"
+        if current not in values:
+            current = "All"
+            variable.set(current)
+        combo.configure(values=values)
 
     def on_filters_changed(self):
-        self._refresh_filter_options()
-        self.weekly_items = self._filtered_weekly_items()
-        self.selected_weekly_item = None
-        self.selected_weekly_idx = None
-        self.selected_action_idx = None
-        self.related_actions = []
-        self._render_weekly_rows(self.week_var.get().strip())
-        self._clear_scroll(self.actions_list)
-        week_start = self.week_var.get().strip()
-        if week_start:
-            self.status_label.configure(text=f"{len(self.weekly_items)} weekly item(s) for {week_start}")
+        self.load_selected_week()
 
-    def on_select_weekly_item(self, idx: int):
-        if idx < 0 or idx >= len(self.weekly_items):
+    def add_selected(self):
+        parsed = self._selected_week_context()
+        if not parsed:
+            messagebox.showwarning("No Week Selected", "Choose a Week Start first.")
+            return
+        week_start, year, _quarter, month = parsed
+        selected_ids = [ape_id for ape_id, var in self.left_checks.items() if var.get()]
+        if not selected_ids:
+            messagebox.showwarning("No APE Selected", "Check one or more month-assigned APEs on the left first.")
             return
 
+        created = 0
+        skipped = 0
+        for ape_id in selected_ids:
+            result = self.vps_manager.create_week_action_items_for_ape(ape_id, year, month, [week_start])
+            created += int(result.get("created_count", 0))
+            skipped += int(result.get("skipped_count", 0))
+
+        self.refresh()
+        self.status_label.configure(text=f"Created {created} weekly tactic(s); skipped {skipped} existing item(s).")
+
+    def _render_lists(self):
+        self._clear_scroll(self.left_frame)
+        self._clear_scroll(self.right_list)
+        self.left_checks = {}
+        self._render_left_rows()
+        self._render_right_rows()
+
+    def _render_left_rows(self):
+        if not self.left_items:
+            ctk.CTkLabel(self.left_frame, text="No month-assigned Annual Plan Elements match the current week/filter.", text_color=status_text_color("muted")).grid(
+                row=0, column=0, pady=20, padx=10, sticky="w"
+            )
+            return
+
+        palette = semantic_colors()
+        header = ctk.CTkFrame(self.left_frame, fg_color=palette["surface_subtle"])
+        header.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 4))
+        header.grid_columnconfigure(4, weight=1)
+        ctk.CTkLabel(header, text="Pick", width=52, font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5)
+        ctk.CTkLabel(header, text="#", width=self.INDEX_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="Segment", width=self.SEGMENT_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="SubSegment", width=self.SUBSEGMENT_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="Category", width=self.CATEGORY_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+
+        for idx, row in enumerate(self.left_items, start=1):
+            segment_name, subsegment_name, category_name = self._ape_parts(row)
+            segment_color, subsegment_color = resolve_lineage_colors(segment_name, subsegment_name, self.vps_manager, self.segment_colors, self.subsegment_colors)
+            category_color = self.category_colors.get((segment_name.strip().lower(), subsegment_name.strip().lower(), category_name.strip().lower()), "") or subsegment_color
+
+            item = ctk.CTkFrame(self.left_frame)
+            item.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            item.grid_columnconfigure(4, weight=1)
+
+            checked = ctk.BooleanVar(value=False)
+            self.left_checks[row["id"]] = checked
+            ctk.CTkCheckBox(item, text="", variable=checked, width=30).grid(row=0, column=0, padx=5, pady=5)
+            index_label = ctk.CTkLabel(item, text=str(idx), width=self.INDEX_COL_WIDTH, anchor="w")
+            index_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            seg_chip = ctk.CTkLabel(item, text=f" {self._clip_label(segment_name, 18)} ", width=self.SEGMENT_COL_WIDTH, fg_color=segment_color, text_color=pick_text_color(segment_color), corner_radius=6, anchor="w")
+            seg_chip.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+            sub_chip = ctk.CTkLabel(item, text=f" {self._clip_label(subsegment_name, 18)} ", width=self.SUBSEGMENT_COL_WIDTH, fg_color=subsegment_color, text_color=pick_text_color(subsegment_color), corner_radius=6, anchor="w")
+            sub_chip.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+            cat_chip = ctk.CTkLabel(item, text=f" {self._clip_label(category_name, 18)} ", width=self.CATEGORY_COL_WIDTH, fg_color=category_color, text_color=pick_text_color(category_color), corner_radius=6, anchor="w")
+            cat_chip.grid(row=0, column=4, padx=5, pady=5, sticky="w")
+            self._bind_drag_widgets((item, index_label, seg_chip, sub_chip, cat_chip), row)
+
+    def _render_right_rows(self):
+        if not self.right_items:
+            ctk.CTkLabel(self.right_list, text="No weekly tactics exist for the selected week yet.", text_color=status_text_color("muted")).grid(
+                row=0, column=0, pady=20, padx=10, sticky="w"
+            )
+            return
+
+        palette = semantic_colors()
+        row_text = palette["row_text"]
+        header = ctk.CTkFrame(self.right_list, fg_color=palette["surface_subtle"])
+        header.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 4))
+        header.grid_columnconfigure(3, weight=1)
+        ctk.CTkLabel(header, text="#", width=self.INDEX_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="Segment", width=self.SEGMENT_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="SubSegment", width=self.SUBSEGMENT_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(header, text="Category", width=self.CATEGORY_COL_WIDTH, font=ctk.CTkFont(weight="bold"), anchor="w").grid(row=0, column=3, padx=5, pady=5, sticky="w")
+
+        for idx, row in enumerate(self.right_items, start=1):
+            segment_name, subsegment_name, category_name = self._weekly_parts(row)
+            segment_color, subsegment_color = resolve_lineage_colors(segment_name, subsegment_name, self.vps_manager, self.segment_colors, self.subsegment_colors)
+            category_color = self.category_colors.get((segment_name.strip().lower(), subsegment_name.strip().lower(), category_name.strip().lower()), "") or subsegment_color
+            bg = palette["selected_tint"] if idx - 1 == self.selected_weekly_idx else None
+
+            item = ctk.CTkFrame(self.right_list, fg_color=bg, border_width=2, border_color=segment_color)
+            item.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
+            item.grid_columnconfigure(3, weight=1)
+            index_label = ctk.CTkLabel(item, text=str(idx), width=self.INDEX_COL_WIDTH, anchor="w", text_color=row_text)
+            index_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+            seg_chip = ctk.CTkLabel(item, text=f" {self._clip_label(segment_name, 18)} ", width=self.SEGMENT_COL_WIDTH, fg_color=segment_color, text_color=pick_text_color(segment_color), corner_radius=6, anchor="w")
+            seg_chip.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+            sub_chip = ctk.CTkLabel(item, text=f" {self._clip_label(subsegment_name, 18)} ", width=self.SUBSEGMENT_COL_WIDTH, fg_color=subsegment_color, text_color=pick_text_color(subsegment_color), corner_radius=6, anchor="w")
+            sub_chip.grid(row=0, column=2, padx=5, pady=5, sticky="w")
+            cat_chip = ctk.CTkLabel(item, text=f" {self._clip_label(category_name, 18)} ", width=self.CATEGORY_COL_WIDTH, fg_color=category_color, text_color=pick_text_color(category_color), corner_radius=6, anchor="w")
+            cat_chip.grid(row=0, column=3, padx=5, pady=5, sticky="w")
+            for widget in (item, index_label, seg_chip, sub_chip, cat_chip):
+                widget.bind("<Button-1>", lambda _e, i=idx - 1: self.on_select_weekly_item(i))
+                widget.bind("<Double-Button-1>", lambda _e, i=idx - 1: self._open_weekly_from_index(i))
+
+    def on_select_weekly_item(self, idx: int):
+        if idx < 0 or idx >= len(self.right_items):
+            return
         self.selected_weekly_idx = idx
-        self.selected_weekly_item = self.weekly_items[idx]
-        self._render_weekly_rows(self.week_var.get().strip())
-        self.related_actions = self.vps_manager.get_related_actions_for_weekly_item(self.selected_weekly_item["id"])
-        self.selected_action_idx = None
+        self.selected_weekly_item = self.right_items[idx]
+        self._render_right_rows()
 
-        self._render_action_rows()
-
-        self.status_label.configure(
-            text=f"{len(self.related_actions)} related action item(s) for selected weekly item"
-        )
+    def _open_weekly_from_index(self, idx: int):
+        self.on_select_weekly_item(idx)
+        self.open_selected_weekly_item()
 
     def create_action_item_for_selected_weekly(self):
         if not self.selected_weekly_item:
-            messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
+            messagebox.showwarning("No Weekly Item Selected", "Select a weekly tactic on the right first.")
             return
+
         from ..models import ActionItem
+        from .title_format import build_action_item_title, split_action_item_title
 
         dialog = ctk.CTkInputDialog(text="Immediate Step:", title="New Related Action")
         title = (dialog.get_input() or "").strip()
@@ -332,15 +397,9 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
         weekly = self.selected_weekly_item
         weekly_title = self.vps_manager.normalize_week_token((weekly.get("title") or "").strip())
-        weekly_title_short = self._shorten_pipe_prefix(weekly_title)
+        weekly_title_short = self.vps_manager.shorten_pipe_prefix(weekly_title)
         parsed = split_action_item_title(weekly_title_short)
-        context = parsed.context
-        if not context:
-            match = re.match(r"^\s*(.+?\bW\s*\d+\b)", weekly_title_short, flags=re.IGNORECASE)
-            if match:
-                context = (match.group(1) or "").strip()
-        context = re.sub(r"\s*[-–—]?\s*\(\d{4}-\d{2}-\d{2}\)\s*$", "", context or "").strip()
-        full_title = build_action_item_title(context, title)
+        full_title = build_action_item_title(parsed.context, title)
         item = ActionItem(
             who=weekly.get("who") or "",
             title=full_title,
@@ -353,213 +412,100 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             item_type="daily",
         )
         self.app.db_manager.create_action_item(item, apply_defaults=False)
-        self.on_action_editor_closed()
-
-    def _shorten_pipe_prefix(self, text: str) -> str:
-        return self.vps_manager.shorten_pipe_prefix(text)
+        self.status_label.configure(text="Added a related Action Item for the selected weekly tactic.")
 
     def open_selected_weekly_item(self):
-        """Open the selected weekly action item in the editor."""
         if not self.selected_weekly_item:
-            messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
+            messagebox.showwarning("No Weekly Item Selected", "Select a weekly tactic on the right first.")
             return
-
         from .item_editor import ItemEditorDialog
-
-        ItemEditorDialog(
-            self,
-            self.app.db_manager,
-            item_id=self.selected_weekly_item["id"],
-            vps_manager=self.vps_manager,
-            on_close_callback=self.on_action_editor_closed,
-        )
+        ItemEditorDialog(self, self.app.db_manager, item_id=self.selected_weekly_item["id"], vps_manager=self.vps_manager, on_close_callback=self.on_weekly_editor_closed)
 
     def delete_selected_weekly_item(self):
         if not self.selected_weekly_item:
-            messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
+            messagebox.showwarning("No Weekly Item Selected", "Select a weekly tactic on the right first.")
             return
-        title = (self.selected_weekly_item.get("title") or "this weekly item").strip()
-        if not messagebox.askyesno(
-            "Delete Weekly Item",
-            f"Delete {title} and related action items?",
-            icon="warning",
-        ):
+        title = (self.selected_weekly_item.get("title") or "this weekly tactic").strip()
+        if not messagebox.askyesno("Delete Weekly Tactic", f"Delete {title} and related action items?", icon="warning"):
             return
-        weekly_id = self.selected_weekly_item["id"]
-        if self.vps_manager.delete_weekly_action_item(weekly_id):
+        if self.vps_manager.delete_weekly_action_item(self.selected_weekly_item["id"]):
             self.refresh()
         else:
-            messagebox.showerror("Delete Failed", "Weekly item could not be deleted.")
+            messagebox.showerror("Delete Failed", "Weekly tactic could not be deleted.")
 
-    def on_action_editor_closed(self):
-        if self.selected_weekly_item:
-            self.related_actions = self.vps_manager.get_related_actions_for_weekly_item(self.selected_weekly_item["id"])
-            self.selected_action_idx = None
-            self._render_action_rows()
+    def on_weekly_editor_closed(self):
+        self.refresh()
 
-    def open_selected_action_item(self, _event=None):
-        if not self.related_actions:
+    def _start_row_drag(self, row: Dict[str, object]):
+        self.dragged_row = row
+        self.winfo_toplevel().bind("<ButtonRelease-1>", self._finish_row_drag)
+
+    def _finish_row_drag(self, _event):
+        self.winfo_toplevel().unbind("<ButtonRelease-1>")
+        if not self.dragged_row:
             return
-        if self.selected_action_idx is None:
+        pointer_x, pointer_y = self.winfo_pointerxy()
+        target = self.winfo_containing(pointer_x, pointer_y)
+        row = self.dragged_row
+        self.dragged_row = None
+        if self._is_descendant(target, self.right_list):
+            parsed = self._selected_week_context()
+            if parsed:
+                week_start, year, _quarter, month = parsed
+                result = self.vps_manager.create_week_action_items_for_ape(row["id"], year, month, [week_start])
+                if result.get("created_count"):
+                    self.refresh()
+
+    def _bind_drag_widgets(self, widgets: tuple, row: Dict[str, object]):
+        for widget in widgets:
+            widget.bind("<ButtonPress-1>", lambda _event, r=row: self._start_row_drag(r))
+
+    def _on_body_resize(self, _event):
+        if self._drag_start_x is None:
+            self._apply_split_ratio()
+
+    def _on_divider_press(self, event):
+        self._drag_start_x = event.x_root
+        self._drag_start_left = self.left_frame.winfo_width()
+
+    def _on_divider_drag(self, event):
+        if self._drag_start_x is None or self._drag_start_left is None:
             return
-        idx = self.selected_action_idx
-        if idx < 0 or idx >= len(self.related_actions):
+        total = self.body.winfo_width() - self.SPLITTER_WIDTH
+        if total <= 0:
             return
+        left = self._drag_start_left + (event.x_root - self._drag_start_x)
+        max_left = max(self.MIN_PANEL_WIDTH, total - self.MIN_PANEL_WIDTH)
+        left = max(self.MIN_PANEL_WIDTH, min(max_left, left))
+        self._split_ratio = left / total
+        self._apply_split_ratio()
 
-        action_id = self.related_actions[idx]["id"]
+    def _on_divider_release(self, _event):
+        self._drag_start_x = None
+        self._drag_start_left = None
 
-        from .item_editor import ItemEditorDialog
+    def _apply_split_ratio(self):
+        total = self.body.winfo_width() - self.SPLITTER_WIDTH
+        if total <= 0:
+            return
+        max_left = max(self.MIN_PANEL_WIDTH, total - self.MIN_PANEL_WIDTH)
+        left = int(total * self._split_ratio)
+        left = max(self.MIN_PANEL_WIDTH, min(max_left, left))
+        right = total - left
+        self.body.grid_columnconfigure(0, minsize=left)
+        self.body.grid_columnconfigure(2, minsize=right)
 
-        ItemEditorDialog(
-            self,
-            self.app.db_manager,
-            item_id=action_id,
-            vps_manager=self.vps_manager,
-            on_close_callback=self.on_action_editor_closed,
-        )
+    @staticmethod
+    def _is_descendant(widget, ancestor) -> bool:
+        current = widget
+        while current is not None:
+            if current == ancestor:
+                return True
+            current = getattr(current, "master", None)
+        return False
 
-    def _render_weekly_rows(self, week_start: str):
-        self._clear_scroll(self.weekly_list)
-        palette = semantic_colors()
-        col_widths = {
-            "index": 34,
-            "segment": 135,
-            "subsegment": 155,
-            "category": 125,
-        }
-
-        header = ctk.CTkFrame(self.weekly_list, fg_color=palette["surface_subtle"])
-        header.grid(row=0, column=0, sticky="ew", padx=4, pady=(0, 4))
-        header.grid_columnconfigure(0, minsize=col_widths["index"])
-        header.grid_columnconfigure(1, minsize=col_widths["segment"])
-        header.grid_columnconfigure(2, minsize=col_widths["subsegment"])
-        header.grid_columnconfigure(3, minsize=col_widths["category"])
-        header.grid_columnconfigure(4, weight=1)
-        ctk.CTkLabel(header, text="#", width=col_widths["index"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
-            row=0, column=0, padx=5, pady=5, sticky="w"
-        )
-        ctk.CTkLabel(header, text="Segment", width=col_widths["segment"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
-            row=0, column=1, padx=5, pady=5, sticky="w"
-        )
-        ctk.CTkLabel(header, text="SubSegment", width=col_widths["subsegment"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
-            row=0, column=2, padx=5, pady=5, sticky="w"
-        )
-        ctk.CTkLabel(header, text="Category", width=col_widths["category"], font=ctk.CTkFont(weight="bold"), anchor="w").grid(
-            row=0, column=3, padx=5, pady=5, sticky="w"
-        )
-
-        for idx, wi in enumerate(self.weekly_items):
-            segment_name, subsegment_name, category_name = self._weekly_parts(wi)
-            color, subsegment_color = resolve_lineage_colors(
-                segment_name,
-                subsegment_name,
-                self.vps_manager,
-                self.segment_colors,
-                self.subsegment_colors,
-            )
-            category_color = self.category_colors.get(
-                (
-                    segment_name.strip().lower(),
-                    subsegment_name.strip().lower(),
-                    category_name.strip().lower(),
-                ),
-                "",
-            ) or subsegment_color
-            bg = palette["selected_tint"] if idx == self.selected_weekly_idx else palette["surface_subtle"]
-
-            row = ctk.CTkFrame(
-                self.weekly_list,
-                fg_color=bg,
-                border_width=2,
-                border_color=color,
-            )
-            row.grid(row=idx + 1, column=0, sticky="ew", padx=4, pady=2)
-            row.grid_columnconfigure(0, minsize=col_widths["index"])
-            row.grid_columnconfigure(1, minsize=col_widths["segment"])
-            row.grid_columnconfigure(2, minsize=col_widths["subsegment"])
-            row.grid_columnconfigure(3, minsize=col_widths["category"])
-            row.grid_columnconfigure(4, weight=1)
-
-            idx_label = ctk.CTkLabel(
-                row,
-                text=str(idx + 1),
-                width=col_widths["index"],
-                anchor="w",
-                text_color="black",
-            )
-            idx_label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
-            seg_chip = ctk.CTkLabel(
-                row,
-                text=f" {self._clip_label(segment_name, 15)} ",
-                fg_color=color,
-                text_color=pick_text_color(color),
-                corner_radius=6,
-                width=col_widths["segment"] - 12,
-                anchor="w",
-            )
-            seg_chip.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-            sub_chip = ctk.CTkLabel(
-                row,
-                text=f" {self._clip_label(subsegment_name, 15)} ",
-                fg_color=subsegment_color,
-                text_color=pick_text_color(subsegment_color),
-                corner_radius=6,
-                width=col_widths["subsegment"] - 12,
-                anchor="w",
-            )
-            sub_chip.grid(row=0, column=2, padx=5, pady=5, sticky="w")
-            cat_chip = ctk.CTkLabel(
-                row,
-                text=f" {self._clip_label(category_name, 15)} ",
-                fg_color=category_color,
-                text_color=pick_text_color(category_color),
-                corner_radius=6,
-                anchor="w",
-                width=col_widths["category"] - 12,
-            )
-            cat_chip.grid(row=0, column=3, padx=5, pady=5, sticky="w")
-            for widget in (row, idx_label, seg_chip, sub_chip, cat_chip):
-                widget.bind("<Button-1>", lambda _e, i=idx: self.on_select_weekly_item(i))
-
-    def _render_action_rows(self):
-        self._clear_scroll(self.actions_list)
-        palette = semantic_colors()
-        segment_name = ""
-        if self.selected_weekly_item:
-            segment_name = self.selected_weekly_item.get("ape_segment_name") or self.selected_weekly_item.get("who") or ""
-        color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
-        for idx, action in enumerate(self.related_actions):
-            title = (action.get("title") or "(untitled)").strip()
-            start = action.get("start_date") or ""
-            status = action.get("status") or "open"
-            bg = palette["selected_tint"] if idx == self.selected_action_idx else None
-
-            row = ctk.CTkFrame(
-                self.actions_list,
-                fg_color=bg,
-                border_width=2,
-                border_color=color,
-            )
-            row.grid(row=idx, column=0, sticky="ew", padx=4, pady=2)
-            row.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(row, text=str(idx + 1), width=30, text_color="black").grid(
-                row=0, column=0, padx=5, pady=5
-            )
-            lbl = ctk.CTkLabel(row, text=f"{title}  [{start}] ({status})", anchor="w", text_color="black")
-            lbl.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-            for widget in (row, lbl):
-                widget.bind("<Button-1>", lambda _e, i=idx: self._select_action(i))
-                widget.bind("<Double-Button-1>", lambda _e, i=idx: self._open_action_from_index(i))
-
-    def _select_action(self, idx: int):
-        self.selected_action_idx = idx
-        self._render_action_rows()
-
-    def _open_action_from_index(self, idx: int):
-        self.selected_action_idx = idx
-        self.open_selected_action_item()
-
-    def _clear_scroll(self, frame: ctk.CTkScrollableFrame):
+    @staticmethod
+    def _clear_scroll(frame: ctk.CTkScrollableFrame):
         for child in frame.winfo_children():
             child.destroy()
 
@@ -570,17 +516,36 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             return text
         return text[:limit - 1].rstrip() + "…"
 
-    def _weekly_parts(self, row: Dict[str, Any]) -> tuple[str, str, str]:
+    def _ape_matches_filters(self, row: Dict[str, object]) -> bool:
+        seg, sub, cat = self._ape_parts(row)
+        return self._parts_match_filters(seg, sub, cat)
+
+    def _weekly_matches_filters(self, row: Dict[str, object]) -> bool:
+        seg, sub, cat = self._weekly_parts(row)
+        return self._parts_match_filters(seg, sub, cat)
+
+    def _parts_match_filters(self, seg_name: str, sub_name: str, cat_name: str) -> bool:
+        seg = self.segment_filter_var.get().strip()
+        sub = self.subsegment_filter_var.get().strip()
+        cat = self.category_filter_var.get().strip()
+        if seg and seg != "All" and seg_name != seg:
+            return False
+        if sub and sub != "All" and sub_name != sub:
+            return False
+        if cat and cat != "All" and cat_name != cat:
+            return False
+        return True
+
+    @staticmethod
+    def _ape_parts(row: Dict[str, object]) -> tuple[str, str, str]:
+        return (
+            (row.get("segment_name") or "-").strip(),
+            (row.get("subsegment_name") or "-").strip(),
+            (row.get("category_name") or "-").strip(),
+        )
+
+    def _weekly_parts(self, row: Dict[str, object]) -> tuple[str, str, str]:
         seg = (row.get("ape_segment_name") or row.get("who") or "").strip()
         sub = (row.get("ape_subsegment_name") or "").strip()
         cat = (row.get("ape_category_name") or "").strip()
-        if seg and sub and cat:
-            return seg, sub, cat
-
-        title = (row.get("title") or "").strip()
-        parts = [p.strip() for p in title.split("|") if p.strip()]
-        if len(parts) >= 3:
-            seg = seg or parts[0]
-            sub = sub or parts[1]
-            cat = cat or parts[2].split(" - ")[0].strip()
         return seg or "-", sub or "-", cat or "-"
