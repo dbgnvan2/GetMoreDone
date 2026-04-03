@@ -150,16 +150,24 @@ Main area:
 - **Next item rows (left)** — What: draggable source records. Why: schedule items quickly.
   - Row height: uses the same `Drag Schedule box height (px)` setting for visual alignment with right-side boxes.
 - **Calendar tab** — What: Month-style calendar with clickable/drop-target day boxes. Why: Schedule by calendar instead of date list.
+- **Projects tab** — What: A list of active project boxes. Why: Drag action items onto a project to link them.
+  - Project box columns: Shows project title, planning lineage, and open item counts.
+  - Row height: 50% larger than date boxes for prominence.
+  - **No Project box** — What: A special box at the top of the project list. Why: See unlinked items or drag an item here to remove its project link.
 - **Future options (bottom)** — What: `Next Month`, `Next Quarter`, `Near Term`, `Long Term` boxes. Why: Fast scheduling to common future anchors.
 
 Drag behavior:
-- What: Drag an item title onto a date box.
-- Why: Sets both Start Date and Due Date to the drop date in one action.
+- **Drag onto Date** — What: Drag an item title onto a date box or calendar day. Why: Sets both Start Date and Due Date to the drop date.
+- **Drag onto Project** — What: Drag an item title onto a project box. Why: Links the item to that project and synchronizes its planning lineage (APE).
+- **Drag onto No Project** — What: Drag a linked item onto the "Unlinked" box. Why: Removes existing project links and clears planning lineage.
 
 Filtering behavior:
 - **Click a date box or calendar day** — What: Filters the left list to that specific date. Why: Inspect what is already scheduled there.
-- **Click the same date again** — What: Clears the date filter. Why: Return to the full view quickly.
-- **Resize divider** — What: Drag the center divider between left and right panels. Why: Give more space to either the item list or the date/calendar panel.
+- **Click a project box** — What: Filters the left list to show items linked to that project. Why: See the current project backlog.
+- **Click the same date/project again** — What: Clears the filter. Why: Return to the full view quickly.
+- **Project Sort** — What: Dropdown to sort projects by Title, Subsegment, or Category. Why: Find projects faster in long lists.
+- **Refresh** — What: Reloads the full visible range and clears all active date/project filters. Why: Reset back to the full scheduling set.
+- **Resize divider** — What: Drag the center divider between left and right panels. Why: Give more space to either the item list or the date/calendar/project panel.
 
 ### Projects
 - What: A board of project notes, with one note per Annual Plan Element (APE).

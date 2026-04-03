@@ -69,8 +69,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.selected_date_filter: Optional[str] = None
         self.selected_date_frames: dict[str, list[ctk.CTkFrame]] = {}
         self.date_frame_dates: dict[ctk.CTkFrame, str] = {}
+        self.project_boxes: list[dict] = []
+        self.project_box_ids: dict[ctk.CTkFrame, str] = {}
+        self.selected_project_id: Optional[str] = None
         self.segment_filter_var = ctk.StringVar(value="All")
         self.subsegment_filter_var = ctk.StringVar(value="All")
+        self.project_sort_var = ctk.StringVar(value="Title")
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -220,6 +224,24 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.calendar_tab.grid_rowconfigure(0, weight=1)
         self.calendar_tab.grid_columnconfigure(0, weight=1)
 
+        self.projects_tab = self.date_view_tabs.add("Projects")
+        self.projects_tab.grid_rowconfigure(1, weight=1)
+        self.projects_tab.grid_columnconfigure(0, weight=1)
+
+        self.project_controls = ctk.CTkFrame(self.projects_tab, fg_color="transparent")
+        self.project_controls.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 5))
+        
+        ctk.CTkLabel(self.project_controls, text="Sort Projects by:").pack(side="left", padx=(0, 5))
+        self.project_sort_combo = ctk.CTkComboBox(
+            self.project_controls,
+            values=["Title", "Subsegment", "Category"],
+            variable=self.project_sort_var,
+            width=140,
+            **combo_box_style(),
+            command=lambda _: self.refresh()
+        )
+        self.project_sort_combo.pack(side="left")
+
         self.dates_frame = ctk.CTkScrollableFrame(self.date_boxes_tab, label_text="")
         self.dates_frame.grid(row=0, column=0, sticky="nsew")
         self.dates_frame.grid_columnconfigure(0, weight=1)
@@ -228,6 +250,10 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.calendar_frame.grid(row=0, column=0, sticky="nsew")
         self.calendar_frame.grid_columnconfigure(0, weight=1)
         self.calendar_frame.grid_rowconfigure(1, weight=1)
+
+        self.projects_frame = ctk.CTkScrollableFrame(self.projects_tab, label_text="")
+        self.projects_frame.grid(row=1, column=0, sticky="nsew")
+        self.projects_frame.grid_columnconfigure(0, weight=1)
 
         self.splitter.add(left_frame, minsize=320)
         self.splitter.add(right_frame, minsize=320)
@@ -256,11 +282,15 @@ class DragScheduleScreen(ctk.CTkFrame):
             widget.destroy()
         for widget in self.calendar_frame.winfo_children():
             widget.destroy()
+        for widget in self.projects_frame.winfo_children():
+            widget.destroy()
 
         self.date_boxes = []
         self.date_box_colors = {}
         self.selected_date_frames = {}
         self.date_frame_dates = {}
+        self.project_boxes = []
+        self.project_box_ids = {}
 
         items = self.load_items()
         if not items:
@@ -297,9 +327,11 @@ class DragScheduleScreen(ctk.CTkFrame):
 
         self.build_date_boxes()
         self.build_calendar_view()
+        self.build_project_boxes()
 
     def refresh_all_dates(self):
         self.selected_date_filter = None
+        self.selected_project_id = None
         self.refresh()
 
     def _reload_lineage_maps(self):
@@ -333,6 +365,22 @@ class DragScheduleScreen(ctk.CTkFrame):
                 and self._item_matches_filters(item)
             ]
 
+        if self.selected_project_id:
+            if self.selected_project_id == "__none__":
+                unlinked = self.db_manager.get_unlinked_action_items(status_filter="open")
+                return [
+                    item for item in unlinked
+                    if (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
+                    and self._item_matches_filters(item)
+                ]
+            else:
+                return [
+                    item for item in self.db_manager.get_project_board_items(self.selected_project_id)
+                    if item.status == "open"
+                    and (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
+                    and self._item_matches_filters(item)
+                ]
+
         upcoming = self.db_manager.get_upcoming_items(n_days, who_filter)
         all_open = self.db_manager.get_all_items(
             status_filter="open",
@@ -348,6 +396,129 @@ class DragScheduleScreen(ctk.CTkFrame):
             if item.id not in no_date_ids:
                 items.append(item)
         return [item for item in items if self._item_matches_filters(item)]
+
+    def build_project_boxes(self):
+        projects = self.db_manager.get_project_boards(show_pending=True)
+        # Filter projects by current segment/subsegment filters if applicable
+        selected_segment = (self.segment_filter_var.get() or "All").strip()
+        selected_subsegment = (self.subsegment_filter_var.get() or "All").strip()
+        
+        filtered_projects = []
+        for p in projects:
+            if selected_segment != "All" and p.get("segment_name") != selected_segment:
+                continue
+            if selected_subsegment != "All" and p.get("subsegment_name") != selected_subsegment:
+                continue
+            filtered_projects.append(p)
+
+        # Apply sorting
+        sort_by = self.project_sort_var.get()
+        if sort_by == "Subsegment":
+            filtered_projects.sort(key=lambda x: ((x.get("subsegment_name") or "").lower(), (x.get("title") or "").lower()))
+        elif sort_by == "Category":
+            filtered_projects.sort(key=lambda x: ((x.get("category_name") or "").lower(), (x.get("title") or "").lower()))
+        else: # Title
+            filtered_projects.sort(key=lambda x: (x.get("title") or "").lower())
+
+        # "No Project" special filter box
+        unlinked_count = len(self.db_manager.get_unlinked_action_items(status_filter="open"))
+        no_project_color = self.palette["surface_subtle"]
+        no_project_text = pick_text_color(no_project_color)
+        project_box_height = int(self.date_box_height * 1.5)
+
+        no_project_frame = ctk.CTkFrame(self.projects_frame, height=project_box_height, fg_color=no_project_color)
+        no_project_frame.grid_propagate(False)
+        no_project_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        no_project_frame.grid_columnconfigure(0, weight=1)
+        no_project_frame.grid_rowconfigure(0, weight=1)
+        no_project_frame.grid_rowconfigure(1, weight=1)
+
+        label_np_title = ctk.CTkLabel(
+            no_project_frame,
+            text="Unlinked (No Project)",
+            font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+            text_color=no_project_text,
+            anchor="w"
+        )
+        label_np_title.grid(row=0, column=0, sticky="sw", padx=10, pady=(2, 0))
+
+        label_np_stats = ctk.CTkLabel(
+            no_project_frame,
+            text=f"{unlinked_count} unlinked items",
+            font=ctk.CTkFont(size=12),
+            text_color=no_project_text,
+            anchor="w"
+        )
+        label_np_stats.grid(row=1, column=0, sticky="nw", padx=10, pady=(0, 2))
+
+        for w in [no_project_frame, label_np_title, label_np_stats]:
+            w.bind("<ButtonPress-1>", lambda _e: self.on_project_target_click("__none__"))
+
+        self.project_boxes.append({"frame": no_project_frame, "id": "__none__"})
+        self.project_box_ids[no_project_frame] = "__none__"
+        self.date_box_colors[no_project_frame] = no_project_color
+        
+        is_np_selected = self.selected_project_id == "__none__"
+        no_project_frame.configure(
+            border_width=2 if is_np_selected else 0,
+            border_color=self.palette["primary"] if is_np_selected else self.palette["border"],
+        )
+
+        for i, row in enumerate(filtered_projects):
+            color = (row.get("category_color_hex") or "").strip() or self.palette["surface_subtle"]
+            text_color = pick_text_color(color)
+            
+            frame = ctk.CTkFrame(self.projects_frame, height=project_box_height, fg_color=color)
+            frame.grid_propagate(False)
+            frame.grid(row=i + 1, column=0, sticky="ew", padx=2, pady=2)
+            frame.grid_columnconfigure(0, weight=1)
+            frame.grid_rowconfigure(0, weight=1)
+            frame.grid_rowconfigure(1, weight=1)
+            
+            title = row.get("title") or "Untitled Project"
+            meta = f"{row.get('segment_name')} | {row.get('subsegment_name')} | {row.get('category_name')}"
+            stats = f"{row.get('open_item_count', 0)} open items"
+            
+            label_title = ctk.CTkLabel(
+                frame,
+                text=title,
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=text_color,
+                anchor="w"
+            )
+            label_title.grid(row=0, column=0, sticky="sw", padx=10, pady=(2, 0))
+            
+            label_meta = ctk.CTkLabel(
+                frame,
+                text=f"{meta}  ({stats})",
+                font=ctk.CTkFont(size=12),
+                text_color=text_color,
+                anchor="w"
+            )
+            label_meta.grid(row=1, column=0, sticky="nw", padx=10, pady=(0, 2))
+            
+            # Bind clicks for filtering
+            for w in [frame, label_title, label_meta]:
+                w.bind("<ButtonPress-1>", lambda _e, pid=row["id"]: self.on_project_target_click(pid))
+
+            self.project_boxes.append({"frame": frame, "id": row["id"]})
+            self.project_box_ids[frame] = row["id"]
+            self.date_box_colors[frame] = color # For hover effect
+            
+            # Highlight if selected
+            is_selected = self.selected_project_id == row["id"]
+            frame.configure(
+                border_width=2 if is_selected else 0,
+                border_color=self.palette["primary"] if is_selected else self.palette["border"],
+            )
+
+    def on_project_target_click(self, project_id: str):
+        if self.selected_project_id == project_id:
+            self.selected_project_id = None
+        else:
+            self.selected_project_id = project_id
+            self.selected_date_filter = None # Clear date filter when project is selected
+        self.refresh()
 
     @staticmethod
     def _lineage_from_structured_title(item: ActionItem) -> tuple[str, str, str]:
@@ -646,6 +817,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         frame.grid_columnconfigure(1, minsize=self.DATE_BOX_DATE_MIN_WIDTH)
         frame.grid_columnconfigure(2, minsize=self.DATE_BOX_ITEMS_MIN_WIDTH)
         frame.grid_columnconfigure(3, minsize=self.DATE_BOX_TIME_MIN_WIDTH, weight=1)
+        frame.grid_rowconfigure(0, weight=1)
 
     def _render_date_box_columns(
         self,
@@ -906,7 +1078,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         if not self.drag_item:
             return
 
-        target_date = self.get_drop_target_date()
+        target_date, target_project_id = self.get_drop_target()
         self.clear_hover_target()
 
         if target_date:
@@ -916,6 +1088,12 @@ class DragScheduleScreen(ctk.CTkFrame):
                 target_date,
                 "Drag-and-drop schedule"
             )
+            self.refresh()
+        elif target_project_id:
+            if target_project_id == "__none__":
+                self.db_manager.clear_item_project_links(self.drag_item.id)
+            else:
+                self.db_manager.link_item_to_project_exclusive(target_project_id, self.drag_item.id)
             self.refresh()
 
         if self.drag_label:
@@ -931,10 +1109,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         y = y_root - self.winfo_rooty() + 10
         self.drag_label.place(x=x, y=y)
 
-    def get_drop_target_date(self) -> Optional[str]:
+    def get_drop_target(self) -> tuple[Optional[str], Optional[str]]:
+        """Find the drop target under the mouse. Returns (date_str, project_id)."""
         x_root = self.winfo_pointerx()
         y_root = self.winfo_pointery()
 
+        # Check date boxes
         for box in self.date_boxes:
             frame = box["frame"]
             if not frame.winfo_ismapped():
@@ -944,14 +1124,28 @@ class DragScheduleScreen(ctk.CTkFrame):
             x2 = x1 + frame.winfo_width()
             y2 = y1 + frame.winfo_height()
             if x1 <= x_root <= x2 and y1 <= y_root <= y2:
-                return box["date"]
-        return None
+                return box["date"], None
+                
+        # Check project boxes
+        for box in self.project_boxes:
+            frame = box["frame"]
+            if not frame.winfo_ismapped():
+                continue
+            x1 = frame.winfo_rootx()
+            y1 = frame.winfo_rooty()
+            x2 = x1 + frame.winfo_width()
+            y2 = y1 + frame.winfo_height()
+            if x1 <= x_root <= x2 and y1 <= y_root <= y2:
+                return None, box["id"]
+                
+        return None, None
 
     def update_hover_target(self):
         x_root = self.winfo_pointerx()
         y_root = self.winfo_pointery()
         hovered = None
 
+        # Try date boxes
         for box in self.date_boxes:
             frame = box["frame"]
             if not frame.winfo_ismapped():
@@ -963,6 +1157,20 @@ class DragScheduleScreen(ctk.CTkFrame):
             if x1 <= x_root <= x2 and y1 <= y_root <= y2:
                 hovered = frame
                 break
+        
+        # Try project boxes if no date box hovered
+        if not hovered:
+            for box in self.project_boxes:
+                frame = box["frame"]
+                if not frame.winfo_ismapped():
+                    continue
+                x1 = frame.winfo_rootx()
+                y1 = frame.winfo_rooty()
+                x2 = x1 + frame.winfo_width()
+                y2 = y1 + frame.winfo_height()
+                if x1 <= x_root <= x2 and y1 <= y_root <= y2:
+                    hovered = frame
+                    break
 
         if hovered is self.drag_hover_frame:
             return
@@ -976,8 +1184,16 @@ class DragScheduleScreen(ctk.CTkFrame):
     def clear_hover_target(self):
         if self.drag_hover_frame:
             date_str = self.date_frame_dates.get(self.drag_hover_frame)
+            project_id = self.project_box_ids.get(self.drag_hover_frame)
+            
             if date_str:
                 self._apply_selected_date_style(self.drag_hover_frame, date_str)
+            elif project_id:
+                is_selected = self.selected_project_id == project_id
+                self.drag_hover_frame.configure(
+                    border_width=2 if is_selected else 0,
+                    border_color=self.palette["primary"] if is_selected else self.palette["border"],
+                )
             else:
                 self.drag_hover_frame.configure(border_width=0, border_color=self.palette["border"])
             self.drag_hover_frame = None

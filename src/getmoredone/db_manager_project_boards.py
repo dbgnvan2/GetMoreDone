@@ -163,6 +163,37 @@ class DBManagerProjectBoardsMixin:
         )
         self.db.conn.commit()
 
+    def link_item_to_project_exclusive(self, board_id: str, item_id: str):
+        """Link an action item to exactly one project board, clearing previous project links and syncing APE."""
+        now = datetime.now().isoformat()
+        
+        # 1. Clear existing project links for this item
+        self.db.conn.execute(
+            "DELETE FROM project_board_items WHERE item_id = ?",
+            (item_id,)
+        )
+        
+        # 2. Add the new link
+        self.db.conn.execute("""
+            INSERT INTO project_board_items (project_board_id, item_id, created_at)
+            VALUES (?, ?, ?)
+        """, (board_id, item_id, now))
+        
+        # 3. Fetch board's APE ID to sync
+        board = self.get_project_board(board_id)
+        if board and board.annual_plan_element_id:
+            self.db.conn.execute(
+                "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
+                (board.annual_plan_element_id, now, item_id)
+            )
+            
+        # 4. Touch the project board
+        self.db.conn.execute(
+            "UPDATE project_boards SET updated_at = ? WHERE id = ?",
+            (now, board_id),
+        )
+        self.db.conn.commit()
+
     def unlink_action_item_from_project_board(self, board_id: str, item_id: str):
         """Unlink an action item from a project board."""
         self.db.conn.execute(
@@ -175,6 +206,16 @@ class DBManagerProjectBoardsMixin:
         )
         self.db.conn.commit()
 
+    def clear_item_project_links(self, item_id: str):
+        """Remove all project links and clear APE for an action item."""
+        now = datetime.now().isoformat()
+        self.db.conn.execute("DELETE FROM project_board_items WHERE item_id = ?", (item_id,))
+        self.db.conn.execute(
+            "UPDATE action_items SET annual_plan_element_id = NULL, updated_at = ? WHERE id = ?",
+            (now, item_id)
+        )
+        self.db.conn.commit()
+
     def get_project_board_ids_for_item(self, item_id: str) -> List[str]:
         """Return all project boards linked to an action item."""
         rows = self.db.conn.execute(
@@ -182,6 +223,24 @@ class DBManagerProjectBoardsMixin:
             (item_id,),
         ).fetchall()
         return [row["project_board_id"] for row in rows]
+
+    def get_unlinked_action_items(self, status_filter: str = "open") -> List[ActionItem]:
+        """Return action items that are NOT linked to any project board."""
+        query = """
+            SELECT ai.*
+            FROM action_items ai
+            LEFT JOIN project_board_items pbi ON pbi.item_id = ai.id
+            WHERE pbi.project_board_id IS NULL
+        """
+        params = []
+        if status_filter:
+            query += " AND ai.status = ?"
+            params.append(status_filter)
+            
+        query += " ORDER BY ai.priority_score DESC, ai.title COLLATE NOCASE ASC"
+        
+        rows = self.db.conn.execute(query, params).fetchall()
+        return [self._row_to_action_item(row) for row in rows]
 
     def add_project_board_link(self, link: ProjectBoardLink):
         """Add a link to a project board."""
