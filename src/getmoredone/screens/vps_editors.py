@@ -15,6 +15,35 @@ if TYPE_CHECKING:
     from ..vps_manager import VPSManager
 
 
+def _show_dialog_after_layout(dialog: ctk.CTkToplevel, parent) -> None:
+    """Position and reveal a dialog after its widgets have been laid out."""
+    dialog.transient(parent)
+    dialog.grab_set()
+    dialog.update_idletasks()
+
+    width = dialog.winfo_reqwidth() or dialog.winfo_width() or 600
+    height = dialog.winfo_reqheight() or dialog.winfo_height() or 500
+
+    parent.update_idletasks()
+    parent_x = parent.winfo_rootx()
+    parent_y = parent.winfo_rooty()
+    parent_width = parent.winfo_width()
+    parent_height = parent.winfo_height()
+
+    x = max(0, parent_x + (parent_width - width) // 2)
+    y = max(0, parent_y + (parent_height - height) // 2)
+    dialog.geometry(f"{width}x{height}+{x}+{y}")
+    dialog.deiconify()
+    dialog.after_idle(lambda: _finish_dialog_show(dialog))
+
+
+def _finish_dialog_show(dialog: ctk.CTkToplevel) -> None:
+    """Finish showing a dialog after it becomes visible."""
+    dialog.lift()
+    dialog.focus_force()
+    dialog.update_idletasks()
+
+
 class TLVisionEditorDialog(ctk.CTkToplevel):
     """Dialog for creating/editing TL Visions (Top Level Visions)."""
 
@@ -1176,6 +1205,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
     def __init__(self, parent, vps_manager: 'VPSManager', month_tactic_id: str,
                  segment_id: str, action_id: Optional[str] = None):
         super().__init__(parent)
+        self.withdraw()
 
         self.vps_manager = vps_manager
         self.month_tactic_id = month_tactic_id
@@ -1201,9 +1231,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         if self.action:
             self.load_action_data()
 
-        # Make dialog modal
-        self.transient(parent)
-        self.grab_set()
+        _show_dialog_after_layout(self, parent)
 
     def create_form(self):
         """Create the form layout."""

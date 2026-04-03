@@ -56,6 +56,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                  vps_manager: Optional['VPSManager'] = None, on_close_callback=None,
                  focus_tab: Optional[str] = None):
         super().__init__(parent)
+        self.withdraw()
 
         self.db_manager = db_manager
         self.vps_manager = vps_manager
@@ -96,6 +97,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
+        self.palette = semantic_colors()
+
         # Bind resize event
         self.bind("<Configure>", self.on_resize)
         self.last_width = 920  # Track width for responsive layout
@@ -123,8 +126,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         # Bind cleanup callback when dialog is closed
         self.protocol("WM_DELETE_WINDOW", self.on_dialog_close)
 
-        # Center on parent window
-        self.center_on_parent()
+        # Center and reveal after widgets have been created to avoid blank shells on macOS.
+        self._finalize_dialog_window()
 
     def create_form(self):
         """Create the form layout with responsive two-column design."""
@@ -1527,15 +1530,25 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         # Schedule centering after dialog is fully rendered
         self.after(10, self._do_center)
 
+    def _finalize_dialog_window(self):
+        """Render, position, and show the dialog only after child widgets exist."""
+        self.update_idletasks()
+        self._do_center()
+        self.deiconify()
+        self.after_idle(self._show_dialog_contents)
+
+    def _show_dialog_contents(self):
+        """Finish showing the dialog after the window is visible."""
+        self.lift()
+        self.focus_force()
+        self.update_idletasks()
+
     def _do_center(self):
         """Actually perform the centering after dialog is rendered."""
-        # Use fixed dimensions from geometry call
-        dialog_width = 600
-        dialog_height = 1000
+        self.master.update_idletasks()
 
-        # Force complete update of both windows
-        self.master.update()
-        self.update()
+        dialog_width = self.winfo_reqwidth() or self.winfo_width() or 920
+        dialog_height = self.winfo_reqheight() or self.winfo_height() or 550
 
         # Get parent window position and size using rootx/rooty for absolute screen coordinates
         parent_x = self.master.winfo_rootx()

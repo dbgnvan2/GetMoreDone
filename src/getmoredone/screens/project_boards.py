@@ -534,27 +534,29 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         card.grid_columnconfigure(0, weight=1)
         card.grid_rowconfigure(2, weight=1)
 
+        rank_box_width = 28
+        rank_box_height = 28
         top = ctk.CTkFrame(card, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=(max(4, metrics["pad_x"] - 8), metrics["pad_x"]), pady=(metrics["pad_top"], 2))
+        top.grid(row=0, column=0, sticky="ew", padx=(2, metrics["pad_x"]), pady=(metrics["pad_top"], 2))
         top.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             top,
             text=str(rank),
-            width=self.ACTION_BUTTON_WIDTH,
-            height=self.ACTION_BUTTON_HEIGHT,
-            corner_radius=8,
+            width=rank_box_width,
+            height=rank_box_height,
+            corner_radius=7,
             fg_color=palette["surface_subtle"],
             text_color=palette["body_text"],
-            font=ctk.CTkFont(size=max(13, self.ACTION_ICON_FONT_SIZE - 4), weight="bold"),
-        ).grid(row=0, column=0, padx=(0, 4), sticky="w")
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).grid(row=0, column=0, padx=(0, 2), sticky="w")
         ctk.CTkLabel(
             top,
             text=f"{row.get('subsegment_name') or '-'} - {row.get('category_name') or '-'}",
-            font=ctk.CTkFont(size=metrics["header_font"], weight="bold"),
+            font=ctk.CTkFont(size=max(11, metrics["header_font"] - 2), weight="bold"),
             text_color=text_color,
             anchor="center",
             justify="center",
-        ).grid(row=0, column=1, sticky="ew")
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 2))
 
         ctk.CTkLabel(
             card,
@@ -564,7 +566,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             justify="left",
             anchor="nw",
             wraplength=metrics["wraplength"],
-        ).grid(row=1, column=0, sticky="ew", padx=metrics["pad_x"], pady=(metrics["title_pad_top"], 2))
+        ).grid(row=1, column=0, sticky="ew", padx=(max(6, metrics["pad_x"] - 4), metrics["pad_x"]), pady=(max(1, metrics["title_pad_top"] - 2), 2))
 
         summary = ctk.CTkFrame(card, fg_color="transparent")
         summary.grid(row=2, column=0, sticky="nsew", padx=metrics["pad_x"], pady=(2, metrics["summary_pad_bottom"]))
@@ -595,7 +597,10 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             height=self.ACTION_BUTTON_HEIGHT,
             font=ctk.CTkFont(size=self.ACTION_ICON_FONT_SIZE, weight="bold"),
             command=lambda b=row["id"]: self.edit_project(b),
-            **button_style("secondary"),
+            fg_color="#FACC15",
+            hover_color="#EAB308",
+            text_color="#B91C1C",
+            border_width=0,
         ).grid(row=0, column=0, padx=2, pady=2, sticky="ew")
         ctk.CTkButton(
             actions,

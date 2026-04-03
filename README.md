@@ -670,6 +670,14 @@ python3 -m pytest tests/test_vps_integration.py -v
 python3 test_vps_segments.py
 ```
 
+**Run editor dialog regression coverage:**
+
+```bash
+python3 -m pytest tests/test_item_editor.py -v
+```
+
+- Includes regression checks for editor dialog centering and reveal order so blank-shell editor windows are caught earlier.
+
 ### Test Coverage
 
 - **14 Integration Tests** (`tests/test_vps_integration.py`):
