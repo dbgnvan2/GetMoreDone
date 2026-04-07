@@ -298,6 +298,13 @@ class GetMoreDoneApp(ctk.CTk):
         """Backwards-compatible entrypoint for Vision Planning hub."""
         self.show_vision_planning_hub()
 
+    def show_vision_planning(self):
+        """Show Vision Planning screen."""
+        from .screens.vision_planning import VisionPlanningScreen
+        self.clear_content()
+        self.current_screen = VisionPlanningScreen(self.content_frame, self.vps_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+
     def show_plan(self):
         """Show Plan screen."""
         from .screens.plan import PlanScreen

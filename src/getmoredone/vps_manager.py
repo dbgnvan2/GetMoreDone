@@ -1432,6 +1432,109 @@ class VPSManager:
         return True
 
     # ========================================================================
+    # VISION_SEGMENTS (Master list of Segment/SubSegment/Category elements)
+    # ========================================================================
+
+    def get_vision_segments(self) -> List[Dict[str, Any]]:
+        """Get all vision segments joined with segment_descriptions for color/name."""
+        cursor = self.db.conn.execute("""
+            SELECT vs.*, sd.name as segment_name, sd.color_hex as segment_color
+            FROM vision_segments vs
+            LEFT JOIN segment_descriptions sd ON vs.segment_id = sd.id
+            ORDER BY sd.order_index, vs.order_index, vs.subsegment, vs.category
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_vision_segment(self, vs_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single vision segment by id."""
+        cursor = self.db.conn.execute("""
+            SELECT vs.*, sd.name as segment_name, sd.color_hex as segment_color
+            FROM vision_segments vs
+            LEFT JOIN segment_descriptions sd ON vs.segment_id = sd.id
+            WHERE vs.id = ?
+        """, (vs_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+    def create_vision_segment(self, segment_id: str, subsegment: str,
+                              category: str, order_index: int = 0) -> str:
+        """Create a new vision segment element."""
+        vs_id = f"vs-{uuid4().hex[:8]}"
+        now = datetime.now().isoformat()
+        self.db.conn.execute("""
+            INSERT INTO vision_segments (id, segment_id, subsegment, category, order_index, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (vs_id, segment_id, subsegment, category, order_index, now, now))
+        self.db.conn.commit()
+        return vs_id
+
+    def update_vision_segment(self, vs_id: str, **kwargs) -> bool:
+        """Update a vision segment element."""
+        allowed = {'segment_id', 'subsegment', 'category', 'order_index'}
+        updates = {k: v for k, v in kwargs.items() if k in allowed}
+        if not updates:
+            return False
+        updates['updated_at'] = datetime.now().isoformat()
+        set_clause = ', '.join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [vs_id]
+        self.db.conn.execute(
+            f"UPDATE vision_segments SET {set_clause} WHERE id = ?", values)
+        self.db.conn.commit()
+        return True
+
+    def delete_vision_segment(self, vs_id: str) -> bool:
+        """Delete a vision segment element (cascades to annual assignments)."""
+        self.db.conn.execute(
+            "DELETE FROM vision_segments WHERE id = ?", (vs_id,))
+        self.db.conn.commit()
+        return True
+
+    # ========================================================================
+    # ANNUAL_VISION_SEGMENT_ITEMS (Assignments of vision segments to a year)
+    # ========================================================================
+
+    def get_annual_vision_segment_ids(self, year: int) -> List[str]:
+        """Get vision_segment_ids assigned to a specific year."""
+        cursor = self.db.conn.execute("""
+            SELECT vision_segment_id FROM annual_vision_segment_items WHERE year = ?
+        """, (year,))
+        return [row[0] for row in cursor.fetchall()]
+
+    def save_annual_vision_segments(self, year: int, vision_segment_ids: List[str]):
+        """Replace the annual assignments for a year with the given ids."""
+        now = datetime.now().isoformat()
+        self.db.conn.execute(
+            "DELETE FROM annual_vision_segment_items WHERE year = ?", (year,))
+        for vs_id in vision_segment_ids:
+            item_id = f"avsi-{uuid4().hex[:8]}"
+            self.db.conn.execute("""
+                INSERT INTO annual_vision_segment_items (id, vision_segment_id, year, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (item_id, vs_id, year, now))
+        self.db.conn.commit()
+
+    def get_annual_vision_segments(self, year: int) -> List[Dict[str, Any]]:
+        """Get vision segments assigned to a specific year, with segment details."""
+        cursor = self.db.conn.execute("""
+            SELECT vs.*, sd.name as segment_name, sd.color_hex as segment_color
+            FROM annual_vision_segment_items avsi
+            JOIN vision_segments vs ON avsi.vision_segment_id = vs.id
+            LEFT JOIN segment_descriptions sd ON vs.segment_id = sd.id
+            WHERE avsi.year = ?
+            ORDER BY sd.order_index, vs.order_index, vs.subsegment, vs.category
+        """, (year,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def delete_annual_vision_segment_item(self, vision_segment_id: str, year: int) -> bool:
+        """Remove a single vision segment from a year's assignments."""
+        self.db.conn.execute("""
+            DELETE FROM annual_vision_segment_items
+            WHERE vision_segment_id = ? AND year = ?
+        """, (vision_segment_id, year))
+        self.db.conn.commit()
+        return True
+
+    # ========================================================================
     # TL_VISIONS (Top Level Visions)
     # ========================================================================
 
