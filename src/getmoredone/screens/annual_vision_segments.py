@@ -1,11 +1,11 @@
-"""Annual Vision Segments screen with drag/drop from Vision Elements."""
+"""Annual Plan Elements screen with drag/drop from Vision Elements."""
 
 import customtkinter as ctk
 from tkinter import messagebox
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from ..theme import button_style, semantic_colors
+from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class AnnualVisionSegmentsScreen(ctk.CTkFrame):
-    """Drag vision elements into annual list to create AVE + APE records."""
+    """Drag vision elements into annual list to create annual plan records."""
     SPLITTER_WIDTH = 8
     MIN_PANEL_WIDTH = 420
 
@@ -37,6 +37,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         self._split_ratio = 0.5
         self._drag_start_x: Optional[int] = None
         self._drag_start_left: Optional[int] = None
+        self.dragged_row: Optional[dict] = None
 
         self.create_ui()
         self.refresh_lists()
@@ -46,7 +47,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         header.grid(row=0, column=0, sticky="ew", padx=12, pady=12)
         header.grid_columnconfigure(6, weight=1)
 
-        ctk.CTkLabel(header, text="Annual Vision Segments", font=ctk.CTkFont(size=22, weight="bold")).grid(
+        ctk.CTkLabel(header, text="Annual Plan Elements", font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, padx=8, pady=8, sticky="w"
         )
         ctk.CTkLabel(header, text="Year:").grid(row=0, column=1, padx=(18, 4), pady=8)
@@ -80,7 +81,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         )
         self.right_title_label = ctk.CTkLabel(
             body,
-            text="Annual Vision Elements for the year 0",
+            text="Annual Plan Elements for the year 0",
             font=ctk.CTkFont(weight="bold"),
         )
         self.right_title_label.grid(
@@ -93,7 +94,13 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         left_frame.grid_columnconfigure(0, weight=1)
         self.left_frame = left_frame
 
-        divider = ctk.CTkFrame(body, width=self.SPLITTER_WIDTH, fg_color=semantic_colors()["border"], corner_radius=2)
+        divider = ctk.CTkFrame(
+            body,
+            width=self.SPLITTER_WIDTH,
+            fg_color=semantic_colors()["border"],
+            corner_radius=2,
+            cursor="sb_h_double_arrow",
+        )
         divider.grid(row=1, column=1, sticky="ns", padx=0, pady=(0, 8))
         divider.bind("<ButtonPress-1>", self._on_divider_press)
         divider.bind("<B1-Motion>", self._on_divider_drag)
@@ -141,7 +148,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
             text="Vision Elements (check elements to add to the year and hit save)"
         )
         self.right_title_label.configure(
-            text=f"Annual Vision Elements for the year {year}"
+            text=f"Annual Plan Elements for the year {year}"
         )
         self._render_rows(self.left_list, self.left_items, selectable=True)
         self._render_rows(self.right_list, self.right_items, selectable=False)
@@ -242,7 +249,8 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
                     row=0, column=0, padx=2, pady=5, sticky="w"
                 )
 
-            ctk.CTkLabel(item, text=str(idx + 1), width=col_widths["index"], anchor="w").grid(
+            index_label = ctk.CTkLabel(item, text=str(idx + 1), width=col_widths["index"], anchor="w")
+            index_label.grid(
                 row=0, column=offset + 0, padx=5, pady=5, sticky="w"
             )
             seg_chip = ctk.CTkLabel(
@@ -295,6 +303,8 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
                     command=lambda r=row: self.delete_annual_item(r),
                     **button_style("danger"),
                 ).pack(side="left", padx=(2, 0))
+            else:
+                self._bind_drag_widgets((item, index_label, seg_chip, sub_chip, cat_chip), row)
 
     def _on_body_resize(self, _event):
         if self._drag_start_x is None:
@@ -338,7 +348,13 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         if idx < 0 or idx >= len(self.left_items):
             return
         item = self.left_items[idx]
-        self.vps_manager.create_annual_records_from_vision_element(year, item["id"])
+        self._create_from_row(item)
+
+    def _create_from_row(self, row: dict):
+        year = self._parse_year()
+        if year is None:
+            return
+        self.vps_manager.create_annual_records_from_vision_element(year, row["id"])
         self.refresh_lists()
 
     def add_selected(self):
@@ -354,14 +370,32 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
                 self.vps_manager.create_annual_records_from_vision_element(year, row["id"])
         self.refresh_lists()
 
-    def on_left_press(self, event):
-        self.drag_index = None
+    def _bind_drag_widgets(self, widgets: tuple, row: dict):
+        for widget in widgets:
+            widget.bind("<ButtonPress-1>", lambda _event, r=row: self._start_row_drag(r))
 
-    def on_left_release(self, event):
-        self.drag_index = None
+    def _start_row_drag(self, row: dict):
+        self.dragged_row = row
+        self.winfo_toplevel().bind("<ButtonRelease-1>", self._finish_row_drag)
 
-    def on_right_release(self, _event):
-        self.drag_index = None
+    def _finish_row_drag(self, _event):
+        self.winfo_toplevel().unbind("<ButtonRelease-1>")
+        if not self.dragged_row:
+            return
+        pointer_x, pointer_y = self.winfo_pointerxy()
+        target = self.winfo_containing(pointer_x, pointer_y)
+        row = self.dragged_row
+        self.dragged_row = None
+        if self._is_descendant(target, self.right_frame):
+            self._create_from_row(row)
+
+    def _is_descendant(self, widget, ancestor) -> bool:
+        current = widget
+        while current is not None:
+            if current == ancestor:
+                return True
+            current = getattr(current, "master", None)
+        return False
 
     @staticmethod
     def _clip_label(value: str, limit: int) -> str:
@@ -378,7 +412,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
             return
 
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Edit Annual Vision Element")
+        dialog.title("Edit Annual Plan Element")
         dialog.geometry("620x220")
         dialog.transient(self)
         dialog.grab_set()
@@ -396,14 +430,14 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         segment_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
 
         ctk.CTkLabel(frame, text="SubSegment:").grid(row=1, column=0, sticky="w", padx=8, pady=6)
-        subsegment_combo = ctk.CTkComboBox(frame, variable=subsegment_var, values=[])
+        subsegment_combo = ctk.CTkComboBox(frame, variable=subsegment_var, values=[], **combo_box_style())
         subsegment_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
 
         ctk.CTkLabel(frame, text="Category:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-        category_combo = ctk.CTkComboBox(frame, variable=category_var, values=[])
+        category_combo = ctk.CTkComboBox(frame, variable=category_var, values=[], **combo_box_style())
         category_combo.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
 
-        status_label = ctk.CTkLabel(frame, text="", text_color="red")
+        status_label = ctk.CTkLabel(frame, text="", text_color=status_text_color("error"))
         status_label.grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(2, 6))
 
         def load_segments():

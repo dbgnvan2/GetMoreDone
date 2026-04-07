@@ -1,10 +1,10 @@
-"""Vision Segments admin inside VPS Plan: manage segments, subsegments, categories."""
+"""Vision Segments admin inside VSP Plan: manage segments, subsegments, categories."""
 
 from tkinter import colorchooser, messagebox
 import customtkinter as ctk
 from typing import TYPE_CHECKING, Optional
 
-from ..theme import button_style
+from ..theme import button_style, status_text_color
 from ..color_contrast import pick_text_color
 
 if TYPE_CHECKING:
@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 class VisionSegmentsScreen(ctk.CTkFrame):
     TAB_BUTTON_HEIGHT = 32
     ACTION_BUTTON_WIDTH = 120
+    VIEW_BUTTON_WIDTH = 160
     SEGMENT_COL_WIDTH = 135
     SUBSEGMENT_COL_WIDTH = 155
     CATEGORY_COL_WIDTH = 125
@@ -23,63 +24,118 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         super().__init__(parent)
         self.vps_manager = vps_manager
         self.app = app
+        self.active_view = "categories"
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        self.tabview = ctk.CTkTabview(self)
-        self.tabview.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
-        self.tabview.grid_columnconfigure(0, weight=1)
-        self.tabview.grid_rowconfigure(1, weight=1)
+        self.container = ctk.CTkFrame(self)
+        self.container.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        self.container.grid_columnconfigure(0, weight=1)
+        self.container.grid_rowconfigure(2, weight=1)
 
-        self.seg_tab = self.tabview.add("Segments")
-        self.sub_tab = self.tabview.add("SubSegments")
-        self.cat_tab = self.tabview.add("Categories")
-        self._style_tab_buttons()
-        for tab in (self.seg_tab, self.sub_tab, self.cat_tab):
-            tab.grid_columnconfigure(0, weight=1)
-            tab.grid_rowconfigure(1, weight=1)
-
-        self._create_segment_tab()
-        self._create_subsegment_tab()
-        self._create_category_tab()
+        self._create_action_row()
+        self._create_view_switcher()
+        self._create_lists()
         self.refresh_all()
+        self._set_active_view(self.active_view)
 
-    def _style_tab_buttons(self):
-        # Keep sub-tab controls aligned with standard button height only.
-        if not hasattr(self.tabview, "_button_height") or not hasattr(self.tabview, "_segmented_button"):
-            return
-        self.tabview._button_height = self.TAB_BUTTON_HEIGHT
-        segmented = self.tabview._segmented_button
-        segmented.configure(height=self.TAB_BUTTON_HEIGHT)
-        self.tabview._configure_grid()
-        self.tabview._set_grid_segmented_button()
+    def _create_action_row(self):
+        top = ctk.CTkFrame(self.container)
+        top.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 6))
+        top.grid_columnconfigure(2, weight=1)
+        self.primary_action_btn = ctk.CTkButton(
+            top,
+            text="",
+            width=self.ACTION_BUTTON_WIDTH + 40,
+            height=self.TAB_BUTTON_HEIGHT,
+            command=self._run_primary_action,
+            **button_style("primary"),
+        )
+        self.primary_action_btn.grid(row=0, column=0, padx=(4, 8), pady=6, sticky="w")
+        self.refresh_btn = ctk.CTkButton(
+            top,
+            text="Refresh",
+            width=self.ACTION_BUTTON_WIDTH,
+            height=self.TAB_BUTTON_HEIGHT,
+            command=self._refresh_active_view,
+            **button_style("secondary"),
+        )
+        self.refresh_btn.grid(row=0, column=1, padx=4, pady=6, sticky="w")
 
-    def _create_segment_tab(self):
-        top = ctk.CTkFrame(self.seg_tab)
-        top.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
-        ctk.CTkButton(top, text="+ New Segment", width=self.ACTION_BUTTON_WIDTH, height=self.TAB_BUTTON_HEIGHT, command=self.new_segment, **button_style("primary")).pack(side="left", padx=4, pady=6)
-        ctk.CTkButton(top, text="Refresh", width=self.ACTION_BUTTON_WIDTH, height=self.TAB_BUTTON_HEIGHT, command=self.refresh_segments, **button_style("secondary")).pack(side="left", padx=4, pady=6)
-        self.seg_list = ctk.CTkScrollableFrame(self.seg_tab, label_text="")
-        self.seg_list.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.seg_list.grid_columnconfigure(0, weight=1)
+    def _create_view_switcher(self):
+        switcher = ctk.CTkFrame(self.container, fg_color="transparent")
+        switcher.grid(row=1, column=0, sticky="w", padx=8, pady=(0, 8))
+        self.view_buttons = {}
+        for idx, (key, label) in enumerate((
+            ("segments", "Segments"),
+            ("subsegments", "SubSegments"),
+            ("categories", "Categories"),
+        )):
+            btn = ctk.CTkButton(
+                switcher,
+                text=label,
+                width=self.VIEW_BUTTON_WIDTH,
+                height=self.TAB_BUTTON_HEIGHT,
+                command=lambda k=key: self._set_active_view(k),
+                **button_style("secondary"),
+            )
+            btn.grid(row=0, column=idx, padx=(4 if idx == 0 else 0, 4), pady=4, sticky="w")
+            self.view_buttons[key] = btn
 
-    def _create_subsegment_tab(self):
-        top = ctk.CTkFrame(self.sub_tab)
-        top.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
-        ctk.CTkButton(top, text="+ New SubSegment", width=self.ACTION_BUTTON_WIDTH, height=self.TAB_BUTTON_HEIGHT, command=self.new_subsegment, **button_style("primary")).pack(side="left", padx=4, pady=6)
-        ctk.CTkButton(top, text="Refresh", width=self.ACTION_BUTTON_WIDTH, height=self.TAB_BUTTON_HEIGHT, command=self.refresh_subsegments, **button_style("secondary")).pack(side="left", padx=4, pady=6)
-        self.sub_list = ctk.CTkScrollableFrame(self.sub_tab, label_text="")
-        self.sub_list.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.sub_list.grid_columnconfigure(0, weight=1)
+    def _create_lists(self):
+        self.content = ctk.CTkFrame(self.container)
+        self.content.grid(row=2, column=0, sticky="nsew", padx=8, pady=(0, 8))
+        self.content.grid_columnconfigure(0, weight=1)
+        self.content.grid_rowconfigure(0, weight=1)
 
-    def _create_category_tab(self):
-        top = ctk.CTkFrame(self.cat_tab)
-        top.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
-        ctk.CTkButton(top, text="+ New Category", width=self.ACTION_BUTTON_WIDTH, height=self.TAB_BUTTON_HEIGHT, command=self.new_category, **button_style("primary")).pack(side="left", padx=4, pady=6)
-        ctk.CTkButton(top, text="Refresh", width=self.ACTION_BUTTON_WIDTH, height=self.TAB_BUTTON_HEIGHT, command=self.refresh_categories, **button_style("secondary")).pack(side="left", padx=4, pady=6)
-        self.cat_list = ctk.CTkScrollableFrame(self.cat_tab, label_text="")
-        self.cat_list.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 8))
-        self.cat_list.grid_columnconfigure(0, weight=1)
+        self.seg_list = ctk.CTkScrollableFrame(self.content, label_text="")
+        self.sub_list = ctk.CTkScrollableFrame(self.content, label_text="")
+        self.cat_list = ctk.CTkScrollableFrame(self.content, label_text="")
+        for frame in (self.seg_list, self.sub_list, self.cat_list):
+            frame.grid_columnconfigure(0, weight=1)
+
+    def _set_active_view(self, view: str):
+        self.active_view = view
+        mapping = {
+            "segments": self.seg_list,
+            "subsegments": self.sub_list,
+            "categories": self.cat_list,
+        }
+        for key, frame in mapping.items():
+            if key == view:
+                frame.grid(row=0, column=0, sticky="nsew")
+            else:
+                frame.grid_forget()
+        self._update_view_buttons()
+        self._update_primary_action_button()
+
+    def _update_view_buttons(self):
+        for key, button in self.view_buttons.items():
+            button.configure(**button_style("primary" if key == self.active_view else "secondary"))
+
+    def _update_primary_action_button(self):
+        labels = {
+            "segments": "+ New Segment",
+            "subsegments": "+ New SubSegment",
+            "categories": "+ New Category",
+        }
+        self.primary_action_btn.configure(text=labels[self.active_view])
+
+    def _run_primary_action(self):
+        if self.active_view == "segments":
+            self.new_segment()
+        elif self.active_view == "subsegments":
+            self.new_subsegment()
+        else:
+            self.new_category()
+
+    def _refresh_active_view(self):
+        if self.active_view == "segments":
+            self.refresh_segments()
+        elif self.active_view == "subsegments":
+            self.refresh_subsegments()
+        else:
+            self.refresh_categories()
 
     def refresh_all(self):
         self.refresh_segments()
@@ -277,7 +333,7 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         if vision.get():
             vision_box.insert("1.0", vision.get())
         f.grid_rowconfigure(4, weight=1)
-        msg = ctk.CTkLabel(f, text="", text_color="red")
+        msg = ctk.CTkLabel(f, text="", text_color=status_text_color("error"))
         msg.grid(row=5, column=0, columnspan=2, sticky="w", padx=8)
         act = ctk.CTkFrame(f, fg_color="transparent")
         act.grid(row=6, column=0, columnspan=2, sticky="e", padx=8, pady=8)
@@ -345,7 +401,7 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         if (row or {}).get("vision_text"):
             vision_box.insert("1.0", row["vision_text"])
         f.grid_rowconfigure(4, weight=1)
-        msg = ctk.CTkLabel(f, text="", text_color="red")
+        msg = ctk.CTkLabel(f, text="", text_color=status_text_color("error"))
         msg.grid(row=5, column=0, columnspan=2, sticky="w", padx=8)
         act = ctk.CTkFrame(f, fg_color="transparent")
         act.grid(row=6, column=0, columnspan=2, sticky="e", padx=8, pady=8)
@@ -415,7 +471,7 @@ class VisionSegmentsScreen(ctk.CTkFrame):
         if (row or {}).get("vision_text"):
             vision_box.insert("1.0", row["vision_text"])
         f.grid_rowconfigure(5, weight=1)
-        msg = ctk.CTkLabel(f, text="", text_color="red")
+        msg = ctk.CTkLabel(f, text="", text_color=status_text_color("error"))
         msg.grid(row=6, column=0, columnspan=2, sticky="w", padx=8)
         act = ctk.CTkFrame(f, fg_color="transparent")
         act.grid(row=7, column=0, columnspan=2, sticky="e", padx=8, pady=8)

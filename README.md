@@ -2,13 +2,13 @@
 
 A comprehensive Python task management application with GUI interface and SQLite database. Built to help you prioritize tasks, track time, and improve productivity through data-driven insights.
 
-User guide: `docs/User_Guide.md`
+User guide: `docs/USER_GUIDE.md`
 
 ## Features
 
 ✅ **Smart Prioritization** - Automatic priority scoring based on Importance × Urgency × Effort-Cost × Value
 ⏱️ **Action Timer** - Floating countdown timer with pause/resume, break time, music playback, and completion workflows
-📅 **Upcoming View** - See what's due in the next N days, grouped by date with total time, includes Group/Category columns
+📅 **Upcoming View** - See what's due in the next N days, grouped by date with responsive List View columns
 👥 **Contact Management** - Full contact/client database with autocomplete search in WHO field
 🔗 **Hierarchical Tasks** - Create parent-child relationships with unlimited nesting (grandparent→parent→child→grandchild)
 🌳 **Hierarchical View** - Visual tree structure showing all parent-child relationships with indentation
@@ -18,12 +18,13 @@ User guide: `docs/User_Guide.md`
 📈 **Statistics** - Analyze planned vs actual time with insights by effort-cost and category
 🔄 **Reschedule History** - Never lose track of why dates changed
 📆 **Google Calendar Integration** - Create calendar events directly from action items with automatic linking
-🧭 **Visionary Planning System (VPS)** - Strategic long-term planning from 5-year visions down to weekly actions with life segment organization
+🧭 **Vision Strategy Plan (VSP)** - Strategic long-term planning from vision elements through annual, quarter, month, and weekly execution
+🗂️ **Project Board** - One project note per Annual Plan Element, color-coded by APE category and linked to action items and Obsidian notes
 🎵 **Music Playback** - Background music during work sessions with volume control and format conversion tools
-✨ **12 Comprehensive Screens** - TODAY, Upcoming, All Items, Hierarchical, VPS Planning, Plan, Drag Schedule, Completed, Contacts, Defaults, Stats, Settings
+✨ **13 Comprehensive Screens** - Today, Upcoming, All Items, Hierarchical, Scheduler, Projects, Completed, Contacts, VSP Plan, Plan, Defaults, Status, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
-🖥️ **Responsive UI** - Two-column layout that adapts to window size, floating timer window
+🖥️ **Responsive UI** - Two-column layout that adapts to window size, floating timer window, resizable planning/board panels
 
 ## Quick Start
 
@@ -477,9 +478,9 @@ pytest tests/test_database.py -v
 
 ## Recent Improvements
 
-### VPS Segment Management in Settings (January 2026)
+### VSP Segment Management in Settings (January 2026)
 
-- **New Settings Tab** - "VPS Life Segments" tab for managing all life segments
+- **New Settings Tab** - "VSP Life Segments" tab for managing all life segments
 - **Full CRUD Operations** - Create, edit, and delete life segments
 - **Visual Color Picker** - Native color picker dialog with hex code input and live preview
 - **Segment Properties**:
@@ -497,7 +498,7 @@ pytest tests/test_database.py -v
   - Refresh button to reload segment list
 - **Comprehensive Testing** - 9 new unit tests covering all CRUD operations and edge cases
 
-### VPS (Visionary Planning System) Bug Fixes (January 2026)
+### VSP (Vision Strategy Plan) Bug Fixes (January 2026)
 
 - **Fixed New Vision button crash** - Replaced non-existent `CTkMessageBox` with standard `tkinter.messagebox`
 - **Fixed empty year field validation** - Now provides sensible defaults (current year for start, +10 years for end)
@@ -649,7 +650,7 @@ For issues or questions, create an issue in the repository.
 
 ### Running Tests
 
-The project includes comprehensive test coverage with 21+ VPS-specific tests:
+The project includes comprehensive test coverage with 21+ VSP-specific tests:
 
 **Run all tests:**
 
@@ -657,17 +658,25 @@ The project includes comprehensive test coverage with 21+ VPS-specific tests:
 python3 -m pytest tests/ -v
 ```
 
-**Run VPS tests only:**
+**Run VSP tests only:**
 
 ```bash
 python3 -m pytest tests/test_vps_integration.py -v
 ```
 
-**Run standalone VPS test:**
+**Run standalone VSP test:**
 
 ```bash
 python3 test_vps_segments.py
 ```
+
+**Run editor dialog regression coverage:**
+
+```bash
+python3 -m pytest tests/test_item_editor.py -v
+```
+
+- Includes regression checks for editor dialog centering and reveal order so blank-shell editor windows are caught earlier.
 
 ### Test Coverage
 

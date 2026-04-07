@@ -6,6 +6,7 @@ import customtkinter as ctk
 from typing import Optional, TYPE_CHECKING
 
 from ..models import Defaults, PriorityFactors
+from ..theme import status_text_color
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -221,7 +222,7 @@ class DefaultsScreen(ctk.CTkFrame):
         btn_clear.pack(side="left", padx=5)
 
         # Status label
-        self.status_label = ctk.CTkLabel(scroll, text="", text_color="green")
+        self.status_label = ctk.CTkLabel(scroll, text="", text_color=status_text_color("success"))
         self.status_label.grid(row=row, column=0, columnspan=2, sticky="w", padx=10, pady=5)
 
 
@@ -350,6 +351,6 @@ class DefaultsScreen(ctk.CTkFrame):
             self.load_defaults()
 
         except Exception as e:
-            self.status_label.configure(text=f"Error: {str(e)}", text_color="red")
+            self.status_label.configure(text=f"Error: {str(e)}", text_color=status_text_color("error"))
             if hasattr(self, "date_status_label"):
-                self.date_status_label.configure(text=f"Error: {str(e)}", text_color="red")
+                self.date_status_label.configure(text=f"Error: {str(e)}", text_color=status_text_color("error"))

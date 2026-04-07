@@ -5,6 +5,8 @@ Manage Contacts screen - list and manage all contacts.
 import customtkinter as ctk
 from typing import TYPE_CHECKING
 
+from ..theme import status_text_color
+
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
     from ..app import GetMoreDoneApp
@@ -87,7 +89,7 @@ class ManageContactsScreen(ctk.CTkFrame):
                 self.scroll_frame,
                 text="No contacts found" if search_term else "No contacts yet. Click '+ New Contact' to add one.",
                 font=ctk.CTkFont(size=14),
-                text_color="gray"
+                text_color=status_text_color("muted")
             )
             no_data.grid(row=0, column=0, pady=50)
         else:

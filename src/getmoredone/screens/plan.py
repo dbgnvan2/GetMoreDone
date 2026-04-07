@@ -7,6 +7,7 @@ from datetime import datetime, date
 from typing import TYPE_CHECKING
 
 from ..models import TimeBlock
+from ..theme import button_style, status_text_color
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -256,14 +257,14 @@ class AddTimeBlockDialog(ctk.CTkToplevel):
         btn_frame = ctk.CTkFrame(main_frame)
         btn_frame.pack(pady=(20, 0))
 
-        btn_save = ctk.CTkButton(btn_frame, text="Save", command=self.save)
+        btn_save = ctk.CTkButton(btn_frame, text="Save", command=self.save, **button_style("primary"))
         btn_save.pack(side="left", padx=5)
 
-        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, **button_style("secondary"))
         btn_cancel.pack(side="left", padx=5)
 
         # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red")
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color=status_text_color("error"))
         self.error_label.pack(pady=(10, 0))
 
     def save(self):

@@ -1,5 +1,5 @@
 """
-VPS (Visionary Planning System) Database Schema
+VSP (Vision Strategy Plan) Database Schema
 Extends GetMoreDone with strategic planning hierarchy.
 
 Based on simplified architecture where:
@@ -10,15 +10,16 @@ Based on simplified architecture where:
 """
 
 import sqlite3
-from typing import Optional
+from typing import List, Optional, Tuple
 
 
 class VPSSchema:
-    """Manages VPS table creation and migrations."""
+    """Manages VSP table creation and migrations."""
 
     @staticmethod
     def initialize_vps_schema(conn: sqlite3.Connection):
-        """Create all VPS tables and extend GMD tables."""
+        """Create all VSP tables and extend GMD tables."""
+        legacy_assignment_tables = VPSSchema._prepare_legacy_vision_schema_migration(conn)
 
         # ========================================================================
         # SEGMENT DESCRIPTIONS (Life Segments)
@@ -218,6 +219,7 @@ class VPSSchema:
                 UNIQUE(year, vision_element_id)
             )
         """)
+        VPSSchema._migrate_legacy_vision_schema_data(conn, legacy_assignment_tables)
 
         # ========================================================================
         # QUARTER_INITIATIVE (Quarterly focus areas)
@@ -293,7 +295,7 @@ class VPSSchema:
         """)
 
         # ========================================================================
-        # EXTEND ACTION_ITEMS for VPS Integration
+        # EXTEND ACTION_ITEMS for VSP Integration
         # ========================================================================
         VPSSchema._extend_action_items(conn)
 
@@ -380,8 +382,287 @@ class VPSSchema:
         conn.commit()
 
     @staticmethod
+    def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table_name,),
+        ).fetchone()
+        return row is not None
+
+    @staticmethod
+    def _table_columns(conn: sqlite3.Connection, table_name: str) -> List[str]:
+        if not VPSSchema._table_exists(conn, table_name):
+            return []
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        return [row[1] for row in rows]
+
+    @staticmethod
+    def _prepare_legacy_vision_schema_migration(conn: sqlite3.Connection) -> List[Tuple[str, str]]:
+        """
+        Detect and rename the old Vision Segment schema so modern tables can be created.
+
+        Legacy shape:
+        - vision_segments(id, segment_id, subsegment, category, order_index, created_at, updated_at)
+        - annual_vision_segment_items(vision_segment_id, year, ...)
+        """
+        columns = VPSSchema._table_columns(conn, "vision_segments")
+        if not columns:
+            return []
+
+        is_legacy_segments = (
+            "name" not in columns and {"segment_id", "subsegment", "category"}.issubset(set(columns))
+        )
+        if not is_legacy_segments:
+            return []
+
+        conn.execute("ALTER TABLE vision_segments RENAME TO vision_segments_legacy")
+        assignment_tables: List[Tuple[str, str]] = []
+        for table_name in ("annual_vision_segment_items", "annual_vision_segments"):
+            if not VPSSchema._table_exists(conn, table_name):
+                continue
+            table_cols = set(VPSSchema._table_columns(conn, table_name))
+            if "year" not in table_cols:
+                continue
+            id_column = (
+                "vision_segment_id" if "vision_segment_id" in table_cols
+                else ("vision_element_id" if "vision_element_id" in table_cols else "")
+            )
+            if not id_column:
+                continue
+            legacy_name = f"{table_name}_legacy"
+            if not VPSSchema._table_exists(conn, legacy_name):
+                conn.execute(f"ALTER TABLE {table_name} RENAME TO {legacy_name}")
+            assignment_tables.append((legacy_name, id_column))
+        return assignment_tables
+
+    @staticmethod
+    def _migrate_legacy_vision_schema_data(
+        conn: sqlite3.Connection,
+        legacy_assignment_tables: List[Tuple[str, str]],
+    ):
+        """Migrate legacy Vision Segment rows into current Vision Element tables."""
+        if not VPSSchema._table_exists(conn, "vision_segments_legacy"):
+            return
+
+        from datetime import datetime
+        from uuid import uuid4
+
+        now = datetime.now().isoformat()
+        legacy_rows = conn.execute(
+            """
+            SELECT
+                l.id AS legacy_id,
+                l.segment_id AS legacy_segment_id,
+                COALESCE(sd.name, '') AS segment_name,
+                l.subsegment,
+                l.category,
+                COALESCE(l.created_at, ?) AS created_at,
+                COALESCE(l.updated_at, ?) AS updated_at
+            FROM vision_segments_legacy l
+            LEFT JOIN segment_descriptions sd ON sd.id = l.segment_id
+            ORDER BY COALESCE(l.order_index, 0), l.created_at, l.id
+            """,
+            (now, now),
+        ).fetchall()
+
+        segment_cache = {}
+        subsegment_cache = {}
+        category_cache = {}
+        legacy_to_element = {}
+
+        for row in legacy_rows:
+            segment_name = (row["segment_name"] or "").strip() or "Uncategorized"
+            subsegment_name = (row["subsegment"] or "").strip() or "General"
+            category_name = (row["category"] or "").strip() or "General"
+            created_at = (row["created_at"] or now).strip()
+            updated_at = (row["updated_at"] or now).strip()
+
+            segment_key = segment_name.lower()
+            segment_id = segment_cache.get(segment_key)
+            if not segment_id:
+                segment_row = conn.execute(
+                    "SELECT id FROM vision_segments WHERE LOWER(name) = LOWER(?)",
+                    (segment_name,),
+                ).fetchone()
+                if segment_row:
+                    segment_id = segment_row["id"]
+                else:
+                    segment_id = f"vsg-{uuid4().hex[:8]}"
+                    conn.execute(
+                        """
+                        INSERT INTO vision_segments (id, name, vision_text, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """,
+                        (segment_id, segment_name, "", created_at, updated_at),
+                    )
+                segment_cache[segment_key] = segment_id
+
+            subsegment_key = (segment_id, subsegment_name.lower())
+            subsegment_id = subsegment_cache.get(subsegment_key)
+            if not subsegment_id:
+                subsegment_row = conn.execute(
+                    """
+                    SELECT id FROM vision_subsegments
+                    WHERE segment_id = ? AND LOWER(name) = LOWER(?)
+                    """,
+                    (segment_id, subsegment_name),
+                ).fetchone()
+                if subsegment_row:
+                    subsegment_id = subsegment_row["id"]
+                else:
+                    subsegment_id = f"vss-{uuid4().hex[:8]}"
+                    conn.execute(
+                        """
+                        INSERT INTO vision_subsegments
+                        (id, segment_id, name, color_hex, description, vision_text, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (subsegment_id, segment_id, subsegment_name, None, "", "", created_at, updated_at),
+                    )
+                subsegment_cache[subsegment_key] = subsegment_id
+
+            category_key = (subsegment_id, category_name.lower())
+            category_id = category_cache.get(category_key)
+            if not category_id:
+                category_row = conn.execute(
+                    """
+                    SELECT id FROM vision_categories
+                    WHERE subsegment_id = ? AND LOWER(name) = LOWER(?)
+                    """,
+                    (subsegment_id, category_name),
+                ).fetchone()
+                if category_row:
+                    category_id = category_row["id"]
+                else:
+                    category_id = f"vct-{uuid4().hex[:8]}"
+                    conn.execute(
+                        """
+                        INSERT INTO vision_categories
+                        (id, subsegment_id, name, color_hex, description, vision_text, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (category_id, subsegment_id, category_name, None, "", "", created_at, updated_at),
+                    )
+                category_cache[category_key] = category_id
+
+            key_field = f"{segment_name}|{subsegment_name}|{category_name}"
+            existing_element = conn.execute(
+                """
+                SELECT id, key_field FROM vision_elements
+                WHERE category_id = ?
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (category_id,),
+            ).fetchone()
+            if existing_element:
+                vision_element_id = existing_element["id"]
+                if (existing_element["key_field"] or "") != key_field:
+                    conflict = conn.execute(
+                        "SELECT id FROM vision_elements WHERE key_field = ? AND id <> ?",
+                        (key_field, vision_element_id),
+                    ).fetchone()
+                    if not conflict:
+                        conn.execute(
+                            """
+                            UPDATE vision_elements
+                            SET segment_id = ?, subsegment_id = ?, category_id = ?, key_field = ?, updated_at = ?
+                            WHERE id = ?
+                            """,
+                            (segment_id, subsegment_id, category_id, key_field, updated_at, vision_element_id),
+                        )
+            else:
+                vision_element_id = f"ve-{uuid4().hex[:8]}"
+                conn.execute(
+                    """
+                    INSERT INTO vision_elements
+                    (id, segment_id, subsegment_id, category_id, key_field, vision_text, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (vision_element_id, segment_id, subsegment_id, category_id, key_field, "", created_at, updated_at),
+                )
+
+            legacy_to_element[row["legacy_id"]] = {
+                "vision_element_id": vision_element_id,
+                "segment_name": segment_name,
+                "subsegment_name": subsegment_name,
+                "category_name": category_name,
+                "key_field": key_field,
+            }
+
+        for table_name, id_column in legacy_assignment_tables:
+            if not VPSSchema._table_exists(conn, table_name):
+                continue
+            assignment_rows = conn.execute(
+                f"""
+                SELECT year, {id_column} AS source_id, COALESCE(created_at, ?) AS created_at
+                FROM {table_name}
+                """,
+                (now,),
+            ).fetchall()
+            for row in assignment_rows:
+                source_id = row["source_id"]
+                mapped = legacy_to_element.get(source_id)
+                if not mapped and id_column == "vision_element_id":
+                    ve_row = conn.execute(
+                        """
+                        SELECT
+                            ve.id AS vision_element_id,
+                            s.name AS segment_name,
+                            ss.name AS subsegment_name,
+                            c.name AS category_name,
+                            ve.key_field AS key_field
+                        FROM vision_elements ve
+                        JOIN vision_segments s ON s.id = ve.segment_id
+                        JOIN vision_subsegments ss ON ss.id = ve.subsegment_id
+                        JOIN vision_categories c ON c.id = ve.category_id
+                        WHERE ve.id = ?
+                        """,
+                        (source_id,),
+                    ).fetchone()
+                    if ve_row:
+                        mapped = dict(ve_row)
+                if not mapped:
+                    continue
+
+                exists = conn.execute(
+                    """
+                    SELECT id FROM annual_vision_elements
+                    WHERE year = ? AND vision_element_id = ?
+                    """,
+                    (row["year"], mapped["vision_element_id"]),
+                ).fetchone()
+                if exists:
+                    continue
+
+                created_at = (row["created_at"] or now).strip()
+                conn.execute(
+                    """
+                    INSERT INTO annual_vision_elements
+                    (id, year, vision_element_id, segment_name, subsegment_name, category_name, key_field, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"ave-{uuid4().hex[:8]}",
+                        row["year"],
+                        mapped["vision_element_id"],
+                        mapped["segment_name"],
+                        mapped["subsegment_name"],
+                        mapped["category_name"],
+                        mapped["key_field"],
+                        created_at,
+                        created_at,
+                    ),
+                )
+
+        for table_name, _id_column in legacy_assignment_tables:
+            if VPSSchema._table_exists(conn, table_name):
+                conn.execute(f"DROP TABLE {table_name}")
+        conn.execute("DROP TABLE vision_segments_legacy")
+
+    @staticmethod
     def _extend_action_items(conn: sqlite3.Connection):
-        """Add VPS-related columns to existing action_items table."""
+        """Add VSP-related columns to existing action_items table."""
         # Check which columns already exist
         cursor = conn.execute("PRAGMA table_info(action_items)")
         columns = [row[1] for row in cursor.fetchall()]
@@ -526,7 +807,7 @@ class VPSSchema:
 
     @staticmethod
     def _create_indexes(conn: sqlite3.Connection):
-        """Create performance indexes for VPS tables."""
+        """Create performance indexes for VSP tables."""
 
         # Segment descriptions
         conn.execute("""
@@ -680,7 +961,7 @@ class VPSSchema:
             ON week_actions(status)
         """)
 
-        # Action Items VPS extensions
+        # Action Items VSP extensions
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_action_items_week_action
             ON action_items(week_action_id)

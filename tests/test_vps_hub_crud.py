@@ -61,8 +61,14 @@ def test_delete_annual_records_for_vision_element_clears_links(tmp_path):
         ids = manager.create_annual_records_from_vision_element(2026, ve_id)
         ape_id = ids["annual_plan_element_id"]
 
+        board_row = manager.db.conn.execute(
+            "SELECT id FROM project_boards WHERE annual_plan_element_id = ?",
+            (ape_id,),
+        ).fetchone()
+        assert board_row is not None
+
         weekly = ActionItem(
-            who="VPS",
+            who="VSP",
             title="Weekly Parent",
             item_type="week",
             start_date="2026-02-23",
@@ -90,6 +96,12 @@ def test_delete_annual_records_for_vision_element_clears_links(tmp_path):
             (weekly.id,),
         ).fetchone()
         assert linked and linked["annual_plan_element_id"] is None
+
+        board_row = manager.db.conn.execute(
+            "SELECT id FROM project_boards WHERE annual_plan_element_id = ?",
+            (ape_id,),
+        ).fetchone()
+        assert board_row is None
     finally:
         manager.close()
 
@@ -98,7 +110,7 @@ def test_delete_weekly_action_item_removes_children(tmp_path):
     manager = _manager(tmp_path)
     try:
         weekly = ActionItem(
-            who="VPS",
+            who="VSP",
             title="Weekly Parent",
             item_type="week",
             start_date="2026-02-23",
@@ -107,7 +119,7 @@ def test_delete_weekly_action_item_removes_children(tmp_path):
         manager.db_manager.create_action_item(weekly, apply_defaults=False)
 
         child = ActionItem(
-            who="VPS",
+            who="VSP",
             title="Child Item",
             parent_id=weekly.id,
             start_date="2026-02-23",
@@ -180,5 +192,73 @@ def test_rename_segment_subsegment_category_propagates_keys(tmp_path):
         assert ave["segment_name"] == "Creative Work"
         assert ave["subsegment_name"] == "Writing Studio"
         assert ave["category_name"] == "APW Books"
+    finally:
+        manager.close()
+
+
+def test_assign_ape_to_quarter_creates_quarter_initiative_and_flag(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Writing")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "APW Book")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+        ape_id = ids["annual_plan_element_id"]
+
+        assert manager.assign_ape_to_quarter(ape_id, 2) is True
+
+        ape_row = manager.db.conn.execute(
+            "SELECT q2 FROM annual_plan_elements WHERE id = ?",
+            (ape_id,),
+        ).fetchone()
+        assert ape_row and ape_row["q2"] == 1
+
+        annual_initiative = manager.db.conn.execute(
+            "SELECT id FROM annual_initiatives WHERE year = 2026 AND title = ?",
+            (f"{segment_name}|{sub_name}|APW Book",),
+        ).fetchone()
+        assert annual_initiative is not None
+
+        quarter_row = manager.db.conn.execute(
+            "SELECT quarter, year FROM quarter_initiatives WHERE annual_initiative_id = ?",
+            (annual_initiative["id"],),
+        ).fetchone()
+        assert quarter_row and quarter_row["quarter"] == 2 and quarter_row["year"] == 2026
+    finally:
+        manager.close()
+
+
+def test_assign_ape_to_month_creates_month_tactic_and_flag(tmp_path):
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Writing")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "APW Book")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+        ape_id = ids["annual_plan_element_id"]
+
+        assert manager.assign_ape_to_month(ape_id, 2, 5) is True
+
+        ape_row = manager.db.conn.execute(
+            "SELECT q2, m5 FROM annual_plan_elements WHERE id = ?",
+            (ape_id,),
+        ).fetchone()
+        assert ape_row and ape_row["q2"] == 1 and ape_row["m5"] == 1
+
+        annual_initiative = manager.db.conn.execute(
+            "SELECT id FROM annual_initiatives WHERE year = 2026 AND title = ?",
+            (f"{segment_name}|{sub_name}|APW Book",),
+        ).fetchone()
+        assert annual_initiative is not None
+
+        quarter_row = manager.db.conn.execute(
+            "SELECT id FROM quarter_initiatives WHERE annual_initiative_id = ? AND quarter = 2 AND year = 2026",
+            (annual_initiative["id"],),
+        ).fetchone()
+        assert quarter_row is not None
+
+        month_row = manager.db.conn.execute(
+            "SELECT month, year FROM month_tactics WHERE quarter_initiative_id = ? AND month = 5 AND year = 2026",
+            (quarter_row["id"],),
+        ).fetchone()
+        assert month_row and month_row["month"] == 5 and month_row["year"] == 2026
     finally:
         manager.close()

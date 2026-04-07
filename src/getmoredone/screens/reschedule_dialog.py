@@ -6,7 +6,7 @@ import customtkinter as ctk
 from datetime import datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 
-from ..theme import button_style
+from ..theme import button_style, status_text_color
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -85,7 +85,7 @@ class RescheduleDialog(ctk.CTkToplevel):
             main_frame,
             text=new_text,
             font=ctk.CTkFont(size=12),
-            text_color="lightblue"
+            text_color=status_text_color("info")
         ).pack(pady=(0, 20))
 
         # Reason
@@ -94,7 +94,7 @@ class RescheduleDialog(ctk.CTkToplevel):
         self.reason_text.pack(fill="x", pady=5)
 
         # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red")
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color=status_text_color("error"))
         self.error_label.pack(pady=5)
 
         # Buttons
@@ -109,7 +109,7 @@ class RescheduleDialog(ctk.CTkToplevel):
         )
         btn_save.pack(side="left", padx=5)
 
-        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy)
+        btn_cancel = ctk.CTkButton(btn_frame, text="Cancel", command=self.destroy, **button_style("secondary"))
         btn_cancel.pack(side="left", padx=5)
 
     def save(self):

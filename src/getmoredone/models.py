@@ -48,12 +48,12 @@ class ActionItem:
     planned_minutes: Optional[int] = None
     status: str = "open"
     completed_at: Optional[str] = None
-    week_action_id: Optional[str] = None  # References week_actions.id for VPS integration
+    week_action_id: Optional[str] = None  # References week_actions.id for VSP integration
     annual_plan_element_id: Optional[str] = None  # References annual_plan_elements.id for APE linkage
     item_type: str = "daily"  # daily, week
-    segment_description_id: Optional[str] = None  # References segment_descriptions.id for VPS integration
-    is_habit: bool = False  # VPS: Indicates if this is a habit item
-    percent_complete: int = 0  # VPS: Completion percentage (0-100)
+    segment_description_id: Optional[str] = None  # References segment_descriptions.id for VSP integration
+    is_habit: bool = False  # VSP: Indicates if this is a habit item
+    percent_complete: int = 0  # VSP: Completion percentage (0-100)
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -124,6 +124,35 @@ class ContactLink:
     url: str
     label: Optional[str] = None
     link_type: str = "url"  # "url", "file", "obsidian_note"
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class ProjectBoard:
+    """Represents a project board card linked to an Annual Plan Element."""
+
+    title: str
+    annual_plan_element_id: Optional[str] = None
+    importance: Optional[int] = None
+    next_step: Optional[str] = None
+    notes: Optional[str] = None
+    display_order: Optional[int] = None
+    status: str = "active"
+    completed_at: Optional[str] = None
+    id: str = field(default_factory=lambda: str(uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+@dataclass
+class ProjectBoardLink:
+    """Represents a link/attachment on a project board."""
+
+    project_board_id: str
+    url: str
+    label: Optional[str] = None
+    link_type: str = "url"
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -233,3 +262,11 @@ class Status:
     OPEN = "open"
     COMPLETED = "completed"
     CANCELED = "canceled"
+
+
+class ProjectBoardStatus:
+    """Valid status values for project boards."""
+
+    ACTIVE = "active"
+    PENDING = "pending"
+    COMPLETED = "completed"

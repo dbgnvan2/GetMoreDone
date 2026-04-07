@@ -118,6 +118,7 @@ def test_weekly_item_helpers_return_records(tmp_path):
         )
         assert len(items) == 1
         assert items[0]["title"] == "C|W|APW Book - W9"
+        assert items[0]["group"] == "Weekly Tactic"
 
         # Month picker metadata should include February 2026
         months = manager.get_weekly_action_item_months()

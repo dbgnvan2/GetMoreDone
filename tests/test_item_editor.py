@@ -6,10 +6,13 @@ import pytest
 import tempfile
 import os
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 from src.getmoredone.database import Database
 from src.getmoredone.db_manager import DatabaseManager
 from src.getmoredone.models import ActionItem, Defaults, PriorityFactors
+from src.getmoredone.screens.item_editor import ItemEditorDialog
+from src.getmoredone.screens.vps_editors import _show_dialog_after_layout
 
 
 @pytest.fixture
@@ -214,6 +217,84 @@ def test_priority_score_calculation_with_defaults(temp_db):
     retrieved = temp_db.get_action_item(item_id)
     expected_score = 10 * 5 * 4 * 8  # 1600
     assert retrieved.priority_score == expected_score
+
+
+def test_item_editor_do_center_uses_requested_dialog_size():
+    calls = []
+
+    dialog = SimpleNamespace(
+        master=SimpleNamespace(
+            update_idletasks=lambda: calls.append("parent_update"),
+            winfo_rootx=lambda: 100,
+            winfo_rooty=lambda: 50,
+            winfo_width=lambda: 1200,
+            winfo_height=lambda: 800,
+        ),
+        winfo_reqwidth=lambda: 920,
+        winfo_reqheight=lambda: 550,
+        winfo_width=lambda: 1,
+        winfo_height=lambda: 1,
+        geometry=lambda value: calls.append(("geometry", value)),
+        update_idletasks=lambda: calls.append("dialog_update"),
+    )
+
+    ItemEditorDialog._do_center(dialog)
+
+    assert ("geometry", "920x550+240+175") in calls
+    assert "parent_update" in calls
+    assert "dialog_update" in calls
+
+
+def test_item_editor_finalize_reveals_after_centering():
+    calls = []
+
+    dialog = SimpleNamespace(
+        update_idletasks=lambda: calls.append("update"),
+        _do_center=lambda: calls.append("center"),
+        deiconify=lambda: calls.append("show"),
+        after_idle=lambda callback: (calls.append("after_idle"), callback()),
+        _show_dialog_contents=lambda: calls.append("finish"),
+    )
+
+    ItemEditorDialog._finalize_dialog_window(dialog)
+
+    assert calls == ["update", "center", "show", "after_idle", "finish"]
+
+
+def test_vps_editor_show_dialog_after_layout_centers_then_reveals():
+    calls = []
+
+    dialog = SimpleNamespace(
+        transient=lambda parent: calls.append(("transient", parent)),
+        grab_set=lambda: calls.append("grab"),
+        update_idletasks=lambda: calls.append("dialog_update"),
+        winfo_reqwidth=lambda: 700,
+        winfo_reqheight=lambda: 900,
+        winfo_width=lambda: 1,
+        winfo_height=lambda: 1,
+        geometry=lambda value: calls.append(("geometry", value)),
+        deiconify=lambda: calls.append("show"),
+        after_idle=lambda callback: (calls.append("after_idle"), callback()),
+        lift=lambda: calls.append("lift"),
+        focus_force=lambda: calls.append("focus"),
+    )
+    parent = SimpleNamespace(
+        update_idletasks=lambda: calls.append("parent_update"),
+        winfo_rootx=lambda: 100,
+        winfo_rooty=lambda: 50,
+        winfo_width=lambda: 1200,
+        winfo_height=lambda: 1000,
+    )
+
+    _show_dialog_after_layout(dialog, parent)
+
+    assert ("geometry", "700x900+350+100") in calls
+    assert calls[:4] == [("transient", parent), "grab", "dialog_update", "parent_update"]
+    assert "show" in calls
+    assert "after_idle" in calls
+    assert "lift" in calls
+    assert "focus" in calls
+    assert calls.index("show") < calls.index("after_idle") < calls.index("lift") < calls.index("focus")
 
 
 if __name__ == "__main__":

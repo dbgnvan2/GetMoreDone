@@ -5,6 +5,8 @@ Stats screen - planned vs actual time statistics.
 import customtkinter as ctk
 from typing import TYPE_CHECKING
 
+from ..theme import semantic_colors, status_text_color
+
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
     from ..app import GetMoreDoneApp
@@ -74,7 +76,8 @@ class StatsScreen(ctk.CTkFrame):
         total_actual = sum(s['actual_minutes'] for s in stats)
         total_variance = total_actual - total_planned
 
-        summary_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+        palette = semantic_colors()
+        summary_frame = ctk.CTkFrame(self.scroll_frame, fg_color=palette["surface_subtle"])
         summary_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10), padx=5)
         summary_frame.grid_columnconfigure(0, weight=1)
 
@@ -94,7 +97,7 @@ class StatsScreen(ctk.CTkFrame):
             ctk.CTkLabel(summary_frame, text=accuracy_text).grid(row=2, column=0, sticky="w", padx=10, pady=5)
 
         # Table header
-        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray30")
+        header_frame = ctk.CTkFrame(self.scroll_frame, fg_color=palette["surface_subtle"])
         header_frame.grid(row=1, column=0, sticky="ew", pady=(10, 2), padx=5)
         header_frame.grid_columnconfigure(0, weight=1)
 
@@ -136,7 +139,7 @@ class StatsScreen(ctk.CTkFrame):
 
             # Variance
             variance = stat['variance']
-            variance_color = "green" if variance <= 0 else "red"
+            variance_color = status_text_color("success") if variance <= 0 else status_text_color("error")
             ctk.CTkLabel(
                 item_frame,
                 text=f"{variance:+d}m",
@@ -145,7 +148,7 @@ class StatsScreen(ctk.CTkFrame):
             ).grid(row=0, column=6, padx=5, pady=5)
 
         # Insights section
-        insights_frame = ctk.CTkFrame(self.scroll_frame, fg_color="gray25")
+        insights_frame = ctk.CTkFrame(self.scroll_frame, fg_color=palette["surface_subtle"])
         insights_frame.grid(row=len(stats)+2, column=0, sticky="ew", pady=(10, 0), padx=5)
 
         ctk.CTkLabel(

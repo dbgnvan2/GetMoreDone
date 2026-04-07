@@ -36,14 +36,14 @@ class GetMoreDoneApp(ctk.CTk):
         # Initialize database
         self.db_manager = DatabaseManager()
 
-        # Initialize VPS manager with shared db_manager
+        # Initialize VSP manager with shared db_manager
         self.vps_manager = VPSManager(db_manager=self.db_manager)
 
         # Backfill legacy action items so they carry segment ids
         try:
             updated_segments = self.db_manager.backfill_action_item_segments()
             if updated_segments:
-                print(f"[VPS] Backfilled segment ids on {updated_segments} action item(s).")
+                print(f"[VSP] Backfilled segment ids on {updated_segments} action item(s).")
         except Exception as exc:
             print(f"[WARN] Unable to backfill action item segments: {exc}")
 
@@ -90,6 +90,7 @@ class GetMoreDoneApp(ctk.CTk):
             "upcoming": self.show_upcoming,
             "all_items": self.show_all_items,
             "hierarchical": self.show_hierarchical,
+            "project_boards": self.show_project_boards,
             "vision_planning": self.show_vision_planning_hub,
             "plan": self.show_plan,
             "drag_schedule": self.show_drag_schedule,
@@ -107,7 +108,7 @@ class GetMoreDoneApp(ctk.CTk):
         """Create navigation sidebar."""
         self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
-        self.sidebar.grid_rowconfigure(18, weight=1)
+        self.sidebar.grid_rowconfigure(19, weight=1)
 
         # Logo/title
         self.logo_label = ctk.CTkLabel(
@@ -169,6 +170,16 @@ class GetMoreDoneApp(ctk.CTk):
         self.btn_drag_schedule.grid(row=5, column=0, padx=20, pady=10)
         self.nav_buttons["drag_schedule"] = self.btn_drag_schedule
 
+        self.btn_project_boards = ctk.CTkButton(
+            self.sidebar,
+            text="Projects",
+            command=self.show_project_boards,
+            fg_color="transparent",
+            border_width=1
+        )
+        self.btn_project_boards.grid(row=6, column=0, padx=20, pady=10)
+        self.nav_buttons["project_boards"] = self.btn_project_boards
+
         self.btn_completed = ctk.CTkButton(
             self.sidebar,
             text="Completed",
@@ -176,7 +187,7 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_completed.grid(row=6, column=0, padx=20, pady=10)
+        self.btn_completed.grid(row=7, column=0, padx=20, pady=10)
         self.nav_buttons["completed"] = self.btn_completed
 
         self.btn_stats = ctk.CTkButton(
@@ -186,7 +197,7 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_stats.grid(row=8, column=0, padx=20, pady=10)
+        self.btn_stats.grid(row=9, column=0, padx=20, pady=10)
         self.nav_buttons["stats"] = self.btn_stats
 
         self.btn_contacts = ctk.CTkButton(
@@ -196,17 +207,17 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_contacts.grid(row=9, column=0, padx=20, pady=10)
+        self.btn_contacts.grid(row=10, column=0, padx=20, pady=10)
         self.nav_buttons["contacts"] = self.btn_contacts
 
         self.btn_vps_planning = ctk.CTkButton(
             self.sidebar,
-            text="VPS Plan",
+            text="VSP Plan",
             command=self.show_vision_planning_hub,
             fg_color="transparent",
             border_width=1
         )
-        self.btn_vps_planning.grid(row=10, column=0, padx=20, pady=10)
+        self.btn_vps_planning.grid(row=11, column=0, padx=20, pady=10)
         self.nav_buttons["vision_planning"] = self.btn_vps_planning
 
         self.btn_plan = ctk.CTkButton(
@@ -216,7 +227,7 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_plan.grid(row=11, column=0, padx=20, pady=10)
+        self.btn_plan.grid(row=12, column=0, padx=20, pady=10)
         self.nav_buttons["plan"] = self.btn_plan
 
         self.btn_defaults = ctk.CTkButton(
@@ -226,7 +237,7 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_defaults.grid(row=12, column=0, padx=20, pady=10)
+        self.btn_defaults.grid(row=13, column=0, padx=20, pady=10)
         self.nav_buttons["defaults"] = self.btn_defaults
 
         self.btn_settings = ctk.CTkButton(
@@ -236,7 +247,7 @@ class GetMoreDoneApp(ctk.CTk):
             fg_color="transparent",
             border_width=1
         )
-        self.btn_settings.grid(row=13, column=0, padx=20, pady=10)
+        self.btn_settings.grid(row=14, column=0, padx=20, pady=10)
         self.nav_buttons["settings"] = self.btn_settings
         self._apply_sidebar_button_styles()
 
@@ -321,6 +332,14 @@ class GetMoreDoneApp(ctk.CTk):
         self.current_screen.grid(row=0, column=0, sticky="nsew")
         self._set_active_nav("drag_schedule")
 
+    def show_project_boards(self):
+        """Show Project Boards screen."""
+        from .screens.project_boards import ProjectBoardsScreen
+        self.clear_content()
+        self.current_screen = ProjectBoardsScreen(self.content_frame, self.db_manager, self)
+        self.current_screen.grid(row=0, column=0, sticky="nsew")
+        self._set_active_nav("project_boards")
+
     def show_completed(self):
         """Show Completed screen."""
         from .screens.completed import CompletedScreen
@@ -388,11 +407,15 @@ class GetMoreDoneApp(ctk.CTk):
         self._set_active_nav("vision_planning")
 
     def show_annual_vision_segments(self):
-        """Show Annual Vision Segments screen."""
+        """Show Annual Plan Elements screen."""
         from .screens.annual_vision_segments import AnnualVisionSegmentsScreen
         self.clear_content()
         self.current_screen = AnnualVisionSegmentsScreen(self.content_frame, self.vps_manager, self)
         self.current_screen.grid(row=0, column=0, sticky="nsew")
+
+    def show_annual_vision_elements(self):
+        """Compatibility alias for Annual Plan Elements navigation."""
+        self.show_annual_vision_segments()
 
     def show_ape_assignment(self):
         """Show APE Assignment screen."""

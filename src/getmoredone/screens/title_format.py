@@ -74,3 +74,15 @@ def format_column_text(value: str | None, max_chars: int) -> str:
     if max_chars <= 3:
         return "." * max_chars
     return text[: max_chars - 3].rstrip() + "..."
+
+
+def responsive_column_chars(available_width: int) -> dict[str, int]:
+    """Keep Immediate Step, SubSegment, and Category stable while other fields shrink."""
+    limits = {
+        "title": TITLE_COL_CHARS,
+        "subsegment": 15,
+        "category": 15,
+        "context": 10,
+        "who": 10,
+    }
+    return limits

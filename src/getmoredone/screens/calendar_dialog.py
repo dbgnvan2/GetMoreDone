@@ -8,7 +8,7 @@ from typing import Optional, TYPE_CHECKING
 
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
-from ..theme import button_style
+from ..theme import button_style, status_text_color
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -130,7 +130,7 @@ class CalendarEventDialog(ctk.CTkToplevel):
         self.attendees_entry.pack(pady=(0, 15))
 
         # Error label
-        self.error_label = ctk.CTkLabel(main_frame, text="", text_color="red", wraplength=550)
+        self.error_label = ctk.CTkLabel(main_frame, text="", text_color=status_text_color("error"), wraplength=550)
         self.error_label.pack(pady=5)
 
         # Buttons

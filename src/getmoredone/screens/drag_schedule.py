@@ -1,16 +1,24 @@
 """
-Drag Schedule screen - drag items onto date boxes to reschedule.
+Scheduler screen - drag items onto date boxes to reschedule.
 """
 
+import calendar
 import customtkinter as ctk
 from datetime import datetime, timedelta
+import tkinter as tk
 from typing import Optional, TYPE_CHECKING
 
 from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
-from ..date_utils import future_date_targets
-from ..theme import semantic_colors
+from ..theme import button_style, combo_box_style, semantic_colors
+from .drag_schedule_support import (
+    color_for_day_stats,
+    date_background_for,
+    date_text_color_for,
+    format_day_stats_text,
+    future_options_for,
+)
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 from .title_format import split_action_item_title, format_column_text
 
@@ -21,6 +29,19 @@ if TYPE_CHECKING:
 
 class DragScheduleScreen(ctk.CTkFrame):
     """Screen with drag-and-drop scheduling onto date boxes."""
+
+    TITLE_COL_CHARS = 30
+    LINEAGE_COL_CHARS = 15
+    LINEAGE_COL_MIN_WIDTH = 150
+    TITLE_COL_MIN_WIDTH = 260
+    DATE_BOX_DAY_MIN_WIDTH = 104
+    DATE_BOX_DATE_MIN_WIDTH = 84
+    DATE_BOX_ITEMS_MIN_WIDTH = 84
+    DATE_BOX_TIME_MIN_WIDTH = 84
+    ITEM_TITLE_CHARS = 20
+    ITEM_META_CHARS = 15
+    ITEM_TITLE_COL_WIDTH = 220
+    ITEM_META_COL_WIDTH = 170
 
     def __init__(self, parent, db_manager: 'DatabaseManager', app: 'GetMoreDoneApp'):
         super().__init__(parent)
@@ -45,6 +66,15 @@ class DragScheduleScreen(ctk.CTkFrame):
         self._ape_lineage_cache = {}
         self._week_segment_cache = {}
         self._item_lineage_cache = {}
+        self.selected_date_filter: Optional[str] = None
+        self.selected_date_frames: dict[str, list[ctk.CTkFrame]] = {}
+        self.date_frame_dates: dict[ctk.CTkFrame, str] = {}
+        self.project_boxes: list[dict] = []
+        self.project_box_ids: dict[ctk.CTkFrame, str] = {}
+        self.selected_project_id: Optional[str] = None
+        self.segment_filter_var = ctk.StringVar(value="All")
+        self.subsegment_filter_var = ctk.StringVar(value="All")
+        self.project_sort_var = ctk.StringVar(value="Title")
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -62,11 +92,11 @@ class DragScheduleScreen(ctk.CTkFrame):
     def create_header(self):
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(6, weight=1)
+        header.grid_columnconfigure(11, weight=1)
 
         title = ctk.CTkLabel(
             header,
-            text="Drag Schedule",
+            text="Scheduler",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         title.grid(row=0, column=0, padx=10, pady=10)
@@ -80,15 +110,24 @@ class DragScheduleScreen(ctk.CTkFrame):
             values=["1", "3", "7", "14", "30"],
             variable=self.days_var,
             width=80,
-            command=lambda _: self.refresh()
+            **combo_box_style(),
         )
         self.days_combo.grid(row=0, column=2, padx=5, pady=10)
 
         ctk.CTkLabel(header, text="days").grid(
             row=0, column=3, sticky="w", padx=5, pady=10)
 
+        self.refresh_btn = ctk.CTkButton(
+            header,
+            text="Refresh",
+            width=88,
+            command=self.refresh_all_dates,
+            **button_style("secondary"),
+        )
+        self.refresh_btn.grid(row=0, column=4, padx=(10, 5), pady=10)
+
         ctk.CTkLabel(header, text="Who:").grid(
-            row=0, column=4, padx=(20, 5), pady=10)
+            row=0, column=5, padx=(20, 5), pady=10)
 
         who_values = ["All"] + self.db_manager.get_distinct_who_values()
         self.who_var = ctk.StringVar(value="All")
@@ -97,55 +136,137 @@ class DragScheduleScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
+            **combo_box_style(),
             command=lambda _: self.refresh()
         )
-        self.who_combo.grid(row=0, column=5, padx=5, pady=10)
+        self.who_combo.grid(row=0, column=6, padx=5, pady=10)
 
-        help_text = ctk.CTkLabel(
-            header,
-            text="Drag a Next Item onto a date box to reschedule",
-            text_color="gray70"
+        ctk.CTkLabel(header, text="Segment:").grid(
+            row=0, column=7, padx=(14, 5), pady=10
         )
-        help_text.grid(row=0, column=6, sticky="e", padx=10, pady=10)
+        self.segment_filter_combo = ctk.CTkComboBox(
+            header,
+            values=["All"],
+            variable=self.segment_filter_var,
+            width=160,
+            **combo_box_style(),
+            command=lambda _v: self.on_segment_filter_changed(),
+        )
+        self.segment_filter_combo.grid(row=0, column=8, padx=5, pady=10)
+
+        ctk.CTkLabel(header, text="SubSegment:").grid(
+            row=0, column=9, padx=(14, 5), pady=10
+        )
+        self.subsegment_filter_combo = ctk.CTkComboBox(
+            header,
+            values=["All"],
+            variable=self.subsegment_filter_var,
+            width=160,
+            **combo_box_style(),
+            command=lambda _v: self.on_subsegment_filter_changed(),
+        )
+        self.subsegment_filter_combo.grid(row=0, column=10, padx=5, pady=10)
 
     def create_body(self):
         body = ctk.CTkFrame(self)
         body.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         body.grid_columnconfigure(0, weight=1)
-        body.grid_columnconfigure(1, weight=1)
         body.grid_rowconfigure(0, weight=1)
+        palette = semantic_colors()
+
+        self.splitter = tk.PanedWindow(
+            body,
+            orient=tk.HORIZONTAL,
+            sashwidth=8,
+            sashrelief=tk.RAISED,
+            bd=0,
+            bg=palette["surface_subtle"],
+        )
+        self.splitter.grid(row=0, column=0, sticky="nsew")
 
         # Left: Next Items list
-        left_frame = ctk.CTkFrame(body)
-        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left_frame = ctk.CTkFrame(self.splitter)
         left_frame.grid_rowconfigure(1, weight=1)
         left_frame.grid_columnconfigure(0, weight=1)
 
+        left_title = ctk.CTkFrame(left_frame, fg_color="transparent")
+        left_title.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        left_title.grid_columnconfigure(1, weight=1)
+
         ctk.CTkLabel(
-            left_frame,
-            text="Next Items",
+            left_title,
+            text="Action Items",
             font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            left_title,
+            text="(Click and drag an Item to the Date Box to set the Start Date)",
+            text_color=palette["muted_text"],
+        ).grid(row=0, column=1, sticky="w", padx=(10, 0))
 
         self.items_frame = ctk.CTkScrollableFrame(left_frame, label_text="")
         self.items_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
         self.items_frame.grid_columnconfigure(0, weight=1)
 
-        # Right: Date boxes
-        right_frame = ctk.CTkFrame(body)
-        right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
-        right_frame.grid_rowconfigure(1, weight=1)
+        # Right: Date views
+        right_frame = ctk.CTkFrame(self.splitter)
+        right_frame.grid_rowconfigure(0, weight=1)
         right_frame.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkLabel(
-            right_frame,
-            text="Date Boxes",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+        self.date_view_tabs = ctk.CTkTabview(right_frame)
+        self.date_view_tabs.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
 
-        self.dates_frame = ctk.CTkScrollableFrame(right_frame, label_text="")
-        self.dates_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.date_boxes_tab = self.date_view_tabs.add("Date Boxes")
+        self.date_boxes_tab.grid_rowconfigure(0, weight=1)
+        self.date_boxes_tab.grid_columnconfigure(0, weight=1)
+
+        self.calendar_tab = self.date_view_tabs.add("Calendar")
+        self.calendar_tab.grid_rowconfigure(0, weight=1)
+        self.calendar_tab.grid_columnconfigure(0, weight=1)
+
+        self.projects_tab = self.date_view_tabs.add("Projects")
+        self.projects_tab.grid_rowconfigure(1, weight=1)
+        self.projects_tab.grid_columnconfigure(0, weight=1)
+
+        self.project_controls = ctk.CTkFrame(self.projects_tab, fg_color="transparent")
+        self.project_controls.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 5))
+        
+        ctk.CTkLabel(self.project_controls, text="Sort Projects by:").pack(side="left", padx=(0, 5))
+        self.project_sort_combo = ctk.CTkComboBox(
+            self.project_controls,
+            values=["Title", "Subsegment", "Category"],
+            variable=self.project_sort_var,
+            width=140,
+            **combo_box_style(),
+            command=lambda _: self.refresh()
+        )
+        self.project_sort_combo.pack(side="left")
+
+        self.dates_frame = ctk.CTkScrollableFrame(self.date_boxes_tab, label_text="")
+        self.dates_frame.grid(row=0, column=0, sticky="nsew")
         self.dates_frame.grid_columnconfigure(0, weight=1)
+
+        self.calendar_frame = ctk.CTkFrame(self.calendar_tab)
+        self.calendar_frame.grid(row=0, column=0, sticky="nsew")
+        self.calendar_frame.grid_columnconfigure(0, weight=1)
+        self.calendar_frame.grid_rowconfigure(1, weight=1)
+
+        self.projects_frame = ctk.CTkScrollableFrame(self.projects_tab, label_text="")
+        self.projects_frame.grid(row=1, column=0, sticky="nsew")
+        self.projects_frame.grid_columnconfigure(0, weight=1)
+
+        self.splitter.add(left_frame, minsize=320)
+        self.splitter.add(right_frame, minsize=320)
+        self.after(100, self._init_splitter_position)
+
+    def _init_splitter_position(self):
+        if not hasattr(self, "splitter"):
+            return
+        width = self.splitter.winfo_width()
+        if width <= 0:
+            self.after(100, self._init_splitter_position)
+            return
+        self.splitter.sash_place(0, int(width * 0.5), 0)
 
     def refresh(self):
         # Re-load settings so size/color changes from Settings screen apply immediately.
@@ -153,30 +274,38 @@ class DragScheduleScreen(ctk.CTkFrame):
         self._sync_ui_sizing_from_settings()
         self.palette = semantic_colors()
         self._reload_lineage_maps()
+        self._refresh_filter_options()
 
         for widget in self.items_frame.winfo_children():
             widget.destroy()
         for widget in self.dates_frame.winfo_children():
             widget.destroy()
+        for widget in self.calendar_frame.winfo_children():
+            widget.destroy()
+        for widget in self.projects_frame.winfo_children():
+            widget.destroy()
 
         self.date_boxes = []
         self.date_box_colors = {}
+        self.selected_date_frames = {}
+        self.date_frame_dates = {}
+        self.project_boxes = []
+        self.project_box_ids = {}
 
         items = self.load_items()
         if not items:
             ctk.CTkLabel(
                 self.items_frame,
-                text="No next items",
+                text="No action items",
                 font=ctk.CTkFont(size=14)
             ).grid(row=0, column=0, pady=20)
         else:
             header = ctk.CTkFrame(self.items_frame, fg_color=self.palette["surface_subtle"])
             header.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 4))
-            header.grid_columnconfigure(0, minsize=280)
-            header.grid_columnconfigure(1, minsize=120)
-            header.grid_columnconfigure(2, minsize=120)
-            header.grid_columnconfigure(3, minsize=120)
-            header.grid_columnconfigure(4, weight=1)
+            header.grid_columnconfigure(0, minsize=self.TITLE_COL_MIN_WIDTH)
+            header.grid_columnconfigure(1, minsize=self.LINEAGE_COL_MIN_WIDTH)
+            header.grid_columnconfigure(2, minsize=self.LINEAGE_COL_MIN_WIDTH)
+            header.grid_columnconfigure(3, minsize=self.LINEAGE_COL_MIN_WIDTH, weight=1)
             ctk.CTkLabel(header, text="Title", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=0, sticky="w", padx=(10, 4), pady=5
             )
@@ -189,9 +318,6 @@ class DragScheduleScreen(ctk.CTkFrame):
             ctk.CTkLabel(header, text="Category", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=3, sticky="w", padx=4, pady=5
             )
-            ctk.CTkLabel(header, text="Date", anchor="e", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=4, sticky="e", padx=(4, 10), pady=5
-            )
 
             row = 1
             for item in items:
@@ -200,6 +326,13 @@ class DragScheduleScreen(ctk.CTkFrame):
                 row += 1
 
         self.build_date_boxes()
+        self.build_calendar_view()
+        self.build_project_boxes()
+
+    def refresh_all_dates(self):
+        self.selected_date_filter = None
+        self.selected_project_id = None
+        self.refresh()
 
     def _reload_lineage_maps(self):
         self.segment_colors, self.subsegment_colors = load_latest_lineage_color_maps(self.app.vps_manager)
@@ -219,6 +352,35 @@ class DragScheduleScreen(ctk.CTkFrame):
         n_days = int(self.days_var.get())
         who_filter = None if self.who_var.get() == "All" else self.who_var.get()
 
+        if self.selected_date_filter:
+            all_open = self.db_manager.get_all_items(
+                status_filter="open",
+                who_filter=who_filter,
+                sort_by="priority_score",
+                sort_desc=True
+            )
+            return [
+                item for item in all_open
+                if (item.start_date or item.due_date) == self.selected_date_filter
+                and self._item_matches_filters(item)
+            ]
+
+        if self.selected_project_id:
+            if self.selected_project_id == "__none__":
+                unlinked = self.db_manager.get_unlinked_action_items(status_filter="open")
+                return [
+                    item for item in unlinked
+                    if (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
+                    and self._item_matches_filters(item)
+                ]
+            else:
+                return [
+                    item for item in self.db_manager.get_project_board_items(self.selected_project_id)
+                    if item.status == "open"
+                    and (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
+                    and self._item_matches_filters(item)
+                ]
+
         upcoming = self.db_manager.get_upcoming_items(n_days, who_filter)
         all_open = self.db_manager.get_all_items(
             status_filter="open",
@@ -233,7 +395,130 @@ class DragScheduleScreen(ctk.CTkFrame):
         for item in upcoming:
             if item.id not in no_date_ids:
                 items.append(item)
-        return items
+        return [item for item in items if self._item_matches_filters(item)]
+
+    def build_project_boxes(self):
+        projects = self.db_manager.get_project_boards(show_pending=True)
+        # Filter projects by current segment/subsegment filters if applicable
+        selected_segment = (self.segment_filter_var.get() or "All").strip()
+        selected_subsegment = (self.subsegment_filter_var.get() or "All").strip()
+        
+        filtered_projects = []
+        for p in projects:
+            if selected_segment != "All" and p.get("segment_name") != selected_segment:
+                continue
+            if selected_subsegment != "All" and p.get("subsegment_name") != selected_subsegment:
+                continue
+            filtered_projects.append(p)
+
+        # Apply sorting
+        sort_by = self.project_sort_var.get()
+        if sort_by == "Subsegment":
+            filtered_projects.sort(key=lambda x: ((x.get("subsegment_name") or "").lower(), (x.get("title") or "").lower()))
+        elif sort_by == "Category":
+            filtered_projects.sort(key=lambda x: ((x.get("category_name") or "").lower(), (x.get("title") or "").lower()))
+        else: # Title
+            filtered_projects.sort(key=lambda x: (x.get("title") or "").lower())
+
+        # "No Project" special filter box
+        unlinked_count = len(self.db_manager.get_unlinked_action_items(status_filter="open"))
+        no_project_color = self.palette["surface_subtle"]
+        no_project_text = pick_text_color(no_project_color)
+        project_box_height = int(self.date_box_height * 1.5)
+
+        no_project_frame = ctk.CTkFrame(self.projects_frame, height=project_box_height, fg_color=no_project_color)
+        no_project_frame.grid_propagate(False)
+        no_project_frame.grid(row=0, column=0, sticky="ew", padx=2, pady=2)
+        no_project_frame.grid_columnconfigure(0, weight=1)
+        no_project_frame.grid_rowconfigure(0, weight=1)
+        no_project_frame.grid_rowconfigure(1, weight=1)
+
+        label_np_title = ctk.CTkLabel(
+            no_project_frame,
+            text="Unlinked (No Project)",
+            font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+            text_color=no_project_text,
+            anchor="w"
+        )
+        label_np_title.grid(row=0, column=0, sticky="sw", padx=10, pady=(2, 0))
+
+        label_np_stats = ctk.CTkLabel(
+            no_project_frame,
+            text=f"{unlinked_count} unlinked items",
+            font=ctk.CTkFont(size=12),
+            text_color=no_project_text,
+            anchor="w"
+        )
+        label_np_stats.grid(row=1, column=0, sticky="nw", padx=10, pady=(0, 2))
+
+        for w in [no_project_frame, label_np_title, label_np_stats]:
+            w.bind("<ButtonPress-1>", lambda _e: self.on_project_target_click("__none__"))
+
+        self.project_boxes.append({"frame": no_project_frame, "id": "__none__"})
+        self.project_box_ids[no_project_frame] = "__none__"
+        self.date_box_colors[no_project_frame] = no_project_color
+        
+        is_np_selected = self.selected_project_id == "__none__"
+        no_project_frame.configure(
+            border_width=2 if is_np_selected else 0,
+            border_color=self.palette["primary"] if is_np_selected else self.palette["border"],
+        )
+
+        for i, row in enumerate(filtered_projects):
+            color = (row.get("category_color_hex") or "").strip() or self.palette["surface_subtle"]
+            text_color = pick_text_color(color)
+            
+            frame = ctk.CTkFrame(self.projects_frame, height=project_box_height, fg_color=color)
+            frame.grid_propagate(False)
+            frame.grid(row=i + 1, column=0, sticky="ew", padx=2, pady=2)
+            frame.grid_columnconfigure(0, weight=1)
+            frame.grid_rowconfigure(0, weight=1)
+            frame.grid_rowconfigure(1, weight=1)
+            
+            title = row.get("title") or "Untitled Project"
+            meta = f"{row.get('segment_name')} | {row.get('subsegment_name')} | {row.get('category_name')}"
+            stats = f"{row.get('open_item_count', 0)} open items"
+            
+            label_title = ctk.CTkLabel(
+                frame,
+                text=title,
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=text_color,
+                anchor="w"
+            )
+            label_title.grid(row=0, column=0, sticky="sw", padx=10, pady=(2, 0))
+            
+            label_meta = ctk.CTkLabel(
+                frame,
+                text=f"{meta}  ({stats})",
+                font=ctk.CTkFont(size=12),
+                text_color=text_color,
+                anchor="w"
+            )
+            label_meta.grid(row=1, column=0, sticky="nw", padx=10, pady=(0, 2))
+            
+            # Bind clicks for filtering
+            for w in [frame, label_title, label_meta]:
+                w.bind("<ButtonPress-1>", lambda _e, pid=row["id"]: self.on_project_target_click(pid))
+
+            self.project_boxes.append({"frame": frame, "id": row["id"]})
+            self.project_box_ids[frame] = row["id"]
+            self.date_box_colors[frame] = color # For hover effect
+            
+            # Highlight if selected
+            is_selected = self.selected_project_id == row["id"]
+            frame.configure(
+                border_width=2 if is_selected else 0,
+                border_color=self.palette["primary"] if is_selected else self.palette["border"],
+            )
+
+    def on_project_target_click(self, project_id: str):
+        if self.selected_project_id == project_id:
+            self.selected_project_id = None
+        else:
+            self.selected_project_id = project_id
+            self.selected_date_filter = None # Clear date filter when project is selected
+        self.refresh()
 
     @staticmethod
     def _lineage_from_structured_title(item: ActionItem) -> tuple[str, str, str]:
@@ -327,14 +612,50 @@ class DragScheduleScreen(ctk.CTkFrame):
             self._item_lineage_cache[item_id] = lineage
         return lineage
 
+    def _refresh_filter_options(self):
+        segment_values = ["All"] + [row["name"] for row in self.app.vps_manager.get_vision_segments()]
+        current_segment = self.segment_filter_var.get().strip() or "All"
+        if current_segment not in segment_values:
+            current_segment = "All"
+            self.segment_filter_var.set(current_segment)
+        self.segment_filter_combo.configure(values=segment_values)
+
+        segment_name = None if current_segment == "All" else current_segment
+        subsegment_values = ["All"] + [
+            row["name"] for row in self.app.vps_manager.get_vision_subsegments(segment_name=segment_name)
+        ]
+        current_subsegment = self.subsegment_filter_var.get().strip() or "All"
+        if current_subsegment not in subsegment_values:
+            current_subsegment = "All"
+            self.subsegment_filter_var.set(current_subsegment)
+        self.subsegment_filter_combo.configure(values=subsegment_values)
+
+    def on_segment_filter_changed(self):
+        self._refresh_filter_options()
+        self.refresh()
+
+    def on_subsegment_filter_changed(self):
+        self.refresh()
+
+    def _item_matches_filters(self, item: ActionItem) -> bool:
+        segment_name, subsegment_name, _category_name = self._lineage_for_item(item)
+        selected_segment = (self.segment_filter_var.get() or "All").strip()
+        selected_subsegment = (self.subsegment_filter_var.get() or "All").strip()
+
+        if selected_segment != "All" and segment_name != selected_segment:
+            return False
+        if selected_subsegment != "All" and subsegment_name != selected_subsegment:
+            return False
+        return True
+
     def create_item_row(self, item: ActionItem):
         frame = ctk.CTkFrame(self.items_frame, height=self.item_row_height)
         frame.grid_propagate(False)
-        frame.grid_columnconfigure(0, minsize=280)
-        frame.grid_columnconfigure(1, minsize=120)
-        frame.grid_columnconfigure(2, minsize=112)
-        frame.grid_columnconfigure(3, minsize=112)
-        frame.grid_columnconfigure(4, weight=1)
+        frame.grid_columnconfigure(0, minsize=self.ITEM_TITLE_COL_WIDTH)
+        frame.grid_columnconfigure(1, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(2, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(3, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(4, minsize=self.ITEM_META_COL_WIDTH, weight=1)
 
         parsed = split_action_item_title(item.title)
         segment_name, subsegment_name, category_name = self._lineage_for_item(item)
@@ -357,86 +678,77 @@ class DragScheduleScreen(ctk.CTkFrame):
             ),
             "",
         ) or subsegment_color
-        frame.configure(fg_color=category_color)
 
         title_text = parsed.title or (item.title or "")
         title_bg = category_color
+        start_date_text = item.start_date or "-"
 
         title_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(title_text, 44)} ",
+            text=f" {format_column_text(title_text, self.ITEM_TITLE_CHARS)} ",
             anchor="w",
             fg_color=title_bg,
             text_color=pick_text_color(title_bg),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_TITLE_COL_WIDTH,
         )
-        title_label.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=2)
+        title_label.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=2)
 
         segment_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(segment_name, 16)} ",
+            text=f" {format_column_text(segment_name, self.ITEM_META_CHARS)} ",
             anchor="w",
             fg_color=segment_color,
             text_color=pick_text_color(segment_color),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
-        segment_label.grid(row=0, column=1, sticky="w", padx=4, pady=2)
+        segment_label.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
 
         subsegment_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(subsegment_name, 15)} ",
+            text=f" {format_column_text(subsegment_name, self.ITEM_META_CHARS)} ",
             anchor="w",
-            fg_color=category_color,
-            text_color=pick_text_color(category_color),
+            fg_color=subsegment_color,
+            text_color=pick_text_color(subsegment_color),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
-        subsegment_label.grid(row=0, column=2, sticky="w", padx=4, pady=2)
+        subsegment_label.grid(row=0, column=2, sticky="ew", padx=4, pady=2)
 
         category_label = ctk.CTkLabel(
             frame,
-            text=f" {format_column_text(category_name, 15)} ",
+            text=f" {format_column_text(category_name, self.ITEM_META_CHARS)} ",
             anchor="w",
             fg_color=category_color,
             text_color=pick_text_color(category_color),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
-        category_label.grid(row=0, column=3, sticky="w", padx=4, pady=2)
+        category_label.grid(row=0, column=3, sticky="ew", padx=4, pady=2)
 
-        date_text = item.start_date or item.due_date or ""
-        date_bg = "transparent"
-        if date_text:
-            try:
-                target_date = datetime.strptime(date_text, "%Y-%m-%d").date()
-                today = datetime.now().date()
-                if target_date < today:
-                    date_bg = "#FBCFE8"  # pink
-                elif target_date == today:
-                    date_bg = "#FEF08A"  # yellow
-                else:
-                    date_bg = "#BBF7D0"  # light green
-            except ValueError:
-                date_bg = "transparent"
-        date_label = ctk.CTkLabel(
+        start_label = ctk.CTkLabel(
             frame,
-            text=date_text,
-            text_color="black" if date_bg != "transparent" else "gray40",
-            anchor="e",
-            fg_color=date_bg,
+            text=f" {format_column_text(start_date_text, self.ITEM_META_CHARS)} ",
+            anchor="w",
+            fg_color=self.palette["surface_subtle"],
+            text_color=self.palette["body_text"],
             corner_radius=6,
             font=ctk.CTkFont(size=14),
+            width=self.ITEM_META_COL_WIDTH,
         )
-        date_label.grid(row=0, column=4, sticky="e", padx=(8, 10), pady=2)
+        start_label.grid(row=0, column=4, sticky="ew", padx=4, pady=2)
 
         self.bind_drag_handlers(frame, item)
         self.bind_drag_handlers(title_label, item)
         self.bind_drag_handlers(segment_label, item)
         self.bind_drag_handlers(subsegment_label, item)
         self.bind_drag_handlers(category_label, item)
-        self.bind_drag_handlers(date_label, item)
+        self.bind_drag_handlers(start_label, item)
         return frame
 
     def build_date_boxes(self):
@@ -447,85 +759,103 @@ class DragScheduleScreen(ctk.CTkFrame):
         # Future date options (bottom)
         options_start_row = n_days + 1
 
-        mid_days = max(1, int(self.settings.mid_term_offset_days))
-        long_days = max(1, int(self.settings.long_term_offset_days))
-        next_month_offset = int(self.settings.next_month_offset_days)
-        next_quarter_offset = int(self.settings.next_quarter_offset_days)
-
-        near_date, long_date_obj, next_month_obj, next_quarter_obj = future_date_targets(
-            today, mid_days, long_days, next_month_offset, next_quarter_offset
-        )
-        mid_date = near_date.strftime("%Y-%m-%d")
-        long_date = long_date_obj.strftime("%Y-%m-%d")
-        next_month_date = next_month_obj.strftime("%Y-%m-%d")
-        next_quarter_date = next_quarter_obj.strftime("%Y-%m-%d")
-
         day_dates = [
             (today + timedelta(days=i)).strftime("%Y-%m-%d")
             for i in range(n_days)
         ]
 
-        future_options = [
-            ("Near Term", f"+{mid_days} days\n{mid_date}", mid_date, "#FFD54F"),
-            ("Long Term", f"+{long_days} days\n{long_date}", long_date, "#FFCDD2"),
-            ("1st Next Month", next_month_date, next_month_date, "#FFF9C4"),
-            ("1st Next Quarter", next_quarter_date, next_quarter_date, "#FFE0B2"),
-        ]
-        future_options.sort(key=lambda option: option[2])
+        future_options = future_options_for(today, self.settings)
 
-        date_stats = self.build_date_stats(day_dates, who_filter)
+        date_stats, _items_by_date = self.build_date_stats(day_dates, who_filter)
 
         for i, date_str in enumerate(day_dates):
             day = datetime.strptime(date_str, "%Y-%m-%d").date()
             count, total_minutes = date_stats.get(date_str, (0, 0))
-            label_text = (
-                f"{day.strftime('%a')} - "
-                f"{day.strftime('%m/%d')} - "
-                f"{self.format_day_stats_text(count, total_minutes)}"
-            )
-            color = self.color_for_day_stats(count, total_minutes)
+            color = color_for_day_stats(count, total_minutes)
 
             frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
             frame.grid_propagate(False)
             frame.grid(row=i, column=0, sticky="ew", padx=2, pady=2)
-            frame.grid_columnconfigure(0, weight=1)
-
-            label = ctk.CTkLabel(
+            self._configure_date_box_columns(frame)
+            day_text, date_short, items_text, time_text = self._date_box_values(day.strftime("%A"), day.strftime('%m/%d'), count, total_minutes)
+            self._render_date_box_columns(
                 frame,
-                text=label_text,
-                justify="center",
-                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
-                text_color=self._get_date_text_color()
+                day_text,
+                date_short,
+                items_text,
+                time_text,
+                date_text_color_for(color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")),
+                date_str,
             )
-            label.grid(row=0, column=0, sticky="ew", padx=6, pady=2)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
+            self._register_date_frame(date_str, frame)
 
-        for idx, (title, subtitle, date_str, color) in enumerate(future_options):
+        for idx, (title, date_str, color) in enumerate(future_options):
             short_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%m/%d")
-            future_text = f"{title} - {short_date}"
             frame = ctk.CTkFrame(self.dates_frame, height=self.date_box_height, fg_color=color)
             frame.grid_propagate(False)
             frame.grid(row=options_start_row + idx, column=0, sticky="ew", padx=2, pady=2)
-            frame.grid_columnconfigure(0, weight=1)
-
-            label = ctk.CTkLabel(
+            self._configure_date_box_columns(frame)
+            self._render_date_box_columns(
                 frame,
-                text=future_text,
-                justify="center",
-                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
-                text_color=self._get_date_text_color()
+                title,
+                short_date,
+                "",
+                "",
+                date_text_color_for(color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")),
+                date_str,
             )
-            label.grid(row=0, column=0, sticky="ew", padx=6, pady=2)
 
             self.date_boxes.append({"frame": frame, "date": date_str})
             self.date_box_colors[frame] = color
+            self._register_date_frame(date_str, frame)
+
+    def _configure_date_box_columns(self, frame: ctk.CTkFrame):
+        frame.grid_columnconfigure(0, minsize=self.DATE_BOX_DAY_MIN_WIDTH)
+        frame.grid_columnconfigure(1, minsize=self.DATE_BOX_DATE_MIN_WIDTH)
+        frame.grid_columnconfigure(2, minsize=self.DATE_BOX_ITEMS_MIN_WIDTH)
+        frame.grid_columnconfigure(3, minsize=self.DATE_BOX_TIME_MIN_WIDTH, weight=1)
+        frame.grid_rowconfigure(0, weight=1)
+
+    def _render_date_box_columns(
+        self,
+        frame: ctk.CTkFrame,
+        day_text: str,
+        date_text: str,
+        items_text: str,
+        time_text: str,
+        text_color: str,
+        filter_date: str,
+    ):
+        values = (day_text, date_text, items_text, time_text)
+        for idx, value in enumerate(values):
+            label = ctk.CTkLabel(
+                frame,
+                text=value,
+                anchor="w",
+                justify="left",
+                font=ctk.CTkFont(size=self.date_box_font_size, weight="bold"),
+                text_color=text_color,
+            )
+            label.grid(row=0, column=idx, sticky="w", padx=(10 if idx == 0 else 6, 0), pady=2)
+            self._bind_date_filter_target(label, filter_date)
+        self._bind_date_filter_target(frame, filter_date)
+
+    def _date_box_values(self, day_text: str, date_text: str, count: int, total_minutes: int) -> tuple[str, str, str, str]:
+        item_label = "item" if count == 1 else "items"
+        items_text = f"{count} {item_label}"
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        time_text = f"{hours}h {minutes}m"
+        return day_text, date_text, items_text, time_text
 
     def build_date_stats(self, target_dates, who_filter: Optional[str]):
         """Build per-day count and planned-minute totals for visible date boxes."""
         target_set = set(target_dates)
         date_stats = {}
+        items_by_date: dict[str, list[ActionItem]] = {}
 
         items = self.db_manager.get_all_items(
             status_filter="open",
@@ -538,6 +868,8 @@ class DragScheduleScreen(ctk.CTkFrame):
             scheduled_date = item.start_date or item.due_date
             if not scheduled_date:
                 continue
+            if not self._item_matches_filters(item):
+                continue
 
             if scheduled_date not in target_set:
                 continue
@@ -548,80 +880,169 @@ class DragScheduleScreen(ctk.CTkFrame):
                 count + 1,
                 total_minutes + (item.planned_minutes or 0)
             )
+            items_by_date.setdefault(day_key, []).append(item)
 
-        return date_stats
+        return date_stats, items_by_date
+
+    def build_calendar_view(self):
+        today = datetime.now().date()
+        who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+        cal = calendar.Calendar(firstweekday=int(getattr(self.settings, "first_day_of_week", 0)))
+        month_label = ctk.CTkLabel(
+            self.calendar_frame,
+            text=today.strftime("%B %Y"),
+            font=ctk.CTkFont(size=16, weight="bold"),
+        )
+        month_label.grid(row=0, column=0, sticky="w", padx=8, pady=(4, 8))
+
+        grid = ctk.CTkFrame(self.calendar_frame, fg_color="transparent")
+        grid.grid(row=1, column=0, sticky="nsew")
+        for col in range(7):
+            grid.grid_columnconfigure(col, weight=1, uniform="sched-cal")
+        week_rows = cal.monthdatescalendar(today.year, today.month)
+        for row_idx in range(len(week_rows) + 1):
+            grid.grid_rowconfigure(row_idx, weight=1)
+
+        weekday_names = list(calendar.day_name)
+        ordered_weekday_names = weekday_names[int(getattr(self.settings, "first_day_of_week", 0)):] + weekday_names[:int(getattr(self.settings, "first_day_of_week", 0))]
+        for col_idx, name in enumerate(ordered_weekday_names):
+            ctk.CTkLabel(
+                grid,
+                text=name,
+                anchor="center",
+                font=ctk.CTkFont(weight="bold"),
+            ).grid(row=0, column=col_idx, sticky="ew", padx=2, pady=(0, 4))
+
+        month_dates = [day.isoformat() for week in week_rows for day in week]
+        date_stats, items_by_date = self.build_date_stats(month_dates, who_filter)
+        for row_idx, week in enumerate(week_rows, start=1):
+            for col_idx, day in enumerate(week):
+                self._render_calendar_day(grid, row_idx, col_idx, day, today, date_stats, items_by_date)
+
+        future_frame = ctk.CTkFrame(self.calendar_frame, fg_color="transparent")
+        future_frame.grid(row=2, column=0, sticky="ew", padx=4, pady=(10, 0))
+        for col in range(4):
+            future_frame.grid_columnconfigure(col, weight=1, uniform="sched-future")
+        for idx, (title, date_str, color) in enumerate(future_options_for(today, self.settings)):
+            short_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%m/%d")
+            box = ctk.CTkFrame(future_frame, fg_color=color, corner_radius=8)
+            box.grid(row=0, column=idx, sticky="ew", padx=4, pady=4)
+            box.grid_columnconfigure(0, weight=1)
+            label = ctk.CTkLabel(
+                box,
+                text=f"{title}\n{short_date}",
+                justify="center",
+                anchor="center",
+                font=ctk.CTkFont(weight="bold"),
+                text_color=date_text_color_for(color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")),
+            )
+            label.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+            self._bind_date_filter_target(label, date_str)
+            self._bind_date_filter_target(box, date_str)
+            self.date_boxes.append({"frame": box, "date": date_str})
+            self.date_box_colors[box] = color
+            self._register_date_frame(date_str, box)
+
+    def _render_calendar_day(self, parent, row_idx: int, col_idx: int, day, today, date_stats, items_by_date):
+        date_str = day.isoformat()
+        count, total_minutes = date_stats.get(date_str, (0, 0))
+        cell_color = color_for_day_stats(count, total_minutes) if count or total_minutes else self.palette["surface_subtle"]
+        if day.month != today.month:
+            cell_color = self.palette["surface_subtle"]
+
+        cell = ctk.CTkFrame(parent, fg_color=cell_color, corner_radius=8)
+        cell.grid(row=row_idx, column=col_idx, sticky="nsew", padx=2, pady=2)
+        cell.grid_columnconfigure(0, weight=1)
+
+        day_kwargs = {
+            "text": str(day.day),
+            "anchor": "center",
+            "font": ctk.CTkFont(size=18, weight="bold"),
+            "text_color": self._calendar_day_text_color(day, today, cell_color),
+        }
+        if day == today:
+            day_kwargs["fg_color"] = self.palette["primary"]
+            day_kwargs["text_color"] = self.palette["on_primary"]
+            day_kwargs["corner_radius"] = 999
+            day_kwargs["width"] = 42
+            day_kwargs["height"] = 42
+        day_label = ctk.CTkLabel(cell, **day_kwargs)
+        day_label.grid(row=0, column=0, sticky="n", padx=6, pady=(8, 4))
+        self._bind_date_filter_target(day_label, date_str)
+
+        preview_items = items_by_date.get(date_str, [])[:2]
+        text_color = pick_text_color(cell_color)
+        for idx, item in enumerate(preview_items, start=1):
+            preview = format_column_text(split_action_item_title(item.title).title or item.title or "", 18)
+            label = ctk.CTkLabel(
+                cell,
+                text=preview,
+                anchor="w",
+                justify="left",
+                text_color=text_color,
+            )
+            label.grid(row=idx, column=0, sticky="ew", padx=8, pady=1)
+            self._bind_date_filter_target(label, date_str)
+
+        remaining = max(0, len(items_by_date.get(date_str, [])) - len(preview_items))
+        if remaining:
+            more_label = ctk.CTkLabel(
+                cell,
+                text=f"{remaining} more",
+                anchor="w",
+                justify="left",
+                text_color=text_color,
+            )
+            more_label.grid(row=len(preview_items) + 1, column=0, sticky="ew", padx=8, pady=(2, 6))
+            self._bind_date_filter_target(more_label, date_str)
+        self._bind_date_filter_target(cell, date_str)
+        self.date_boxes.append({"frame": cell, "date": date_str})
+        self.date_box_colors[cell] = cell_color
+        self._register_date_frame(date_str, cell)
+
+    def _calendar_day_text_color(self, day, today, bg_color: str) -> str:
+        if day.month != today.month:
+            return self.palette["muted_text"]
+        return pick_text_color(bg_color)
+
+    def _future_options_for(self, today) -> list[tuple[str, str, str]]:
+        return future_options_for(today, self.settings)
+
+    def _bind_date_filter_target(self, widget, date_str: str):
+        widget.bind("<ButtonPress-1>", lambda _event, d=date_str: self.on_date_target_click(d), add="+")
+
+    def on_date_target_click(self, date_str: str):
+        if self.selected_date_filter == date_str:
+            self.selected_date_filter = None
+        else:
+            self.selected_date_filter = date_str
+        self.refresh()
+
+    def _register_date_frame(self, date_str: str, frame):
+        self.selected_date_frames.setdefault(date_str, []).append(frame)
+        self.date_frame_dates[frame] = date_str
+        self._apply_selected_date_style(frame, date_str)
+
+    def _apply_selected_date_style(self, frame, date_str: str):
+        is_selected = self.selected_date_filter == date_str
+        frame.configure(
+            border_width=2 if is_selected else 0,
+            border_color=self.palette["primary"] if is_selected else self.palette["border"],
+        )
 
     def format_day_stats_text(self, count: int, total_minutes: int) -> str:
-        item_label = "item" if count == 1 else "items"
-        hours = total_minutes // 60
-        minutes = total_minutes % 60
-        return f"{count} {item_label} - {hours}h {minutes}m"
+        return format_day_stats_text(count, total_minutes)
 
     def _get_date_text_color(self) -> str:
-        color = str(getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF") or "#FFFFFF").strip()
-        if not color.startswith("#"):
-            color = f"#{color}"
-        if len(color) != 7:
-            return "#FFFFFF"
-        return color
+        from .drag_schedule_support import normalized_date_text_color
 
-    def color_for_day_stats(self, count: int, total_minutes: int) -> str:
-        """
-        Color ramp sequence:
-        green (<2h / equivalent load) -> light orange -> darker orange ->
-        light pink -> darker pink -> reddish
-        based on 12 items or 6 hours (360 min), whichever is higher.
-        """
-        count_ratio = min(max(count / 12.0, 0.0), 1.0)
-        time_ratio = min(max(total_minutes / 360.0, 0.0), 1.0)
-        intensity = max(count_ratio, time_ratio)
+        return normalized_date_text_color(getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF"))
 
-        # Keep all low-load days green until one-third of max load
-        # (equivalent to <2h out of 6h, or <4 items out of 12).
-        if intensity < (1.0 / 3.0):
-            return "#6BCB77"
+    def _date_text_color_for(self, bg_color: str) -> str:
+        return date_text_color_for(bg_color, getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF"))
 
-        # After green zone, transition from orange -> pink -> red.
-        post_green_t = (intensity - (1.0 / 3.0)) / (2.0 / 3.0)
-        palette = [
-            "#FFD8A8",  # light orange
-            "#FFB347",  # darker orange
-            "#FF9BC2",  # light pink
-            "#FF5A8A",  # darker pink
-            "#E5243B",  # reddish
-        ]
-        return self.interpolate_palette(palette, post_green_t)
-
-    def interpolate_palette(self, colors, t: float) -> str:
-        """Interpolate across a palette of 2+ colors."""
-        t = min(max(t, 0.0), 1.0)
-        if len(colors) < 2:
-            return colors[0] if colors else "#DFF8D8"
-        if t == 1.0:
-            return colors[-1]
-
-        segments = len(colors) - 1
-        pos = t * segments
-        left_idx = int(pos)
-        right_idx = min(left_idx + 1, len(colors) - 1)
-        local_t = pos - left_idx
-        return self.interpolate_hex_color(colors[left_idx], colors[right_idx], local_t)
-
-    def interpolate_hex_color(self, start_hex: str, end_hex: str, t: float) -> str:
-        """Linearly interpolate between two hex colors."""
-        t = min(max(t, 0.0), 1.0)
-
-        s = start_hex.lstrip("#")
-        e = end_hex.lstrip("#")
-
-        sr, sg, sb = int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
-        er, eg, eb = int(e[0:2], 16), int(e[2:4], 16), int(e[4:6], 16)
-
-        r = round(sr + (er - sr) * t)
-        g = round(sg + (eg - sg) * t)
-        b = round(sb + (eb - sb) * t)
-
-        return f"#{r:02X}{g:02X}{b:02X}"
+    def _date_background_for(self, date_text: str) -> str:
+        return date_background_for(date_text)
 
     def bind_drag_handlers(self, widget, item: ActionItem):
         widget.bind("<ButtonPress-1>", lambda e: self.start_drag(e, item))
@@ -630,12 +1051,13 @@ class DragScheduleScreen(ctk.CTkFrame):
 
     def start_drag(self, event, item: ActionItem):
         self.drag_item = item
+        palette = self.palette
         if self.drag_label is None:
             self.drag_label = ctk.CTkLabel(
                 self,
                 text=item.title,
-                fg_color="gray30",
-                text_color="white",
+                fg_color=palette["chip_bg"],
+                text_color=palette["chip_text"],
                 corner_radius=6,
                 padx=8,
                 pady=4
@@ -656,7 +1078,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         if not self.drag_item:
             return
 
-        target_date = self.get_drop_target_date()
+        target_date, target_project_id = self.get_drop_target()
         self.clear_hover_target()
 
         if target_date:
@@ -666,6 +1088,12 @@ class DragScheduleScreen(ctk.CTkFrame):
                 target_date,
                 "Drag-and-drop schedule"
             )
+            self.refresh()
+        elif target_project_id:
+            if target_project_id == "__none__":
+                self.db_manager.clear_item_project_links(self.drag_item.id)
+            else:
+                self.db_manager.link_item_to_project_exclusive(target_project_id, self.drag_item.id)
             self.refresh()
 
         if self.drag_label:
@@ -681,10 +1109,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         y = y_root - self.winfo_rooty() + 10
         self.drag_label.place(x=x, y=y)
 
-    def get_drop_target_date(self) -> Optional[str]:
+    def get_drop_target(self) -> tuple[Optional[str], Optional[str]]:
+        """Find the drop target under the mouse. Returns (date_str, project_id)."""
         x_root = self.winfo_pointerx()
         y_root = self.winfo_pointery()
 
+        # Check date boxes
         for box in self.date_boxes:
             frame = box["frame"]
             if not frame.winfo_ismapped():
@@ -694,14 +1124,28 @@ class DragScheduleScreen(ctk.CTkFrame):
             x2 = x1 + frame.winfo_width()
             y2 = y1 + frame.winfo_height()
             if x1 <= x_root <= x2 and y1 <= y_root <= y2:
-                return box["date"]
-        return None
+                return box["date"], None
+                
+        # Check project boxes
+        for box in self.project_boxes:
+            frame = box["frame"]
+            if not frame.winfo_ismapped():
+                continue
+            x1 = frame.winfo_rootx()
+            y1 = frame.winfo_rooty()
+            x2 = x1 + frame.winfo_width()
+            y2 = y1 + frame.winfo_height()
+            if x1 <= x_root <= x2 and y1 <= y_root <= y2:
+                return None, box["id"]
+                
+        return None, None
 
     def update_hover_target(self):
         x_root = self.winfo_pointerx()
         y_root = self.winfo_pointery()
         hovered = None
 
+        # Try date boxes
         for box in self.date_boxes:
             frame = box["frame"]
             if not frame.winfo_ismapped():
@@ -713,18 +1157,44 @@ class DragScheduleScreen(ctk.CTkFrame):
             if x1 <= x_root <= x2 and y1 <= y_root <= y2:
                 hovered = frame
                 break
+        
+        # Try project boxes if no date box hovered
+        if not hovered:
+            for box in self.project_boxes:
+                frame = box["frame"]
+                if not frame.winfo_ismapped():
+                    continue
+                x1 = frame.winfo_rootx()
+                y1 = frame.winfo_rooty()
+                x2 = x1 + frame.winfo_width()
+                y2 = y1 + frame.winfo_height()
+                if x1 <= x_root <= x2 and y1 <= y_root <= y2:
+                    hovered = frame
+                    break
 
         if hovered is self.drag_hover_frame:
             return
 
         self.clear_hover_target()
         if hovered:
-            hovered.configure(fg_color="gray35")
+            hovered.configure(border_width=2, border_color=self.palette["primary_hover"])
             self.drag_hover_frame = hovered
-            self.drag_hover_base_color = self.date_box_colors.get(hovered, "gray20")
+            self.drag_hover_base_color = self.date_box_colors.get(hovered, self.palette["surface_subtle"])
 
     def clear_hover_target(self):
         if self.drag_hover_frame:
-            self.drag_hover_frame.configure(fg_color=self.drag_hover_base_color or "gray20")
+            date_str = self.date_frame_dates.get(self.drag_hover_frame)
+            project_id = self.project_box_ids.get(self.drag_hover_frame)
+            
+            if date_str:
+                self._apply_selected_date_style(self.drag_hover_frame, date_str)
+            elif project_id:
+                is_selected = self.selected_project_id == project_id
+                self.drag_hover_frame.configure(
+                    border_width=2 if is_selected else 0,
+                    border_color=self.palette["primary"] if is_selected else self.palette["border"],
+                )
+            else:
+                self.drag_hover_frame.configure(border_width=0, border_color=self.palette["border"])
             self.drag_hover_frame = None
             self.drag_hover_base_color = None

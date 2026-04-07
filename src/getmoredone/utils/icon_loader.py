@@ -85,6 +85,33 @@ class IconLoader:
         """Clear the icon cache."""
         cls._cache.clear()
 
+    @classmethod
+    def load_image_path(cls, image_path: str, size: int = 24) -> Optional["ctk.CTkImage"]:
+        """Load an arbitrary image path and return a CTkImage object."""
+        if not PNG_SUPPORT:
+            return None
+        path = Path(image_path).expanduser()
+        if not path.exists():
+            return None
+
+        cache_key = f"path::{path.resolve()}::{size}"
+        if cache_key in cls._cache:
+            return cls._cache[cache_key]
+
+        try:
+            image = Image.open(path).convert("RGBA")
+            image = image.resize((size, size))
+            ctk_image = ctk.CTkImage(
+                light_image=image,
+                dark_image=image,
+                size=(size, size),
+            )
+            cls._cache[cache_key] = ctk_image
+            return ctk_image
+        except Exception as e:
+            print(f"Error loading image {path}: {e}")
+            return None
+
 
 # Convenience functions for common icons
 def load_play_icon(size: int = 24) -> Optional["ctk.CTkImage"]:

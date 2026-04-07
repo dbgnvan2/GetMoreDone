@@ -68,14 +68,28 @@ def semantic_colors() -> Dict[str, str]:
     primary_hover = _theme_value("CTkButton", "hover_color", "#14375e")
     muted_text = _theme_value("CTkEntry", "placeholder_text_color", "gray62")
     label_text = _theme_value("CTkLabel", "text_color", "gray84")
+    input_surface = _theme_value("CTkComboBox", "fg_color", _theme_value("CTkEntry", "fg_color", "gray20"))
+    input_button = _theme_value("CTkComboBox", "button_color", primary)
+    input_button_hover = _theme_value("CTkComboBox", "button_hover_color", primary_hover)
+    input_text = _theme_value("CTkComboBox", "text_color", label_text)
+    dropdown_surface = _theme_value("DropdownMenu", "fg_color", input_surface)
+    dropdown_text = _theme_value("DropdownMenu", "text_color", label_text)
     return {
         "primary": primary,
         "primary_hover": primary_hover,
+        "surface": _theme_value("CTkFrame", "fg_color", "gray17"),
         "ghost_hover": _theme_value("DropdownMenu", "hover_color", "gray28"),
         "border": _theme_value("CTkFrame", "border_color", "gray28"),
         "muted_text": muted_text,
         "body_text": label_text,
+        "row_text": label_text,
         "on_primary": _theme_value("CTkButton", "text_color", "#DCE4EE"),
+        "input_surface": input_surface,
+        "input_button": input_button,
+        "input_button_hover": input_button_hover,
+        "input_text": input_text,
+        "dropdown_surface": dropdown_surface,
+        "dropdown_text": dropdown_text,
         "surface_subtle": _theme_value("CTkFrame", "top_fg_color", "gray21"),
         # Align list accents with Drag Schedule visual language.
         "chip_bg": "gray30",
@@ -86,6 +100,9 @@ def semantic_colors() -> Dict[str, str]:
         "success_tint": "#E8F5EE" if mode == "light" else "#1F2B24",
         "critical_tint": "#FDECEC" if mode == "light" else "#3A2328",
         "danger": "#B91C1C",
+        "danger_hover": "#991B1B",
+        "on_danger": "#FEE2E2",
+        "warning": "#B45309" if mode == "light" else "#FBBF24",
         "selected_tint": "#E6EEF8" if mode == "light" else "#223247",
         "success_strong": "#166534" if mode == "light" else "#14532D",
         "on_strong": "#ECFDF5" if mode == "light" else "#DCFCE7",
@@ -103,6 +120,13 @@ def apply_segment_accent(frame: ctk.CTkFrame, segment_color: str | None):
 def button_style(kind: str = "primary") -> Dict[str, object]:
     """Shared semantic button styles used across screens."""
     palette = semantic_colors()
+    if kind == "ghost":
+        return {
+            "fg_color": "transparent",
+            "hover_color": palette["ghost_hover"],
+            "border_width": 0,
+            "text_color": palette["body_text"],
+        }
     if kind == "secondary":
         return {
             "fg_color": "transparent",
@@ -113,9 +137,9 @@ def button_style(kind: str = "primary") -> Dict[str, object]:
         }
     if kind == "danger":
         return {
-            "fg_color": "#B91C1C",
-            "hover_color": "#991B1B",
-            "text_color": "#FEE2E2",
+            "fg_color": palette["danger"],
+            "hover_color": palette["danger_hover"],
+            "text_color": palette["on_danger"],
             "border_width": 0,
         }
     return {
@@ -129,3 +153,77 @@ def button_style(kind: str = "primary") -> Dict[str, object]:
 def list_row_font() -> ctk.CTkFont:
     """Standard larger font for item-list rows."""
     return ctk.CTkFont(size=LIST_ROW_FONT_SIZE)
+
+
+def combo_box_style() -> Dict[str, object]:
+    """Theme-aware combobox styling for filters and settings controls."""
+    palette = semantic_colors()
+    return {
+        "fg_color": palette["input_surface"],
+        "text_color": palette["input_text"],
+        "button_color": palette["input_button"],
+        "button_hover_color": palette["input_button_hover"],
+        "dropdown_fg_color": palette["dropdown_surface"],
+        "dropdown_text_color": palette["dropdown_text"],
+    }
+
+
+def status_text_color(kind: str) -> str:
+    """Return semantic text colors for status messages.
+
+    Accepts semantic names and legacy color words to ease incremental cleanup.
+    """
+    palette = semantic_colors()
+    normalized = (kind or "").strip().lower()
+    mapping = {
+        "success": palette["success_strong"],
+        "green": palette["success_strong"],
+        "error": palette["danger"],
+        "danger": palette["danger"],
+        "red": palette["danger"],
+        "warning": palette["warning"],
+        "orange": palette["warning"],
+        "yellow": palette["warning"],
+        "info": palette["primary"],
+        "blue": palette["primary"],
+        "muted": palette["muted_text"],
+        "gray": palette["muted_text"],
+        "body": palette["body_text"],
+        "default": palette["body_text"],
+        "white": palette["body_text"],
+    }
+    return mapping.get(normalized, kind or palette["body_text"])
+
+
+def schedule_colors() -> Dict[str, object]:
+    """Shared Drag Schedule palette values."""
+    return {
+        "date_overdue": "#FCA5A5",
+        "date_today": "#86EFAC",
+        "date_future": "#FDE68A",
+        "future_near_term": "#F4D35E",
+        "future_long_term": "#E9C6CF",
+        "future_next_month": "#EFE6A7",
+        "future_next_quarter": "#E9CAA0",
+        "low_load": "#6BCB77",
+        "load_gradient": ["#FFD8A8", "#FFB347", "#F5A6BE", "#EF7292", "#D94B66"],
+        "load_fallback": "#DFF8D8",
+    }
+
+
+def vps_level_colors() -> Dict[str, str]:
+    """Shared planning-hierarchy legend colors."""
+    return {
+        "TL Vision": "#7C3AED",
+        "Annual Vision": "#2563EB",
+        "Annual Plan": "#0D9488",
+        "Annual Initiative": "#F59E0B",
+        "Quarter": "#EA580C",
+        "Month": "#059669",
+        "Week": "#0284C7",
+    }
+
+
+def celebration_colors() -> Tuple[str, ...]:
+    """Shared celebratory accent colors."""
+    return ("#00C800", "#FFD54F", "#3B82F6", "#EF4444", "#A855F7", "#F97316")

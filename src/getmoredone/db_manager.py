@@ -9,14 +9,15 @@ import sqlite3
 import re
 
 from .database import Database
+from .db_manager_project_boards import DBManagerProjectBoardsMixin
 from .models import (
     ActionItem, ItemLink, ContactLink, Defaults, RescheduleHistory,
-    TimeBlock, WorkLog, Status, Contact
+    TimeBlock, WorkLog, Status, Contact, ProjectBoard, ProjectBoardStatus, ProjectBoardLink
 )
 from .app_settings import AppSettings
 
 
-class DatabaseManager:
+class DatabaseManager(DBManagerProjectBoardsMixin):
     """Manages database operations for GetMoreDone."""
 
     # Allowed sort columns (security: prevent SQL injection)
@@ -60,6 +61,7 @@ class DatabaseManager:
         # Stamp segment ID from linked structures when missing
         self._stamp_segment_from_relationships(item)
         self._normalize_week_item_dates(item)
+        self._normalize_week_item_group(item)
 
         # Validate and adjust dates
         item.validate_and_adjust_dates()
@@ -132,6 +134,7 @@ class DatabaseManager:
         self._stamp_segment_from_relationships(item)
         if normalize_week_dates:
             self._normalize_week_item_dates(item)
+        self._normalize_week_item_group(item)
 
         self.db.conn.execute("""
             UPDATE action_items SET
@@ -517,7 +520,10 @@ class DatabaseManager:
         rows = self.db.conn.execute(query, (pattern, pattern, pattern, pattern)).fetchall()
         return [self._row_to_action_item(row) for row in rows]
 
+    # ==================== PROJECT BOARDS ====================
+
     # ==================== DEFAULTS ====================
+
 
     def get_defaults(self, scope_type: str, scope_key: Optional[str] = None) -> Optional[Defaults]:
         """Get defaults for given scope."""
@@ -995,6 +1001,11 @@ class DatabaseManager:
 
         item.start_date, item.due_date = bounds
 
+    def _normalize_week_item_group(self, item: ActionItem):
+        """Reserve group label for weekly tactics so they are easy to filter/report."""
+        if item.item_type == "week":
+            item.group = "Weekly Tactic"
+
     def _segment_from_week_action(self, week_action_id: Optional[str]) -> Optional[str]:
         if not week_action_id:
             return None
@@ -1409,6 +1420,58 @@ class DatabaseManager:
             url=row["url"],
             link_type=link_type,
             created_at=row["created_at"]
+        )
+
+    def _row_to_project_board(self, row: sqlite3.Row) -> ProjectBoard:
+        """Convert database row to ProjectBoard."""
+        try:
+            importance = row["importance"]
+        except (KeyError, IndexError):
+            importance = None
+
+        try:
+            next_step = row["next_step"]
+        except (KeyError, IndexError):
+            next_step = None
+
+        try:
+            notes = row["notes"]
+        except (KeyError, IndexError):
+            notes = None
+
+        try:
+            completed_at = row["completed_at"]
+        except (KeyError, IndexError):
+            completed_at = None
+
+        return ProjectBoard(
+            id=row["id"],
+            title=row["title"],
+            annual_plan_element_id=row["annual_plan_element_id"],
+            importance=importance,
+            next_step=next_step,
+            notes=notes,
+            display_order=row["display_order"] if "display_order" in row.keys() else None,
+            status=row["status"],
+            completed_at=completed_at,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+        )
+
+    def _row_to_project_board_link(self, row: sqlite3.Row) -> ProjectBoardLink:
+        """Convert database row to ProjectBoardLink."""
+        try:
+            link_type = row["link_type"]
+        except (KeyError, IndexError):
+            link_type = "url"
+
+        return ProjectBoardLink(
+            id=row["id"],
+            project_board_id=row["project_board_id"],
+            label=row["label"],
+            url=row["url"],
+            link_type=link_type,
+            created_at=row["created_at"],
         )
 
     def _row_to_time_block(self, row: sqlite3.Row) -> TimeBlock:

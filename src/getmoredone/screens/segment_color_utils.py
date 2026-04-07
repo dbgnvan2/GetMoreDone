@@ -1,4 +1,4 @@
-"""Utilities for resolving VPS segment/subsegment colors on screen rows."""
+"""Utilities for resolving VSP segment/subsegment colors on screen rows."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ DEFAULT_SEGMENT_COLOR = "#334155"
 
 
 def load_latest_lineage_color_maps(vps_manager: Any) -> Tuple[Dict[str, str], Dict[Tuple[str, str], str]]:
-    """Return current segment and subsegment color maps from VPS sources."""
+    """Return current segment and subsegment color maps from VSP sources."""
     segment_colors = vps_manager.get_segment_color_map()
     subsegment_colors: Dict[Tuple[str, str], str] = {}
     for row in vps_manager.get_vision_subsegments():
@@ -31,7 +31,7 @@ def resolve_lineage_colors(
     segment_colors: Dict[str, str],
     subsegment_colors: Dict[Tuple[str, str], str],
 ) -> Tuple[str, str]:
-    """Resolve segment + subsegment colors with live VPS-based fallback."""
+    """Resolve segment + subsegment colors with live VSP-based fallback."""
     segment_value = (segment_name or "").strip()
     subsegment_value = (subsegment_name or "").strip()
 

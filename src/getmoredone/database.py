@@ -248,8 +248,75 @@ class Database:
             ON contact_links(contact_id)
         """)
 
-        # Initialize VPS (Visionary Planning System) schema
+        # Initialize VSP (Vision Strategy Plan) schema
         VPSSchema.initialize_vps_schema(conn)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_boards (
+                id                     TEXT PRIMARY KEY,
+                title                  TEXT NOT NULL,
+                annual_plan_element_id TEXT REFERENCES annual_plan_elements(id) ON DELETE RESTRICT,
+                importance             INTEGER,
+                next_step              TEXT,
+                notes                  TEXT,
+                display_order          INTEGER,
+                status                 TEXT NOT NULL DEFAULT 'active'
+                                        CHECK(status IN ('active', 'pending', 'completed')),
+                completed_at           TEXT,
+                created_at             TEXT NOT NULL,
+                updated_at             TEXT NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_board_items (
+                project_board_id       TEXT NOT NULL REFERENCES project_boards(id) ON DELETE CASCADE,
+                item_id                TEXT NOT NULL REFERENCES action_items(id) ON DELETE CASCADE,
+                created_at             TEXT NOT NULL,
+                PRIMARY KEY (project_board_id, item_id)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS project_board_links (
+                id                     TEXT PRIMARY KEY,
+                project_board_id       TEXT NOT NULL REFERENCES project_boards(id) ON DELETE CASCADE,
+                label                  TEXT,
+                url                    TEXT NOT NULL,
+                link_type              TEXT DEFAULT 'url',
+                created_at             TEXT NOT NULL
+            )
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_project_boards_status
+            ON project_boards(status, updated_at)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_project_boards_ape
+            ON project_boards(annual_plan_element_id)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_project_board_items_board
+            ON project_board_items(project_board_id)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_project_board_items_item
+            ON project_board_items(item_id)
+        """)
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_project_board_links_board
+            ON project_board_links(project_board_id)
+        """)
+
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_project_boards_unique_ape
+            ON project_boards(annual_plan_element_id)
+        """)
 
         conn.commit()
 
@@ -286,6 +353,14 @@ class Database:
                 ALTER TABLE action_items
                 ADD COLUMN parent_id TEXT REFERENCES action_items(id) ON DELETE SET NULL
             """)
+
+        # Keep weekly tactics grouped consistently for filtering/reporting.
+        conn.execute("""
+            UPDATE action_items
+            SET "group" = 'Weekly Tactic'
+            WHERE item_type = 'week'
+              AND COALESCE("group", '') <> 'Weekly Tactic'
+        """)
 
         # Check if contact_id column exists in defaults
         cursor = conn.execute("PRAGMA table_info(defaults)")
@@ -375,6 +450,61 @@ class Database:
             conn.execute("""
                 ALTER TABLE action_items
                 ADD COLUMN next_action TEXT
+            """)
+
+        cursor = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_boards'"
+        )
+        if cursor.fetchone():
+            columns = [row[1] for row in conn.execute("PRAGMA table_info(project_boards)").fetchall()]
+
+            if 'importance' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN importance INTEGER
+                """)
+
+            if 'next_step' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN next_step TEXT
+                """)
+
+            if 'notes' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN notes TEXT
+                """)
+
+            if 'status' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
+                """)
+
+            if 'display_order' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN display_order INTEGER
+                """)
+
+            if 'completed_at' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN completed_at TEXT
+                """)
+
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_board_links'")
+        if not cursor.fetchone():
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS project_board_links (
+                    id                     TEXT PRIMARY KEY,
+                    project_board_id       TEXT NOT NULL REFERENCES project_boards(id) ON DELETE CASCADE,
+                    label                  TEXT,
+                    url                    TEXT NOT NULL,
+                    link_type              TEXT DEFAULT 'url',
+                    created_at             TEXT NOT NULL
+                )
             """)
 
     def __enter__(self):

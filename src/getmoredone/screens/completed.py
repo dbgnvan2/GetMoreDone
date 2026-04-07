@@ -7,11 +7,10 @@ from typing import TYPE_CHECKING
 
 from ..color_contrast import pick_text_color
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from ..theme import apply_segment_accent, semantic_colors, button_style, combo_box_style, list_row_font
 from .title_format import (
     split_action_item_title,
     format_column_text,
-    TITLE_COL_CHARS,
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
@@ -94,12 +93,7 @@ class CompletedScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
-            fg_color="white",
-            text_color="black",
-            button_color="white",
-            button_hover_color="white",
-            dropdown_fg_color="white",
-            dropdown_text_color="black",
+            **combo_box_style(),
             command=lambda _: self.refresh()
         )
         self.who_combo.grid(row=0, column=5, padx=5, pady=10)
@@ -142,7 +136,7 @@ class CompletedScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
-            # Refresh VPS segment color cache
+            # Refresh VSP segment color cache
             self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
             self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
             self._parent_segment_cache = {}
@@ -187,6 +181,7 @@ class CompletedScreen(ctk.CTkFrame):
 
             # Display items
             palette = self.palette
+            row_text = palette["row_text"]
             for idx, item in enumerate(items):
                 segment_color = resolve_segment_color_for_item(
                     item,
@@ -209,18 +204,30 @@ class CompletedScreen(ctk.CTkFrame):
                 parsed = split_action_item_title(item.title)
 
                 # Checkmark
-                ctk.CTkLabel(item_frame, text="✓", width=30, text_color="black").grid(
+                ctk.CTkLabel(item_frame, text="✓", width=30, text_color=palette["success_strong"]).grid(
                     row=0, column=0, padx=5, pady=5)
 
+                title_cell = ctk.CTkFrame(item_frame, fg_color="transparent")
+                title_cell.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+                title_cell.grid_columnconfigure(1, weight=1)
+                if item.item_type == "week":
+                    ctk.CTkLabel(
+                        title_cell,
+                        text="WT",
+                        width=28,
+                        corner_radius=6,
+                        fg_color=palette["success_strong"],
+                        text_color=palette["on_strong"],
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                    ).grid(row=0, column=0, padx=(0, 6), sticky="w")
                 title_label = ctk.CTkLabel(
-                    item_frame,
-                    text=format_column_text(parsed.title, TITLE_COL_CHARS),
-                    width=300,
+                    title_cell,
+                    text=parsed.title,
                     font=list_row_font(),
                     anchor="w",
-                    text_color="black",
+                    text_color=row_text,
                 )
-                title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                title_label.grid(row=0, column=1, sticky="ew")
                 title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
                 # Context
@@ -229,7 +236,7 @@ class CompletedScreen(ctk.CTkFrame):
                     text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
                     width=140,
                     anchor="w",
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font(),
                 ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
@@ -239,7 +246,7 @@ class CompletedScreen(ctk.CTkFrame):
                     text=format_column_text(item.who, CONTACT_COL_CHARS),
                     width=110,
                     anchor="w",
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font(),
                 ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
@@ -249,7 +256,7 @@ class CompletedScreen(ctk.CTkFrame):
                         item_frame,
                         text=f"Completed: {item.completed_at[:10]}",
                         width=150,
-                        text_color="black",
+                        text_color=row_text,
                         font=list_row_font()
                     )
                     completed_label.grid(row=0, column=4, padx=5, pady=5)
@@ -261,7 +268,7 @@ class CompletedScreen(ctk.CTkFrame):
                     text=f"P:{item.priority_score}",
                     width=60,
                     fg_color=self.palette["danger"] if is_priority_critical else "transparent",
-                    text_color=pick_text_color(self.palette["danger"]) if is_priority_critical else "black",
+                    text_color=pick_text_color(self.palette["danger"]) if is_priority_critical else row_text,
                     corner_radius=6 if is_priority_critical else 0,
                     font=list_row_font()
                 )
@@ -288,7 +295,7 @@ class CompletedScreen(ctk.CTkFrame):
                             "width": width,
                             "anchor": "w",
                             "font": list_row_font(),
-                            "text_color": "black",
+                            "text_color": row_text,
                         }
                         if label in ("I", "U") and str(value).strip() == "20":
                             label_kwargs["fg_color"] = self.palette["danger"]

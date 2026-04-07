@@ -6,6 +6,24 @@ Complete index of all documentation files for the GetMoreDone task management ap
 
 ## Primary Documentation
 
+### `codex.md`
+
+Repository maintainability policy used during code review and refactoring:
+
+- File responsibility and cohesion rules
+- Refactor triggers and decision heuristics
+- Testability and dependency-load guidance
+- Default expectations for ongoing development work
+
+### `docs/changes/`
+
+Agent handoff notes and implementation summaries:
+
+- One note per substantial agent change
+- Verification commands and outcomes
+- Risks / known gaps
+- Follow-up guidance for subsequent agents
+
 ### README.md (27KB)
 
 Main project documentation including:
@@ -16,17 +34,17 @@ Main project documentation including:
 - Recent improvements (VPS, Timer, Contacts, etc.)
 - **NEW: Testing section** with test commands and coverage
 
-### docs/User_Guide.md (NEW)
+### docs/USER_GUIDE.md
 
 Current end-user documentation including:
 
 - Screen-by-screen walkthrough
 - What/why for buttons and controls
 - Item Editor, Timer, Calendar, and Settings details
-- Drag Schedule usage
-- Vision Planning hub and APE Weekly workflow
-- Drag Schedule date-box text format and color setting
-- Drag Schedule date-box height setting and color picker
+- Scheduler usage, calendar tab, date filters, and future targets
+- Project Board usage, note controls, and linked action-item workflow
+- Vision Strategy Plan hub, Annual Plan Elements, and APE assignment flow
+- List View terminology and current responsive-column behavior
 
 ### GetMoreDone_MasterSpec_SQLite_v1.md (19KB)
 
@@ -64,7 +82,16 @@ Starter operational guide for multi-agent delivery:
 - Required handoff note workflow
 - PR template and CI docs-gate behavior
 
-## VPS (Visionary Planning System) Documentation
+### `.github/pull_request_template.md`
+
+Pull request template used for multi-agent delivery:
+
+- Summary / validation sections
+- Agent handoff reference
+- Docs sync checklist
+- Maintainability checklist aligned with `codex.md`
+
+## VSP (Vision Strategy Plan) Documentation
 
 ### docs/VPS_UPDATES_2026-01-24.md (8.5KB) **NEW**
 

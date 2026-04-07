@@ -9,12 +9,13 @@ from ..models import Status
 from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
+from ..theme import apply_segment_accent, semantic_colors, button_style, combo_box_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
 from .title_format import (
     split_action_item_title,
     format_column_text,
-    TITLE_COL_CHARS,
+    responsive_column_chars,
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
@@ -36,7 +37,9 @@ class AllItemsScreen(ctk.CTkFrame):
         self.segment_colors_by_name = {}
         self._parent_segment_cache = {}
         self._ape_segment_cache = {}
+        self._ape_lineage_cache = {}
         self._week_action_segment_cache = {}
+        self._item_lineage_cache = {}
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.search_query = ""  # Track search query
@@ -113,12 +116,7 @@ class AllItemsScreen(ctk.CTkFrame):
             values=who_values,
             variable=self.who_var,
             width=150,
-            fg_color="white",
-            text_color="black",
-            button_color="white",
-            button_hover_color="white",
-            dropdown_fg_color="white",
-            dropdown_text_color="black",
+            **combo_box_style(),
             command=lambda _: self.refresh()
         )
         self.who_combo.grid(row=0, column=6, padx=5, pady=10)
@@ -166,12 +164,15 @@ class AllItemsScreen(ctk.CTkFrame):
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
 
-            # Refresh VPS segment color cache
+            # Refresh VSP segment color cache
             self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
             self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
             self._parent_segment_cache = {}
             self._ape_segment_cache = {}
+            self._ape_lineage_cache = {}
             self._week_action_segment_cache = {}
+            self._item_lineage_cache = {}
+            row_text = self.palette["row_text"]
 
             # Get filters
             status_filter = None if self.status_var.get() == "all" else self.status_var.get()
@@ -209,9 +210,9 @@ class AllItemsScreen(ctk.CTkFrame):
                               pady=(0, 5), padx=5)
             header_frame.grid_columnconfigure(1, weight=1)
 
-            headers = ["✓", "Immediate Step", "Context", "Who", "Start", "Due",
+            headers = ["✓", "Immediate Step", "SubSegment", "Category", "Context", "Who", "Start", "Due",
                        "Priority", "Est. Time", "Status", "Actions"]
-            col_weights = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+            col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
             for col, (header_text, weight) in enumerate(zip(headers, col_weights)):
                 header_frame.grid_columnconfigure(col, weight=weight)
@@ -245,7 +246,15 @@ class AllItemsScreen(ctk.CTkFrame):
                 apply_segment_accent(item_frame, segment_color)
                 item_frame.grid(row=idx, column=0, sticky="ew", pady=2, padx=5)
                 item_frame.grid_columnconfigure(1, weight=1)
+                limits = responsive_column_chars(max(self.winfo_width(), self.scroll_frame.winfo_width()))
                 parsed = split_action_item_title(item.title)
+                _segment_name, subsegment_name, category_name = lineage_for_item(
+                    item,
+                    self.db_manager,
+                    self._item_lineage_cache,
+                    self._ape_lineage_cache,
+                    self._week_action_segment_cache,
+                )
 
                 # Checkbox
                 if item.status == Status.OPEN:
@@ -263,36 +272,66 @@ class AllItemsScreen(ctk.CTkFrame):
                         row=0, column=0, padx=5, pady=5)
 
                 # Context
+                title_cell = ctk.CTkFrame(item_frame, fg_color="transparent")
+                title_cell.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+                title_cell.grid_columnconfigure(1, weight=1)
+                if item.item_type == "week":
+                    ctk.CTkLabel(
+                        title_cell,
+                        text="WT",
+                        width=28,
+                        corner_radius=6,
+                        fg_color=palette["success_strong"],
+                        text_color=palette["on_strong"],
+                        font=ctk.CTkFont(size=11, weight="bold"),
+                    ).grid(row=0, column=0, padx=(0, 6), sticky="w")
                 title_label = ctk.CTkLabel(
-                    item_frame,
-                    text=format_column_text(parsed.title, TITLE_COL_CHARS),
-                    width=300,
+                    title_cell,
+                    text=parsed.title,
                     anchor="w",
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font()
                 )
-                title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                title_label.grid(row=0, column=1, sticky="ew")
                 title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(subsegment_name or "-", limits["subsegment"]),
+                    width=max(56, limits["subsegment"] * 8),
+                    anchor="w",
+                    text_color=row_text,
+                    font=list_row_font()
+                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+                ctk.CTkLabel(
+                    item_frame,
+                    text=format_column_text(category_name or "-", limits["category"]),
+                    width=max(56, limits["category"] * 8),
+                    anchor="w",
+                    text_color=row_text,
+                    font=list_row_font()
+                ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
                 # Context
                 ctk.CTkLabel(
                     item_frame,
-                    text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
-                    width=140,
+                    text=format_column_text(parsed.context, limits["context"]),
+                    width=max(90, limits["context"] * 8),
                     anchor="w",
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font()
-                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+                ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
 
                 # Who
                 ctk.CTkLabel(
                     item_frame,
-                    text=format_column_text(item.who, CONTACT_COL_CHARS),
-                    width=100,
-                    text_color="black",
+                    text=format_column_text(item.who, limits["who"]),
+                    width=max(52, limits["who"] * 8),
+                    text_color=row_text,
                     font=list_row_font(),
                 ).grid(
-                    row=0, column=3, padx=5, pady=5)
+                    row=0, column=5, padx=5, pady=5)
 
                 # Start date
                 start_text = item.start_date or "-"
@@ -307,10 +346,10 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=start_text,
                     width=60,
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font()
                 )
-                start_label.grid(row=0, column=4, padx=5, pady=5)
+                start_label.grid(row=0, column=6, padx=5, pady=5)
                 start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
                 # Due date
@@ -326,10 +365,10 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=due_text,
                     width=60,
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font()
                 )
-                due_label.grid(row=0, column=5, padx=5, pady=5)
+                due_label.grid(row=0, column=7, padx=5, pady=5)
                 due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
                 # Priority
@@ -339,11 +378,11 @@ class AllItemsScreen(ctk.CTkFrame):
                     text=str(item.priority_score),
                     width=80,
                     fg_color=palette["danger"] if is_priority_critical else "transparent",
-                    text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+                    text_color=pick_text_color(palette["danger"]) if is_priority_critical else row_text,
                     corner_radius=6 if is_priority_critical else 0,
                     font=list_row_font(),
                 )
-                priority_label.grid(row=0, column=6, padx=5, pady=5)
+                priority_label.grid(row=0, column=8, padx=5, pady=5)
                 priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
                 # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
@@ -352,16 +391,16 @@ class AllItemsScreen(ctk.CTkFrame):
                     item_frame,
                     text=time_text,
                     width=60,
-                    text_color="black",
+                    text_color=row_text,
                     font=list_row_font()
-                ).grid(row=0, column=7, padx=5, pady=5)
+                ).grid(row=0, column=9, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
                     factors_frame = ctk.CTkFrame(
                         item_frame, fg_color="transparent")
-                    factors_frame.grid(row=0, column=8, padx=5, pady=5)
+                    factors_frame.grid(row=0, column=10, padx=5, pady=5)
                     columns = [
                         ("G", item.group, 120),
                         ("C", item.category, 120),
@@ -377,7 +416,7 @@ class AllItemsScreen(ctk.CTkFrame):
                             "width": width,
                             "anchor": "w",
                             "font": list_row_font(),
-                            "text_color": "black",
+                            "text_color": row_text,
                         }
                         if label in ("I", "U") and str(value).strip() == "20":
                             label_kwargs["fg_color"] = palette["danger"]
@@ -388,11 +427,11 @@ class AllItemsScreen(ctk.CTkFrame):
                     col_offset = 1
 
                 # Status
-                ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font(), text_color="black").grid(
-                    row=0, column=8+col_offset, padx=5, pady=5)
+                ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font(), text_color=row_text).grid(
+                    row=0, column=10 + col_offset, padx=5, pady=5)
 
                 # Action buttons
-                col = 9 + col_offset
+                col = 11 + col_offset
                 # Timer button (only for open items)
                 if item.status == Status.OPEN:
                     btn_timer = ctk.CTkButton(

@@ -4,6 +4,8 @@ Today view screen - shows items for today including completed ones.
 
 import customtkinter as ctk
 from datetime import datetime, date
+import random
+import tkinter as tk
 from typing import Optional, TYPE_CHECKING
 
 from ..db_manager import DatabaseManager
@@ -12,12 +14,14 @@ from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
-from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
+from ..theme import apply_segment_accent, celebration_colors, semantic_colors, button_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
+from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
+from ..utils.icon_loader import IconLoader
 from .title_format import (
     split_action_item_title,
     format_column_text,
-    TITLE_COL_CHARS,
+    responsive_column_chars,
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
@@ -38,7 +42,12 @@ class TodayScreen(ctk.CTkFrame):
         self.segment_colors_by_name = {}
         self._parent_segment_cache = {}
         self._ape_segment_cache = {}
+        self._ape_lineage_cache = {}
         self._week_action_segment_cache = {}
+        self._item_lineage_cache = {}
+        self._completion_badge_image = None
+        self._session_completed_count = 0
+        self._confetti_overlay = None
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
@@ -152,6 +161,7 @@ class TodayScreen(ctk.CTkFrame):
     def refresh(self):
         """Refresh the view."""
         self.settings = AppSettings.load()  # Reload settings for icon changes
+        self._completion_badge_image = None
         self.load_items()
 
     def load_items(self):
@@ -169,12 +179,14 @@ class TodayScreen(ctk.CTkFrame):
             # Get today's items (start_date <= today, includes completed)
             items = self.get_todays_items()
 
-            # Refresh VPS color caches
+            # Refresh VSP color caches
             self.segment_colors_by_id = self.app.vps_manager.get_segment_colors_by_id()
             self.segment_colors_by_name = self.app.vps_manager.get_segment_color_map()
             self._parent_segment_cache = {}
             self._ape_segment_cache = {}
+            self._ape_lineage_cache = {}
             self._week_action_segment_cache = {}
+            self._item_lineage_cache = {}
 
             if not items:
                 label = ctk.CTkLabel(
@@ -314,6 +326,7 @@ class TodayScreen(ctk.CTkFrame):
             self._week_action_segment_cache,
         )
         is_critical = (item.importance == 20 or item.urgency == 20)
+        row_text = palette["row_text"]
         if segment_color:
             bg_color = segment_color
         elif is_completed:
@@ -326,19 +339,35 @@ class TodayScreen(ctk.CTkFrame):
         frame = ctk.CTkFrame(self.scroll_frame, fg_color=bg_color)
         apply_segment_accent(frame, segment_color)
         frame.grid_columnconfigure(1, weight=1)
+        limits = responsive_column_chars(max(self.winfo_width(), self.scroll_frame.winfo_width()))
         parsed = split_action_item_title(item.title)
+        _segment_name, subsegment_name, category_name = lineage_for_item(
+            item,
+            self.db_manager,
+            self._item_lineage_cache,
+            self._ape_lineage_cache,
+            self._week_action_segment_cache,
+        )
 
         # Completion indicator
         if is_completed:
-            # Show custom completion icon
-            completion_text = self.settings.completion_icon
-            ctk.CTkLabel(
-                frame,
-                text=completion_text,
-                font=ctk.CTkFont(size=16),
-                text_color="black",
-                width=30
-            ).grid(row=0, column=0, padx=5, pady=5)
+            badge_image = self._get_completion_badge_image()
+            if badge_image is not None:
+                ctk.CTkLabel(
+                    frame,
+                    text="",
+                    image=badge_image,
+                    width=44,
+                ).grid(row=0, column=0, padx=5, pady=5)
+            else:
+                completion_text = self.settings.completion_icon or "✓"
+                ctk.CTkLabel(
+                    frame,
+                    text=completion_text,
+                    font=ctk.CTkFont(size=28, weight="bold"),
+                    text_color=palette["success_strong"],
+                    width=44
+                ).grid(row=0, column=0, padx=5, pady=5)
         else:
             # Complete checkbox for open items
             var = ctk.BooleanVar(value=False)
@@ -351,36 +380,66 @@ class TodayScreen(ctk.CTkFrame):
             )
             checkbox.grid(row=0, column=0, padx=5, pady=5)
 
+        title_cell = ctk.CTkFrame(frame, fg_color="transparent")
+        title_cell.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        title_cell.grid_columnconfigure(1, weight=1)
+        if item.item_type == "week":
+            ctk.CTkLabel(
+                title_cell,
+                text="WT",
+                width=28,
+                corner_radius=6,
+                fg_color=palette["success_strong"],
+                text_color=palette["on_strong"],
+                font=ctk.CTkFont(size=11, weight="bold"),
+            ).grid(row=0, column=0, padx=(0, 6), sticky="w")
         title_label = ctk.CTkLabel(
-            frame,
-            text=format_column_text(parsed.title, TITLE_COL_CHARS),
-            width=300,
+            title_cell,
+            text=parsed.title,
             font=list_row_font(),
             anchor="w",
-            text_color="black"
+            text_color=row_text
         )
-        title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        title_label.grid(row=0, column=1, sticky="ew")
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(subsegment_name or "-", limits["subsegment"]),
+            width=max(56, limits["subsegment"] * 8),
+            anchor="w",
+            text_color=row_text,
+            font=list_row_font(),
+        ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+
+        ctk.CTkLabel(
+            frame,
+            text=format_column_text(category_name or "-", limits["category"]),
+            width=max(56, limits["category"] * 8),
+            anchor="w",
+            text_color=row_text,
+            font=list_row_font(),
+        ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
         # Context
         ctk.CTkLabel(
             frame,
-            text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
-            width=140,
+            text=format_column_text(parsed.context, limits["context"]),
+            width=max(90, limits["context"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
-        ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
 
         # Who
         ctk.CTkLabel(
             frame,
-            text=format_column_text(item.who, CONTACT_COL_CHARS),
-            width=100,
+            text=format_column_text(item.who, limits["who"]),
+            width=max(52, limits["who"] * 8),
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font(),
-        ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        ).grid(row=0, column=5, padx=5, pady=5, sticky="w")
 
         # Start Date
         start_date_text = item.start_date if item.start_date else "-"
@@ -395,10 +454,10 @@ class TodayScreen(ctk.CTkFrame):
             text=f"S:{start_date_text}",
             width=60,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
-        start_label.grid(row=0, column=4, padx=5, pady=5)
+        start_label.grid(row=0, column=6, padx=5, pady=5)
         start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
         # Due Date
@@ -414,10 +473,10 @@ class TodayScreen(ctk.CTkFrame):
             text=f"D:{due_date_text}",
             width=60,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
-        due_label.grid(row=0, column=5, padx=5, pady=5)
+        due_label.grid(row=0, column=7, padx=5, pady=5)
         due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
         # Priority score
@@ -427,11 +486,11 @@ class TodayScreen(ctk.CTkFrame):
             text=f"P:{item.priority_score}",
             width=60,
             fg_color=palette["danger"] if is_priority_critical else "transparent",
-            text_color=pick_text_color(palette["danger"]) if is_priority_critical else "black",
+            text_color=pick_text_color(palette["danger"]) if is_priority_critical else row_text,
             corner_radius=6 if is_priority_critical else 0,
             font=list_row_font(),
         )
-        score_label.grid(row=0, column=6, padx=5, pady=5)
+        score_label.grid(row=0, column=8, padx=5, pady=5)
         score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
         # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
@@ -441,15 +500,15 @@ class TodayScreen(ctk.CTkFrame):
             text=time_text,
             width=50,
             anchor="w",
-            text_color="black",
+            text_color=row_text,
             font=list_row_font()
         )
-        time_label.grid(row=0, column=7, padx=5, pady=5)
+        time_label.grid(row=0, column=9, padx=5, pady=5)
 
         # Factor chips (I, U, E, V) - only shown when expanded
         factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
         if self.columns_expanded:
-            factors_frame.grid(row=0, column=8, padx=5, pady=5)
+            factors_frame.grid(row=0, column=10, padx=5, pady=5)
             columns = [
                 ("G", item.group, 120),
                 ("C", item.category, 120),
@@ -465,7 +524,7 @@ class TodayScreen(ctk.CTkFrame):
                     "width": width,
                     "anchor": "w",
                     "font": list_row_font(),
-                    "text_color": "black",
+                    "text_color": row_text,
                 }
                 if label in ("I", "U") and str(value).strip() == "20":
                     label_kwargs["fg_color"] = palette["danger"]
@@ -476,7 +535,7 @@ class TodayScreen(ctk.CTkFrame):
 
         # Action buttons (only for open items)
         # Column positions shift based on whether factors are shown
-        btn_col_start = 9 if self.columns_expanded else 8
+        btn_col_start = 11 if self.columns_expanded else 10
         if not is_completed:
             btn_timer = ctk.CTkButton(
                 frame,
@@ -491,8 +550,70 @@ class TodayScreen(ctk.CTkFrame):
 
     def complete_item(self, item_id: str):
         """Mark item as complete."""
-        self.db_manager.complete_action_item(item_id)
-        self.refresh()
+        if self.db_manager.complete_action_item(item_id):
+            self._session_completed_count += 1
+            self.refresh()
+            self._maybe_show_completion_confetti()
+
+    def _get_completion_badge_image(self):
+        if self._completion_badge_image is not None:
+            return self._completion_badge_image
+        badge_path = getattr(self.settings, "completion_badge_path", None)
+        if not badge_path:
+            return None
+        self._completion_badge_image = IconLoader.load_image_path(badge_path, size=34)
+        return self._completion_badge_image
+
+    def _maybe_show_completion_confetti(self):
+        threshold = int(getattr(self.settings, "completion_confetti_threshold", 0) or 0)
+        if threshold <= 0:
+            return
+        if self._session_completed_count % threshold != 0:
+            return
+        self._show_confetti_overlay()
+
+    def _show_confetti_overlay(self):
+        if self._confetti_overlay is not None:
+            try:
+                self._confetti_overlay.destroy()
+            except Exception:
+                pass
+        self.update_idletasks()
+        overlay = tk.Canvas(self, highlightthickness=0, bg=self.winfo_toplevel().cget("bg"), bd=0)
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
+        self._confetti_overlay = overlay
+
+        width = max(1, self.winfo_width())
+        height = max(1, self.winfo_height())
+        colors = celebration_colors()
+        pieces = []
+        for _ in range(36):
+            x = random.randint(0, width)
+            y = random.randint(-height // 3, 0)
+            size = random.randint(6, 12)
+            color = random.choice(colors)
+            shape = overlay.create_rectangle(x, y, x + size, y + size, fill=color, outline="")
+            pieces.append({
+                "id": shape,
+                "dx": random.uniform(-2.2, 2.2),
+                "dy": random.uniform(3.0, 6.0),
+            })
+
+        self._animate_confetti(overlay, pieces, 0, height)
+
+    def _animate_confetti(self, overlay, pieces, step: int, max_height: int):
+        if self._confetti_overlay is not overlay:
+            return
+        if step > 45:
+            overlay.destroy()
+            if self._confetti_overlay is overlay:
+                self._confetti_overlay = None
+            return
+
+        for piece in pieces:
+            overlay.move(piece["id"], piece["dx"], piece["dy"])
+        self.after(35, lambda: self._animate_confetti(overlay, pieces, step + 1, max_height))
 
     def start_timer(self, item_id: str):
         """Start timer for an action item."""

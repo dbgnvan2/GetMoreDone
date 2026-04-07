@@ -90,3 +90,37 @@ def test_drag_schedule_text_color_setting_persist():
     finally:
         settings.drag_schedule_date_text_color = original_color
         settings.save()
+
+
+def test_business_year_start_setting_persist():
+    settings = AppSettings.load()
+    original_value = getattr(settings, "business_year_start_mmdd", "01-01")
+
+    try:
+        settings.business_year_start_mmdd = "04-01"
+        settings.save()
+
+        reloaded = AppSettings.load()
+        assert reloaded.business_year_start_mmdd == "04-01"
+    finally:
+        settings.business_year_start_mmdd = original_value
+        settings.save()
+
+
+def test_completion_badge_and_confetti_settings_persist():
+    settings = AppSettings.load()
+    original_badge = getattr(settings, "completion_badge_path", None)
+    original_threshold = getattr(settings, "completion_confetti_threshold", 0)
+
+    try:
+        settings.completion_badge_path = "/tmp/completion-badge.png"
+        settings.completion_confetti_threshold = 5
+        settings.save()
+
+        reloaded = AppSettings.load()
+        assert reloaded.completion_badge_path == "/tmp/completion-badge.png"
+        assert reloaded.completion_confetti_threshold == 5
+    finally:
+        settings.completion_badge_path = original_badge
+        settings.completion_confetti_threshold = original_threshold
+        settings.save()

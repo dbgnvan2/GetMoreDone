@@ -4,8 +4,6 @@ Settings screen - application settings and database management.
 
 import customtkinter as ctk
 import shutil
-import subprocess
-import threading
 from pathlib import Path
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -13,7 +11,9 @@ from tkinter import filedialog, colorchooser, messagebox
 
 from ..app_settings import AppSettings
 from ..obsidian_utils import validate_obsidian_setup
-from ..theme import APPEARANCE_MODES, THEME_NAMES, button_style
+from ..theme import APPEARANCE_MODES, THEME_NAMES, button_style, combo_box_style, status_text_color
+from .settings_integrations import SettingsIntegrationsMixin
+from .settings_vsp_segments import SettingsVSPSegmentsMixin
 from ..utils.icon_loader import load_volume_icon
 
 if TYPE_CHECKING:
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
 
 
-class SettingsScreen(ctk.CTkFrame):
+class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CTkFrame):
     """Screen for application settings."""
 
     def __init__(self, parent, db_manager: 'DatabaseManager', app: 'GetMoreDoneApp'):
@@ -91,7 +91,16 @@ class SettingsScreen(ctk.CTkFrame):
         email_tab.grid_columnconfigure(0, weight=1)
         self.create_email_import_section(email_tab)
 
-        # VPS segment management moved into VPS Plan -> Vision Segments.
+        # VSP segment management moved into VSP Plan -> Vision Elements.
+
+    def _status_label(self, parent, text: str = "", level: str = "success", **kwargs):
+        return ctk.CTkLabel(parent, text=text, text_color=status_text_color(level), **kwargs)
+
+    def _info_label(self, parent, text: str, **kwargs):
+        return ctk.CTkLabel(parent, text=text, text_color=status_text_color("muted"), **kwargs)
+
+    def _set_status(self, label: ctk.CTkLabel, text: str, level: str = "success"):
+        label.configure(text=text, text_color=status_text_color(level))
 
     def create_database_section(self, parent=None):
         """Create database management section."""
@@ -132,21 +141,50 @@ class SettingsScreen(ctk.CTkFrame):
         )
         btn_demo.grid(row=2, column=1, sticky="w", padx=10, pady=10)
 
+        ctk.CTkLabel(section, text="Business year starts (MM-DD):").grid(
+            row=3, column=0, sticky="w", padx=10, pady=5
+        )
+        self.business_year_start_var = ctk.StringVar(
+            value=getattr(self.settings, "business_year_start_mmdd", "01-01")
+        )
+        self.business_year_start_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.business_year_start_var,
+            width=120,
+        )
+        self.business_year_start_entry.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
+        self.db_save_btn = ctk.CTkButton(
+            section,
+            text="Save Database Settings",
+            command=self.save_database_settings,
+            width=180,
+            **button_style("secondary"),
+        )
+        self.db_save_btn.grid(row=4, column=0, sticky="w", padx=10, pady=10)
+
         # Status label
-        self.db_status_label = ctk.CTkLabel(
-            section, text="", text_color="green")
+        self.db_status_label = self._status_label(section, text="", level="success")
         self.db_status_label.grid(
-            row=3, column=1, sticky="w", padx=10, pady=10)
+            row=4, column=1, sticky="w", padx=10, pady=10)
 
         # Info
         info_text = (
             "Backups are saved in the data/ directory with timestamps.\n"
-            "Database file: getmoredone.db\n\n"
+            "Database file: getmoredone.db\n"
+            "Business year start uses recurring MM-DD format.\n\n"
             "Demo Data: adds a small set of sample items to the CURRENT database (no deletion)."
         )
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray").grid(
-            row=4, column=0, columnspan=2, sticky="w", padx=10, pady=5
+        self._info_label(section, text=info_text, justify="left").grid(
+            row=5, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
+
+    def save_database_settings(self):
+        """Save database-related preferences."""
+        self.settings.business_year_start_mmdd = self.business_year_start_var.get().strip()
+        self.settings.save()
+        self.business_year_start_var.set(self.settings.business_year_start_mmdd)
+        self._set_status(self.db_status_label, "✓ Database settings saved", "success")
 
     def create_obsidian_section(self, parent=None):
         """Create Obsidian integration section."""
@@ -221,7 +259,7 @@ class SettingsScreen(ctk.CTkFrame):
         info_text = ("Configure your Obsidian vault to link notes to Action Items and Contacts.\n"
                      "Notes will be saved to: {vault_path}/{subfolder}/\n"
                      "The vault must have a .obsidian folder (be a valid Obsidian vault).")
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+        self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
             row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
         )
 
@@ -238,10 +276,7 @@ class SettingsScreen(ctk.CTkFrame):
 
         self.settings.save()
 
-        self.obsidian_status_label.configure(
-            text="✓ Settings saved",
-            text_color="green"
-        )
+        self._set_status(self.obsidian_status_label, "✓ Settings saved", "success")
 
     def test_obsidian_connection(self):
         """Test Obsidian vault connection."""
@@ -249,24 +284,15 @@ class SettingsScreen(ctk.CTkFrame):
         subfolder = self.subfolder_var.get().strip() or "GetMoreDone"
 
         if not vault_path:
-            self.obsidian_status_label.configure(
-                text="❌ Please enter a vault path",
-                text_color="red"
-            )
+            self._set_status(self.obsidian_status_label, "❌ Please enter a vault path", "error")
             return
 
         is_valid, message = validate_obsidian_setup(vault_path, subfolder)
 
         if is_valid:
-            self.obsidian_status_label.configure(
-                text=f"✓ {message}",
-                text_color="green"
-            )
+            self._set_status(self.obsidian_status_label, f"✓ {message}", "success")
         else:
-            self.obsidian_status_label.configure(
-                text=f"❌ {message}",
-                text_color="red"
-            )
+            self._set_status(self.obsidian_status_label, f"❌ {message}", "error")
 
     def create_appearance_section(self, parent=None):
         """Create appearance settings section."""
@@ -293,6 +319,7 @@ class SettingsScreen(ctk.CTkFrame):
             values=list(APPEARANCE_MODES),
             variable=self.appearance_mode_var,
             width=180,
+            **combo_box_style(),
             command=self.on_theme_preference_changed
         )
         self.appearance_mode_combo.grid(row=1, column=1, sticky="w", padx=10, pady=5)
@@ -307,6 +334,7 @@ class SettingsScreen(ctk.CTkFrame):
             values=list(THEME_NAMES),
             variable=self.theme_name_var,
             width=180,
+            **combo_box_style(),
             command=self.on_theme_preference_changed
         )
         self.theme_name_combo.grid(row=2, column=1, sticky="w", padx=10, pady=5)
@@ -320,28 +348,63 @@ class SettingsScreen(ctk.CTkFrame):
             values=[str(size) for size in range(10, 25)],
             variable=self.list_row_font_size_var,
             width=180,
+            **combo_box_style(),
             command=self.on_theme_preference_changed
         )
         self.list_row_font_size_combo.grid(row=3, column=1, sticky="w", padx=10, pady=5)
 
+        ctk.CTkLabel(section, text="Completion Badge:").grid(
+            row=4, column=0, sticky="w", padx=10, pady=5)
+        self.completion_badge_path_var = ctk.StringVar(
+            value=getattr(self.settings, "completion_badge_path", "") or ""
+        )
+        self.completion_badge_path_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.completion_badge_path_var,
+            width=260,
+        )
+        self.completion_badge_path_entry.grid(row=4, column=1, sticky="w", padx=10, pady=5)
+        self.completion_badge_browse_btn = ctk.CTkButton(
+            section,
+            text="Browse",
+            width=90,
+            command=self.browse_completion_badge,
+            **button_style("secondary"),
+        )
+        self.completion_badge_browse_btn.grid(row=4, column=2, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(section, text="Confetti Every N Completions:").grid(
+            row=5, column=0, sticky="w", padx=10, pady=5)
+        self.completion_confetti_threshold_var = ctk.StringVar(
+            value=str(getattr(self.settings, "completion_confetti_threshold", 0))
+        )
+        self.completion_confetti_threshold_entry = ctk.CTkEntry(
+            section,
+            textvariable=self.completion_confetti_threshold_var,
+            width=180,
+        )
+        self.completion_confetti_threshold_entry.grid(row=5, column=1, sticky="w", padx=10, pady=5)
+
         self.theme_apply_btn = ctk.CTkButton(
             section,
-            text="Apply Theme",
+            text="Apply / Save",
             command=self.apply_theme_preferences,
             width=120
         )
-        self.theme_apply_btn.grid(row=1, column=2, rowspan=3, sticky="w", padx=10, pady=5)
+        self.theme_apply_btn.grid(row=1, column=3, rowspan=5, sticky="w", padx=10, pady=5)
 
-        self.appearance_status_label = ctk.CTkLabel(section, text="", text_color="green")
-        self.appearance_status_label.grid(row=4, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 4))
+        self.appearance_status_label = self._status_label(section, text="", level="success")
+        self.appearance_status_label.grid(row=6, column=0, columnspan=4, sticky="w", padx=10, pady=(8, 4))
 
         info_text = (
             "Appearance mode controls system/dark/light rendering.\n"
             "Color theme switches between bundled CustomTkinter palettes.\n"
-            "Row Text Size controls font size in item listing rows."
+            "Row Text Size controls font size in item listing rows.\n"
+            "Completion Badge can be an uploaded image shown on Today completed items.\n"
+            "Set Confetti Every N Completions to 0 to disable confetti."
         )
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=5, column=0, columnspan=3, sticky="w", padx=10, pady=5
+        self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
+            row=7, column=0, columnspan=4, sticky="w", padx=10, pady=5
         )
 
     def on_theme_preference_changed(self, _choice=None):
@@ -356,14 +419,25 @@ class SettingsScreen(ctk.CTkFrame):
             self.settings.list_row_font_size = int(self.list_row_font_size_var.get().strip())
         except ValueError:
             self.settings.list_row_font_size = 14
+        self.settings.completion_badge_path = self.completion_badge_path_var.get().strip() or None
+        self.settings.completion_confetti_threshold = self._parse_positive_or_zero_int(
+            self.completion_confetti_threshold_var.get(),
+            default=getattr(self.settings, "completion_confetti_threshold", 0),
+        )
         self.settings.save()
 
         self.app.settings = self.settings
         self.app.apply_theme_preferences()
-        self.appearance_status_label.configure(
-            text=f"✓ Applied {self.settings.appearance_mode}/{self.settings.theme_name} (row text {self.settings.list_row_font_size})",
-            text_color="green",
+        self._set_status(self.appearance_status_label, "✓ Saved appearance and completion badge settings", "success")
+
+    def browse_completion_badge(self):
+        """Pick an image file for the completion badge."""
+        path = filedialog.askopenfilename(
+            title="Select Completion Badge",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.gif *.webp"), ("All Files", "*.*")],
         )
+        if path:
+            self.completion_badge_path_var.set(path)
 
     def create_date_increment_section(self, parent=None):
         """Create date increment settings section."""
@@ -413,8 +487,8 @@ class SettingsScreen(ctk.CTkFrame):
         columns_expanded_checkbox.grid(row=3, column=0, columnspan=2,
                                        sticky="w", padx=10, pady=5)
 
-        # First day of week selector (used by VPS week generation)
-        ctk.CTkLabel(section, text="First day of week (VPS):").grid(
+        # First day of week selector (used by VSP week generation)
+        ctk.CTkLabel(section, text="First day of week (VSP):").grid(
             row=4, column=0, sticky="w", padx=10, pady=5
         )
         first_day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -426,7 +500,8 @@ class SettingsScreen(ctk.CTkFrame):
             section,
             values=first_day_names,
             variable=self.first_day_of_week_var,
-            width=180
+            width=180,
+            **combo_box_style(),
         )
         self.first_day_of_week_combo.grid(row=4, column=1, sticky="w", padx=10, pady=5)
 
@@ -477,8 +552,7 @@ class SettingsScreen(ctk.CTkFrame):
         btn_save.grid(row=7, column=0, sticky="w", padx=10, pady=10)
 
         # Status label
-        self.date_increment_status_label = ctk.CTkLabel(
-            section, text="", text_color="green")
+        self.date_increment_status_label = self._status_label(section, text="", level="success")
         self.date_increment_status_label.grid(
             row=7, column=1, sticky="w", padx=10, pady=10)
 
@@ -488,7 +562,7 @@ class SettingsScreen(ctk.CTkFrame):
                      "• +/- buttons in date fields\n"
                      "• Continue button (duplicate action for next day)\n\n"
                      "Note: Manual date entry is not affected by these settings.")
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+        self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
             row=8, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
 
@@ -516,10 +590,7 @@ class SettingsScreen(ctk.CTkFrame):
         )
         self.settings.save()
 
-        self.date_increment_status_label.configure(
-            text="✓ Settings saved",
-            text_color="green"
-        )
+        self._set_status(self.date_increment_status_label, "✓ Settings saved", "success")
 
     def pick_drag_schedule_text_color(self):
         """Pick Drag Schedule date text color using color chooser."""
@@ -532,6 +603,13 @@ class SettingsScreen(ctk.CTkFrame):
         try:
             parsed = int(str(value).strip())
             return parsed if parsed > 0 else default
+        except Exception:
+            return default
+
+    def _parse_positive_or_zero_int(self, value: str, default: int) -> int:
+        try:
+            parsed = int(str(value).strip())
+            return parsed if parsed >= 0 else default
         except Exception:
             return default
 
@@ -554,10 +632,7 @@ class SettingsScreen(ctk.CTkFrame):
 
         self.settings.save()
 
-        self.future_date_status_label.configure(
-            text="✓ Future date options saved",
-            text_color="green"
-        )
+        self._set_status(self.future_date_status_label, "✓ Future date options saved", "success")
 
     def create_timer_audio_section(self, parent=None):
         """Create timer and audio settings section."""
@@ -636,8 +711,7 @@ class SettingsScreen(ctk.CTkFrame):
         btn_save.grid(row=3, column=0, sticky="w", padx=10, pady=10)
 
         # Status label
-        self.timer_audio_status_label = ctk.CTkLabel(
-            section, text="", text_color="green")
+        self.timer_audio_status_label = self._status_label(section, text="", level="success")
         self.timer_audio_status_label.grid(
             row=3, column=1, sticky="w", padx=10, pady=10)
 
@@ -645,7 +719,7 @@ class SettingsScreen(ctk.CTkFrame):
         info_text = ("Select a folder containing music files (MP3, WAV, OGG, FLAC, M4A).\n"
                      "When you start a timer, a random music file from this folder will play.\n"
                      "Adjust volume to control music playback loudness (70% recommended).")
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+        self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
             row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
         )
 
@@ -666,9 +740,10 @@ class SettingsScreen(ctk.CTkFrame):
         self.settings.music_volume = self.music_volume_var.get()
         self.settings.save()
 
-        self.timer_audio_status_label.configure(
-            text=f"✓ Settings saved (Volume: {int(self.settings.music_volume * 100)}%)",
-            text_color="green"
+        self._set_status(
+            self.timer_audio_status_label,
+            f"✓ Settings saved (Volume: {int(self.settings.music_volume * 100)}%)",
+            "success",
         )
 
     def create_organizational_factors_section(self, parent=None):
@@ -689,7 +764,7 @@ class SettingsScreen(ctk.CTkFrame):
         # Info
         info_text = ("Manage the values for Group and Category fields.\n"
                      "Edit values to rename them across all items, or delete values with replacement.")
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
+        self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
             row=1, column=0, sticky="w", padx=10, pady=5
         )
 
@@ -802,8 +877,7 @@ class SettingsScreen(ctk.CTkFrame):
         def save():
             new_value = new_value_var.get().strip()
             if not new_value:
-                status_label.configure(
-                    text="Please enter a value", text_color="red")
+                self._set_status(status_label, "Please enter a value", "error")
                 return
 
             if new_value == old_value:
@@ -818,12 +892,12 @@ class SettingsScreen(ctk.CTkFrame):
                     )
                     status_label.configure(
                         text=f"✓ Replaced in all items",
-                        text_color="green"
+                        text_color=status_text_color("success")
                     )
                 else:
                     status_label.configure(
                         text="Value not replaced (option unchecked)",
-                        text_color="orange"
+                        text_color=status_text_color("warning")
                     )
 
                 # Close dialog after a brief delay
@@ -832,8 +906,7 @@ class SettingsScreen(ctk.CTkFrame):
                 self.refresh_organizational_factors()
 
             except Exception as e:
-                status_label.configure(
-                    text=f"Error: {str(e)}", text_color="red")
+                self._set_status(status_label, f"Error: {str(e)}", "error")
 
         ctk.CTkButton(btn_frame, text="Save", command=save).pack(
             side="left", padx=5)
@@ -902,7 +975,8 @@ class SettingsScreen(ctk.CTkFrame):
             replace_frame,
             values=other_values if other_values else [""],
             variable=replacement_var,
-            width=200
+            width=200,
+            **combo_box_style(),
         )
         replacement_combo.pack(side="left", padx=5)
 
@@ -923,14 +997,13 @@ class SettingsScreen(ctk.CTkFrame):
                     )
                     status_label.configure(
                         text=f"✓ Deleted (cleared in all items)",
-                        text_color="green"
+                        text_color=status_text_color("success")
                     )
                 else:
                     # Replace with another value
                     replacement = replacement_var.get().strip()
                     if not replacement:
-                        status_label.configure(
-                            text="Please select a replacement value", text_color="red")
+                        self._set_status(status_label, "Please select a replacement value", "error")
                         return
 
                     self.db_manager.delete_organizational_factor(
@@ -938,7 +1011,7 @@ class SettingsScreen(ctk.CTkFrame):
                     )
                     status_label.configure(
                         text=f"✓ Deleted (replaced with '{replacement}')",
-                        text_color="green"
+                        text_color=status_text_color("success")
                     )
 
                 # Close dialog after a brief delay
@@ -947,8 +1020,7 @@ class SettingsScreen(ctk.CTkFrame):
                 self.refresh_organizational_factors()
 
             except Exception as e:
-                status_label.configure(
-                    text=f"Error: {str(e)}", text_color="red")
+                self._set_status(status_label, f"Error: {str(e)}", "error")
 
         ctk.CTkButton(btn_frame, text="Delete", **button_style("danger"), command=delete).pack(side="left", padx=5)
         ctk.CTkButton(btn_frame, text="Cancel",
@@ -971,8 +1043,7 @@ class SettingsScreen(ctk.CTkFrame):
         try:
             db_path = Path(self.db_manager.db.db_path)
             if not db_path.exists():
-                self.db_status_label.configure(
-                    text="Database file not found", text_color="red")
+                self._set_status(self.db_status_label, "Database file not found", "error")
                 return
 
             # Create backup filename with timestamp
@@ -982,16 +1053,10 @@ class SettingsScreen(ctk.CTkFrame):
             # Copy database file
             shutil.copy2(db_path, backup_path)
 
-            self.db_status_label.configure(
-                text=f"Backup created: {backup_path.name}",
-                text_color="green"
-            )
+            self._set_status(self.db_status_label, f"Backup created: {backup_path.name}", "success")
 
         except Exception as e:
-            self.db_status_label.configure(
-                text=f"Backup failed: {str(e)}",
-                text_color="red"
-            )
+            self._set_status(self.db_status_label, f"Backup failed: {str(e)}", "error")
 
     def load_demo_data(self):
         """Insert demo data into the CURRENT database (safe additive)."""
@@ -1010,839 +1075,7 @@ class SettingsScreen(ctk.CTkFrame):
             from ..demo_data import load_demo_data
             created = load_demo_data(db_path=self.db_manager.db.db_path)
 
-            self.db_status_label.configure(
-                text=f"Demo data added ({created} items)",
-                text_color="green",
-            )
+            self._set_status(self.db_status_label, f"Demo data added ({created} items)", "success")
 
         except Exception as e:
-            self.db_status_label.configure(
-                text=f"Demo data failed: {str(e)}",
-                text_color="red",
-            )
-
-    def create_email_import_section(self, parent=None):
-        """Create Email Import settings section (Gmail label → Action Items)."""
-        if parent is None:
-            parent = self
-
-        section = ctk.CTkFrame(parent)
-        section.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        section.grid_columnconfigure(1, weight=1)
-
-        # Title
-        ctk.CTkLabel(
-            section,
-            text="Email Import (Gmail)",
-            font=ctk.CTkFont(size=16, weight="bold"),
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 5))
-
-        info = (
-            "Move/label an email into the Trigger Label (e.g. GMD) and GetMoreDone will create an Action Item.\n"
-            "After import, the email is moved by removing the trigger label and applying the Processed Label (e.g. GMD/moved).\n\n"
-            "This uses the Gmail account you authorized on this computer (OAuth token in ~/.getmoredone/)."
-        )
-        ctk.CTkLabel(section, text=info, justify="left", text_color="gray", wraplength=700).grid(
-            row=1, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10)
-        )
-
-        # Enabled toggle
-        self.gmail_enabled_var = ctk.BooleanVar(value=bool(getattr(self.settings, "gmail_import_enabled", True)))
-        ctk.CTkCheckBox(
-            section,
-            text="Enable Gmail import",
-            variable=self.gmail_enabled_var,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
-
-        # Trigger label
-        ctk.CTkLabel(section, text="Trigger Label:").grid(row=3, column=0, sticky="w", padx=10, pady=5)
-        self.gmail_trigger_var = ctk.StringVar(value=getattr(self.settings, "gmail_import_trigger_label", "GMD"))
-        ctk.CTkEntry(section, textvariable=self.gmail_trigger_var, width=260).grid(row=3, column=1, sticky="w", padx=10, pady=5)
-
-        # Processed label
-        ctk.CTkLabel(section, text="Processed Label:").grid(row=4, column=0, sticky="w", padx=10, pady=5)
-        self.gmail_moved_var = ctk.StringVar(value=getattr(self.settings, "gmail_import_moved_label", "GMD/moved"))
-        ctk.CTkEntry(section, textvariable=self.gmail_moved_var, width=260).grid(row=4, column=1, sticky="w", padx=10, pady=5)
-
-        # Interval
-        ctk.CTkLabel(section, text="Poll Interval (sec):").grid(row=5, column=0, sticky="w", padx=10, pady=5)
-        self.gmail_interval_var = ctk.StringVar(value=str(getattr(self.settings, "gmail_import_interval_seconds", 60)))
-        ctk.CTkEntry(section, textvariable=self.gmail_interval_var, width=120).grid(row=5, column=1, sticky="w", padx=10, pady=5)
-
-        # Calendar import lookahead
-        ctk.CTkLabel(section, text="Calendar Days to check:").grid(row=6, column=0, sticky="w", padx=10, pady=5)
-        self.calendar_days_var = ctk.StringVar(value=str(getattr(self.settings, "calendar_import_days_ahead", 14)))
-        ctk.CTkEntry(section, textvariable=self.calendar_days_var, width=120).grid(row=6, column=1, sticky="w", padx=10, pady=5)
-
-        # Buttons
-        btn_frame = ctk.CTkFrame(section, fg_color="transparent")
-        btn_frame.grid(row=7, column=0, columnspan=2, sticky="w", padx=10, pady=10)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Save Email Import Settings",
-            command=self.save_email_import_settings,
-            **button_style("primary"),
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Run Import Now",
-            command=self.run_email_import_now,
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Run Calendar Import Now",
-            command=self.run_calendar_import_now,
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Open Logs",
-            command=self.open_email_import_logs,
-            **button_style("secondary"),
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            btn_frame,
-            text="Email Import Help",
-            command=self.show_email_import_help,
-            **button_style("secondary"),
-        ).pack(side="left", padx=5)
-
-        # Status label
-        self.gmail_status_label = ctk.CTkLabel(section, text="", wraplength=700)
-        self.gmail_status_label.grid(row=8, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
-
-        self.calendar_status_label = ctk.CTkLabel(section, text="", wraplength=700)
-        self.calendar_status_label.grid(row=9, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 10))
-
-    def create_future_date_options_section(self, parent=None):
-        """Create Future Date Options section (Drag Schedule)."""
-        if parent is None:
-            parent = self
-
-        section = ctk.CTkFrame(parent)
-        section.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        section.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            section,
-            text="Future Date Options (Drag Schedule)",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(10, 10))
-
-        ctk.CTkLabel(section, text="Near Term (days from today):").grid(
-            row=1, column=0, sticky="w", padx=10, pady=5)
-        self.future_near_var = ctk.StringVar(value=str(self.settings.mid_term_offset_days))
-        ctk.CTkEntry(section, textvariable=self.future_near_var, width=120).grid(
-            row=1, column=1, sticky="w", padx=10, pady=5)
-
-        ctk.CTkLabel(section, text="Long Term (days from today):").grid(
-            row=2, column=0, sticky="w", padx=10, pady=5)
-        self.future_long_var = ctk.StringVar(value=str(self.settings.long_term_offset_days))
-        ctk.CTkEntry(section, textvariable=self.future_long_var, width=120).grid(
-            row=2, column=1, sticky="w", padx=10, pady=5)
-
-        ctk.CTkLabel(section, text="1st Next Month Offset (days from 1st):").grid(
-            row=3, column=0, sticky="w", padx=10, pady=5)
-        self.future_next_month_var = ctk.StringVar(value=str(getattr(self.settings, "next_month_offset_days", 0)))
-        ctk.CTkEntry(section, textvariable=self.future_next_month_var, width=120).grid(
-            row=3, column=1, sticky="w", padx=10, pady=5)
-
-        ctk.CTkLabel(section, text="1st Next Quarter Offset (days from 1st):").grid(
-            row=4, column=0, sticky="w", padx=10, pady=5)
-        self.future_next_quarter_var = ctk.StringVar(value=str(getattr(self.settings, "next_quarter_offset_days", 0)))
-        ctk.CTkEntry(section, textvariable=self.future_next_quarter_var, width=120).grid(
-            row=4, column=1, sticky="w", padx=10, pady=5)
-
-        btn_save = ctk.CTkButton(
-            section,
-            text="Save Future Date Options",
-            command=self.save_future_date_options,
-            **button_style("primary"),
-            width=220
-        )
-        btn_save.grid(row=5, column=0, sticky="w", padx=10, pady=10)
-
-        self.future_date_status_label = ctk.CTkLabel(section, text="", text_color="green")
-        self.future_date_status_label.grid(row=5, column=1, sticky="w", padx=10, pady=10)
-
-        info_text = (
-            "Near/Long term are offsets from today.\n"
-            "Next Month/Quarter offsets are applied to the 1st of next month/quarter."
-        )
-        ctk.CTkLabel(section, text=info_text, justify="left", text_color="gray", wraplength=600).grid(
-            row=6, column=0, columnspan=2, sticky="w", padx=10, pady=5
-        )
-
-    def save_email_import_settings(self):
-        """Save Email Import settings into settings.json."""
-        try:
-            self.settings.gmail_import_enabled = bool(self.gmail_enabled_var.get())
-            self.settings.gmail_import_trigger_label = self.gmail_trigger_var.get().strip() or "GMD"
-            self.settings.gmail_import_moved_label = self.gmail_moved_var.get().strip() or "GMD/moved"
-
-            try:
-                interval = int(self.gmail_interval_var.get().strip() or "60")
-            except Exception:
-                interval = 60
-            if interval < 15:
-                interval = 15
-            self.settings.gmail_import_interval_seconds = interval
-
-            try:
-                calendar_days = int(self.calendar_days_var.get().strip() or "14")
-            except Exception:
-                calendar_days = 14
-            if calendar_days < 1:
-                calendar_days = 1
-            if calendar_days > 365:
-                calendar_days = 365
-            self.settings.calendar_import_days_ahead = calendar_days
-
-            self.settings.save()
-
-            # Apply to launchd (prod) so interval changes take effect automatically
-            try:
-                repo_root = Path(__file__).resolve().parents[3]
-                updater = repo_root / "tools" / "update_launchd_importer.py"
-                python_exe = repo_root / "venv" / "bin" / "python"
-                if updater.exists() and python_exe.exists():
-                    subprocess.run([str(python_exe), str(updater), "--reload", "prod"], check=False)
-            except Exception:
-                pass
-
-            self.gmail_status_label.configure(text="Saved (launchd updated).", text_color="green")
-        except Exception as e:
-            self.gmail_status_label.configure(text=f"Save failed: {e}", text_color="red")
-
-    def run_email_import_now(self):
-        """Run the Gmail importer immediately (in a background thread)."""
-        # Save current UI values first
-        self.save_email_import_settings()
-
-        if not bool(self.gmail_enabled_var.get()):
-            self.gmail_status_label.configure(text="Importer is disabled (enable it first).", text_color="gray")
-            return
-
-        def work():
-            try:
-                from ..gmail_importer import GmailImportConfig, import_labeled_emails
-
-                cfg = GmailImportConfig(
-                    trigger_label_name=self.settings.gmail_import_trigger_label,
-                    moved_label_name=self.settings.gmail_import_moved_label,
-                    who_value="Email",
-                    group_value="EMAIL",
-                    start_offset_days=0,
-                    due_offset_days=1,
-                )
-                n = import_labeled_emails(db_path=self.db_manager.db.db_path, cfg=cfg, dry_run=False)
-                self.gmail_status_label.after(0, lambda: self.gmail_status_label.configure(
-                    text=f"Imported {n} email(s) from {cfg.trigger_label_name}.",
-                    text_color=("green" if n else "gray"),
-                ))
-            except Exception as e:
-                self.gmail_status_label.after(0, lambda: self.gmail_status_label.configure(
-                    text=f"Import failed: {e}",
-                    text_color="red",
-                ))
-
-        self.gmail_status_label.configure(text="Running import…", text_color="gray")
-        threading.Thread(target=work, daemon=True).start()
-
-    def open_email_import_logs(self):
-        """Open the launchd log files for the importer (best-effort)."""
-        # These are the log paths used by our launchd plists.
-        out_log = "/tmp/getmoredone-gmailimport-com.getmoredone.gmailimport.prod.out.log"
-        err_log = "/tmp/getmoredone-gmailimport-com.getmoredone.gmailimport.prod.err.log"
-        try:
-            subprocess.run(["open", out_log], check=False)
-            subprocess.run(["open", err_log], check=False)
-            self.gmail_status_label.configure(text="Opened logs.", text_color="gray")
-        except Exception as e:
-            self.gmail_status_label.configure(text=f"Could not open logs: {e}", text_color="red")
-
-    def show_email_import_help(self):
-        """Show a help dialog with Gmail importer recovery steps."""
-        help_path = Path(__file__).resolve().parents[3] / "docs" / "EMAIL_IMPORT_HELP.md"
-        try:
-            content = help_path.read_text(encoding="utf-8")
-        except Exception as e:
-            messagebox.showerror("Email Import Help", f"Could not load help file:\n{e}")
-            return
-
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Gmail Import Help")
-        dialog.geometry("720x520")
-        dialog.transient(self)
-        dialog.grab_set()
-
-        textbox = ctk.CTkTextbox(dialog, wrap="word")
-        textbox.pack(fill="both", expand=True, padx=15, pady=(15, 5))
-        textbox.insert("1.0", content)
-        textbox.configure(state="disabled")
-
-        ctk.CTkButton(dialog, text="Close", command=dialog.destroy).pack(pady=(0, 15))
-
-    def run_calendar_import_now(self):
-        """Run Google Calendar importer immediately (in a background thread)."""
-        # Save current UI values first (including calendar lookahead days)
-        self.save_email_import_settings()
-
-        def work():
-            try:
-                from ..calendar_importer import CalendarImportConfig, import_upcoming_calendar_events
-
-                cfg = CalendarImportConfig(
-                    calendar_id="primary",
-                    days_ahead=max(1, int(getattr(self.settings, "calendar_import_days_ahead", 14))),
-                    who_value="Calendar",
-                    group_value="CALENDAR",
-                    include_all_day=True,
-                )
-                stats = import_upcoming_calendar_events(
-                    db_path=self.db_manager.db.db_path,
-                    cfg=cfg,
-                    dry_run=False,
-                )
-
-                msg = (
-                    f"Calendar import complete: seen={stats['events_seen']}, "
-                    f"created={stats['created']}, "
-                    f"updated_existing={stats.get('updated_existing', 0)}, "
-                    f"skipped_existing={stats['skipped_existing']}, "
-                    f"skipped_all_day={stats['skipped_all_day']}"
-                )
-                color = "green" if (stats["created"] > 0 or stats.get("updated_existing", 0) > 0) else "gray"
-                self.calendar_status_label.after(
-                    0, lambda: self.calendar_status_label.configure(text=msg, text_color=color)
-                )
-            except Exception as e:
-                self.calendar_status_label.after(
-                    0,
-                    lambda: self.calendar_status_label.configure(
-                        text=f"Calendar import failed: {e}",
-                        text_color="red",
-                    ),
-                )
-
-        self.calendar_status_label.configure(text="Running calendar import…", text_color="gray")
-        threading.Thread(target=work, daemon=True).start()
-
-    def create_vps_segments_section(self, parent=None):
-        """Create VPS Life Segments management section."""
-        if parent is None:
-            parent = self
-
-        section = ctk.CTkFrame(parent)
-        section.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        section.grid_columnconfigure(0, weight=1)
-        section.grid_columnconfigure(1, weight=1)
-        section.grid_rowconfigure(2, weight=1)
-
-        # Section title
-        title_frame = ctk.CTkFrame(section)
-        title_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
-        title_frame.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(
-            title_frame,
-            text="VPS Life Segments",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).pack(side="left", padx=10)
-
-        ctk.CTkLabel(
-            title_frame,
-            text="Manage your life segments for Visionary Planning System",
-            font=ctk.CTkFont(size=11),
-            text_color="gray"
-        ).pack(side="left", padx=10)
-
-        # Buttons frame
-        buttons_frame = ctk.CTkFrame(section)
-        buttons_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
-
-        ctk.CTkButton(
-            buttons_frame,
-            text="+ New Segment",
-            command=self.create_new_segment,
-            width=150,
-            **button_style("primary"),
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            buttons_frame,
-            text="+ New SubSegment",
-            command=self.create_new_subsegment,
-            width=160,
-            **button_style("secondary"),
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            buttons_frame,
-            text="↻ Refresh",
-            command=lambda: (self.refresh_segments_list(), self.refresh_subsegments_list()),
-            width=100
-        ).pack(side="left", padx=5)
-
-        # Left column: Segments
-        segments_panel = ctk.CTkFrame(section)
-        segments_panel.grid(row=2, column=0, sticky="nsew", padx=(10, 5), pady=10)
-        segments_panel.grid_columnconfigure(0, weight=1)
-        segments_panel.grid_rowconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            segments_panel,
-            text="Segments",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 6))
-
-        self.segments_scroll_frame = ctk.CTkScrollableFrame(segments_panel, label_text="")
-        self.segments_scroll_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
-        self.segments_scroll_frame.grid_columnconfigure(0, weight=1)
-
-        # Right column: Subsegments
-        subsegments_panel = ctk.CTkFrame(section)
-        subsegments_panel.grid(row=2, column=1, sticky="nsew", padx=(5, 10), pady=10)
-        subsegments_panel.grid_columnconfigure(1, weight=1)
-        subsegments_panel.grid_rowconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            subsegments_panel,
-            text="Subsegments",
-            font=ctk.CTkFont(size=14, weight="bold"),
-        ).grid(row=0, column=0, sticky="w", padx=(10, 5), pady=(10, 6))
-        ctk.CTkLabel(subsegments_panel, text="Segment Filter:").grid(
-            row=0, column=1, sticky="w", padx=(0, 6), pady=(10, 6)
-        )
-        self.subsegment_filter_var = ctk.StringVar(value="All")
-        self.subsegment_filter_combo = ctk.CTkComboBox(
-            subsegments_panel,
-            values=["All"],
-            variable=self.subsegment_filter_var,
-            command=lambda _v: self.refresh_subsegments_list(),
-            width=220,
-        )
-        self.subsegment_filter_combo.grid(row=0, column=2, sticky="w", padx=(0, 10), pady=(10, 6))
-
-        self.subsegments_scroll_frame = ctk.CTkScrollableFrame(subsegments_panel, label_text="")
-        self.subsegments_scroll_frame.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=10, pady=(0, 10))
-        self.subsegments_scroll_frame.grid_columnconfigure(0, weight=1)
-
-        # Load lists
-        self.refresh_segments_list()
-        self.refresh_subsegments_list()
-
-    def refresh_segments_list(self):
-        """Refresh the segments list display."""
-        if not hasattr(self, "segments_scroll_frame"):
-            return
-        # Clear current widgets
-        for widget in self.segments_scroll_frame.winfo_children():
-            widget.destroy()
-
-        # Get all segments (including inactive)
-        segments = self.app.vps_manager.get_all_segments(active_only=False)
-        if hasattr(self, "subsegment_filter_combo"):
-            names = ["All"] + [s["name"] for s in segments]
-            self.subsegment_filter_combo.configure(values=names)
-            if self.subsegment_filter_var.get() not in names:
-                self.subsegment_filter_var.set("All")
-
-        if not segments:
-            label = ctk.CTkLabel(
-                self.segments_scroll_frame,
-                text="No life segments defined. Click '+ New Segment' to create one.",
-                font=ctk.CTkFont(size=12),
-                text_color="gray"
-            )
-            label.grid(row=0, column=0, pady=20)
-            return
-
-        # Display each segment
-        for idx, segment in enumerate(segments):
-            self.create_segment_row(segment, idx)
-
-    def create_segment_row(self, segment: dict, row: int):
-        """Create a row displaying a segment with edit/delete buttons."""
-        frame = ctk.CTkFrame(self.segments_scroll_frame)
-        frame.grid(row=row, column=0, sticky="ew", pady=5, padx=5)
-        frame.grid_columnconfigure(2, weight=1)
-
-        # Color indicator
-        color_frame = ctk.CTkFrame(
-            frame, width=40, height=40, fg_color=segment['color_hex'])
-        color_frame.grid(row=0, column=0, rowspan=2, padx=10, pady=5)
-        color_frame.grid_propagate(False)
-
-        # Segment name
-        name_label = ctk.CTkLabel(
-            frame,
-            text=f"🎯 {segment['name']}",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            anchor="w"
-        )
-        name_label.grid(row=0, column=1, columnspan=2,
-                        sticky="w", padx=10, pady=(5, 0))
-
-        # Segment description
-        desc_label = ctk.CTkLabel(
-            frame,
-            text=segment['description'] or "No description",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            anchor="w"
-        )
-        desc_label.grid(row=1, column=1, columnspan=2,
-                        sticky="w", padx=10, pady=(0, 5))
-
-        # Status badge
-        status_text = "✓ Active" if segment['is_active'] else "○ Inactive"
-        status_color = "green" if segment['is_active'] else "gray"
-        status_label = ctk.CTkLabel(
-            frame,
-            text=status_text,
-            font=ctk.CTkFont(size=10),
-            text_color=status_color
-        )
-        status_label.grid(row=0, column=3, padx=5, pady=5)
-
-        # Edit button
-        edit_btn = ctk.CTkButton(
-            frame,
-            text="✎ Edit",
-            command=lambda s=segment: self.edit_segment(s),
-            width=80
-        )
-        edit_btn.grid(row=0, column=4, rowspan=2, padx=5, pady=5)
-
-        # Delete button
-        delete_btn = ctk.CTkButton(
-            frame,
-            text="🗑 Delete",
-            command=lambda s=segment: self.delete_segment(s),
-            **button_style("danger"),
-            width=80
-        )
-        delete_btn.grid(row=0, column=5, rowspan=2, padx=5, pady=5)
-
-    def refresh_subsegments_list(self):
-        """Refresh subsegments list (right column)."""
-        if not hasattr(self, "subsegments_scroll_frame"):
-            return
-        for widget in self.subsegments_scroll_frame.winfo_children():
-            widget.destroy()
-
-        selected_segment = (self.subsegment_filter_var.get() or "All").strip()
-        segment_filter = None if selected_segment in ("", "All") else selected_segment
-        rows = self.app.vps_manager.get_vision_subsegments(segment_name=segment_filter)
-
-        if not rows:
-            ctk.CTkLabel(
-                self.subsegments_scroll_frame,
-                text="No subsegments found. Create them via Vision Elements or edit existing records.",
-                font=ctk.CTkFont(size=12),
-                text_color="gray",
-            ).grid(row=0, column=0, pady=20, padx=10, sticky="w")
-            return
-
-        for idx, row in enumerate(rows):
-            self.create_subsegment_row(row, idx)
-
-    def create_subsegment_row(self, subsegment: dict, row: int):
-        """Render a subsegment row with color controls."""
-        frame = ctk.CTkFrame(self.subsegments_scroll_frame)
-        frame.grid(row=row, column=0, sticky="ew", pady=4, padx=5)
-        frame.grid_columnconfigure(1, weight=1)
-
-        color_hex = subsegment.get("color_hex") or "#64748B"
-        color_frame = ctk.CTkFrame(frame, width=26, height=26, fg_color=color_hex)
-        color_frame.grid(row=0, column=0, rowspan=2, padx=10, pady=8)
-        color_frame.grid_propagate(False)
-
-        ctk.CTkLabel(
-            frame,
-            text=subsegment.get("name") or "(unnamed subsegment)",
-            font=ctk.CTkFont(size=13, weight="bold"),
-            anchor="w",
-        ).grid(row=0, column=1, sticky="w", padx=8, pady=(6, 0))
-
-        ctk.CTkLabel(
-            frame,
-            text=f"Segment: {subsegment.get('segment_name') or '-'}",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-            anchor="w",
-        ).grid(row=1, column=1, sticky="w", padx=8, pady=(0, 6))
-
-        ctk.CTkButton(
-            frame,
-            text="Pick Color",
-            width=96,
-            command=lambda s=subsegment: self.pick_subsegment_color(s),
-            **button_style("secondary"),
-        ).grid(row=0, column=2, rowspan=2, padx=6, pady=6)
-
-    def pick_subsegment_color(self, subsegment: dict):
-        """Pick and save one subsegment color."""
-        initial = subsegment.get("color_hex") or "#64748B"
-        picked = colorchooser.askcolor(initialcolor=initial, title="Choose Subsegment Color")
-        new_color = (picked[1] or "").strip()
-        if not new_color:
-            return
-        try:
-            self.app.vps_manager.update_vision_subsegment_color(subsegment["id"], new_color)
-            self.refresh_subsegments_list()
-        except Exception as exc:
-            messagebox.showerror("Color Update Failed", str(exc))
-
-    def create_new_segment(self):
-        """Open dialog to create a new segment."""
-        from .vps_segment_editor import VPSSegmentEditorDialog
-        dialog = VPSSegmentEditorDialog(self, self.app.vps_manager)
-        self.wait_window(dialog)
-        self.refresh_segments_list()
-        self.refresh_subsegments_list()
-
-    def create_new_subsegment(self):
-        """Create a subsegment under an existing Settings life segment."""
-        segments = self.app.vps_manager.get_all_segments(active_only=False)
-        if not segments:
-            messagebox.showwarning("No Segments", "Create a life segment first.")
-            return
-
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("New SubSegment")
-        dialog.geometry("520x250")
-        dialog.transient(self)
-        dialog.grab_set()
-
-        segment_var = ctk.StringVar(value=segments[0]["name"])
-        name_var = ctk.StringVar(value="")
-        color_var = ctk.StringVar(value=self.app.vps_manager.default_subsegment_color_for_segment(segments[0]["name"]))
-
-        frame = ctk.CTkFrame(dialog)
-        frame.pack(fill="both", expand=True, padx=12, pady=12)
-        frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(frame, text="Segment:").grid(row=0, column=0, sticky="w", padx=8, pady=6)
-        seg_combo = ctk.CTkComboBox(frame, variable=segment_var, values=[s["name"] for s in segments])
-        seg_combo.grid(row=0, column=1, sticky="ew", padx=8, pady=6)
-
-        ctk.CTkLabel(frame, text="SubSegment:").grid(row=1, column=0, sticky="w", padx=8, pady=6)
-        name_entry = ctk.CTkEntry(frame, textvariable=name_var)
-        name_entry.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
-
-        ctk.CTkLabel(frame, text="Color:").grid(row=2, column=0, sticky="w", padx=8, pady=6)
-        color_row = ctk.CTkFrame(frame, fg_color="transparent")
-        color_row.grid(row=2, column=1, sticky="ew", padx=8, pady=6)
-        color_row.grid_columnconfigure(1, weight=1)
-
-        swatch = ctk.CTkFrame(color_row, width=24, height=24, fg_color=color_var.get())
-        swatch.grid(row=0, column=0, padx=(0, 8))
-        swatch.grid_propagate(False)
-
-        color_entry = ctk.CTkEntry(color_row, textvariable=color_var)
-        color_entry.grid(row=0, column=1, sticky="ew")
-
-        def recalc_default(*_args):
-            default = self.app.vps_manager.default_subsegment_color_for_segment(segment_var.get().strip())
-            color_var.set(default)
-            swatch.configure(fg_color=default)
-
-        def pick_color():
-            picked = colorchooser.askcolor(initialcolor=color_var.get(), title="Choose SubSegment Color")
-            if picked[1]:
-                color_var.set(picked[1])
-                swatch.configure(fg_color=picked[1])
-
-        seg_combo.configure(command=lambda _v: recalc_default())
-        ctk.CTkButton(color_row, text="Pick", width=70, command=pick_color, **button_style("secondary")).grid(
-            row=0, column=2, padx=(8, 0)
-        )
-
-        status = ctk.CTkLabel(frame, text="", text_color="red")
-        status.grid(row=3, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 4))
-
-        actions = ctk.CTkFrame(frame, fg_color="transparent")
-        actions.grid(row=4, column=0, columnspan=2, sticky="e", padx=8, pady=(8, 4))
-        ctk.CTkButton(actions, text="Cancel", width=90, command=dialog.destroy, **button_style("secondary")).pack(
-            side="right", padx=4
-        )
-
-        def on_save():
-            seg = segment_var.get().strip()
-            sub = name_var.get().strip()
-            col = color_var.get().strip()
-            if not seg or not sub:
-                status.configure(text="Segment and SubSegment are required.")
-                return
-            try:
-                self.app.vps_manager.create_vision_subsegment(seg, sub, col)
-            except Exception as exc:
-                status.configure(text=f"Unable to save: {exc}")
-                return
-            dialog.destroy()
-            self.refresh_subsegments_list()
-
-        ctk.CTkButton(actions, text="Save", width=90, command=on_save, **button_style("primary")).pack(
-            side="right", padx=4
-        )
-
-    def edit_segment(self, segment: dict):
-        """Open dialog to edit a segment."""
-        from .vps_segment_editor import VPSSegmentEditorDialog
-        dialog = VPSSegmentEditorDialog(self, self.app.vps_manager, segment)
-        self.wait_window(dialog)
-        self.refresh_segments_list()
-        self.refresh_subsegments_list()
-
-    def delete_segment(self, segment: dict):
-        """Delete a segment after comprehensive check and typed confirmation."""
-        from tkinter import messagebox
-        import customtkinter as ctk
-
-        # First check: Get comprehensive count of all related records
-        success, counts = self.app.vps_manager.delete_segment(segment['id'])
-
-        if not success:
-            # Has child records - show detailed breakdown and require typed confirmation
-            total = sum(counts.values())
-
-            # Build detailed message
-            breakdown = "\n".join(
-                [f"  • {label}: {count}" for label, count in counts.items()])
-
-            warning_msg = (
-                f"⚠️  CASCADE DELETE WARNING  ⚠️\n\n"
-                f"Segment '{segment['name']}' has {total} linked records:\n\n"
-                f"{breakdown}\n\n"
-                f"If you proceed, ALL {total} records will be PERMANENTLY DELETED.\n\n"
-                f"This includes all child records in the hierarchy:\n"
-                f"Visions → Plans → Initiatives → Tactics → Actions\n\n"
-                f"⚠️  THIS CANNOT BE UNDONE  ⚠️\n\n"
-                f"To proceed with deletion, type exactly:\n"
-                f"yes proceed"
-            )
-
-            # Create custom dialog for typed confirmation
-            dialog = ctk.CTkToplevel(self)
-            dialog.title("Confirm Cascade Deletion")
-            dialog.geometry("600x500")
-            dialog.transient(self)
-            dialog.grab_set()
-
-            # Warning message
-            warning_frame = ctk.CTkFrame(dialog, fg_color="#8B0000")
-            warning_frame.pack(fill="x", padx=20, pady=(20, 10))
-
-            ctk.CTkLabel(
-                warning_frame,
-                text=warning_msg,
-                justify="left",
-                text_color="white",
-                font=("Arial", 12)
-            ).pack(padx=20, pady=20)
-
-            # Typed confirmation entry
-            entry_frame = ctk.CTkFrame(dialog)
-            entry_frame.pack(fill="x", padx=20, pady=10)
-
-            ctk.CTkLabel(
-                entry_frame,
-                text="Type 'yes proceed' to confirm:",
-                font=("Arial", 12, "bold")
-            ).pack(anchor="w", padx=10, pady=(10, 5))
-
-            confirmation_var = ctk.StringVar()
-            entry = ctk.CTkEntry(
-                entry_frame,
-                textvariable=confirmation_var,
-                width=400,
-                height=35,
-                font=("Arial", 12)
-            )
-            entry.pack(padx=10, pady=(0, 10))
-            entry.focus()
-
-            # Status label
-            status_label = ctk.CTkLabel(
-                dialog,
-                text="",
-                text_color="red",
-                font=("Arial", 11)
-            )
-            status_label.pack(pady=5)
-
-            # Button frame
-            btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-            btn_frame.pack(pady=20)
-
-            def proceed_deletion():
-                typed_text = confirmation_var.get().strip()
-                if typed_text == "yes proceed":
-                    dialog.destroy()
-                    # Actually delete by clearing all records first
-                    try:
-                        # Since we can't delete with children, we need to tell user
-                        # to remove records manually
-                        messagebox.showwarning(
-                            "Manual Deletion Required",
-                            f"To delete segment '{segment['name']}':\n\n"
-                            f"1. Go to VPS Planning screen\n"
-                            f"2. Delete all {total} records in this segment\n"
-                            f"   (Start with Week Actions, work up to TL Visions)\n"
-                            f"3. Return here to delete the empty segment\n\n"
-                            f"This manual process prevents accidental data loss."
-                        )
-                    except Exception as e:
-                        messagebox.showerror(
-                            "Error", f"Deletion failed: {str(e)}")
-                else:
-                    status_label.configure(
-                        text="❌ Incorrect confirmation text. Type exactly: yes proceed"
-                    )
-
-            def cancel_deletion():
-                dialog.destroy()
-
-            # Buttons
-            ctk.CTkButton(
-                btn_frame,
-                text="Cancel",
-                command=cancel_deletion,
-                width=120,
-                **button_style("secondary"),
-            ).pack(side="left", padx=5)
-
-            ctk.CTkButton(
-                btn_frame,
-                text="Proceed with Deletion",
-                command=proceed_deletion,
-                width=180,
-                **button_style("danger"),
-            ).pack(side="left", padx=5)
-
-            # Bind Enter key
-            entry.bind('<Return>', lambda e: proceed_deletion())
-            entry.bind('<Escape>', lambda e: cancel_deletion())
-
-        else:
-            # No child records - safe to delete with simple confirmation
-            response = messagebox.askyesno(
-                "Confirm Deletion",
-                f"Delete segment '{segment['name']}'?\n\n"
-                f"This segment has no linked records.",
-                icon='warning'
-            )
-
-            if response:
-                messagebox.showinfo(
-                    "Success",
-                    f"Segment '{segment['name']}' has been deleted."
-                )
-                self.refresh_segments_list()
-                self.refresh_subsegments_list()
+            self._set_status(self.db_status_label, f"Demo data failed: {str(e)}", "error")

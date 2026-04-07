@@ -31,3 +31,4 @@ data/
 # PyInstaller
 /build/
 /dist/
+.pip-cache/
