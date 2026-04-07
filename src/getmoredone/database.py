@@ -255,7 +255,7 @@ class Database:
             CREATE TABLE IF NOT EXISTS project_boards (
                 id                     TEXT PRIMARY KEY,
                 title                  TEXT NOT NULL,
-                annual_plan_element_id TEXT NOT NULL REFERENCES annual_plan_elements(id) ON DELETE RESTRICT,
+                annual_plan_element_id TEXT REFERENCES annual_plan_elements(id) ON DELETE RESTRICT,
                 importance             INTEGER,
                 next_step              TEXT,
                 notes                  TEXT,

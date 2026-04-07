@@ -82,12 +82,17 @@ class DBManagerProjectBoardsMixin:
     ) -> List[Dict[str, Any]]:
         """Return project boards with joined APE metadata and linked-item counts."""
         self._normalize_project_board_order()
-        statuses = [ProjectBoardStatus.ACTIVE]
+        
+        statuses = []
         if show_pending:
             statuses.append(ProjectBoardStatus.PENDING)
         if show_completed:
             statuses.append(ProjectBoardStatus.COMPLETED)
-
+            
+        # If no filters are selected, show only active projects
+        if not statuses:
+            statuses = [ProjectBoardStatus.ACTIVE]
+            
         placeholders = ",".join("?" for _ in statuses)
         query = f"""
             SELECT
@@ -102,7 +107,7 @@ class DBManagerProjectBoardsMixin:
                 SUM(CASE WHEN ai.status = 'open' THEN 1 ELSE 0 END) AS open_item_count,
                 SUM(CASE WHEN ai.status = 'completed' THEN 1 ELSE 0 END) AS completed_item_count
             FROM project_boards pb
-            JOIN annual_plan_elements ape
+            LEFT JOIN annual_plan_elements ape
               ON ape.id = pb.annual_plan_element_id
             LEFT JOIN vision_categories vc
               ON LOWER(vc.name) = LOWER(ape.category_name)
@@ -119,7 +124,9 @@ class DBManagerProjectBoardsMixin:
             LEFT JOIN action_items ai
               ON ai.id = pbi.item_id
             WHERE pb.status IN ({placeholders})
-            GROUP BY pb.id, ape.year, ape.segment_name, ape.subsegment_name, ape.category_name, ape.key_field, vc.color_hex
+            GROUP BY 
+                pb.id, pb.title, pb.importance, pb.next_step, pb.notes, pb.display_order, pb.status, pb.completed_at, pb.created_at, pb.updated_at,
+                ape.year, ape.segment_name, ape.subsegment_name, ape.category_name, ape.key_field, vc.color_hex
             ORDER BY
                 CASE pb.status
                     WHEN 'active' THEN 0
@@ -127,7 +134,7 @@ class DBManagerProjectBoardsMixin:
                     ELSE 2
                 END,
                 COALESCE(pb.display_order, 999999) ASC,
-                pb.title COLLATE NOCASE ASC
+                COALESCE(pb.title, '') COLLATE NOCASE ASC
         """
         rows = self.db.conn.execute(query, statuses).fetchall()
         return [dict(row) for row in rows]

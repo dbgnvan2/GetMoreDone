@@ -7,9 +7,11 @@ from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional
 
 import customtkinter as ctk
+from PIL import Image
 
 from ..color_contrast import pick_text_color
 from ..models import ActionItem, PriorityFactors, ProjectBoard, ProjectBoardStatus
+from ..paths import project_root
 from ..theme import button_style, combo_box_style, semantic_colors
 
 if TYPE_CHECKING:
@@ -32,16 +34,7 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
         self.db_manager = db_manager
         self.board = board
         self.result: Optional[ProjectBoard | str] = None
-        assigned_ids = {
-            row["annual_plan_element_id"]
-            for row in self.db_manager.get_project_boards(show_pending=True, show_completed=True)
-        }
-        if board:
-            assigned_ids.discard(board.annual_plan_element_id)
-        self.ape_rows = [
-            row for row in self.db_manager.list_annual_plan_element_catalog()
-            if row["id"] not in assigned_ids
-        ]
+        self.ape_rows = self.db_manager.list_annual_plan_element_catalog()
         self.ape_label_to_id: dict[str, str] = {}
 
         self.title("Edit Project" if board else "New Project")
@@ -65,26 +58,23 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
         ctk.CTkEntry(root, textvariable=self.title_var).grid(row=0, column=1, sticky="ew", padx=8, pady=8)
 
         ctk.CTkLabel(root, text="Annual Plan Element").grid(row=1, column=0, sticky="w", padx=8, pady=8)
-        ape_labels: list[str] = []
-        selected_label = ""
+        ape_labels: list[str] = ["(Optional: No linked APE)"]
+        selected_label = ape_labels[0]
         for row in self.ape_rows:
             label = self._format_ape_label(row)
             self.ape_label_to_id[label] = row["id"]
             ape_labels.append(label)
             if self.board and row["id"] == self.board.annual_plan_element_id:
                 selected_label = label
-        if not selected_label and ape_labels:
-            selected_label = ape_labels[0]
+        
         self.ape_var = ctk.StringVar(value=selected_label)
         self.ape_combo = ctk.CTkComboBox(
             root,
-            values=ape_labels or ["No Annual Plan Elements"],
+            values=ape_labels,
             variable=self.ape_var,
             **combo_box_style(),
         )
         self.ape_combo.grid(row=1, column=1, sticky="ew", padx=8, pady=8)
-        if not ape_labels:
-            self.ape_combo.configure(state="disabled")
 
         top_row = ctk.CTkFrame(root, fg_color="transparent")
         top_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=0, pady=0)
@@ -164,9 +154,6 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
             messagebox.showerror("Missing Title", "Project title is required.", parent=self)
             return
         ape_id = self.ape_label_to_id.get(self.ape_var.get())
-        if not ape_id:
-            messagebox.showerror("Missing Annual Plan Element", "Choose an Annual Plan Element.", parent=self)
-            return
 
         board = self.board or ProjectBoard(
             title="",
@@ -276,7 +263,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
     """Single project board containing many project items linked to APEs."""
 
     CARD_WIDTH = 235
-    CARD_HEIGHT = 235
+    CARD_HEIGHT = 280
     SPLITTER_WIDTH = 8
     MIN_PANEL_WIDTH = 300
     ACTION_BUTTON_WIDTH = 38
@@ -309,6 +296,17 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self._drag_threshold = 8
         self._card_frames: dict[str, ctk.CTkFrame] = {}
         self._custom_card_width: int = self.CARD_WIDTH
+
+        # Load Edit Icon
+        icon_path = project_root() / "assets" / "icons" / "pencil_vertical.png"
+        if icon_path.exists():
+            self.edit_icon_image = ctk.CTkImage(
+                light_image=Image.open(icon_path),
+                dark_image=Image.open(icon_path),
+                size=(22, 22),
+            )
+        else:
+            self.edit_icon_image = None
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -571,17 +569,34 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         summary = ctk.CTkFrame(card, fg_color="transparent")
         summary.grid(row=2, column=0, sticky="nsew", padx=metrics["pad_x"], pady=(2, metrics["summary_pad_bottom"]))
         summary.grid_columnconfigure(0, weight=1)
+        # Note: we use weight=1 for row 1 (notes) to allow it to expand if needed, 
+        # but the card itself has a fixed height, so it will just fill the available space.
         summary.grid_rowconfigure(1, weight=1)
 
+        # Show ALL of next step (no clipping)
+        next_step_text = (row.get('next_step') or '-').strip()
         ctk.CTkLabel(
             summary,
-            text=f"Next: {self._clip(row.get('next_step') or '-', metrics['next_chars'])}",
+            text=f"Next: {next_step_text}",
             text_color=text_color,
             justify="left",
             anchor="nw",
-            font=ctk.CTkFont(size=metrics["body_font"]),
+            font=ctk.CTkFont(size=metrics["body_font"], weight="bold"),
             wraplength=metrics["wraplength"],
         ).grid(row=0, column=0, sticky="ew")
+
+        # Show as much of notes as possible
+        notes_text = (row.get('notes') or '').strip()
+        if notes_text:
+            ctk.CTkLabel(
+                summary,
+                text=notes_text,
+                text_color=text_color,
+                justify="left",
+                anchor="nw",
+                font=ctk.CTkFont(size=metrics["body_font"] - 1),
+                wraplength=metrics["wraplength"],
+            ).grid(row=1, column=0, sticky="nsew", pady=(2, 0))
 
         actions = ctk.CTkFrame(card, fg_color="transparent")
         actions.grid(row=3, column=0, sticky="ew", padx=metrics["pad_x"], pady=(4, metrics["pad_bottom"]))
@@ -592,7 +607,8 @@ class ProjectBoardsScreen(ctk.CTkFrame):
 
         ctk.CTkButton(
             actions,
-            text=self.ICON_EDIT,
+            text="" if self.edit_icon_image else self.ICON_EDIT,
+            image=self.edit_icon_image,
             width=self.ACTION_BUTTON_WIDTH,
             height=self.ACTION_BUTTON_HEIGHT,
             font=ctk.CTkFont(size=self.ACTION_ICON_FONT_SIZE, weight="bold"),
@@ -920,14 +936,18 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         if not board:
             return
         from .item_editor import CreateNoteDialog
-        CreateNoteDialog(self, self.db_manager, "project_board", board.id, board.title)
+        dialog = CreateNoteDialog(self, self.db_manager, "project_board", board.id, board.title)
+        self.wait_window(dialog)
+        self.refresh()
 
     def link_note(self, board_id: str):
         board = self.db_manager.get_project_board(board_id)
         if not board:
             return
         from .item_editor import LinkNoteDialog
-        LinkNoteDialog(self, self.db_manager, "project_board", board.id)
+        dialog = LinkNoteDialog(self, self.db_manager, "project_board", board.id)
+        self.wait_window(dialog)
+        self.refresh()
 
     def open_note_picker(self, board_id: str):
         from ..app_settings import AppSettings
@@ -980,49 +1000,60 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self.load_notes()
 
     def load_notes(self):
-        if not hasattr(self, "notes_links_frame"):
+        if not hasattr(self, "notes_links_frame") or not self.selected_board_id:
             return
+
         for child in self.notes_links_frame.winfo_children():
             child.destroy()
-        if not self.selected_board_id:
-            return
+
         links = self.db_manager.get_project_board_links(self.selected_board_id)
         if not links:
             ctk.CTkLabel(
                 self.notes_links_frame,
-                text="No linked notes.",
+                text="No notes linked to this project.",
                 text_color=semantic_colors()["muted_text"],
-                anchor="w",
-            ).grid(row=0, column=0, sticky="w", padx=8, pady=6)
+                font=ctk.CTkFont(size=12, slant="italic"),
+            ).pack(pady=4)
             return
-        ctk.CTkLabel(
-            self.notes_links_frame,
-            text="Obsidian Notes",
-            font=ctk.CTkFont(weight="bold"),
-            anchor="w",
-        ).grid(row=0, column=0, sticky="w", padx=8, pady=(6, 4))
-        for idx, link in enumerate(links, start=1):
+
+        for link in links:
             row = ctk.CTkFrame(self.notes_links_frame, fg_color="transparent")
-            row.grid(row=idx, column=0, sticky="ew", padx=8, pady=2)
-            row.grid_columnconfigure(0, weight=1)
-            ctk.CTkLabel(row, text=link.label or link.url, anchor="w").grid(row=0, column=0, sticky="w")
+            row.pack(fill="x", pady=2)
+            
+            label = link.label or link.url
+            ctk.CTkLabel(
+                row, 
+                text=f"📄 {label}", 
+                anchor="w",
+                font=ctk.CTkFont(size=13)
+            ).pack(side="left", fill="x", expand=True, padx=4)
+            
             ctk.CTkButton(
                 row,
                 text="Open",
-                width=64,
+                width=60,
+                height=24,
                 command=lambda path=link.url: self._open_note_path(path),
                 **button_style("secondary"),
-            ).grid(row=0, column=1, padx=4)
+            ).pack(side="left", padx=2)
+            
+            ctk.CTkButton(
+                row,
+                text="Remove",
+                width=60,
+                height=24,
+                command=lambda lid=link.id: self.delete_note_link(lid),
+                **button_style("danger"),
+            ).pack(side="left", padx=2)
 
     def _open_note_path(self, path: str):
-        from ..app_settings import AppSettings
         from ..obsidian_utils import open_in_obsidian
-
+        from ..app_settings import AppSettings
         settings = AppSettings.load()
-        if not settings.obsidian_vault_path:
-            messagebox.showerror("Obsidian Not Set Up", "Configure an Obsidian vault in Settings first.", parent=self)
-            return
-        open_in_obsidian(path, settings.obsidian_vault_path)
+        if settings.obsidian_vault_path:
+            open_in_obsidian(path, settings.obsidian_vault_path)
+        else:
+            messagebox.showerror("Error", "Obsidian vault path not configured in settings.")
 
     def _bind_click_recursive(self, widget, callback):
         widget.bind("<Button-1>", callback)
@@ -1052,7 +1083,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         compact = self.compact_height_var.get()
         metrics = {
             "card_width": 235,
-            "card_height": 235,
+            "card_height": 280,
             "header_font": 15,
             "title_font": 18,
             "body_font": 14,

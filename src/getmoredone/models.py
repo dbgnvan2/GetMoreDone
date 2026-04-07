@@ -133,7 +133,7 @@ class ProjectBoard:
     """Represents a project board card linked to an Annual Plan Element."""
 
     title: str
-    annual_plan_element_id: str
+    annual_plan_element_id: Optional[str] = None
     importance: Optional[int] = None
     next_step: Optional[str] = None
     notes: Optional[str] = None

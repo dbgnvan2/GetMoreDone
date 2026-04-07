@@ -178,7 +178,7 @@ Board behavior:
 - **Color** — What: Note color comes from the APE category color. Why: Preserve planning lineage visually.
 - **Top title** — What: Each note shows `SubSegment - Category`. Why: Keep the planning context visible at a glance.
 - **Rank box** — What: A prominent number in the upper-left shows the board order position. Why: Make manual ordering obvious after dragging cards.
-- **Body** — What: Shows the project title and next step. Why: Keep the board readable when many notes are visible.
+- **Body** — What: Shows the project title, full next step (bolded), and as many notes as will fit. Why: Keep strategic work visible on the board without manual setup.
 - **Click a note** — What: Selects the note and loads its detail panel. Why: Prevent accidental opens while still supporting drag reordering.
 - **Drag notes** — What: Reorders notes left-to-right, top-to-bottom. Why: Let you organize the board visually.
 - **Board divider** — What: Drag the vertical divider between the board and detail panel. Why: Make the board wider or narrower.
@@ -186,7 +186,7 @@ Board behavior:
 - **Compact Height** — What: Reduces note height. Why: Fit more notes vertically.
 
 Note actions:
-- **Pencil** — What: Edit project. Why: Update title, next step, notes, or status.
+- **Pencil** — What: Edit project (vertical yellow pencil with black tip and red eraser). Why: Update title, next step, notes, or status.
 - **Plus** — What: Create and link a new action item. Why: Turn project planning into execution.
 - **Page** — What: Create/link/open Obsidian notes using the same workflow as action items. Why: Reuse the existing note-linking model.
 - **Clock** — What: Set project note to Pending. Why: Hide it from the active board without deleting it.
