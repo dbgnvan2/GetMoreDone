@@ -20,6 +20,9 @@ This file provides project-specific instructions and context for Gemini CLI.
 
 ## Development Standards & Mandates
 
+### UI Regression Guardrail
+Follow `AGENT_UI_REGRESSION_POLICY.md` for any UI change. Existing user-visible controls (buttons, links, tabs, menus, fields, dialogs) are part of the contract and must not be removed, hidden, renamed, or relocated without explicit approval and regression coverage. Before modifying any existing UI, identify the current user-visible actions and preserve them.
+
 ### Theme System (CRITICAL)
 - **No hard-coded colors:** Never use hex or named colors directly in widgets. Use semantic tokens from `theme.py`.
 - **Accents only:** Category/segment colors from DB are for chips/icons/stripes only, never full-row fills.

@@ -327,21 +327,6 @@ class VPSSchema:
         VPSSchema._extend_week_actions(conn)
 
         # ========================================================================
-        # VISION_SEGMENTS (Master list: Segment/SubSegment/Category elements)
-        # ========================================================================
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS vision_segments (
-                id          TEXT PRIMARY KEY,
-                segment_id  TEXT REFERENCES segment_descriptions(id) ON DELETE CASCADE,
-                subsegment  TEXT NOT NULL,
-                category    TEXT NOT NULL,
-                order_index INTEGER DEFAULT 0,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
-            )
-        """)
-
-        # ========================================================================
         # ANNUAL_VISION_SEGMENT_ITEMS (Which vision segments are assigned to a year)
         # ========================================================================
         conn.execute("""
@@ -981,16 +966,6 @@ class VPSSchema:
         conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_action_items_annual_plan_element
             ON action_items(annual_plan_element_id)
-        """)
-
-        # Vision Segments
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_vision_segments_segment
-            ON vision_segments(segment_id)
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_vision_segments_order
-            ON vision_segments(order_index)
         """)
 
         # Annual Vision Segment Items

@@ -255,7 +255,8 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
 
     def _link(self, item_id: str):
         self.db_manager.link_action_item_to_project_board(self.board_id, item_id)
-        self.on_linked()
+        if self.on_linked and callable(self.on_linked):
+            self.on_linked()
         self.refresh_results()
 
 
@@ -322,10 +323,12 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         ctk.CTkLabel(header, text="Project Board", font=ctk.CTkFont(size=22, weight="bold")).grid(
             row=0, column=0, padx=8, pady=8, sticky="w"
         )
-        ctk.CTkButton(header, text="+ New Project", command=self.add_project, **button_style("primary")).grid(
+        self.btn_add_project = ctk.CTkButton(header, text="+ New Project", command=self.add_project, **button_style("primary"))
+        self.btn_add_project.grid(
             row=0, column=1, padx=6, pady=8
         )
-        ctk.CTkButton(header, text="Refresh", command=self.refresh, **button_style("secondary")).grid(
+        self.btn_refresh = ctk.CTkButton(header, text="Refresh", command=self.refresh, **button_style("secondary"))
+        self.btn_refresh.grid(
             row=0, column=2, padx=6, pady=8
         )
         ctk.CTkCheckBox(
@@ -433,8 +436,12 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             show_pending=self.show_pending_var.get(),
             show_completed=self.show_completed_var.get(),
         )
-        if self.selected_board_id and not any(row["id"] == self.selected_board_id for row in self.board_rows):
-            self.selected_board_id = None
+        # If we have a selected ID, verify it still exists in the DB at all
+        if self.selected_board_id:
+            exists = self.db_manager.get_project_board(self.selected_board_id)
+            if not exists:
+                self.selected_board_id = None
+        
         if not self.selected_board_id and self.board_rows:
             self.selected_board_id = self.board_rows[0]["id"]
         self._render_cards()
@@ -530,6 +537,10 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         )
         card.grid_propagate(False)
         card.grid_columnconfigure(0, weight=1)
+        # Row 0: Top info (rank, lineage)
+        # Row 1: Title
+        # Row 2: Summary (Next Step, Notes) - EXPANDABLE
+        # Row 3: Actions - FIXED
         card.grid_rowconfigure(2, weight=1)
 
         rank_box_width = 28
@@ -569,8 +580,6 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         summary = ctk.CTkFrame(card, fg_color="transparent")
         summary.grid(row=2, column=0, sticky="nsew", padx=metrics["pad_x"], pady=(2, metrics["summary_pad_bottom"]))
         summary.grid_columnconfigure(0, weight=1)
-        # Note: we use weight=1 for row 1 (notes) to allow it to expand if needed, 
-        # but the card itself has a fixed height, so it will just fill the available space.
         summary.grid_rowconfigure(1, weight=1)
 
         # Show ALL of next step (no clipping)
@@ -600,9 +609,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
 
         actions = ctk.CTkFrame(card, fg_color="transparent")
         actions.grid(row=3, column=0, sticky="ew", padx=metrics["pad_x"], pady=(4, metrics["pad_bottom"]))
-        for idx in range(3):
-            actions.grid_columnconfigure(idx, weight=1)
-        for idx in range(3, 6):
+        for idx in range(6):
             actions.grid_columnconfigure(idx, weight=1)
 
         ctk.CTkButton(
@@ -685,15 +692,18 @@ class ProjectBoardsScreen(ctk.CTkFrame):
 
         row = next((item for item in self.board_rows if item["id"] == board.id), None)
         if not row:
-            self.detail_title.configure(text=board.title)
-            self.detail_meta.configure(text="")
-            return
+            # Try to fetch directly if not in filtered list
+            row = dict(self.db_manager.db.conn.execute("SELECT * FROM project_boards WHERE id = ?", (board.id,)).fetchone() or {})
+            if not row:
+                self.detail_title.configure(text=board.title)
+                self.detail_meta.configure(text="")
+                return
 
         self.detail_title.configure(text=row["title"])
         self.detail_meta.configure(
             text=(
-                f"{row.get('ape_year')} | {row.get('segment_name')} | {row.get('subsegment_name')} | "
-                f"{row.get('category_name')} | Status: {row.get('status')}\n"
+                f"{row.get('ape_year') or ''} | {row.get('segment_name') or ''} | {row.get('subsegment_name') or ''} | "
+                f"{row.get('category_name') or ''} | Status: {row.get('status')}\n"
                 f"Next Step: {row.get('next_step') or '-'}"
             )
         )
@@ -701,10 +711,11 @@ class ProjectBoardsScreen(ctk.CTkFrame):
 
         toolbar = ctk.CTkFrame(self.items_frame, fg_color="transparent")
         toolbar.grid(row=0, column=0, sticky="ew", padx=2, pady=(2, 8))
-        ctk.CTkButton(toolbar, text="Create Action Item", command=lambda: self.create_action_item(board.id), **button_style("primary")).pack(
+        self.btn_create_action = ctk.CTkButton(toolbar, text="Create Action Item", command=lambda: self.create_action_item(board.id), **button_style("primary"))
+        self.btn_create_action.pack(
             side="left", padx=4
         )
-        ctk.CTkButton(
+        self.btn_link_action = ctk.CTkButton(
             toolbar,
             text="Link Action Item",
             command=lambda: self.link_existing_action_item(board.id),
@@ -712,23 +723,29 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             hover_color=category_color,
             text_color=pick_text_color(category_color),
             border_width=0,
-        ).pack(
+        )
+        self.btn_link_action.pack(
             side="left", padx=4
         )
-        ctk.CTkButton(toolbar, text="Edit Project", command=lambda: self.edit_project(board.id), **button_style("secondary")).pack(
+        self.btn_edit_project = ctk.CTkButton(toolbar, text="Edit Project", command=lambda: self.edit_project(board.id), **button_style("secondary"))
+        self.btn_edit_project.pack(
             side="left", padx=4
         )
-        ctk.CTkButton(toolbar, text="Create Note", command=lambda: self.create_note(board.id), **button_style("secondary")).pack(
+        self.btn_create_note = ctk.CTkButton(toolbar, text="Create Note", command=lambda: self.create_note(board.id), **button_style("secondary"))
+        self.btn_create_note.pack(
             side="left", padx=4
         )
-        ctk.CTkButton(toolbar, text="Link Note", command=lambda: self.link_note(board.id), **button_style("secondary")).pack(
+        self.btn_link_note = ctk.CTkButton(toolbar, text="Link Note", command=lambda: self.link_note(board.id), **button_style("secondary"))
+        self.btn_link_note.pack(
             side="left", padx=4
         )
-        ctk.CTkButton(toolbar, text="Open Notes", command=lambda: self.open_note_picker(board.id), **button_style("secondary")).pack(
+        self.btn_open_notes = ctk.CTkButton(toolbar, text="Open Notes", command=lambda: self.open_note_picker(board.id), **button_style("secondary"))
+        self.btn_open_notes.pack(
             side="left", padx=4
         )
         if board.status != ProjectBoardStatus.ACTIVE:
-            ctk.CTkButton(toolbar, text="Set Active", command=lambda: self.set_status(board.id, ProjectBoardStatus.ACTIVE), **button_style("secondary")).pack(
+            self.btn_set_active = ctk.CTkButton(toolbar, text="Set Active", command=lambda: self.set_status(board.id, ProjectBoardStatus.ACTIVE), **button_style("secondary"))
+            self.btn_set_active.pack(
                 side="left", padx=4
             )
 
@@ -880,31 +897,43 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self._render_cards()
 
     def create_action_item(self, board_id: str):
-        board = self.db_manager.get_project_board(board_id)
-        if not board:
-            return
-        row = next((item for item in self.board_rows if item["id"] == board_id), None)
-        who_value = (row or {}).get("segment_name") or "Project"
-        title = (board.next_step or board.title or "Project Task").strip()
-        description_lines = [f"Project: {board.title}"]
-        if board.notes:
-            description_lines.extend(["", board.notes])
-        item = ActionItem(
-            who=who_value,
-            title=title,
-            description="\n".join(description_lines),
-            next_action=board.next_step,
-            annual_plan_element_id=board.annual_plan_element_id,
-            start_date=date.today().isoformat(),
-            status="open",
-            category="Project Board",
-            importance=board.importance,
-        )
-        item_id = self.db_manager.create_action_item(item, apply_defaults=True)
-        self.db_manager.link_action_item_to_project_board(board_id, item_id)
-        self.selected_board_id = board_id
-        self.refresh()
-        self.edit_item(item_id)
+        try:
+            board = self.db_manager.get_project_board(board_id)
+            if not board:
+                return
+            
+            # Use segment_name from the board rows if available, fallback to 'Project'
+            row = next((r for r in self.board_rows if r["id"] == board_id), None)
+            who_value = (row or {}).get("segment_name") or "Project"
+            
+            title = (board.next_step or board.title or "Project Task").strip()
+            description_lines = [f"Project: {board.title}"]
+            if board.notes:
+                description_lines.extend(["", board.notes])
+            item = ActionItem(
+                who=who_value,
+                title=title,
+                description="\n".join(description_lines),
+                next_action=board.next_step,
+                annual_plan_element_id=board.annual_plan_element_id,
+                start_date=date.today().isoformat(),
+                status="open",
+                category="Project Board",
+                importance=board.importance,
+                urgency=5,  # Default to medium
+                size=5,
+                value=5,
+            )
+            item.update_priority_score()
+            item_id = self.db_manager.create_action_item(item, apply_defaults=True)
+            self.db_manager.link_action_item_to_project_board(board_id, item_id)
+            self.selected_board_id = board_id
+            
+            # We refresh FIRST to update the list, then open the editor
+            self.refresh()
+            self.edit_item(item_id)
+        except Exception as e:
+            messagebox.showerror("Error Creating Item", f"Failed to create action item: {str(e)}", parent=self)
 
     def complete_item(self, item_id: str):
         self.db_manager.complete_action_item(item_id)
@@ -923,10 +952,11 @@ class ProjectBoardsScreen(ctk.CTkFrame):
     def edit_item(self, item_id: str):
         from .item_editor import ItemEditorDialog
 
+        # Parent should be the main app window
         ItemEditorDialog(
-            self,
+            self.app,
             self.db_manager,
-            item_id,
+            item_id=item_id,
             vps_manager=self.app.vps_manager,
             on_close_callback=self.refresh,
         )
@@ -935,7 +965,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         board = self.db_manager.get_project_board(board_id)
         if not board:
             return
-        from .item_editor import CreateNoteDialog
+        from .item_editor_dialogs import CreateNoteDialog
         dialog = CreateNoteDialog(self, self.db_manager, "project_board", board.id, board.title)
         self.wait_window(dialog)
         self.refresh()
@@ -944,7 +974,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         board = self.db_manager.get_project_board(board_id)
         if not board:
             return
-        from .item_editor import LinkNoteDialog
+        from .item_editor_dialogs import LinkNoteDialog
         dialog = LinkNoteDialog(self, self.db_manager, "project_board", board.id)
         self.wait_window(dialog)
         self.refresh()

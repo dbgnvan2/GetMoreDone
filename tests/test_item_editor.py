@@ -236,11 +236,13 @@ def test_item_editor_do_center_uses_requested_dialog_size():
         winfo_height=lambda: 1,
         geometry=lambda value: calls.append(("geometry", value)),
         update_idletasks=lambda: calls.append("dialog_update"),
+        specified_x=None,
+        specified_y=None,
     )
 
     ItemEditorDialog._do_center(dialog)
 
-    assert ("geometry", "920x550+240+175") in calls
+    assert ("geometry", "920x680+240+110") in calls
     assert "parent_update" in calls
     assert "dialog_update" in calls
 

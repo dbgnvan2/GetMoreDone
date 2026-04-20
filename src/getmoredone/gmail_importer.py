@@ -17,9 +17,10 @@ Auth:
 from __future__ import annotations
 
 import base64
+import logging
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Iterable
 
 from google.oauth2.credentials import Credentials
@@ -29,10 +30,28 @@ from googleapiclient.discovery import build
 
 from .db_manager import DatabaseManager
 from .models import ActionItem, ItemLink
-from .paths import legacy_dot_dir
+from .paths import app_data_dir_path, legacy_dot_dir
 
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+
+
+def get_logger() -> logging.Logger:
+    """Get the Gmail importer logger, configured with timestamps."""
+    logger = logging.getLogger("getmoredone.gmail_importer")
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.INFO)
+    
+    # We log to stdout/stderr which are redirected by launchd to /tmp logs.
+    # By using a formatter here, we get timestamps in those files.
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    
+    return logger
 
 
 @dataclass
@@ -66,7 +85,12 @@ def _load_creds(cfg: GmailImportConfig) -> Credentials:
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                get_logger().warning(f"Could not refresh token: {e}. Re-authenticating...")
+                flow = InstalledAppFlow.from_client_secrets_file(cfg.credentials_json, SCOPES)
+                creds = flow.run_local_server(port=0)
         else:
             flow = InstalledAppFlow.from_client_secrets_file(cfg.credentials_json, SCOPES)
             creds = flow.run_local_server(port=0)
@@ -150,87 +174,96 @@ def import_labeled_emails(db_path: Optional[str] = None, cfg: Optional[GmailImpo
     Returns number of imported messages.
     """
     cfg = cfg or GmailImportConfig()
+    logger = get_logger()
 
-    creds = _load_creds(cfg)
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-
-    user_id = cfg.gmail_user_id
-    trigger_label_id = _get_or_create_label_id(service, user_id, cfg.trigger_label_name)
-    moved_label_id = _get_or_create_label_id(service, user_id, cfg.moved_label_name)
-
-    # List message IDs under trigger label
-    resp = service.users().messages().list(userId=user_id, labelIds=[trigger_label_id]).execute()
-    messages = resp.get("messages", []) or []
-
-    imported = 0
-    if not messages:
-        return 0
-
-    dbm = DatabaseManager(db_path=db_path)
     try:
-        for m in messages:
-            msg_id = m["id"]
-            full = service.users().messages().get(userId=user_id, id=msg_id, format="full").execute()
-            payload = full.get("payload", {})
-            headers = payload.get("headers", []) or []
+        creds = _load_creds(cfg)
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
-            subject = _header(headers, "Subject") or "(no subject)"
-            from_h = _header(headers, "From") or ""
-            date_h = _header(headers, "Date") or ""
+        user_id = cfg.gmail_user_id
+        trigger_label_id = _get_or_create_label_id(service, user_id, cfg.trigger_label_name)
+        moved_label_id = _get_or_create_label_id(service, user_id, cfg.moved_label_name)
 
-            body_text = _extract_plain_text(payload)
-            if cfg.max_body_chars and len(body_text) > cfg.max_body_chars:
-                body_text = body_text[: cfg.max_body_chars] + "\n\n[TRUNCATED]"
+        # List message IDs under trigger label
+        resp = service.users().messages().list(userId=user_id, labelIds=[trigger_label_id]).execute()
+        messages = resp.get("messages", []) or []
 
-            today = date.today()
-            start_date = (today + timedelta(days=cfg.start_offset_days)).isoformat()
-            due_date = (today + timedelta(days=cfg.due_offset_days)).isoformat()
+        imported = 0
+        if not messages:
+            return 0
 
-            desc_parts = [
-                f"From: {from_h}",
-                f"Date: {date_h}",
-                "",
-                body_text.strip(),
-            ]
-            description = "\n".join(desc_parts).strip()
+        dbm = DatabaseManager(db_path=db_path)
+        try:
+            for m in messages:
+                msg_id = m["id"]
+                full = service.users().messages().get(userId=user_id, id=msg_id, format="full").execute()
+                payload = full.get("payload", {})
+                headers = payload.get("headers", []) or []
 
-            item = ActionItem(
-                who=cfg.who_value,
-                title=subject,
-                description=description,
-                start_date=start_date,
-                due_date=due_date,
-                group=cfg.group_value,
-            )
+                subject = _header(headers, "Subject") or "(no subject)"
+                from_h = _header(headers, "From") or ""
+                date_h = _header(headers, "Date") or ""
 
-            if dry_run:
-                # Don't touch DB or Gmail labels
-                imported += 1
-                continue
+                logger.info(f"Importing email: {subject} from {from_h}")
 
-            item_id = dbm.create_action_item(item, apply_defaults=True)
+                body_text = _extract_plain_text(payload)
+                if cfg.max_body_chars and len(body_text) > cfg.max_body_chars:
+                    body_text = body_text[: cfg.max_body_chars] + "\n\n[TRUNCATED]"
 
-            # Link back to Gmail thread
-            thread_id = full.get("threadId")
-            if thread_id:
-                link = ItemLink(
-                    item_id=item_id,
-                    url=_gmail_thread_url(thread_id),
-                    label="Email (Gmail)",
-                    link_type="url",
+                today = date.today()
+                start_date = (today + timedelta(days=cfg.start_offset_days)).isoformat()
+                due_date = (today + timedelta(days=cfg.due_offset_days)).isoformat()
+
+                desc_parts = [
+                    f"From: {from_h}",
+                    f"Date: {date_h}",
+                    "",
+                    body_text.strip(),
+                ]
+                description = "\n".join(desc_parts).strip()
+
+                item = ActionItem(
+                    who=cfg.who_value,
+                    title=subject,
+                    description=description,
+                    start_date=start_date,
+                    due_date=due_date,
+                    group=cfg.group_value,
                 )
-                dbm.add_item_link(link)
 
-            # Move: remove trigger label, add moved label
-            service.users().messages().modify(
-                userId=user_id,
-                id=msg_id,
-                body={"addLabelIds": [moved_label_id], "removeLabelIds": [trigger_label_id]},
-            ).execute()
+                if dry_run:
+                    # Don't touch DB or Gmail labels
+                    logger.info(f"[DRY RUN] Would create item for: {subject}")
+                    imported += 1
+                    continue
 
-            imported += 1
+                item_id = dbm.create_action_item(item, apply_defaults=True)
 
-    finally:
-        dbm.close()
+                # Link back to Gmail thread
+                thread_id = full.get("threadId")
+                if thread_id:
+                    link = ItemLink(
+                        item_id=item_id,
+                        url=_gmail_thread_url(thread_id),
+                        label="Email (Gmail)",
+                        link_type="url",
+                    )
+                    dbm.add_item_link(link)
 
-    return imported
+                # Move: remove trigger label, add moved label
+                service.users().messages().modify(
+                    userId=user_id,
+                    id=msg_id,
+                    body={"addLabelIds": [moved_label_id], "removeLabelIds": [trigger_label_id]},
+                ).execute()
+
+                imported += 1
+
+        finally:
+            dbm.close()
+
+        return imported
+
+    except Exception as e:
+        logger.exception(f"Error during Gmail import: {e}")
+        raise

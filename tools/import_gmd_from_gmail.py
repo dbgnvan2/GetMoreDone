@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_PATH = REPO_ROOT / "src"
 sys.path.insert(0, str(SRC_PATH))
 
-from getmoredone.gmail_importer import GmailImportConfig, import_labeled_emails
+from getmoredone.gmail_importer import GmailImportConfig, import_labeled_emails, get_logger
 from getmoredone.app_settings import AppSettings
 
 
@@ -33,11 +33,12 @@ def main() -> int:
     ap.add_argument("--moved", default=None, help="Moved/processed label name (defaults to Settings)")
     args = ap.parse_args()
 
+    logger = get_logger()
     settings = AppSettings.load()
 
     # Respect enable/disable flag (especially for launchd runs)
     if not getattr(settings, "gmail_import_enabled", True) and not args.dry_run:
-        print("Gmail import disabled in Settings.")
+        logger.info("Gmail import disabled in Settings.")
         return 0
 
     trigger_label = args.label if args.label is not None else getattr(settings, "gmail_import_trigger_label", "GMD")
@@ -53,7 +54,7 @@ def main() -> int:
     )
 
     n = import_labeled_emails(db_path=args.db, cfg=cfg, dry_run=args.dry_run)
-    print(f"Imported {n} email(s) from label {cfg.trigger_label_name}.")
+    logger.info(f"Imported {n} email(s) from label {cfg.trigger_label_name}.")
     return 0
 
 

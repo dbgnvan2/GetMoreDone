@@ -54,7 +54,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
     def __init__(self, parent, db_manager: 'DatabaseManager', item_id: Optional[str] = None,
                  week_action_id: Optional[str] = None, segment_description_id: Optional[str] = None,
                  vps_manager: Optional['VPSManager'] = None, on_close_callback=None,
-                 focus_tab: Optional[str] = None):
+                 focus_tab: Optional[str] = None, x: Optional[int] = None, y: Optional[int] = None):
         super().__init__(parent)
         self.withdraw()
 
@@ -66,6 +66,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.week_action_id = week_action_id
         self.segment_description_id = segment_description_id
         self.focus_tab = focus_tab
+        self.specified_x = x
+        self.specified_y = y
         self.week_action_options = {}  # Map display string to week_action_id
         self.week_action_display_values = ["(None)"]
         self.app_settings = AppSettings.load()
@@ -133,591 +135,286 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         """Create the form layout with responsive two-column design."""
         # Main container frame
         main_frame = ctk.CTkFrame(self)
-        main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        main_frame.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
         main_frame.grid_columnconfigure(0, weight=1)  # Left column
-        main_frame.grid_columnconfigure(
-            1, weight=0)  # Right column - fixed width
+        main_frame.grid_columnconfigure(1, weight=0)  # Right column - fixed width
         main_frame.grid_rowconfigure(0, weight=1)
-        main_frame.grid_rowconfigure(2, weight=1)
 
-        # Left column
+        # Left column - Primary Info
         left_col = ctk.CTkFrame(main_frame)
         left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         left_col.grid_columnconfigure(1, weight=1)
 
-        # Right column
-        right_col = ctk.CTkFrame(main_frame)
-        right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-        right_col.grid_columnconfigure(1, weight=1)
-        right_col.grid_rowconfigure(0, weight=1)
+        # Right column - Metadata, Tabs, and Actions
+        right_col = ctk.CTkFrame(main_frame, width=350)
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 5))
+        right_col.grid_propagate(False)
+        right_col.grid_rowconfigure(0, weight=1) # Tabview takes most space
+        right_col.grid_rowconfigure(1, weight=0) # Action buttons at bottom
 
-        # Resizable separator between panel 1 (top form) and panel 2 (tabs)
-        self.separator_frame = ctk.CTkFrame(
-            main_frame, height=5, fg_color=self.palette["border"], cursor="sb_v_double_arrow")
-        self.separator_frame.bind("<Button-1>", self.start_resize)
-        self.separator_frame.bind("<B1-Motion>", self.do_resize)
-        self.resizing = False
-        self.resize_start_y = 0
-        self.is_single_column = False
-
-        # === LEFT COLUMN ===
+        # === LEFT COLUMN CONTENT ===
         row_l = 0
 
-        # Parent Item Info (if this is a sub-item)
+        # Header: Type Badge & Contact
+        header_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        header_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", pady=(5, 10))
+        header_frame.grid_columnconfigure(1, weight=1)
+
+        self.record_type_badge = ctk.CTkLabel(
+            header_frame, text="Action Item", font=ctk.CTkFont(size=12, weight="bold"),
+            corner_radius=8, padx=10, pady=2
+        )
+        self.record_type_badge.grid(row=0, column=0, padx=(10, 10))
+
+        ctk.CTkLabel(header_frame, text="Who:").grid(row=0, column=1, sticky="w")
+        self.who_var = ctk.StringVar()
+        self.who_entry = ctk.CTkEntry(header_frame, textvariable=self.who_var)
+        self.who_entry.grid(row=0, column=2, sticky="ew", padx=(5, 10))
+        self.who_entry.bind('<KeyRelease>', self.on_who_search)
+        self.who_entry.bind('<FocusOut>', lambda e: self.on_who_changed())
+        row_l += 1
+
+        # Title & Context
+        title_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        title_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", pady=5)
+        title_frame.grid_columnconfigure(1, weight=0)
+        title_frame.grid_columnconfigure(3, weight=1)
+
+        self.context_label = ctk.CTkLabel(title_frame, text="Context:")
+        self.context_label.grid(row=0, column=0, sticky="w", padx=10)
+        self.title_context_entry = ctk.CTkEntry(title_frame, width=120)
+        self.title_context_entry.grid(row=0, column=1, sticky="w", padx=(5, 10))
+
+        ctk.CTkLabel(title_frame, text="Title:").grid(row=0, column=2, sticky="w")
+        self.title_entry = ctk.CTkEntry(title_frame)
+        self.title_entry.grid(row=0, column=3, sticky="ew", padx=(5, 10))
+        row_l += 1
+
+        # Parent Info (if applicable)
         if self.item and self.item.parent_id:
             parent_item = self.db_manager.get_action_item(self.item.parent_id)
             if parent_item:
-                parent_frame = ctk.CTkFrame(
-                    left_col, fg_color=self.palette["surface_subtle"], corner_radius=8)
-                parent_frame.grid(row=row_l, column=0, columnspan=2,
-                                  sticky="ew", padx=10, pady=(5, 10))
-
-                ctk.CTkLabel(
-                    parent_frame,
-                    text=f"Sub-item of: {parent_item.title}",
-                    font=ctk.CTkFont(size=12),
-                    text_color=status_text_color("info")
-                ).pack(side="left", padx=10, pady=5)
-
-                btn_view_parent = ctk.CTkButton(
-                    parent_frame,
-                    text="View Parent",
-                    width=80,
-                    height=24,
-                    command=lambda: self.view_parent_item(parent_item.id)
-                )
-                btn_view_parent.pack(side="right", padx=10, pady=5)
-
+                p_info = ctk.CTkLabel(left_col, text=f"Parent: {parent_item.title}", 
+                                     font=ctk.CTkFont(size=11), text_color=semantic_colors()["muted_text"])
+                p_info.grid(row=row_l, column=0, columnspan=2, sticky="w", padx=10)
                 row_l += 1
 
-        # Basic Info Section
-        ctk.CTkLabel(
-            left_col,
-            text="Basic Information",
-            font=ctk.CTkFont(size=16, weight="bold")
-        ).grid(row=row_l, column=0, sticky="w", padx=10, pady=(5, 10))
-        self.record_type_badge = ctk.CTkLabel(
-            left_col,
-            text="",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            corner_radius=8,
-        )
-        self.record_type_badge.grid(row=row_l, column=1, sticky="e", padx=10, pady=(5, 10))
-        row_l += 1
-
-        # Who (with contact lookup)
-        who_label_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        who_label_frame.grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-
-        ctk.CTkLabel(who_label_frame, text="* Who:").pack(side="left")
-
-        # Add contact button
-        btn_add_contact = ctk.CTkButton(
-            who_label_frame,
-            text="+",
-            width=30,
-            height=24,
-            command=self.add_new_contact
-        )
-        btn_add_contact.pack(side="left", padx=(5, 0))
-
-        # Who entry with autocomplete
-        who_frame = ctk.CTkFrame(left_col, fg_color="transparent")
-        who_frame.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-
-        self.who_var = ctk.StringVar()
-        self.who_entry = ctk.CTkEntry(
-            who_frame, textvariable=self.who_var, width=320)
-        self.who_entry.pack()
-        self.who_entry.bind('<KeyRelease>', self.on_who_search)
-        self.who_entry.bind('<Button-1>', self.on_who_click)  # Show on click
-        self.who_entry.bind('<Tab>', lambda e: self.hide_contact_suggestions())
-        self.who_entry.bind(
-            '<Escape>', lambda e: self.hide_contact_suggestions())
-        # Apply defaults when focus leaves WHO field
-        self.who_entry.bind('<FocusOut>', lambda e: self.on_who_changed())
-
-        # Dropdown for contact suggestions
-        self.contact_suggestions_frame = None
-        self.selected_contact_id = None
-        self.suggestions_hide_job = None  # Track scheduled hide job
-
-        # Try to auto-select contact if who name matches a contact
-        if not self.item_id:
-            # Set default who value - check system defaults first
-            system_defaults = self.db_manager.get_defaults("system")
-            if system_defaults and system_defaults.who:
-                self.who_var.set(system_defaults.who)
-                # Try to match with a contact
-                contacts = self.db_manager.get_all_contacts(active_only=True)
-                for contact in contacts:
-                    if contact.name == system_defaults.who:
-                        self.selected_contact_id = contact.id
-                        break
-            else:
-                # Fall back to first active contact or "Self"
-                contacts = self.db_manager.get_all_contacts(active_only=True)
-                if contacts:
-                    self.who_var.set(contacts[0].name)
-                    self.selected_contact_id = contacts[0].id
-                else:
-                    self.who_var.set("Self")
-
-        row_l += 1
-
-        # Context + Title
-        self.context_label = ctk.CTkLabel(left_col, text="Context:")
-        self.context_label.grid(row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.title_context_entry = ctk.CTkEntry(
-            left_col, width=320, placeholder_text="PW|LS|Blog - W8")
-        self.title_context_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
-        ctk.CTkLabel(left_col, text="* Immediate Step:").grid(row=row_l,
-                                                     column=0, sticky="w", padx=10, pady=5)
-        self.title_entry = ctk.CTkEntry(left_col, width=320, placeholder_text="write blog 3")
-        self.title_entry.grid(row=row_l, column=1, sticky="w", padx=10, pady=5)
-        row_l += 1
-
         # Description
-        ctk.CTkLabel(left_col, text="Description:").grid(
-            row=row_l, column=0, sticky="nw", padx=10, pady=5)
-        self.description_text = ctk.CTkTextbox(left_col, height=100, width=320)
-        self.description_text.grid(
-            row=row_l, column=1, sticky="nsew", padx=10, pady=5)
-        left_col.grid_rowconfigure(row_l, weight=1)  # Allow vertical resizing
+        ctk.CTkLabel(left_col, text="Description:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=(5, 0))
         row_l += 1
-
-        # Planned Minutes (keep in left column for now)
-        ctk.CTkLabel(left_col, text="Planned Minutes:").grid(
-            row=row_l, column=0, sticky="w", padx=10, pady=5)
-        self.planned_minutes_entry = ctk.CTkEntry(
-            left_col, placeholder_text="0", width=320)
-        self.planned_minutes_entry.grid(
-            row=row_l, column=1, sticky="w", padx=10, pady=5)
+        left_col.grid_rowconfigure(row_l, weight=1) # Make Description row expand
+        self.description_text = ctk.CTkTextbox(left_col, height=100)
+        self.description_text.grid(row=row_l, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10))
         row_l += 1
 
         # Next Action
-        ctk.CTkLabel(left_col, text="Next Action:").grid(
-            row=row_l, column=0, sticky="nw", padx=10, pady=5)
-        self.next_action_text = ctk.CTkTextbox(left_col, height=120, width=320)
-        self.next_action_text.grid(
-            row=row_l, column=1, sticky="nsew", padx=10, pady=5)
-        left_col.grid_rowconfigure(row_l, weight=1)  # Bottom section grows with window
+        ctk.CTkLabel(left_col, text="Next Action:").grid(row=row_l, column=0, sticky="nw", padx=10, pady=(5, 0))
+        row_l += 1
+        left_col.grid_rowconfigure(row_l, weight=1) # Make Next Action row expand
+        self.next_action_text = ctk.CTkTextbox(left_col, height=100)
+        self.next_action_text.grid(row=row_l, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10))
         row_l += 1
 
-        # === RIGHT COLUMN with TABS ===
-        row_r = 0
+        # Planned Minutes
+        planned_frame = ctk.CTkFrame(left_col, fg_color="transparent")
+        planned_frame.grid(row=row_l, column=0, columnspan=2, sticky="w", pady=5)
+        ctk.CTkLabel(planned_frame, text="Planned Minutes:").pack(side="left", padx=10)
+        self.planned_minutes_entry = ctk.CTkEntry(planned_frame, width=80)
+        self.planned_minutes_entry.pack(side="left")
+        row_l += 1
 
-        # Create tabview for right column with fixed height
-        self.tabview = ctk.CTkTabview(right_col, width=380, height=400)
-        self.tabview.grid(row=row_r, column=0, columnspan=2,
-                          sticky="nsew", padx=10, pady=10)
-        row_r += 1
-
-        # Create tabs (Dates tab first as default)
+        # === RIGHT COLUMN CONTENT ===
+        # Tabview
+        self.tabview = ctk.CTkTabview(right_col)
+        self.tabview.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        
         self.tab_dates = self.tabview.add("Dates")
         self.tab_priority = self.tabview.add("Priority")
-        self.tab_organization = self.tabview.add("Organization")
+        self.tab_org = self.tabview.add("Organization")
         self.tab_notes = self.tabview.add("Notes")
 
-        # Configure tab grids - items stick to top, don't expand vertically
-        self.tab_dates.grid_columnconfigure(1, weight=1)
-        self.tab_priority.grid_columnconfigure(1, weight=1)
-        self.tab_organization.grid_columnconfigure(1, weight=1)
-        self.tab_notes.grid_columnconfigure(0, weight=1)
+        self._setup_dates_tab(self.tab_dates)
+        self._setup_priority_tab(self.tab_priority)
+        self._setup_org_tab(self.tab_org)
+        self._setup_notes_tab(self.tab_notes)
 
-        # Don't let rows expand - this keeps items at the top
-        # Empty row at bottom absorbs space
-        self.tab_dates.grid_rowconfigure(99, weight=1)
-        self.tab_priority.grid_rowconfigure(99, weight=1)
-        self.tab_organization.grid_rowconfigure(99, weight=1)
-        self.tab_notes.grid_rowconfigure(99, weight=1)
+        # Action Buttons Area
+        btn_container = ctk.CTkScrollableFrame(right_col, height=180, fg_color="transparent")
+        btn_container.grid(row=1, column=0, sticky="ew", padx=5, pady=5)
+        btn_container.grid_columnconfigure((0, 1), weight=1)
 
-        # === TAB 0: DATES ===
-        tab0_row = 0
+        # Primary Row
+        p_row = ctk.CTkFrame(btn_container, fg_color="transparent")
+        p_row.pack(fill="x", pady=2)
+        self.btn_save_close = ctk.CTkButton(p_row, text="Save & Close", command=self.save_and_close, **button_style("primary"))
+        self.btn_save_close.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_save = ctk.CTkButton(p_row, text="Save", command=self.save_item, **button_style("secondary"))
+        self.btn_save.pack(side="left", fill="x", expand=True, padx=2)
+        self.btn_cancel = ctk.CTkButton(p_row, text="Cancel", command=self.destroy, **button_style("secondary"))
+        self.btn_cancel.pack(side="left", fill="x", expand=True, padx=2)
 
+        # Secondary Actions (Grid for better fit)
+        s_frame = ctk.CTkFrame(btn_container, fg_color="transparent")
+        s_frame.pack(fill="x", pady=5)
+        s_frame.grid_columnconfigure((0, 1), weight=1)
+
+        row_s = 0
+        
+        # Always available secondary
+        if not self.item_id:
+            self.btn_save_new = ctk.CTkButton(s_frame, text="Save + New", command=self.save_and_new, **button_style("secondary"))
+            self.btn_save_new.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            row_s += 1
+
+        # Existing item secondary
+        if self.item_id:
+            self.btn_duplicate = ctk.CTkButton(s_frame, text="Duplicate", command=self.duplicate_item, **button_style("secondary"))
+            self.btn_duplicate.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            self.btn_followup = ctk.CTkButton(s_frame, text="Add Follow-up", command=self.create_followup, **button_style("secondary"))
+            self.btn_followup.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+            row_s += 1
+            
+            self.btn_create_tasks = ctk.CTkButton(s_frame, text="Add Sub-tasks", command=self.create_sub_item, **button_style("secondary"))
+            self.btn_create_tasks.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            self.btn_show_related = ctk.CTkButton(s_frame, text="Show Related", command=self.show_related, **button_style("secondary"))
+            self.btn_show_related.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+            row_s += 1
+            
+            self.btn_set_parent = ctk.CTkButton(s_frame, text="Set Parent", command=self.set_parent, **button_style("secondary"))
+            self.btn_set_parent.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            self.btn_set_weekly = ctk.CTkButton(s_frame, text="Set Wk Tactic", command=self.set_weekly_tactic, **button_style("secondary"))
+            self.btn_set_weekly.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+            row_s += 1
+            
+            # Destructive/Status
+            self.btn_complete = ctk.CTkButton(s_frame, text="Complete", command=self.complete_item, **button_style("success"))
+            self.btn_complete.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            self.btn_delete = ctk.CTkButton(s_frame, text="Delete", command=self.delete_item, **button_style("danger"))
+            self.btn_delete.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+
+        # Status Label
+        self.error_label = ctk.CTkLabel(btn_container, text="", text_color=status_text_color("error"), wraplength=350)
+        self.error_label.pack(fill="x", pady=5)
+
+    def _setup_dates_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        r = 0
+        
         # Start Date
-        ctk.CTkLabel(self.tab_dates, text="Start Date:").grid(
-            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
-
-        start_date_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
-        start_date_frame.grid(row=tab0_row, column=1,
-                              sticky="w", padx=10, pady=5)
-
-        self.start_date_entry = ctk.CTkEntry(
-            start_date_frame, placeholder_text="YYYY-MM-DD", width=150)
-        self.start_date_entry.pack(side="left", padx=(0, 5))
-        # Bind to validate due date when start date is manually edited
-        self.start_date_entry.bind(
-            "<FocusOut>", lambda e: self.validate_and_adjust_due_date())
-
-        btn_start_today = ctk.CTkButton(start_date_frame, text="Today", width=50,
-                                        command=lambda: self.set_date(self.start_date_entry, 0))
-        btn_start_today.pack(side="left", padx=2)
-
-        btn_start_minus = ctk.CTkButton(start_date_frame, text="-1", width=40,
-                                        command=lambda: self.adjust_date(self.start_date_entry, -1))
-        btn_start_minus.pack(side="left", padx=2)
-
-        btn_start_plus = ctk.CTkButton(start_date_frame, text="+1", width=40,
-                                       command=lambda: self.adjust_date(self.start_date_entry, 1))
-        btn_start_plus.pack(side="left", padx=2)
-
-        btn_start_clear = ctk.CTkButton(start_date_frame, text="Clear", width=50,
-                                        command=lambda: self.start_date_entry.delete(0, "end"))
-        btn_start_clear.pack(side="left", padx=2)
-        tab0_row += 1
+        ctk.CTkLabel(tab, text="Start:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
+        f = ctk.CTkFrame(tab, fg_color="transparent")
+        f.grid(row=r, column=1, sticky="w", padx=5)
+        self.start_date_entry = ctk.CTkEntry(f, width=110)
+        self.start_date_entry.pack(side="left", padx=2)
+        ctk.CTkButton(f, text="-", width=28, command=lambda: self.adjust_date(self.start_date_entry, -1)).pack(side="left", padx=1)
+        ctk.CTkButton(f, text="+", width=28, command=lambda: self.adjust_date(self.start_date_entry, 1)).pack(side="left", padx=1)
+        ctk.CTkButton(f, text="T", width=28, command=lambda: self.set_date(self.start_date_entry, 0)).pack(side="left", padx=1)
+        self.start_date_entry.bind("<FocusOut>", lambda e: self.validate_and_adjust_due_date())
+        r += 1
 
         # Due Date
-        ctk.CTkLabel(self.tab_dates, text="Due Date:").grid(
-            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(tab, text="Due:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
+        f = ctk.CTkFrame(tab, fg_color="transparent")
+        f.grid(row=r, column=1, sticky="w", padx=5)
+        self.due_date_entry = ctk.CTkEntry(f, width=110)
+        self.due_date_entry.pack(side="left", padx=2)
+        ctk.CTkButton(f, text="-", width=28, command=lambda: self.adjust_date(self.due_date_entry, -1)).pack(side="left", padx=1)
+        ctk.CTkButton(f, text="+", width=28, command=lambda: self.adjust_date(self.due_date_entry, 1)).pack(side="left", padx=1)
+        ctk.CTkButton(f, text="T", width=28, command=lambda: self.set_date(self.due_date_entry, 0)).pack(side="left", padx=1)
+        self.due_date_entry.bind("<FocusOut>", lambda e: self.validate_due_date_on_edit())
+        r += 1
 
-        due_date_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
-        due_date_frame.grid(row=tab0_row, column=1,
-                            sticky="w", padx=10, pady=5)
+        # Is Meeting
+        self.is_meeting_var = ctk.BooleanVar()
+        ctk.CTkCheckBox(tab, text="Scheduled Meeting", variable=self.is_meeting_var).grid(row=r, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        r += 1
 
-        self.due_date_entry = ctk.CTkEntry(
-            due_date_frame, placeholder_text="YYYY-MM-DD", width=150)
-        self.due_date_entry.pack(side="left", padx=(0, 5))
-        # Bind to validate due date when manually edited
-        self.due_date_entry.bind(
-            "<FocusOut>", lambda e: self.validate_due_date_on_edit())
+        # Calendar Button
+        ctk.CTkButton(tab, text="📅 Manage Calendar Event", command=self.create_calendar_event, **button_style("secondary")).grid(row=r, column=0, columnspan=2, sticky="ew", padx=10, pady=5)
+        r += 1
 
-        btn_due_today = ctk.CTkButton(due_date_frame, text="Today", width=50,
-                                      command=lambda: self.set_date(self.due_date_entry, 0))
-        btn_due_today.pack(side="left", padx=2)
+        # Info labels
+        self.meeting_time_label = ctk.CTkLabel(tab, text="Not scheduled", font=ctk.CTkFont(size=11))
+        self.meeting_time_label.grid(row=r, column=0, columnspan=2, sticky="w", padx=10)
+        r += 1
+        
+        self.original_due_date_label = ctk.CTkLabel(tab, text="Orig Due: -", font=ctk.CTkFont(size=11))
+        self.original_due_date_label.grid(row=r, column=0, columnspan=2, sticky="w", padx=10)
+        r += 1
+        
+        self.completed_at_label = ctk.CTkLabel(tab, text="Done: -", font=ctk.CTkFont(size=11))
+        self.completed_at_label.grid(row=r, column=0, columnspan=2, sticky="w", padx=10)
 
-        btn_due_minus = ctk.CTkButton(due_date_frame, text="-1", width=40,
-                                      command=lambda: self.adjust_date(self.due_date_entry, -1))
-        btn_due_minus.pack(side="left", padx=2)
+    def _setup_priority_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        r = 0
+        
+        factors = [
+            ("Importance:", "importance_var", "importance_combo", PriorityFactors.IMPORTANCE),
+            ("Urgency:", "urgency_var", "urgency_combo", PriorityFactors.URGENCY),
+            ("Effort:", "size_var", "size_combo", PriorityFactors.SIZE),
+            ("Value:", "value_var", "value_combo", PriorityFactors.VALUE),
+        ]
+        
+        for label, var_name, combo_name, options in factors:
+            ctk.CTkLabel(tab, text=label).grid(row=r, column=0, sticky="w", padx=10, pady=5)
+            vals = [f"{k} ({v})" for k, v in options.items()]
+            var = ctk.StringVar()
+            setattr(self, var_name, var)
+            combo = ctk.CTkComboBox(tab, values=vals, variable=var, **combo_box_style(), 
+                                   command=lambda _: self.update_priority_display())
+            combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
+            setattr(self, combo_name, combo)
+            r += 1
+            
+        self.priority_label = ctk.CTkLabel(tab, text="Score: 0", font=ctk.CTkFont(weight="bold", size=14))
+        self.priority_label.grid(row=r, column=0, columnspan=2, pady=10)
 
-        btn_due_plus = ctk.CTkButton(due_date_frame, text="+1", width=40,
-                                     command=lambda: self.adjust_date(self.due_date_entry, 1))
-        btn_due_plus.pack(side="left", padx=2)
-
-        btn_due_clear = ctk.CTkButton(due_date_frame, text="Clear", width=50,
-                                      command=lambda: self.due_date_entry.delete(0, "end"))
-        btn_due_clear.pack(side="left", padx=2)
-        tab0_row += 1
-
-        # Is Meeting + Calendar
-        ctk.CTkLabel(self.tab_dates, text="Is Meeting:").grid(
-            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
-        self.is_meeting_var = ctk.BooleanVar(value=False)
-        meeting_frame = ctk.CTkFrame(self.tab_dates, fg_color="transparent")
-        meeting_frame.grid(row=tab0_row, column=1, sticky="w", padx=10, pady=5)
-        meeting_frame.grid_columnconfigure(0, minsize=150)
-
-        self.is_meeting_checkbox = ctk.CTkCheckBox(
-            meeting_frame,
-            text="",
-            variable=self.is_meeting_var,
-            onvalue=True,
-            offvalue=False
-        )
-        self.is_meeting_checkbox.grid(row=0, column=0, sticky="w")
-
-        btn_calendar = ctk.CTkButton(
-            meeting_frame,
-            text="📅 Calendar",
-            command=self.create_calendar_event,
-            width=100,
-            **button_style("secondary"),
-        )
-        btn_calendar.grid(row=0, column=1, sticky="w", padx=(5, 0))
-        tab0_row += 1
-
-        # Meeting Start Time (read-only, set when calendar event is created)
-        ctk.CTkLabel(self.tab_dates, text="Meeting Time:").grid(
-            row=tab0_row, column=0, sticky="w", padx=10, pady=5)
-        self.meeting_time_label = ctk.CTkLabel(
-            self.tab_dates, text="Not scheduled", anchor="w")
-        self.meeting_time_label.grid(
-            row=tab0_row, column=1, sticky="w", padx=10, pady=5)
-        tab0_row += 1
-
-        # === TAB 1: PRIORITY FACTORS ===
-        tab1_row = 0
-
-        # Importance
-        ctk.CTkLabel(self.tab_priority, text="Importance:").grid(
-            row=tab1_row, column=0, sticky="w", padx=10, pady=5)
-        importance_values = [
-            f"{k} ({v})" for k, v in PriorityFactors.IMPORTANCE.items()]
-        self.importance_var = ctk.StringVar(value="")
-        self.importance_combo = ctk.CTkComboBox(
-            self.tab_priority, values=importance_values, variable=self.importance_var, width=180,
-            **combo_box_style(),
-            command=lambda _: self.update_priority_display()
-        )
-        self.importance_combo.grid(
-            row=tab1_row, column=1, sticky="w", padx=10, pady=5)
-        tab1_row += 1
-
-        # Urgency
-        ctk.CTkLabel(self.tab_priority, text="Urgency:").grid(
-            row=tab1_row, column=0, sticky="w", padx=10, pady=5)
-        urgency_values = [
-            f"{k} ({v})" for k, v in PriorityFactors.URGENCY.items()]
-        self.urgency_var = ctk.StringVar(value="")
-        self.urgency_combo = ctk.CTkComboBox(
-            self.tab_priority, values=urgency_values, variable=self.urgency_var, width=180,
-            **combo_box_style(),
-            command=lambda _: self.update_priority_display()
-        )
-        self.urgency_combo.grid(row=tab1_row, column=1,
-                                sticky="w", padx=10, pady=5)
-        tab1_row += 1
-
-        # Effort-Cost (Size internally)
-        ctk.CTkLabel(self.tab_priority, text="Effort-Cost:").grid(row=tab1_row,
-                                                                  column=0, sticky="w", padx=10, pady=5)
-        size_values = [f"{k} ({v})" for k, v in PriorityFactors.SIZE.items()]
-        self.size_var = ctk.StringVar(value="")
-        self.size_combo = ctk.CTkComboBox(
-            self.tab_priority, values=size_values, variable=self.size_var, width=180,
-            **combo_box_style(),
-            command=lambda _: self.update_priority_display()
-        )
-        self.size_combo.grid(row=tab1_row, column=1,
-                             sticky="w", padx=10, pady=5)
-        tab1_row += 1
-
-        # Value
-        ctk.CTkLabel(self.tab_priority, text="Value:").grid(
-            row=tab1_row, column=0, sticky="w", padx=10, pady=5)
-        value_values = [f"{k} ({v})" for k, v in PriorityFactors.VALUE.items()]
-        self.value_var = ctk.StringVar(value="")
-        self.value_combo = ctk.CTkComboBox(
-            self.tab_priority, values=value_values, variable=self.value_var, width=180,
-            **combo_box_style(),
-            command=lambda _: self.update_priority_display()
-        )
-        self.value_combo.grid(row=tab1_row, column=1,
-                              sticky="w", padx=10, pady=5)
-        tab1_row += 1
-
-        # Priority Score Display (more compact)
-        score_frame = ctk.CTkFrame(self.tab_priority, corner_radius=8)
-        score_frame.grid(row=tab1_row, column=0, columnspan=2,
-                         sticky="ew", padx=10, pady=(15, 5))
-        score_frame.grid_columnconfigure(0, weight=1)
-        score_frame.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(
-            score_frame,
-            text="Priority Score:",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).grid(row=0, column=0, sticky="w", padx=10, pady=8)
-
-        self.priority_label = ctk.CTkLabel(
-            score_frame,
-            text="0 (0×0×0×0)",
-            font=ctk.CTkFont(size=12, weight="bold"),
-            anchor="e",
-        )
-        self.priority_label.grid(row=0, column=1, sticky="e", padx=10, pady=8)
-        tab1_row += 1
-
-        # === TAB 2: ORGANIZATION ===
-        tab2_row = 0
-
+    def _setup_org_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        r = 0
+        
         # Group
-        ctk.CTkLabel(self.tab_organization, text="Group:").grid(
-            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(tab, text="Group:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
+        self.group_var = ctk.StringVar()
         groups = self.db_manager.get_distinct_groups()
-        self.group_var = ctk.StringVar(value="")
-        self.group_combo = ctk.CTkComboBox(self.tab_organization, values=groups if groups else [
-                                           ""], variable=self.group_var, width=180, **combo_box_style())
-        self.group_combo.grid(row=tab2_row, column=1,
-                              sticky="w", padx=10, pady=5)
-        tab2_row += 1
-
+        self.group_combo = ctk.CTkComboBox(tab, values=groups or [""], variable=self.group_var, **combo_box_style())
+        self.group_combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
+        r += 1
+        
         # Category
-        ctk.CTkLabel(self.tab_organization, text="Category:").grid(
-            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
+        ctk.CTkLabel(tab, text="Category:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
+        self.category_var = ctk.StringVar()
         categories = self.db_manager.get_distinct_categories()
-        self.category_var = ctk.StringVar(value="")
-        self.category_combo = ctk.CTkComboBox(self.tab_organization, values=categories if categories else [
-                                              ""], variable=self.category_var, width=180, **combo_box_style())
-        self.category_combo.grid(
-            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
-        tab2_row += 1
-
-        # Weekly Tactic (VSP Integration)
-        ctk.CTkLabel(self.tab_organization, text="Weekly Tactic:").grid(
-            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
-        self.week_action_var = ctk.StringVar(value="")
-        self.week_action_combo = ctk.CTkComboBox(self.tab_organization, values=[
-                                                 ""], variable=self.week_action_var, width=250, **combo_box_style())
-        self.week_action_combo.grid(
-            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
-        tab2_row += 1
-
-        # Load week actions if vps_manager is available
+        self.category_combo = ctk.CTkComboBox(tab, values=categories or [""], variable=self.category_var, **combo_box_style())
+        self.category_combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
+        r += 1
+        
+        # Weekly Tactic
+        ctk.CTkLabel(tab, text="Wk Tactic:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
+        self.week_action_var = ctk.StringVar()
+        self.week_action_combo = ctk.CTkComboBox(tab, values=[""], variable=self.week_action_var, **combo_box_style())
+        self.week_action_combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
+        
         self.load_week_actions()
 
-        # Original Due Date (read-only display)
-        ctk.CTkLabel(self.tab_organization, text="Original Due Date:").grid(
-            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
-        self.original_due_date_label = ctk.CTkLabel(
-            self.tab_organization,
-            text="-",
-            anchor="w",
-            text_color=status_text_color("muted")
-        )
-        self.original_due_date_label.grid(
-            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
-        tab2_row += 1
-
-        # Completed Date (read-only display)
-        ctk.CTkLabel(self.tab_organization, text="Completed Date:").grid(
-            row=tab2_row, column=0, sticky="w", padx=10, pady=5)
-        self.completed_at_label = ctk.CTkLabel(
-            self.tab_organization,
-            text="-",
-            anchor="w",
-            text_color=status_text_color("success")
-        )
-        self.completed_at_label.grid(
-            row=tab2_row, column=1, sticky="w", padx=10, pady=5)
-        tab2_row += 1
-
-        # === TAB 3: OBSIDIAN NOTES ===
-        tab3_row = 0
-
-        # Notes list frame
-        self.notes_frame = ctk.CTkScrollableFrame(self.tab_notes, height=180)
-        self.notes_frame.grid(row=tab3_row, column=0,
-                              sticky="new", padx=10, pady=5)
+    def _setup_notes_tab(self, tab):
+        tab.grid_columnconfigure(0, weight=1)
+        tab.grid_rowconfigure(1, weight=1)
+        
+        btns = ctk.CTkFrame(tab, fg_color="transparent")
+        btns.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        ctk.CTkButton(btns, text="+ Create", width=80, command=self.create_note).pack(side="left", padx=2)
+        ctk.CTkButton(btns, text="🔗 Link", width=80, command=self.link_existing_note).pack(side="left", padx=2)
+        
+        self.notes_frame = ctk.CTkScrollableFrame(tab, height=200)
+        self.notes_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.notes_frame.grid_columnconfigure(0, weight=1)
-        tab3_row += 1
-
-        # Notes buttons
-        notes_btn_frame = ctk.CTkFrame(self.tab_notes, fg_color="transparent")
-        notes_btn_frame.grid(row=tab3_row, column=0,
-                             sticky="w", padx=10, pady=5)
-
-        btn_create_note = ctk.CTkButton(
-            notes_btn_frame,
-            text="+ Create Note",
-            width=110,
-            command=self.create_note
-        )
-        btn_create_note.pack(side="left", padx=2)
-
-        btn_link_note = ctk.CTkButton(
-            notes_btn_frame,
-            text="+ Link Note",
-            width=100,
-            command=self.link_existing_note
-        )
-        btn_link_note.pack(side="left", padx=2)
-        tab3_row += 1
-
-        # Load notes (if item exists)
+        
         if self.item_id:
             self.load_notes()
         else:
-            # Show message for new items
-            ctk.CTkLabel(
-                self.notes_frame,
-                text="Item will be saved when you create or link a note",
-                font=ctk.CTkFont(size=11),
-                text_color=status_text_color("muted")
-            ).grid(row=0, column=0, pady=10)
-
-        # === BUTTONS ===
-        btn_frame = ctk.CTkFrame(self)
-        btn_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
-
-        # Row 1: Primary actions
-        top_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
-        top_row.pack(fill="x", pady=(0, 5))
-
-        action_btn_width = 110
-
-        btn_save = ctk.CTkButton(top_row, text="Save",
-                                 command=self.save_item, width=action_btn_width, **button_style("primary"))
-        btn_save.pack(side="left", padx=2)
-
-        btn_save_close = ctk.CTkButton(
-            top_row, text="Save & Close", command=self.save_and_close, width=action_btn_width, **button_style("primary"))
-        btn_save_close.pack(side="left", padx=2)
-
-        if not self.item_id:
-            btn_save_new = ctk.CTkButton(
-                top_row, text="Save + New", command=self.save_and_new, width=action_btn_width, **button_style("secondary"))
-            btn_save_new.pack(side="left", padx=2)
-
-        if self.item_id:
-            btn_duplicate = ctk.CTkButton(
-                top_row, text="Duplicate", command=self.duplicate_item, width=action_btn_width, **button_style("secondary"))
-            btn_duplicate.pack(side="left", padx=2)
-
-            btn_followup = ctk.CTkButton(
-                top_row, text="Add Follow-up", command=self.create_followup, width=action_btn_width, **button_style("secondary"))
-            btn_followup.pack(side="left", padx=2)
-
-        # Error label
-        self.error_label = ctk.CTkLabel(
-            top_row, text="", text_color=status_text_color("error"), wraplength=600)
-        self.error_label.pack(side="left", expand=True, padx=10)
-
-        # Row 2: Secondary actions (only for existing items)
-        if self.item_id:
-            bottom_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
-            bottom_row.pack(fill="x")
-
-            btn_create_tasks = ctk.CTkButton(
-                bottom_row, text="Add Tasks", command=self.create_sub_item, width=action_btn_width)
-            btn_create_tasks.pack(side="left", padx=2)
-
-            btn_show_related = ctk.CTkButton(
-                bottom_row, text="Show Related", command=self.show_related, width=action_btn_width)
-            btn_show_related.pack(side="left", padx=2)
-
-            btn_set_parent = ctk.CTkButton(
-                bottom_row, text="Set Parent", command=self.set_parent, width=action_btn_width)
-            btn_set_parent.pack(side="left", padx=2)
-
-            btn_set_weekly = ctk.CTkButton(
-                bottom_row, text="Set Wk Tactic", command=self.set_weekly_tactic, width=action_btn_width)
-            btn_set_weekly.pack(side="left", padx=2)
-
-        # Row 3: Completion actions
-        third_row = ctk.CTkFrame(btn_frame, fg_color="transparent")
-        third_row.pack(fill="x", pady=(5, 0))
-
-        if self.item_id:
-            btn_complete = ctk.CTkButton(
-                third_row,
-                text="Complete",
-                command=self.complete_item,
-                width=action_btn_width,
-                **button_style("danger"),
-            )
-            btn_complete.pack(side="left", padx=2)
-
-        btn_cancel = ctk.CTkButton(
-            third_row, text="Cancel", command=self.destroy, width=action_btn_width)
-        btn_cancel.pack(side="left", padx=2)
-
-        if self.item_id:
-            btn_delete = ctk.CTkButton(
-                third_row,
-                text="Delete",
-                command=self.delete_item,
-                width=action_btn_width,
-                **button_style("danger"),
-            )
-            btn_delete.pack(side="left", padx=2)
-
-        # Store references for responsive layout
-        self.left_col = left_col
-        self.right_col = right_col
-        self.main_frame = main_frame
+            ctk.CTkLabel(self.notes_frame, text="Notes available after save", font=ctk.CTkFont(size=11)).pack(pady=20)
 
     def load_week_actions(self):
         """Load week actions into the dropdown if the VSP manager is available."""
@@ -1372,18 +1069,29 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 # Now duplicate the saved version
                 new_id = self.db_manager.duplicate_action_item(self.item_id)
                 if new_id:
+                    # Calculate offset position (shifted right)
+                    new_x = self.winfo_x() + 100
+                    new_y = self.winfo_y() + 40
+                    
                     # Open the duplicate in a NEW editor window (don't close current one)
                     ItemEditorDialog(self.master, self.db_manager, new_id,
-                                     vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+                                     vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
+                                     x=new_x, y=new_y)
 
     def create_followup(self):
-        """Create a follow-up item linked to the current item."""
+        """Create a follow-up item linked to the current item and open in a new offset window."""
         if self.item_id:
             new_id = self.db_manager.create_followup_item(self.item_id)
-            self.on_dialog_close()
             if new_id:
+                # Calculate offset position (shifted right)
+                new_x = self.winfo_x() + 100
+                new_y = self.winfo_y() + 40
+                
+                # Open the follow-up in a NEW editor window
+                # We do NOT call on_dialog_close() here because we want both open.
                 ItemEditorDialog(self.master, self.db_manager, new_id,
-                                 vps_manager=self.vps_manager, on_close_callback=self.on_close_callback)
+                                 vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
+                                 x=new_x, y=new_y)
 
     def complete_item(self):
         """Mark item as complete."""
@@ -1547,18 +1255,23 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         """Actually perform the centering after dialog is rendered."""
         self.master.update_idletasks()
 
-        dialog_width = self.winfo_reqwidth() or self.winfo_width() or 920
-        dialog_height = self.winfo_reqheight() or self.winfo_height() or 550
+        dialog_width = 920
+        dialog_height = 680 # Increased to accommodate buttons
 
-        # Get parent window position and size using rootx/rooty for absolute screen coordinates
-        parent_x = self.master.winfo_rootx()
-        parent_y = self.master.winfo_rooty()
-        parent_width = self.master.winfo_width()
-        parent_height = self.master.winfo_height()
+        if self.specified_x is not None and self.specified_y is not None:
+            # Use specified coordinates
+            x = self.specified_x
+            y = self.specified_y
+        else:
+            # Get parent window position and size using rootx/rooty for absolute screen coordinates
+            parent_x = self.master.winfo_rootx()
+            parent_y = self.master.winfo_rooty()
+            parent_width = self.master.winfo_width()
+            parent_height = self.master.winfo_height()
 
-        # Calculate center position
-        x = parent_x + (parent_width - dialog_width) // 2
-        y = parent_y + (parent_height - dialog_height) // 2
+            # Calculate center position
+            x = parent_x + (parent_width - dialog_width) // 2
+            y = parent_y + (parent_height - dialog_height) // 2
 
         # Ensure dialog is not positioned off-screen
         x = max(0, x)

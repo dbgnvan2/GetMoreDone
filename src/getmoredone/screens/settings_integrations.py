@@ -97,6 +97,13 @@ class SettingsIntegrationsMixin:
 
         ctk.CTkButton(
             btn_frame,
+            text="Clear Logs",
+            command=self.clear_email_import_logs,
+            **button_style("danger"),
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_frame,
             text="Email Import Help",
             command=self.show_email_import_help,
             **button_style("secondary"),
@@ -259,6 +266,19 @@ class SettingsIntegrationsMixin:
             self._set_status(self.gmail_status_label, "Opened logs.", "muted")
         except Exception as e:
             self._set_status(self.gmail_status_label, f"Could not open logs: {e}", "error")
+
+    def clear_email_import_logs(self):
+        """Truncate the launchd log files for the importer."""
+        out_log = "/tmp/getmoredone-gmailimport-com.getmoredone.gmailimport.prod.out.log"
+        err_log = "/tmp/getmoredone-gmailimport-com.getmoredone.gmailimport.prod.err.log"
+        try:
+            for p in [out_log, err_log]:
+                path = Path(p)
+                if path.exists():
+                    path.write_text("", encoding="utf-8")
+            self._set_status(self.gmail_status_label, "Logs cleared.", "success")
+        except Exception as e:
+            self._set_status(self.gmail_status_label, f"Could not clear logs: {e}", "error")
 
     def show_email_import_help(self):
         """Show a help dialog with Gmail importer recovery steps."""

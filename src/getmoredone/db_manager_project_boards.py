@@ -125,7 +125,7 @@ class DBManagerProjectBoardsMixin:
               ON ai.id = pbi.item_id
             WHERE pb.status IN ({placeholders})
             GROUP BY 
-                pb.id, pb.title, pb.importance, pb.next_step, pb.notes, pb.display_order, pb.status, pb.completed_at, pb.created_at, pb.updated_at,
+                pb.id, pb.title, pb.annual_plan_element_id, pb.importance, pb.next_step, pb.notes, pb.display_order, pb.status, pb.completed_at, pb.created_at, pb.updated_at,
                 ape.year, ape.segment_name, ape.subsegment_name, ape.category_name, ape.key_field, vc.color_hex
             ORDER BY
                 CASE pb.status
