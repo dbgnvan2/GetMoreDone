@@ -197,6 +197,36 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         self.update_action_item(item)
         return True
 
+    def bulk_update_action_items(self, item_ids: List[str], start_date: Optional[str] = None, priority: Optional[int] = None):
+        """
+        Update multiple action items with the same start_date and/or priority.
+        Only specified fields are updated; others are preserved.
+        If start_date is provided, due_date is set to start_date + 1 day.
+
+        Args:
+            item_ids: List of action item IDs to update
+            start_date: New start date (ISO format YYYY-MM-DD), or None to skip
+            priority: New importance/priority value, or None to skip
+        """
+        for item_id in item_ids:
+            item = self.get_action_item(item_id)
+            if not item:
+                continue
+
+            # Update fields if provided
+            if start_date:
+                item.start_date = start_date
+                # Auto-calculate due_date as start_date + 1 day
+                from datetime import date as date_class
+                start = date_class.fromisoformat(start_date)
+                item.due_date = (start + timedelta(days=1)).isoformat()
+
+            if priority is not None:
+                item.importance = priority
+
+            # Persist the item
+            self.update_action_item(item, normalize_week_dates=False)
+
     def duplicate_action_item(self, item_id: str) -> Optional[str]:
         """
         Duplicate an action item (creates new item with same fields and linked notes).

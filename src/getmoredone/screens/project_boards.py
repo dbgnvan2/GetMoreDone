@@ -260,6 +260,145 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         self.refresh_results()
 
 
+class BulkEditItemsDialog(ctk.CTkToplevel):
+    """Bulk edit dialog for setting Start Date and Priority across multiple items."""
+
+    def __init__(self, parent, db_manager: "DatabaseManager", item_ids: list[str]):
+        super().__init__(parent)
+        self.db_manager = db_manager
+        self.item_ids = item_ids
+        self.result: Optional[dict] = None
+
+        self.title("Bulk Edit Items")
+        self.geometry("520x380")
+        self.transient(parent)
+        self.grab_set()
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self._build()
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+    def _build(self):
+        root = ctk.CTkFrame(self)
+        root.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        root.grid_columnconfigure(1, weight=1)
+        root.grid_rowconfigure(3, weight=1)
+
+        # Title
+        ctk.CTkLabel(root, text="Bulk Edit Items", font=ctk.CTkFont(size=16, weight="bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w", padx=0, pady=(0, 12)
+        )
+
+        # Start Date
+        ctk.CTkLabel(root, text="Start Date").grid(row=1, column=0, sticky="w", padx=8, pady=8)
+        start_frame = ctk.CTkFrame(root, fg_color="transparent")
+        start_frame.grid(row=1, column=1, sticky="ew", padx=8, pady=8)
+        start_frame.grid_columnconfigure(0, weight=1)
+
+        self.start_date_var = ctk.StringVar(value="")
+        ctk.CTkEntry(start_frame, textvariable=self.start_date_var, placeholder_text="YYYY-MM-DD (leave blank to skip)").grid(
+            row=0, column=0, sticky="ew", padx=0, pady=0
+        )
+        self.start_date_skip_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(start_frame, text="Skip", variable=self.start_date_skip_var).grid(
+            row=0, column=1, sticky="w", padx=(8, 0), pady=0
+        )
+
+        # Priority
+        ctk.CTkLabel(root, text="Priority").grid(row=2, column=0, sticky="w", padx=8, pady=8)
+        priority_frame = ctk.CTkFrame(root, fg_color="transparent")
+        priority_frame.grid(row=2, column=1, sticky="ew", padx=8, pady=8)
+        priority_frame.grid_columnconfigure(0, weight=1)
+
+        priority_options = ["(Skip)"] + IMPORTANCE_OPTIONS
+        self.priority_var = ctk.StringVar(value=priority_options[0])
+        ctk.CTkComboBox(
+            priority_frame,
+            values=priority_options,
+            variable=self.priority_var,
+            **combo_box_style(),
+        ).grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+
+        # Info box
+        info_frame = ctk.CTkFrame(root)
+        info_frame.grid(row=3, column=0, columnspan=2, sticky="nsew", padx=0, pady=(12, 12))
+        info_frame.grid_columnconfigure(0, weight=1)
+
+        info_text = f"Updating {len(self.item_ids)} item(s). Leave fields blank or select '(Skip)' to preserve existing values."
+        ctk.CTkLabel(
+            info_frame,
+            text=info_text,
+            text_color=semantic_colors()["muted_text"],
+            wraplength=480,
+            justify="left",
+        ).pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Buttons
+        actions = ctk.CTkFrame(root, fg_color="transparent")
+        actions.grid(row=4, column=0, columnspan=2, sticky="ew", padx=0, pady=0)
+        ctk.CTkButton(actions, text="Cancel", width=90, command=self.cancel, **button_style("secondary")).pack(
+            side="right", padx=4
+        )
+        ctk.CTkButton(actions, text="Save", width=90, command=self.save, **button_style("primary")).pack(
+            side="right", padx=4
+        )
+
+    def save(self):
+        start_date = self.start_date_var.get().strip() if not self.start_date_skip_var.get() else None
+        priority_label = self.priority_var.get().strip()
+        priority = None if priority_label == "(Skip)" else self._extract_priority_value(priority_label)
+
+        # Validate start date if provided
+        if start_date:
+            try:
+                from datetime import date as date_class
+                input_date = date_class.fromisoformat(start_date)
+                today = date_class.today()
+                if input_date < today:
+                    messagebox.showerror(
+                        "Invalid Date",
+                        f"Start date must be today ({today.isoformat()}) or later.",
+                        parent=self,
+                    )
+                    return
+            except ValueError:
+                messagebox.showerror(
+                    "Invalid Date Format",
+                    "Please use YYYY-MM-DD format (e.g., 2026-06-15).",
+                    parent=self,
+                )
+                return
+
+        # Require at least one field to be changed
+        if not start_date and priority is None:
+            messagebox.showwarning(
+                "No Changes",
+                "Please specify at least one field to update, or click Cancel.",
+                parent=self,
+            )
+            return
+
+        self.result = {
+            "item_ids": self.item_ids,
+            "start_date": start_date,
+            "priority": priority,
+        }
+        self.destroy()
+
+    def cancel(self):
+        self.result = None
+        self.destroy()
+
+    def _extract_priority_value(self, text: str) -> Optional[int]:
+        if "(" in text and ")" in text:
+            try:
+                return int(text.rsplit("(", 1)[1].rstrip(")"))
+            except ValueError:
+                return None
+        return None
+
+
 class ProjectBoardsScreen(ctk.CTkFrame):
     """Single project board containing many project items linked to APEs."""
 
@@ -297,6 +436,8 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self._drag_threshold = 8
         self._card_frames: dict[str, ctk.CTkFrame] = {}
         self._custom_card_width: int = self.CARD_WIDTH
+        self.selected_item_ids: set[str] = {}
+        self.item_checkbox_vars: dict[str, ctk.BooleanVar] = {}
 
         # Load Edit Icon
         icon_path = project_root() / "assets" / "icons" / "pencil_vertical.png"
@@ -679,6 +820,10 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         for child in self.items_frame.winfo_children():
             child.destroy()
 
+        # Clear selections when rendering new detail view
+        self.selected_item_ids.clear()
+        self.item_checkbox_vars.clear()
+
         if not self.selected_board_id:
             self.detail_title.configure(text="Select a Project")
             self.detail_meta.configure(text="")
@@ -727,6 +872,14 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self.btn_link_action.pack(
             side="left", padx=4
         )
+        self.btn_bulk_edit = ctk.CTkButton(
+            toolbar,
+            text="Bulk Edit",
+            command=self.on_bulk_edit_clicked,
+            state="disabled",
+            **button_style("secondary"),
+        )
+        self.btn_bulk_edit.pack(side="left", padx=4)
         self.btn_edit_project = ctk.CTkButton(toolbar, text="Edit Project", command=lambda: self.edit_project(board.id), **button_style("secondary"))
         self.btn_edit_project.pack(
             side="left", padx=4
@@ -766,10 +919,20 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         for idx, item in enumerate(tasks, start=2):
             row_frame = ctk.CTkFrame(self.items_frame)
             row_frame.grid(row=idx, column=0, sticky="ew", padx=2, pady=4)
-            row_frame.grid_columnconfigure(0, weight=1)
+            row_frame.grid_columnconfigure(1, weight=1)
+
+            checkbox_var = ctk.BooleanVar(value=False)
+            self.item_checkbox_vars[item.id] = checkbox_var
+            checkbox_var.trace_add("write", lambda *_args, item_id=item.id: self._on_item_checkbox_changed(item_id))
+
+            ctk.CTkCheckBox(
+                row_frame,
+                text="",
+                variable=checkbox_var,
+            ).grid(row=0, column=0, sticky="w", padx=4, pady=8)
 
             left = ctk.CTkFrame(row_frame, fg_color="transparent")
-            left.grid(row=0, column=0, sticky="ew", padx=8, pady=8)
+            left.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
             left.grid_columnconfigure(0, weight=1)
             ctk.CTkLabel(
                 left,
@@ -785,7 +948,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             ctk.CTkLabel(left, text=meta, justify="left", anchor="w").grid(row=1, column=0, sticky="w", pady=(2, 0))
 
             actions = ctk.CTkFrame(row_frame, fg_color="transparent")
-            actions.grid(row=0, column=1, sticky="e", padx=8, pady=8)
+            actions.grid(row=0, column=2, sticky="e", padx=8, pady=8)
             ctk.CTkButton(actions, text="Edit", width=70, command=lambda item_id=item.id: self.edit_item(item_id), **button_style("secondary")).pack(
                 side="left", padx=3
             )
@@ -944,6 +1107,44 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             return
         self.db_manager.unlink_action_item_from_project_board(self.selected_board_id, item_id)
         self.refresh()
+
+    def _on_item_checkbox_changed(self, item_id: str):
+        if self.item_checkbox_vars[item_id].get():
+            self.selected_item_ids.add(item_id)
+        else:
+            self.selected_item_ids.discard(item_id)
+        self._update_bulk_edit_button_state()
+
+    def _update_bulk_edit_button_state(self):
+        if hasattr(self, "btn_bulk_edit"):
+            if self.selected_item_ids:
+                self.btn_bulk_edit.configure(state="normal")
+            else:
+                self.btn_bulk_edit.configure(state="disabled")
+
+    def on_bulk_edit_clicked(self):
+        if not self.selected_item_ids:
+            return
+        dialog = BulkEditItemsDialog(self, self.db_manager, list(self.selected_item_ids))
+        self.wait_window(dialog)
+        if dialog.result:
+            self._apply_bulk_edit(dialog.result)
+
+    def _apply_bulk_edit(self, result: dict):
+        item_ids = result["item_ids"]
+        start_date = result["start_date"]
+        priority = result["priority"]
+
+        if not item_ids:
+            return
+
+        try:
+            self.db_manager.bulk_update_action_items(item_ids, start_date, priority)
+            self.selected_item_ids.clear()
+            self.item_checkbox_vars.clear()
+            self.refresh()
+        except Exception as e:
+            messagebox.showerror("Bulk Edit Error", f"Failed to update items: {str(e)}", parent=self)
 
     def link_existing_action_item(self, board_id: str):
         dialog = LinkProjectActionItemsDialog(self, self.db_manager, board_id, self.refresh)
