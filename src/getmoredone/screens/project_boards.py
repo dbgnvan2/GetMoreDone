@@ -916,14 +916,36 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             ).grid(row=2, column=0, sticky="w", padx=6, pady=12)
             return
 
-        for idx, item in enumerate(tasks, start=2):
+        # Add "Check All" header for items
+        items_header = ctk.CTkFrame(self.items_frame, fg_color="transparent")
+        items_header.grid(row=2, column=0, sticky="ew", padx=2, pady=(8, 4))
+        items_header.grid_columnconfigure(1, weight=1)
+
+        self.check_all_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(
+            items_header,
+            text="Select All",
+            variable=self.check_all_var,
+            command=self._on_check_all_changed,
+            width=24,
+            checkbox_width=24,
+            checkbox_height=24,
+        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+
+        ctk.CTkLabel(
+            items_header,
+            text=f"{len(tasks)} items",
+            text_color=semantic_colors()["muted_text"],
+            font=ctk.CTkFont(size=12),
+        ).grid(row=0, column=1, sticky="e", padx=8, pady=4)
+
+        for idx, item in enumerate(tasks, start=3):
             row_frame = ctk.CTkFrame(self.items_frame)
             row_frame.grid(row=idx, column=0, sticky="ew", padx=2, pady=4)
             row_frame.grid_columnconfigure(1, weight=1)
 
             checkbox_var = ctk.BooleanVar(value=False)
             self.item_checkbox_vars[item.id] = checkbox_var
-            checkbox_var.trace_add("write", lambda *_args, item_id=item.id: self._on_item_checkbox_changed(item_id))
 
             ctk.CTkCheckBox(
                 row_frame,
@@ -932,6 +954,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 width=24,
                 checkbox_width=24,
                 checkbox_height=24,
+                command=lambda item_id=item.id: self._on_item_checkbox_changed(item_id),
             ).grid(row=0, column=0, rowspan=2, sticky="nw", padx=6, pady=8)
 
             left = ctk.CTkFrame(row_frame, fg_color="transparent")
@@ -1116,6 +1139,15 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             self.selected_item_ids.add(item_id)
         else:
             self.selected_item_ids.discard(item_id)
+        self._update_bulk_edit_button_state()
+
+    def _on_check_all_changed(self):
+        state = self.check_all_var.get()
+        self.selected_item_ids.clear()
+        for item_id, checkbox_var in self.item_checkbox_vars.items():
+            checkbox_var.set(state)
+            if state:
+                self.selected_item_ids.add(item_id)
         self._update_bulk_edit_button_state()
 
     def _update_bulk_edit_button_state(self):
