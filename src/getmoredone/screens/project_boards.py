@@ -1273,14 +1273,15 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             child.destroy()
 
         links = self.db_manager.get_project_board_links(self.selected_board_id)
-        if not links:
-            ctk.CTkLabel(
-                self.notes_links_frame,
-                text="No notes linked to this project.",
-                text_color=semantic_colors()["muted_text"],
-                font=ctk.CTkFont(size=12, slant="italic"),
-            ).pack(pady=4)
-            return
+
+        count = len(links)
+        ctk.CTkLabel(
+            self.notes_links_frame,
+            text=f"{count} note{'s' if count != 1 else ''} linked to this project.",
+            text_color=semantic_colors()["muted_text"],
+            font=ctk.CTkFont(size=12, slant="italic"),
+            anchor="w",
+        ).pack(fill="x", pady=4, padx=4)
 
         for link in links:
             row = ctk.CTkFrame(self.notes_links_frame, fg_color="transparent")
