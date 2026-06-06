@@ -174,44 +174,97 @@ class TestBulkUpdateActionItems:
             assert item.priority_score == expected_score
 
 
+@pytest.fixture
+def gui_screen(db_manager):
+    """Build a real ProjectBoardsScreen against a temp DB.
+
+    Skips when CustomTkinter or a display is unavailable (e.g., the default
+    pytest environment). Run under the project's venv to exercise this:
+        ./venv/bin/python -m pytest tests/test_project_board_bulk_edit.py -v
+    """
+    ctk = pytest.importorskip("customtkinter")
+    from types import SimpleNamespace
+    from src.getmoredone.screens.project_boards import ProjectBoardsScreen
+
+    try:
+        root = ctk.CTk()
+    except Exception as exc:  # no display
+        pytest.skip(f"No GUI display available: {exc}")
+    root.withdraw()
+
+    board = ProjectBoard(title="GUI Test Board")
+    board_id = db_manager.create_project_board(board)
+    item_ids = []
+    for i in range(4):
+        item = ActionItem(
+            who="me", title=f"GUI Task {i}",
+            importance=3, urgency=3, size=3, value=3, status="open",
+        )
+        iid = db_manager.create_action_item(item)
+        db_manager.link_action_item_to_project_board(board_id, iid)
+        item_ids.append(iid)
+
+    screen = ProjectBoardsScreen(root, db_manager, SimpleNamespace(vps_manager=None))
+    screen.selected_board_id = board_id
+    screen.refresh()
+    root.update_idletasks()
+
+    yield screen, item_ids, root
+    root.destroy()
+
+
 class TestBulkEditUI:
-    """Test bulk edit UI components (requires screen interaction)."""
+    """GUI-level tests for checkbox selection and Bulk Edit button wiring.
 
-    @pytest.mark.skip(reason="Requires CustomTkinter GUI environment")
-    def test_bulk_edit_dialog_exists(self):
-        """AC2: BulkEditItemsDialog class exists and is importable."""
-        from src.getmoredone.screens.project_boards import BulkEditItemsDialog
-        assert BulkEditItemsDialog is not None
+    These exercise the real ProjectBoardsScreen widgets and would have caught
+    the `selected_item_ids = {}` (dict instead of set) regression.
+    """
 
-    @pytest.mark.skip(reason="Requires CustomTkinter GUI environment")
-    def test_bulk_edit_validation_rejects_past_dates(self, db_manager):
-        """AC4: Dialog validation rejects past dates."""
-        from src.getmoredone.screens.project_boards import BulkEditItemsDialog
-        from datetime import date
+    def test_selected_item_ids_is_a_set(self, gui_screen):
+        """Regression: selection store must be a set (was mistakenly a dict)."""
+        screen, _item_ids, _root = gui_screen
+        assert isinstance(screen.selected_item_ids, set)
 
-        # Create a dialog instance (won't render without GUI)
-        # Just verify the date validation logic exists
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+    def test_individual_checkbox_selection(self, gui_screen):
+        """AC1: Clicking each item's checkbox adds it to the selection."""
+        screen, item_ids, _root = gui_screen
+        for iid in item_ids:
+            screen.item_checkbox_vars[iid].set(True)
+            screen._on_item_checkbox_changed(iid)
+        assert screen.selected_item_ids == set(item_ids)
 
-        # The dialog's _extract_priority_value method should work
-        dialog_methods = dir(BulkEditItemsDialog)
-        assert "_extract_priority_value" in dialog_methods
+    def test_bulk_edit_button_enables_with_selection(self, gui_screen):
+        """AC2: Bulk Edit button enables when ≥1 item selected, disables at 0."""
+        screen, item_ids, _root = gui_screen
+        assert screen.btn_bulk_edit.cget("state") == "disabled"
 
-    @pytest.mark.skip(reason="Requires CustomTkinter GUI environment")
-    def test_checkbox_tracking_state_exists(self):
-        """AC1 & AC8: ProjectBoardsScreen has checkbox tracking attributes."""
-        from src.getmoredone.screens.project_boards import ProjectBoardsScreen
+        screen.item_checkbox_vars[item_ids[0]].set(True)
+        screen._on_item_checkbox_changed(item_ids[0])
+        assert screen.btn_bulk_edit.cget("state") == "normal"
 
-        # Verify the class has the necessary attributes for checkbox tracking
-        init_source = ProjectBoardsScreen.__init__.__code__.co_names
-        assert "selected_item_ids" in init_source or True  # Will be set in __init__
+        screen.item_checkbox_vars[item_ids[0]].set(False)
+        screen._on_item_checkbox_changed(item_ids[0])
+        assert screen.btn_bulk_edit.cget("state") == "disabled"
 
-        # Verify methods exist
-        methods = dir(ProjectBoardsScreen)
-        assert "_on_item_checkbox_changed" in methods
-        assert "_update_bulk_edit_button_state" in methods
-        assert "on_bulk_edit_clicked" in methods
-        assert "_apply_bulk_edit" in methods
+    def test_select_all_selects_every_item(self, gui_screen):
+        """AC1: Select All checks every item and selects all of them."""
+        screen, item_ids, _root = gui_screen
+        screen.check_all_var.set(True)
+        screen._on_check_all_changed()
+        assert screen.selected_item_ids == set(item_ids)
+        assert all(v.get() for v in screen.item_checkbox_vars.values())
+        assert screen.btn_bulk_edit.cget("state") == "normal"
+
+    def test_select_all_then_clear(self, gui_screen):
+        """AC1: Unchecking Select All clears every item."""
+        screen, item_ids, _root = gui_screen
+        screen.check_all_var.set(True)
+        screen._on_check_all_changed()
+        screen.check_all_var.set(False)
+        screen._on_check_all_changed()
+        assert screen.selected_item_ids == set()
+        assert not any(v.get() for v in screen.item_checkbox_vars.values())
+        assert screen.btn_bulk_edit.cget("state") == "disabled"
 
 
 class TestBulkEditIntegration:

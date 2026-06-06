@@ -436,7 +436,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self._drag_threshold = 8
         self._card_frames: dict[str, ctk.CTkFrame] = {}
         self._custom_card_width: int = self.CARD_WIDTH
-        self.selected_item_ids: set[str] = {}
+        self.selected_item_ids: set[str] = set()
         self.item_checkbox_vars: dict[str, ctk.BooleanVar] = {}
 
         # Load Edit Icon
