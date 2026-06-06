@@ -1,0 +1,74 @@
+#!/bin/bash
+#
+# GetMoreDone double-click launcher.
+#
+# This executable lives inside "GetMoreDone Launcher.app". It locates the
+# project repository (its own location, four levels up from this script),
+# then hands off to start.sh, which creates/updates the venv and runs the app.
+#
+# Because it runs the live source via start.sh, no rebuild is ever needed
+# after editing the code -- just double-click again.
+
+set -euo pipefail
+
+# --- Locate the repo -------------------------------------------------------
+# This script is at:  <repo>/GetMoreDone Launcher.app/Contents/MacOS/GetMoreDone
+# So the repo root is four directories up.
+SELF="$(cd "$(dirname "$0")" && pwd)"
+REPO="$(cd "$SELF/../../.." && pwd)"
+
+LOG_DIR="${HOME}/Library/Logs/GetMoreDone"
+mkdir -p "$LOG_DIR"
+LOG="${LOG_DIR}/launcher.log"
+
+{
+  echo "=============================================="
+  echo "GetMoreDone launcher started: $(date)"
+  echo "Repo: $REPO"
+} >>"$LOG" 2>&1
+
+# --- Sanity check ----------------------------------------------------------
+if [[ ! -f "$REPO/start.sh" ]]; then
+  osascript -e 'display alert "GetMoreDone" message "Could not find start.sh next to the launcher. Keep \"GetMoreDone Launcher.app\" inside the GetMoreDone project folder." as critical'
+  echo "ERROR: start.sh not found at $REPO" >>"$LOG" 2>&1
+  exit 1
+fi
+
+# --- First-run icon setup --------------------------------------------------
+# Convert the bundled PNG to a .icns the first time, using macOS tools.
+ICON_PNG="$SELF/../Resources/AppIcon.png"
+ICON_ICNS="$SELF/../Resources/AppIcon.icns"
+if [[ -f "$ICON_PNG" && ! -f "$ICON_ICNS" ]]; then
+  {
+    echo "Generating app icon..."
+    ICONSET="$(mktemp -d)/AppIcon.iconset"
+    mkdir -p "$ICONSET"
+    for SZ in 16 32 64 128 256 512 1024; do
+      sips -z "$SZ" "$SZ" "$ICON_PNG" --out "$ICONSET/icon_${SZ}x${SZ}.png" >/dev/null 2>&1 || true
+      HALF=$((SZ / 2))
+      if [[ "$HALF" -ge 16 ]]; then
+        cp "$ICONSET/icon_${SZ}x${SZ}.png" "$ICONSET/icon_${HALF}x${HALF}@2x.png" 2>/dev/null || true
+      fi
+    done
+    if iconutil -c icns "$ICONSET" -o "$ICON_ICNS" 2>/dev/null; then
+      # Touch the bundle so Finder refreshes the icon.
+      touch "$SELF/../.." 2>/dev/null || true
+      echo "Icon generated."
+    else
+      echo "iconutil failed; app will use a generic icon."
+    fi
+  } >>"$LOG" 2>&1
+fi
+
+# --- Launch ----------------------------------------------------------------
+cd "$REPO"
+echo "Handing off to start.sh..." >>"$LOG" 2>&1
+
+# Run start.sh; capture output to the log. If it fails, show an alert.
+if ! /bin/bash "$REPO/start.sh" >>"$LOG" 2>&1; then
+  osascript -e 'display alert "GetMoreDone failed to start" message "See the log for details:\n~/Library/Logs/GetMoreDone/launcher.log" as critical'
+  echo "ERROR: start.sh exited non-zero." >>"$LOG" 2>&1
+  exit 1
+fi
+
+echo "GetMoreDone exited cleanly: $(date)" >>"$LOG" 2>&1

@@ -929,7 +929,10 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 row_frame,
                 text="",
                 variable=checkbox_var,
-            ).grid(row=0, column=0, sticky="w", padx=4, pady=8)
+                width=24,
+                checkbox_width=24,
+                checkbox_height=24,
+            ).grid(row=0, column=0, rowspan=2, sticky="nw", padx=6, pady=8)
 
             left = ctk.CTkFrame(row_frame, fg_color="transparent")
             left.grid(row=0, column=1, sticky="ew", padx=8, pady=8)
