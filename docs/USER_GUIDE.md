@@ -2,7 +2,7 @@
 
 This guide explains what each screen, button, and workflow does, and why you might use it. It is aligned to the current UI and screen code in `src/getmoredone/screens`.
 
-Last updated: 2026-03-18
+Last updated: 2026-06-06
 
 ---
 
@@ -188,7 +188,7 @@ Board behavior:
 Note actions:
 - **Pencil** — What: Edit project (vertical yellow pencil with black tip and red eraser). Why: Update title, next step, notes, or status.
 - **Plus** — What: Create and link a new action item. Why: Turn project planning into execution.
-- **Page** — What: Create/link/open Obsidian notes using the same workflow as action items. Why: Reuse the existing note-linking model.
+- **Page (📄)** — What: Opens a small chooser asking "Create New Obsidian Note" or "Link Existing Obsidian Note", which delegates to the same dialogs used for Action Item notes. Why: Make the natural reading of the icon ("add a note here") match its behavior.
 - **Clock** — What: Set project note to Pending. Why: Hide it from the active board without deleting it.
 - **Check mark** — What: Set project note to Completed. Why: Remove it from the active board when finished.
 - **Trash can** — What: Delete the project note. Why: Remove obsolete project records when appropriate.
@@ -196,6 +196,37 @@ Note actions:
 Filters:
 - **Show Pending / Show Complete** — What: Toggles those note states onto the board. Why: Review inactive work without mixing it into the default active board.
 - **Link Action Item button color** — What: In the detail panel, the button uses the Category color. Why: Keep the project-to-action workflow visually tied to planning lineage.
+
+#### Project detail panel (right side)
+
+When you click a project on the board, the right side shows two stacked sections — Project Notes on top, Action Items below — with a shared filter above both.
+
+- **Shared "Show Completed" checkbox** — What: A single toggle above both lists, default OFF. Why: First view shows only open Project Notes and open Action Items; flip it on to reveal completed work in both lists at once.
+
+Project Notes section:
+- **What it is** — Each row is an Obsidian note linked to this project. Project Notes have a Status (Open / Completed) but no priority and no dates.
+- **Per-row buttons**:
+  - **Open** — What: Opens the note in your Obsidian vault. Why: Read or edit the note.
+  - **Complete** / **Reopen** — What: Flips the note's status. Why: Track whether a reference doc still needs attention.
+  - **Unlink** — What: Removes the link from this project (does not delete the .md file). Why: Disassociate a note that no longer belongs.
+- **Ordering** — Notes are shown most-recently-linked first.
+- **Count label** — Reads "N note(s) shown" or "N shown • M completed hidden" when the shared filter hides completed notes.
+
+Action Items section:
+- **Select All checkbox** — What: Checks every visible action item row in one click. Why: Avoid clicking each row when planning a bulk change. Respects the shared Show Completed filter — only visible items are selected.
+- **Per-item checkbox** — What: Selects a single action item. Why: Build an arbitrary selection for bulk edits.
+- **Bulk Edit button** — What: Enabled when ≥1 item is selected; opens a small dialog. Why: Apply Start Date and/or Priority to several items at once.
+  - **Start Date** — Future dates only (today or later). When set, Due Date is auto-set to Start Date + 1 day for every selected item.
+  - **Priority** — Any importance value, or "(Skip)" to leave each item's existing priority untouched.
+  - **Field preservation** — Leaving a field blank / on "(Skip)" preserves the existing value for every selected item; only the fields you fill in change.
+- **Edit / Complete / Unlink** — Per-row controls work as before.
+
+#### Toolbar buttons (right panel)
+- **Create Action Item** / **Link Action Item** — Add a task to this project.
+- **Bulk Edit** — See above; enabled when items are selected.
+- **Edit Project** — Open the project editor dialog.
+- **Create Note** / **Link Note** — Create a new Obsidian note (lands in your Project Notes Folder) or link an existing one.
+- **Open Notes** — Browse the project's linked notes in a separate dialog (kept for explicit "show me the notes I have" use).
 
 ### Plan (Time Blocks)
 - What: A time block planning view with a backlog of open items and a day plan.
@@ -276,7 +307,8 @@ Database Management:
 
 Obsidian Integration:
 - **Vault Path** — What: Path to your Obsidian vault. Why: Enable note linking.
-- **Notes Subfolder** — What: Subfolder for notes. Why: Keep GMD notes organized.
+- **Notes Subfolder** — What: Subfolder for notes created from Action Items (and other non-project entities). Default `GetMoreDone`. Why: Keep generic GMD notes organized.
+- **Project Notes Folder** — What: Separate subfolder for notes created from a Project (via Create Note, Link Note, or the 📄 chooser on a project tile). Default `GetMoreDone/Projects`. Leave blank to fall back to the Notes Subfolder above. Why: Keep project reference material separate from per-task notes so the vault stays browsable.
 - **Save Settings** — What: Stores vault settings. Why: Persist configuration.
 - **Test Connection** — What: Validates vault path and subfolder. Why: Confirm setup is correct.
 
