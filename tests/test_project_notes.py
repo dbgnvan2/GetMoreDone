@@ -397,6 +397,328 @@ class TestM7Routing:
             root.destroy()
 
 
+# ============================================================================
+# M3 — UI: Project Notes section
+# ============================================================================
+
+@pytest.fixture
+def gui_screen(db_manager):
+    """Real ProjectBoardsScreen with a board selected and no notes yet."""
+    ctk = pytest.importorskip("customtkinter")
+    from types import SimpleNamespace
+    from src.getmoredone.screens.project_boards import ProjectBoardsScreen
+
+    try:
+        root = ctk.CTk()
+    except Exception as exc:
+        pytest.skip(f"No GUI display available: {exc}")
+    root.withdraw()
+
+    board_id = db_manager.create_project_board(ProjectBoard(title="M3 Board"))
+    screen = ProjectBoardsScreen(
+        root, db_manager, SimpleNamespace(vps_manager=None)
+    )
+    screen.selected_board_id = board_id
+    screen.refresh()
+    root.update_idletasks()
+    yield screen, board_id, root
+    root.destroy()
+
+
+def _all_labels(widget):
+    """Recursively collect all CTkLabel texts under a widget."""
+    import customtkinter as ctk
+    out = []
+    for child in widget.winfo_children():
+        if isinstance(child, ctk.CTkLabel):
+            out.append(child.cget("text"))
+        out.extend(_all_labels(child))
+    return out
+
+
+def _all_button_texts(widget):
+    import customtkinter as ctk
+    out = []
+    for child in widget.winfo_children():
+        if isinstance(child, ctk.CTkButton):
+            out.append(child.cget("text"))
+        out.extend(_all_button_texts(child))
+    return out
+
+
+def _all_checkboxes(widget):
+    import customtkinter as ctk
+    out = []
+    for child in widget.winfo_children():
+        if isinstance(child, ctk.CTkCheckBox):
+            out.append(child)
+        out.extend(_all_checkboxes(child))
+    return out
+
+
+class TestM3UI:
+    """M3: Project Notes is a first-class section with status + buttons."""
+
+    def test_project_notes_header_rendered(self, gui_screen, db_manager):
+        """M3.A.1: A bold 'Project Notes' label appears in the notes frame."""
+        screen, board_id, root = gui_screen
+        # Link a note so the section renders fully
+        db_manager.add_project_board_link(
+            ProjectBoardLink(project_board_id=board_id, url="x://", label="A")
+        )
+        screen.load_notes()
+        root.update_idletasks()
+        labels = _all_labels(screen.notes_links_frame)
+        assert "Project Notes" in labels
+
+    def test_project_note_row_has_status_buttons_no_checkbox(
+        self, gui_screen, db_manager
+    ):
+        """M3.A.2: A note row has Open, Complete, Unlink buttons; NO checkbox."""
+        screen, board_id, root = gui_screen
+        db_manager.add_project_board_link(
+            ProjectBoardLink(project_board_id=board_id, url="x://", label="A")
+        )
+        screen.load_notes()
+        root.update_idletasks()
+        btns = _all_button_texts(screen.notes_links_frame)
+        assert "Open" in btns
+        assert "Complete" in btns
+        assert "Unlink" in btns
+        # Verify status pill renders the note's status
+        labels = _all_labels(screen.notes_links_frame)
+        assert "open" in labels
+        # No checkboxes in the notes section
+        assert _all_checkboxes(screen.notes_links_frame) == []
+
+    def test_completed_note_shows_reopen_not_complete(
+        self, gui_screen, db_manager
+    ):
+        """A completed note shows Reopen instead of Complete."""
+        screen, board_id, root = gui_screen
+        # Need show_completed=True for completed notes to be visible
+        screen.show_completed_items_var.set(True)
+        db_manager.add_project_board_link(
+            ProjectBoardLink(
+                project_board_id=board_id, url="c://", label="B", status="completed"
+            )
+        )
+        screen.load_notes()
+        root.update_idletasks()
+        btns = _all_button_texts(screen.notes_links_frame)
+        assert "Reopen" in btns
+        assert "Complete" not in btns
+
+    def test_complete_button_updates_status(self, gui_screen, db_manager):
+        """M3.A.3: The Complete handler flips status in the DB."""
+        screen, board_id, root = gui_screen
+        link = ProjectBoardLink(
+            project_board_id=board_id, url="x://", label="A"
+        )
+        db_manager.add_project_board_link(link)
+        screen.load_notes()
+        root.update_idletasks()
+
+        screen._on_complete_project_note(link.id)
+
+        refreshed = db_manager.get_project_board_links(board_id)
+        assert refreshed[0].status == "completed"
+
+    def test_reopen_button_updates_status(self, gui_screen, db_manager):
+        """The Reopen handler flips status back to open in the DB."""
+        screen, board_id, root = gui_screen
+        link = ProjectBoardLink(
+            project_board_id=board_id, url="x://", label="A", status="completed"
+        )
+        db_manager.add_project_board_link(link)
+        screen.show_completed_items_var.set(True)
+        screen.load_notes()
+        root.update_idletasks()
+
+        screen._on_reopen_project_note(link.id)
+
+        refreshed = db_manager.get_project_board_links(board_id)
+        assert refreshed[0].status == "open"
+
+    def test_notes_count_label(self, gui_screen, db_manager):
+        """M3.A.4: Count label reads 'N note(s) shown' or 'N shown • M completed hidden'."""
+        screen, board_id, root = gui_screen
+        # Two open + one completed
+        for label, status in [("A", "open"), ("B", "open"), ("C", "completed")]:
+            db_manager.add_project_board_link(
+                ProjectBoardLink(
+                    project_board_id=board_id, url=f"{label}://",
+                    label=label, status=status,
+                )
+            )
+
+        # When showing all: "3 notes shown"
+        screen.show_completed_items_var.set(True)
+        screen.load_notes()
+        root.update_idletasks()
+        labels = _all_labels(screen.notes_links_frame)
+        assert any("3 notes shown" in s for s in labels)
+
+        # When hiding completed: "2 shown • 1 completed hidden"
+        screen.show_completed_items_var.set(False)
+        screen.load_notes()
+        root.update_idletasks()
+        labels = _all_labels(screen.notes_links_frame)
+        assert any("2 shown" in s and "1 completed hidden" in s for s in labels)
+
+    def test_notes_section_orders_newest_first(self, gui_screen, db_manager):
+        """Sort: notes display most-recently-linked first."""
+        screen, board_id, root = gui_screen
+        for label, ts in [("oldest", "2020-01-01T00:00:00"),
+                          ("middle", "2022-06-15T12:00:00"),
+                          ("newest", "2026-06-06T09:00:00")]:
+            db_manager.add_project_board_link(
+                ProjectBoardLink(
+                    project_board_id=board_id, url=f"{label}://",
+                    label=label, created_at=ts,
+                )
+            )
+        screen.show_completed_items_var.set(True)
+        screen.load_notes()
+        root.update_idletasks()
+        labels = _all_labels(screen.notes_links_frame)
+        # Find indices of each label in the rendered order
+        idx_newest = next(i for i, s in enumerate(labels) if "newest" in s)
+        idx_middle = next(i for i, s in enumerate(labels) if "middle" in s)
+        idx_oldest = next(i for i, s in enumerate(labels) if "oldest" in s)
+        assert idx_newest < idx_middle < idx_oldest
+
+
+# ============================================================================
+# M6 — Spec traceability / spec_coverage.md
+# ============================================================================
+
+class TestM6SpecCoverage:
+    """M6: docs/spec_coverage.md exists and mentions every spec ID."""
+
+    def test_spec_coverage_doc_mentions_m1_through_m7(self):
+        """M6.A.2: docs/spec_coverage.md lists every acceptance criterion ID."""
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parent.parent
+        doc = repo_root / "docs" / "spec_coverage.md"
+        assert doc.exists(), f"Missing {doc}"
+        body = doc.read_text()
+
+        expected = [
+            "M1.A.1", "M1.A.2", "M1.A.3", "M1.A.4",
+            "M2.A.1", "M2.A.2", "M2.A.3",
+            "M3.A.1", "M3.A.2", "M3.A.3", "M3.A.4",
+            "M4.A.1", "M4.A.2", "M4.A.3",
+            "M5.A.1", "M5.A.2",
+            "M6.A.1", "M6.A.2",
+            "M7.A.1", "M7.A.2", "M7.A.3", "M7.A.4",
+            "M7.A.5", "M7.A.6", "M7.A.7",
+        ]
+        for spec_id in expected:
+            assert spec_id in body, f"spec_coverage.md missing {spec_id}"
+
+
+# ============================================================================
+# M5 — Old count-only label removed
+# ============================================================================
+
+class TestM5Cleanup:
+    """M5: The legacy 'N notes linked to this project.' line is gone, replaced
+    by the new Project Notes section header + count."""
+
+    def test_old_count_only_label_removed(self, gui_screen):
+        """M5.A.1: No label with the legacy 'notes linked to this project' phrase."""
+        screen, _board_id, root = gui_screen
+        # Render with zero notes — historical edge case where the label
+        # used to read '0 notes linked to this project.'
+        screen.load_notes()
+        root.update_idletasks()
+        labels = _all_labels(screen.notes_links_frame)
+        for s in labels:
+            assert "notes linked to this project" not in s, \
+                f"Legacy phrasing still present: {s!r}"
+
+
+# ============================================================================
+# M4 — Shared Show Completed (default OFF)
+# ============================================================================
+
+class TestM4SharedShowCompleted:
+    """M4: Single shared 'Show Completed' toggle, default OFF, filters BOTH lists."""
+
+    def test_show_completed_default_off(self, gui_screen):
+        """M4.A.1: Default is OFF (open-only view)."""
+        screen, _board_id, _root = gui_screen
+        assert screen.show_completed_items_var.get() is False
+
+    def test_show_completed_filters_both_lists(self, gui_screen, db_manager):
+        """M4.A.2: Toggling the shared filter affects BOTH notes AND action items."""
+        from src.getmoredone.models import ActionItem
+        screen, board_id, root = gui_screen
+        # Open + completed in both lists
+        db_manager.add_project_board_link(
+            ProjectBoardLink(project_board_id=board_id, url="o://", label="note open")
+        )
+        db_manager.add_project_board_link(
+            ProjectBoardLink(
+                project_board_id=board_id, url="c://", label="note done",
+                status="completed",
+            )
+        )
+        open_id = db_manager.create_action_item(
+            ActionItem(who="me", title="ai-open", status="open")
+        )
+        db_manager.link_action_item_to_project_board(board_id, open_id)
+        done_id = db_manager.create_action_item(
+            ActionItem(who="me", title="ai-done", status="open")
+        )
+        db_manager.link_action_item_to_project_board(board_id, done_id)
+        db_manager.complete_action_item(done_id)
+
+        # Default OFF: completed note row absent, completed action item absent
+        screen._render_detail()
+        root.update_idletasks()
+        note_labels = _all_labels(screen.notes_links_frame)
+        assert any("note open" in s for s in note_labels)
+        assert not any("note done" in s for s in note_labels)
+        assert open_id in screen.item_checkbox_vars
+        assert done_id not in screen.item_checkbox_vars
+
+        # Flip ON: both completed entries reappear in their respective lists
+        screen.show_completed_items_var.set(True)
+        screen._render_detail()
+        root.update_idletasks()
+        note_labels = _all_labels(screen.notes_links_frame)
+        assert any("note done" in s for s in note_labels)
+        assert done_id in screen.item_checkbox_vars
+
+    def test_select_all_still_respects_filter(self, gui_screen, db_manager):
+        """M4.A.3 (existing behavior preserved): Select All only selects visible action items."""
+        from src.getmoredone.models import ActionItem
+        screen, board_id, root = gui_screen
+        # 2 open + 1 completed action items
+        open_ids = []
+        for i in range(2):
+            aid = db_manager.create_action_item(
+                ActionItem(who="me", title=f"o{i}", status="open")
+            )
+            db_manager.link_action_item_to_project_board(board_id, aid)
+            open_ids.append(aid)
+        done_id = db_manager.create_action_item(
+            ActionItem(who="me", title="d", status="open")
+        )
+        db_manager.link_action_item_to_project_board(board_id, done_id)
+        db_manager.complete_action_item(done_id)
+
+        # Default OFF: filter hides completed
+        screen._render_detail()
+        root.update_idletasks()
+        screen.check_all_var.set(True)
+        screen._on_check_all_changed()
+        assert screen.selected_item_ids == set(open_ids)
+        assert done_id not in screen.selected_item_ids
+
+
 class TestM7SettingsScreenUI:
     """M7.A.4: SettingsScreen has a Project Notes Folder field bound to
     project_notes_folder_var, and save_obsidian_settings persists it."""

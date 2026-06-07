@@ -307,12 +307,17 @@ def gui_screen_mixed(db_manager):
 class TestShowCompletedToggle:
     """GUI tests for the Show Completed filter in the action items panel."""
 
-    def test_default_shows_completed(self, gui_screen_mixed):
-        """Default state shows all items (open + completed)."""
+    def test_default_hides_completed(self, gui_screen_mixed):
+        """Default state hides completed items (M4 changed default to OFF).
+
+        Spec: docs/implementation_plan_2026-06-06_project_notes.md#M4.A.1
+        """
         screen, open_ids, completed_ids, _root = gui_screen_mixed
-        assert screen.show_completed_items_var.get() is True
+        assert screen.show_completed_items_var.get() is False
         rendered = set(screen.item_checkbox_vars.keys())
-        assert rendered == set(open_ids) | set(completed_ids)
+        assert rendered == set(open_ids)
+        for cid in completed_ids:
+            assert cid not in rendered
 
     def test_hiding_completed_filters_them_out(self, gui_screen_mixed):
         """Unchecking Show Completed hides completed items, keeps open ones."""

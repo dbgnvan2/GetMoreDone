@@ -512,7 +512,12 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self._custom_card_width: int = self.CARD_WIDTH
         self.selected_item_ids: set[str] = set()
         self.item_checkbox_vars: dict[str, ctk.BooleanVar] = {}
-        self.show_completed_items_var = ctk.BooleanVar(value=True)
+        # M4.A.1 — Shared 'Show Completed' toggle filters BOTH the Project
+        # Notes list and the Action Items list. Default OFF per user direction
+        # ("Clicking on a Project will display all the OPEN Project Notes and
+        # Action Items").
+        # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M4.A.1
+        self.show_completed_items_var = ctk.BooleanVar(value=False)
 
         # Load Edit Icon
         icon_path = project_root() / "assets" / "icons" / "pencil_vertical.png"
@@ -977,8 +982,22 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 side="left", padx=4
             )
 
+        # M4.A.1 — Shared "Show Completed" toggle above BOTH the Project Notes
+        # section and the Action Items section. Toggling refreshes both lists
+        # via _render_detail.
+        # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M4.A.1, M4.A.2
+        shared_filter = ctk.CTkFrame(self.items_frame, fg_color="transparent")
+        shared_filter.grid(row=1, column=0, sticky="ew", padx=2, pady=(0, 4))
+        shared_filter.grid_columnconfigure(0, weight=1)
+        ctk.CTkCheckBox(
+            shared_filter,
+            text="Show Completed",
+            variable=self.show_completed_items_var,
+            command=self._render_detail,
+        ).grid(row=0, column=1, sticky="e", padx=8, pady=4)
+
         self.notes_links_frame = ctk.CTkFrame(self.items_frame)
-        self.notes_links_frame.grid(row=1, column=0, sticky="ew", padx=2, pady=(0, 8))
+        self.notes_links_frame.grid(row=2, column=0, sticky="ew", padx=2, pady=(0, 8))
         self.notes_links_frame.grid_columnconfigure(0, weight=1)
         self.load_notes()
 
@@ -988,18 +1007,21 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 self.items_frame,
                 text="No action items linked yet. Use Create Action Item to add the first task.",
                 text_color=semantic_colors()["muted_text"],
-            ).grid(row=2, column=0, sticky="w", padx=6, pady=12)
+            ).grid(row=3, column=0, sticky="w", padx=6, pady=12)
             return
 
-        # Filter completed items based on the toggle
+        # M4.A.2 — Filter respects the SHARED Show Completed toggle. The toggle
+        # itself was rendered above (row 1) and refreshes _render_detail, which
+        # re-runs both the notes section and this items section.
         show_completed = self.show_completed_items_var.get()
         tasks = [t for t in all_tasks if show_completed or t.status != "completed"]
         completed_count = sum(1 for t in all_tasks if t.status == "completed")
 
-        # Action Items header — clarifies these checkboxes are for action items,
-        # NOT the Obsidian notes counted above.
+        # Action Items header — bold section title + Select All + count.
+        # The Show Completed checkbox is intentionally NOT here anymore (M4):
+        # it lives in the shared filter row above both sections.
         items_header = ctk.CTkFrame(self.items_frame, fg_color="transparent")
-        items_header.grid(row=2, column=0, sticky="ew", padx=2, pady=(8, 4))
+        items_header.grid(row=3, column=0, sticky="ew", padx=2, pady=(8, 4))
         items_header.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(
@@ -1007,13 +1029,6 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             text="Action Items",
             font=ctk.CTkFont(size=16, weight="bold"),
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 2))
-
-        ctk.CTkCheckBox(
-            items_header,
-            text="Show Completed",
-            variable=self.show_completed_items_var,
-            command=self._render_detail,
-        ).grid(row=0, column=2, sticky="e", padx=8, pady=(0, 2))
 
         self.check_all_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
@@ -1035,17 +1050,17 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             text=count_text,
             text_color=semantic_colors()["muted_text"],
             font=ctk.CTkFont(size=12),
-        ).grid(row=1, column=1, columnspan=2, sticky="e", padx=8, pady=4)
+        ).grid(row=1, column=1, sticky="e", padx=8, pady=4)
 
         if not tasks:
             ctk.CTkLabel(
                 self.items_frame,
                 text=f"All {completed_count} item(s) completed. Enable 'Show Completed' to view them.",
                 text_color=semantic_colors()["muted_text"],
-            ).grid(row=3, column=0, sticky="w", padx=6, pady=12)
+            ).grid(row=4, column=0, sticky="w", padx=6, pady=12)
             return
 
-        for idx, item in enumerate(tasks, start=3):
+        for idx, item in enumerate(tasks, start=4):
             row_frame = ctk.CTkFrame(self.items_frame)
             row_frame.grid(row=idx, column=0, sticky="ew", padx=2, pady=4)
             row_frame.grid_columnconfigure(1, weight=1)
@@ -1392,52 +1407,169 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self.load_notes()
 
     def load_notes(self):
+        """Render the Project Notes section (visible list of linked notes).
+
+        Purpose: M3 — show Project Notes as a first-class list above Action Items,
+                 each row with status + Open/Complete-or-Reopen/Unlink controls.
+                 No checkbox, no priority, no dates (per user clarification).
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M3
+        Tests:   tests/test_project_notes.py::TestM3UI::test_project_notes_header_rendered
+                 tests/test_project_notes.py::TestM3UI::test_project_note_row_has_status_buttons_no_checkbox
+                 tests/test_project_notes.py::TestM3UI::test_complete_button_updates_status
+                 tests/test_project_notes.py::TestM3UI::test_notes_count_label
+        """
         if not hasattr(self, "notes_links_frame") or not self.selected_board_id:
             return
 
         for child in self.notes_links_frame.winfo_children():
             child.destroy()
 
-        links = self.db_manager.get_project_board_links(self.selected_board_id)
+        # Filter respects the shared Show Completed toggle (added in M4).
+        # Default attr is True so this method is safe to call before M4 wiring.
+        show_completed = getattr(self, "show_completed_items_var", None)
+        include_completed = show_completed.get() if show_completed else True
 
-        count = len(links)
+        all_links = self.db_manager.get_project_board_links(
+            self.selected_board_id, include_completed=True
+        )
+        shown_links = (
+            all_links if include_completed
+            else [link for link in all_links if link.status != "completed"]
+        )
+        completed_hidden = sum(1 for link in all_links if link.status == "completed") \
+            if not include_completed else 0
+
+        # M3.A.1 — Bold "Project Notes" section header
+        header_row = ctk.CTkFrame(self.notes_links_frame, fg_color="transparent")
+        header_row.pack(fill="x", pady=(0, 2))
+        header_row.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            self.notes_links_frame,
-            text=f"{count} note{'s' if count != 1 else ''} linked to this project.",
-            text_color=semantic_colors()["muted_text"],
-            font=ctk.CTkFont(size=12, slant="italic"),
+            header_row,
+            text="Project Notes",
+            font=ctk.CTkFont(size=16, weight="bold"),
             anchor="w",
-        ).pack(fill="x", pady=4, padx=4)
+        ).grid(row=0, column=0, sticky="w", padx=6, pady=(0, 0))
 
-        for link in links:
-            row = ctk.CTkFrame(self.notes_links_frame, fg_color="transparent")
-            row.pack(fill="x", pady=2)
-            
-            label = link.label or link.url
+        # M3.A.4 — Count label
+        if completed_hidden:
+            count_text = (
+                f"{len(shown_links)} shown • {completed_hidden} completed hidden"
+            )
+        else:
+            count_text = (
+                f"{len(shown_links)} note{'s' if len(shown_links) != 1 else ''} shown"
+            )
+        self.notes_count_label = ctk.CTkLabel(
+            header_row,
+            text=count_text,
+            text_color=semantic_colors()["muted_text"],
+            font=ctk.CTkFont(size=12),
+            anchor="e",
+        )
+        self.notes_count_label.grid(row=0, column=1, sticky="e", padx=8)
+
+        if not shown_links:
+            empty_msg = (
+                f"All {completed_hidden} note(s) completed. Enable 'Show Completed' to view them."
+                if completed_hidden else
+                "No notes linked yet. Use Create Note or Link Note to add one."
+            )
             ctk.CTkLabel(
-                row, 
-                text=f"📄 {label}", 
+                self.notes_links_frame,
+                text=empty_msg,
+                text_color=semantic_colors()["muted_text"],
+                font=ctk.CTkFont(size=12, slant="italic"),
                 anchor="w",
-                font=ctk.CTkFont(size=13)
-            ).pack(side="left", fill="x", expand=True, padx=4)
-            
+            ).pack(fill="x", pady=(2, 0), padx=6)
+            return
+
+        for link in shown_links:
+            self._render_project_note_row(link)
+
+    def _render_project_note_row(self, link):
+        """Render one Project Note row: label, status pill, Open/Complete-or-Reopen/Unlink.
+
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M3.A.2
+        Tests:   tests/test_project_notes.py::TestM3UI::test_project_note_row_has_status_buttons_no_checkbox
+        """
+        row = ctk.CTkFrame(self.notes_links_frame, fg_color="transparent")
+        row.pack(fill="x", pady=2, padx=2)
+
+        label_text = link.label or link.url
+        ctk.CTkLabel(
+            row,
+            text=f"📄 {label_text}",
+            anchor="w",
+            font=ctk.CTkFont(size=13),
+        ).pack(side="left", fill="x", expand=True, padx=4)
+
+        status_color = (
+            semantic_colors().get("success_text") or semantic_colors().get("muted_text")
+            if link.status == "completed"
+            else semantic_colors().get("body_text") or semantic_colors().get("muted_text")
+        )
+        ctk.CTkLabel(
+            row,
+            text=link.status,
+            text_color=status_color,
+            font=ctk.CTkFont(size=12),
+            anchor="e",
+        ).pack(side="left", padx=(4, 8))
+
+        ctk.CTkButton(
+            row,
+            text="Open",
+            width=60,
+            height=24,
+            command=lambda path=link.url: self._open_note_path(path),
+            **button_style("secondary"),
+        ).pack(side="left", padx=2)
+
+        if link.status == "completed":
             ctk.CTkButton(
                 row,
-                text="Open",
-                width=60,
+                text="Reopen",
+                width=70,
                 height=24,
-                command=lambda path=link.url: self._open_note_path(path),
+                command=lambda lid=link.id: self._on_reopen_project_note(lid),
                 **button_style("secondary"),
             ).pack(side="left", padx=2)
-            
+        else:
             ctk.CTkButton(
                 row,
-                text="Remove",
-                width=60,
+                text="Complete",
+                width=80,
                 height=24,
-                command=lambda lid=link.id: self.delete_note_link(lid),
-                **button_style("danger"),
+                command=lambda lid=link.id: self._on_complete_project_note(lid),
+                **button_style("secondary"),
             ).pack(side="left", padx=2)
+
+        ctk.CTkButton(
+            row,
+            text="Unlink",
+            width=60,
+            height=24,
+            command=lambda lid=link.id: self.delete_note_link(lid),
+            **button_style("danger"),
+        ).pack(side="left", padx=2)
+
+    def _on_complete_project_note(self, link_id: str):
+        """Mark a Project Note completed and refresh the section.
+
+        Spec: docs/implementation_plan_2026-06-06_project_notes.md#M3.A.3
+        Tests: tests/test_project_notes.py::TestM3UI::test_complete_button_updates_status
+        """
+        self.db_manager.complete_project_note(link_id)
+        self.load_notes()
+
+    def _on_reopen_project_note(self, link_id: str):
+        """Mark a Project Note open (reverse of complete) and refresh the section.
+
+        Spec: docs/implementation_plan_2026-06-06_project_notes.md#M3.A.3
+        Tests: tests/test_project_notes.py::TestM3UI::test_reopen_button_updates_status
+        """
+        self.db_manager.reopen_project_note(link_id)
+        self.load_notes()
 
     def _open_note_path(self, path: str):
         from ..obsidian_utils import open_in_obsidian
