@@ -399,6 +399,80 @@ class BulkEditItemsDialog(ctk.CTkToplevel):
         return None
 
 
+class NoteActionChooserDialog(ctk.CTkToplevel):
+    """Small modal chooser shown when the user clicks the 📄 icon on a project tile.
+
+    Purpose: Ask the user whether they want to create a new Obsidian note or
+             link an existing one to the project. Both branches delegate to
+             the same CreateNoteDialog / LinkNoteDialog used by Action Items.
+    Spec:    docs/implementation_plan_2026-06-06.md (paper-icon-enhancement)
+    Tests:   tests/test_project_note_chooser.py::test_choice_is_create
+             tests/test_project_note_chooser.py::test_choice_is_link
+             tests/test_project_note_chooser.py::test_cancel_returns_none
+    """
+
+    CHOICE_CREATE = "create"
+    CHOICE_LINK = "link"
+
+    def __init__(self, parent, project_title: str):
+        super().__init__(parent)
+        self.result: Optional[str] = None
+
+        self.title("Add Note to Project")
+        self.geometry("420x220")
+        self.transient(parent)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+        root = ctk.CTkFrame(self)
+        root.pack(fill="both", expand=True, padx=16, pady=16)
+        root.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            root,
+            text=f"Add a note to:\n{project_title}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            justify="left",
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", pady=(0, 12))
+
+        ctk.CTkButton(
+            root,
+            text="Create New Obsidian Note",
+            command=self._choose_create,
+            **button_style("primary"),
+        ).grid(row=1, column=0, sticky="ew", pady=4)
+
+        ctk.CTkButton(
+            root,
+            text="Link Existing Obsidian Note",
+            command=self._choose_link,
+            **button_style("secondary"),
+        ).grid(row=2, column=0, sticky="ew", pady=4)
+
+        ctk.CTkButton(
+            root,
+            text="Cancel",
+            command=self.cancel,
+            **button_style("secondary"),
+        ).grid(row=3, column=0, sticky="ew", pady=(12, 0))
+
+        self.lift()
+        self.focus_force()
+
+    def _choose_create(self):
+        self.result = self.CHOICE_CREATE
+        self.destroy()
+
+    def _choose_link(self):
+        self.result = self.CHOICE_LINK
+        self.destroy()
+
+    def cancel(self):
+        self.result = None
+        self.destroy()
+
+
 class ProjectBoardsScreen(ctk.CTkFrame):
     """Single project board containing many project items linked to APEs."""
 
@@ -782,7 +856,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             width=self.ACTION_BUTTON_WIDTH,
             height=self.ACTION_BUTTON_HEIGHT,
             font=ctk.CTkFont(size=self.ACTION_ICON_FONT_SIZE, weight="bold"),
-            command=lambda b=row["id"]: self.open_note_picker(b),
+            command=lambda b=row["id"]: self.add_note_to_project(b),
             **button_style("secondary"),
         ).grid(row=0, column=2, padx=2, pady=2, sticky="ew")
 
@@ -1228,6 +1302,26 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             vps_manager=self.app.vps_manager,
             on_close_callback=self.refresh,
         )
+
+    def add_note_to_project(self, board_id: str):
+        """Prompt the user to create a new or link an existing Obsidian note.
+
+        Purpose: Handler for the 📄 icon on a project tile.
+        Spec:    docs/implementation_plan_2026-06-06.md (paper-icon-enhancement)
+        Tests:   tests/test_project_note_chooser.py::test_handler_dispatches_to_create_note
+                 tests/test_project_note_chooser.py::test_handler_dispatches_to_link_note
+                 tests/test_project_note_chooser.py::test_handler_does_nothing_on_cancel
+        """
+        board = self.db_manager.get_project_board(board_id)
+        if not board:
+            return
+        chooser = NoteActionChooserDialog(self, board.title)
+        self.wait_window(chooser)
+        if chooser.result == NoteActionChooserDialog.CHOICE_CREATE:
+            self.create_note(board_id)
+        elif chooser.result == NoteActionChooserDialog.CHOICE_LINK:
+            self.link_note(board_id)
+        # cancel/closed → no-op
 
     def create_note(self, board_id: str):
         board = self.db_manager.get_project_board(board_id)
