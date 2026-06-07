@@ -17,6 +17,10 @@ class AppSettings:
 
     obsidian_vault_path: Optional[str] = None
     obsidian_notes_subfolder: str = "GetMoreDone"
+    # M7.A.1 — Separate subfolder for Project Notes so they don't mingle with
+    # action-item notes. Blank value falls back to obsidian_notes_subfolder.
+    # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M7.A.1
+    project_notes_subfolder: str = "GetMoreDone/Projects"
     # Default green checkmark, can be customized to image path or emoji
     completion_icon: str = "✓"
     completion_badge_path: Optional[str] = None
@@ -207,3 +211,34 @@ class AppSettings:
 
         notes_folder = vault / self.obsidian_notes_subfolder
         return notes_folder
+
+    def get_project_notes_folder(self) -> Optional[Path]:
+        """Full path to the Project Notes subfolder, falling back when blank.
+
+        Purpose: Resolve the Obsidian folder where Project Notes (.md) live.
+                 If project_notes_subfolder is blank, falls back to the
+                 generic obsidian_notes_subfolder so users who haven't
+                 configured the new setting still get sane behavior.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M7.A.2
+        Tests:   tests/test_project_notes.py::TestM7Settings::test_get_project_notes_folder_returns_path
+                 tests/test_project_notes.py::TestM7Settings::test_blank_project_subfolder_falls_back
+        """
+        if not self.obsidian_vault_path:
+            return None
+        vault = Path(self.obsidian_vault_path)
+        if not vault.exists():
+            return None
+        subfolder = (self.project_notes_subfolder or "").strip() or self.obsidian_notes_subfolder
+        return vault / subfolder
+
+    def get_project_notes_subfolder_or_default(self) -> str:
+        """Return the subfolder string to pass to create_obsidian_note.
+
+        Purpose: Resolves to the project subfolder, or to the generic
+                 obsidian_notes_subfolder if the project setting is blank.
+                 Separate from get_project_notes_folder() because
+                 create_obsidian_note takes the subfolder *string*, not a Path.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M7.A.5
+        Tests:   tests/test_project_notes.py::TestM7Settings::test_blank_project_subfolder_falls_back
+        """
+        return (self.project_notes_subfolder or "").strip() or self.obsidian_notes_subfolder

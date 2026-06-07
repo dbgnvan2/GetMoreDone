@@ -229,9 +229,21 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             section, textvariable=self.subfolder_var, width=200)
         subfolder_entry.grid(row=2, column=1, sticky="w", padx=10, pady=5)
 
+        # M7.A.4 — Project Notes Folder (separate folder for Project Notes;
+        # blank falls back to Notes Subfolder above).
+        # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M7.A.4
+        ctk.CTkLabel(section, text="Project Notes Folder:").grid(
+            row=3, column=0, sticky="w", padx=10, pady=5)
+        self.project_notes_folder_var = ctk.StringVar(
+            value=self.settings.project_notes_subfolder)
+        project_notes_entry = ctk.CTkEntry(
+            section, textvariable=self.project_notes_folder_var, width=200,
+            placeholder_text="GetMoreDone/Projects")
+        project_notes_entry.grid(row=3, column=1, sticky="w", padx=10, pady=5)
+
         # Save and test buttons
         btn_frame = ctk.CTkFrame(section, fg_color="transparent")
-        btn_frame.grid(row=3, column=0, columnspan=2,
+        btn_frame.grid(row=4, column=0, columnspan=2,
                        sticky="w", padx=10, pady=10)
 
         btn_save = ctk.CTkButton(
@@ -270,9 +282,16 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             self.vault_path_var.set(path)
 
     def save_obsidian_settings(self):
-        """Save Obsidian settings."""
+        """Save Obsidian settings.
+
+        Spec: docs/implementation_plan_2026-06-06_project_notes.md#M7.A.4
+        Tests: tests/test_project_notes.py::TestM7Settings::test_settings_roundtrip_project_subfolder
+        """
         self.settings.obsidian_vault_path = self.vault_path_var.get().strip() or None
         self.settings.obsidian_notes_subfolder = self.subfolder_var.get().strip() or "GetMoreDone"
+        # M7.A.4 — Project Notes Folder; blank is allowed and falls back to
+        # obsidian_notes_subfolder at use-time (see get_project_notes_subfolder_or_default).
+        self.settings.project_notes_subfolder = self.project_notes_folder_var.get().strip()
 
         self.settings.save()
 
