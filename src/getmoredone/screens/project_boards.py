@@ -438,6 +438,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self._custom_card_width: int = self.CARD_WIDTH
         self.selected_item_ids: set[str] = set()
         self.item_checkbox_vars: dict[str, ctk.BooleanVar] = {}
+        self.show_completed_items_var = ctk.BooleanVar(value=True)
 
         # Load Edit Icon
         icon_path = project_root() / "assets" / "icons" / "pencil_vertical.png"
@@ -907,8 +908,8 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self.notes_links_frame.grid_columnconfigure(0, weight=1)
         self.load_notes()
 
-        tasks = self.db_manager.get_project_board_items(board.id)
-        if not tasks:
+        all_tasks = self.db_manager.get_project_board_items(board.id)
+        if not all_tasks:
             ctk.CTkLabel(
                 self.items_frame,
                 text="No action items linked yet. Use Create Action Item to add the first task.",
@@ -916,10 +917,29 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             ).grid(row=2, column=0, sticky="w", padx=6, pady=12)
             return
 
-        # Add "Check All" header for items
+        # Filter completed items based on the toggle
+        show_completed = self.show_completed_items_var.get()
+        tasks = [t for t in all_tasks if show_completed or t.status != "completed"]
+        completed_count = sum(1 for t in all_tasks if t.status == "completed")
+
+        # Action Items header — clarifies these checkboxes are for action items,
+        # NOT the Obsidian notes counted above.
         items_header = ctk.CTkFrame(self.items_frame, fg_color="transparent")
         items_header.grid(row=2, column=0, sticky="ew", padx=2, pady=(8, 4))
         items_header.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            items_header,
+            text="Action Items",
+            font=ctk.CTkFont(size=16, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 2))
+
+        ctk.CTkCheckBox(
+            items_header,
+            text="Show Completed",
+            variable=self.show_completed_items_var,
+            command=self._render_detail,
+        ).grid(row=0, column=2, sticky="e", padx=8, pady=(0, 2))
 
         self.check_all_var = ctk.BooleanVar(value=False)
         ctk.CTkCheckBox(
@@ -930,14 +950,26 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             width=24,
             checkbox_width=24,
             checkbox_height=24,
-        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        ).grid(row=1, column=0, sticky="w", padx=6, pady=4)
 
+        if completed_count and not show_completed:
+            count_text = f"{len(tasks)} shown • {completed_count} completed hidden"
+        else:
+            count_text = f"{len(tasks)} item{'s' if len(tasks) != 1 else ''}"
         ctk.CTkLabel(
             items_header,
-            text=f"{len(tasks)} items",
+            text=count_text,
             text_color=semantic_colors()["muted_text"],
             font=ctk.CTkFont(size=12),
-        ).grid(row=0, column=1, sticky="e", padx=8, pady=4)
+        ).grid(row=1, column=1, columnspan=2, sticky="e", padx=8, pady=4)
+
+        if not tasks:
+            ctk.CTkLabel(
+                self.items_frame,
+                text=f"All {completed_count} item(s) completed. Enable 'Show Completed' to view them.",
+                text_color=semantic_colors()["muted_text"],
+            ).grid(row=3, column=0, sticky="w", padx=6, pady=12)
+            return
 
         for idx, item in enumerate(tasks, start=3):
             row_frame = ctk.CTkFrame(self.items_frame)

@@ -267,6 +267,75 @@ class TestBulkEditUI:
         assert screen.btn_bulk_edit.cget("state") == "disabled"
 
 
+@pytest.fixture
+def gui_screen_mixed(db_manager):
+    """Real screen with a mix of open and completed items."""
+    ctk = pytest.importorskip("customtkinter")
+    from types import SimpleNamespace
+    from src.getmoredone.screens.project_boards import ProjectBoardsScreen
+
+    try:
+        root = ctk.CTk()
+    except Exception as exc:
+        pytest.skip(f"No GUI display available: {exc}")
+    root.withdraw()
+
+    board_id = db_manager.create_project_board(ProjectBoard(title="Mixed Board"))
+    open_ids, completed_ids = [], []
+    for i in range(3):
+        iid = db_manager.create_action_item(
+            ActionItem(who="me", title=f"Open {i}", status="open")
+        )
+        db_manager.link_action_item_to_project_board(board_id, iid)
+        open_ids.append(iid)
+    for i in range(2):
+        iid = db_manager.create_action_item(
+            ActionItem(who="me", title=f"Done {i}", status="open")
+        )
+        db_manager.link_action_item_to_project_board(board_id, iid)
+        db_manager.complete_action_item(iid)
+        completed_ids.append(iid)
+
+    screen = ProjectBoardsScreen(root, db_manager, SimpleNamespace(vps_manager=None))
+    screen.selected_board_id = board_id
+    screen.refresh()
+    root.update_idletasks()
+    yield screen, open_ids, completed_ids, root
+    root.destroy()
+
+
+class TestShowCompletedToggle:
+    """GUI tests for the Show Completed filter in the action items panel."""
+
+    def test_default_shows_completed(self, gui_screen_mixed):
+        """Default state shows all items (open + completed)."""
+        screen, open_ids, completed_ids, _root = gui_screen_mixed
+        assert screen.show_completed_items_var.get() is True
+        rendered = set(screen.item_checkbox_vars.keys())
+        assert rendered == set(open_ids) | set(completed_ids)
+
+    def test_hiding_completed_filters_them_out(self, gui_screen_mixed):
+        """Unchecking Show Completed hides completed items, keeps open ones."""
+        screen, open_ids, completed_ids, root = gui_screen_mixed
+        screen.show_completed_items_var.set(False)
+        screen._render_detail()
+        root.update_idletasks()
+        rendered = set(screen.item_checkbox_vars.keys())
+        assert rendered == set(open_ids)
+        for cid in completed_ids:
+            assert cid not in rendered
+
+    def test_select_all_respects_filter(self, gui_screen_mixed):
+        """Select All only selects visible (open) items when completed are hidden."""
+        screen, open_ids, completed_ids, root = gui_screen_mixed
+        screen.show_completed_items_var.set(False)
+        screen._render_detail()
+        root.update_idletasks()
+        screen.check_all_var.set(True)
+        screen._on_check_all_changed()
+        assert screen.selected_item_ids == set(open_ids)
+
+
 class TestBulkEditIntegration:
     """Integration tests for bulk edit workflow."""
 
