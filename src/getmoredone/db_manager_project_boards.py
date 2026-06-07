@@ -250,20 +250,77 @@ class DBManagerProjectBoardsMixin:
         return [self._row_to_action_item(row) for row in rows]
 
     def add_project_board_link(self, link: ProjectBoardLink):
-        """Add a link to a project board."""
+        """Add a link to a project board.
+
+        Purpose: Persist a new project-board link (a Project Note), including
+                 its initial status.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M1.A.4
+        Tests:   tests/test_project_notes.py::test_link_status_roundtrip
+        """
         self.db.conn.execute("""
-            INSERT INTO project_board_links (id, project_board_id, label, url, link_type, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (link.id, link.project_board_id, link.label, link.url, link.link_type, link.created_at))
+            INSERT INTO project_board_links (id, project_board_id, label, url, link_type, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (link.id, link.project_board_id, link.label, link.url, link.link_type, link.status, link.created_at))
         self.db.conn.commit()
 
-    def get_project_board_links(self, board_id: str) -> List[ProjectBoardLink]:
-        """Get all links for a project board."""
-        rows = self.db.conn.execute(
-            "SELECT * FROM project_board_links WHERE project_board_id = ? ORDER BY created_at",
-            (board_id,),
-        ).fetchall()
+    def get_project_board_links(
+        self,
+        board_id: str,
+        include_completed: bool = True,
+    ) -> List[ProjectBoardLink]:
+        """Get links for a project board, newest first.
+
+        Purpose: Fetch Project Notes for display. include_completed defaults to
+                 True so existing callers (Open Notes dialog, count display)
+                 don't change behavior; the new UI passes False when the shared
+                 Show Completed toggle is off.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M2.A.3
+        Tests:   tests/test_project_notes.py::test_get_links_filters_by_status
+                 tests/test_project_notes.py::test_link_status_roundtrip
+        """
+        if include_completed:
+            rows = self.db.conn.execute(
+                "SELECT * FROM project_board_links WHERE project_board_id = ? ORDER BY created_at DESC",
+                (board_id,),
+            ).fetchall()
+        else:
+            rows = self.db.conn.execute(
+                "SELECT * FROM project_board_links "
+                "WHERE project_board_id = ? AND status = 'open' "
+                "ORDER BY created_at DESC",
+                (board_id,),
+            ).fetchall()
         return [self._row_to_project_board_link(row) for row in rows]
+
+    def complete_project_note(self, link_id: str) -> bool:
+        """Mark a project-board link (Project Note) as completed.
+
+        Purpose: Status change handler for the Project Notes list.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M2.A.1
+        Tests:   tests/test_project_notes.py::test_complete_project_note
+        Returns: True if a row was updated, False if link_id was unknown.
+        """
+        cursor = self.db.conn.execute(
+            "UPDATE project_board_links SET status = 'completed' WHERE id = ?",
+            (link_id,),
+        )
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
+    def reopen_project_note(self, link_id: str) -> bool:
+        """Mark a project-board link (Project Note) as open.
+
+        Purpose: Inverse of complete_project_note — used by the Reopen button.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M2.A.2
+        Tests:   tests/test_project_notes.py::test_reopen_project_note
+        Returns: True if a row was updated, False if link_id was unknown.
+        """
+        cursor = self.db.conn.execute(
+            "UPDATE project_board_links SET status = 'open' WHERE id = ?",
+            (link_id,),
+        )
+        self.db.conn.commit()
+        return cursor.rowcount > 0
 
     def delete_project_board_link(self, link_id: str):
         """Delete a project board link."""
@@ -410,11 +467,23 @@ class DBManagerProjectBoardsMixin:
         )
 
     def _row_to_project_board_link(self, row: sqlite3.Row) -> ProjectBoardLink:
-        """Convert database row to ProjectBoardLink."""
+        """Convert database row to ProjectBoardLink.
+
+        Purpose: Row hydration. Guards link_type and status with try/except for
+                 robustness against in-memory rows missing the column (e.g.,
+                 mid-migration partial caches).
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M1.A.4
+        Tests:   tests/test_project_notes.py::test_link_status_roundtrip
+        """
         try:
             link_type = row["link_type"]
         except (KeyError, IndexError):
             link_type = "url"
+
+        try:
+            status = row["status"] or "open"
+        except (KeyError, IndexError):
+            status = "open"
 
         return ProjectBoardLink(
             id=row["id"],
@@ -422,6 +491,7 @@ class DBManagerProjectBoardsMixin:
             label=row["label"],
             url=row["url"],
             link_type=link_type,
+            status=status,
             created_at=row["created_at"],
         )
 

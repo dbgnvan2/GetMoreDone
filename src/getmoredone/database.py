@@ -277,6 +277,10 @@ class Database:
             )
         """)
 
+        # M1.A.2 — project_board_links includes a `status` column (open/completed)
+        # so a linked Obsidian note carries a per-project status.
+        # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M1.A.2
+        # Tests: tests/test_project_notes.py::test_project_board_links_table_has_status_column
         conn.execute("""
             CREATE TABLE IF NOT EXISTS project_board_links (
                 id                     TEXT PRIMARY KEY,
@@ -284,6 +288,7 @@ class Database:
                 label                  TEXT,
                 url                    TEXT NOT NULL,
                 link_type              TEXT DEFAULT 'url',
+                status                 TEXT NOT NULL DEFAULT 'open',
                 created_at             TEXT NOT NULL
             )
         """)
@@ -496,6 +501,8 @@ class Database:
 
         cursor = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_board_links'")
         if not cursor.fetchone():
+            # First-time create on an upgrading DB — include `status` from day one.
+            # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M1.A.3
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS project_board_links (
                     id                     TEXT PRIMARY KEY,
@@ -503,9 +510,23 @@ class Database:
                     label                  TEXT,
                     url                    TEXT NOT NULL,
                     link_type              TEXT DEFAULT 'url',
+                    status                 TEXT NOT NULL DEFAULT 'open',
                     created_at             TEXT NOT NULL
                 )
             """)
+        else:
+            # M1.A.3 — Existing project_board_links from an older DB might not
+            # have the `status` column yet. Add it idempotently with default 'open'
+            # so existing rows are non-null.
+            # Spec: docs/implementation_plan_2026-06-06_project_notes.md#M1.A.3
+            # Tests: tests/test_project_notes.py::test_migration_adds_status_to_existing_db
+            cursor = conn.execute("PRAGMA table_info(project_board_links)")
+            link_columns = [row[1] for row in cursor.fetchall()]
+            if 'status' not in link_columns:
+                conn.execute("""
+                    ALTER TABLE project_board_links
+                    ADD COLUMN status TEXT NOT NULL DEFAULT 'open'
+                """)
 
     def __enter__(self):
         """Context manager entry."""

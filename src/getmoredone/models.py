@@ -147,12 +147,20 @@ class ProjectBoard:
 
 @dataclass
 class ProjectBoardLink:
-    """Represents a link/attachment on a project board."""
+    """Represents a link/attachment on a project board (a "Project Note").
+
+    Purpose: Models an Obsidian note linked to a project board, with a
+             per-link Status so the same Obsidian doc linked to two projects
+             can have independent statuses.
+    Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M1.A.1
+    Tests:   tests/test_project_notes.py::test_project_board_link_has_status_field
+    """
 
     project_board_id: str
     url: str
     label: Optional[str] = None
     link_type: str = "url"
+    status: str = "open"  # M1.A.1 — Open/Completed lifecycle (mirrors action items)
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 

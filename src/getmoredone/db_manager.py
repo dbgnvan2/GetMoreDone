@@ -1489,11 +1489,25 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         )
 
     def _row_to_project_board_link(self, row: sqlite3.Row) -> ProjectBoardLink:
-        """Convert database row to ProjectBoardLink."""
+        """Convert database row to ProjectBoardLink.
+
+        Purpose: Row hydration including the per-link `status` introduced in M1.
+        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M1.A.4
+        Tests:   tests/test_project_notes.py::test_link_status_roundtrip
+        NOTE:    This method shadows DBManagerProjectBoardsMixin's version of
+                 the same name via Python MRO. Both must be kept in sync.
+                 (Adjacent issue, flagged in plan §Risks #5 — should be
+                 consolidated in a follow-up.)
+        """
         try:
             link_type = row["link_type"]
         except (KeyError, IndexError):
             link_type = "url"
+
+        try:
+            status = row["status"] or "open"
+        except (KeyError, IndexError):
+            status = "open"
 
         return ProjectBoardLink(
             id=row["id"],
@@ -1501,6 +1515,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             label=row["label"],
             url=row["url"],
             link_type=link_type,
+            status=status,
             created_at=row["created_at"],
         )
 
