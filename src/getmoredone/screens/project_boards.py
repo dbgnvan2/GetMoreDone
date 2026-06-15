@@ -57,17 +57,33 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
         self.title_var = ctk.StringVar(value=self.board.title if self.board else "")
         ctk.CTkEntry(root, textvariable=self.title_var).grid(row=0, column=1, sticky="ew", padx=8, pady=8)
 
-        ctk.CTkLabel(root, text="Annual Plan Element").grid(row=1, column=0, sticky="w", padx=8, pady=8)
-        ape_labels: list[str] = ["(Optional: No linked APE)"]
-        selected_label = ape_labels[0]
+        ctk.CTkLabel(root, text="Annual Plan Element (Required)").grid(row=1, column=0, sticky="w", padx=8, pady=8)
+        ape_labels: list[str] = []
+        selected_label = None
+        default_projects_label = None
+
         for row in self.ape_rows:
             label = self._format_ape_label(row)
             self.ape_label_to_id[label] = row["id"]
             ape_labels.append(label)
+
+            # Check if this is "Contribution - Projects - Projects" (default)
+            if (row.get("segment_name") == "Contribution" and
+                row.get("subsegment_name") == "Projects" and
+                row.get("category_name") == "Projects"):
+                default_projects_label = label
+
+            # Use current board's APE if set
             if self.board and row["id"] == self.board.annual_plan_element_id:
                 selected_label = label
-        
-        self.ape_var = ctk.StringVar(value=selected_label)
+
+        # Default to Contribution - Projects - Projects if new board or no APE set
+        if not selected_label and default_projects_label:
+            selected_label = default_projects_label
+        elif not selected_label and ape_labels:
+            selected_label = ape_labels[0]
+
+        self.ape_var = ctk.StringVar(value=selected_label or "")
         self.ape_combo = ctk.CTkComboBox(
             root,
             values=ape_labels,
@@ -153,7 +169,17 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
         if not self.title_var.get().strip():
             messagebox.showerror("Missing Title", "Project title is required.", parent=self)
             return
-        ape_id = self.ape_label_to_id.get(self.ape_var.get())
+
+        selected_label = self.ape_var.get().strip()
+        ape_id = self.ape_label_to_id.get(selected_label)
+
+        if not ape_id:
+            messagebox.showerror(
+                "Annual Plan Element Required",
+                "Please select a valid Annual Plan Element before saving.",
+                parent=self,
+            )
+            return
 
         board = self.board or ProjectBoard(
             title="",
@@ -189,8 +215,15 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         self.search_var = ctk.StringVar()
         self.search_var.trace_add("write", lambda *_args: self.refresh_results())
 
+        # Filter state (AND logic)
+        self.filter_completed = False
+        self.filter_not_completed = False
+        self.filter_linked = False
+        self.filter_not_linked = False
+        self.checked_items: set[str] = set()
+
         self.title("Link Action Items")
-        self.geometry("760x520")
+        self.geometry("900x620")
         self.transient(parent)
         self.grab_set()
 
@@ -201,7 +234,7 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         root = ctk.CTkFrame(self)
         root.pack(fill="both", expand=True, padx=12, pady=12)
         root.grid_columnconfigure(0, weight=1)
-        root.grid_rowconfigure(1, weight=1)
+        root.grid_rowconfigure(2, weight=1)
 
         search = ctk.CTkFrame(root)
         search.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 8))
@@ -210,12 +243,45 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         ctk.CTkEntry(search, textvariable=self.search_var, placeholder_text="Search title, description, next step, who").grid(
             row=0, column=1, sticky="ew", padx=8, pady=8
         )
+        self.btn_link_selected = ctk.CTkButton(
+            search, text="Link Selected", width=120, command=self._link_selected_items, **button_style("primary")
+        )
+        self.btn_link_selected.grid(row=0, column=2, padx=(4, 4), pady=8)
         ctk.CTkButton(search, text="Close", width=90, command=self.destroy, **button_style("secondary")).grid(
-            row=0, column=2, padx=8, pady=8
+            row=0, column=3, padx=8, pady=8
         )
 
+        # Filter buttons (AND logic)
+        filters = ctk.CTkFrame(root)
+        filters.grid(row=1, column=0, sticky="ew", padx=0, pady=(0, 8))
+        filters.grid_columnconfigure(5, weight=1)
+
+        ctk.CTkLabel(filters, text="Filter (AND):", text_color=semantic_colors()["muted_text"]).grid(
+            row=0, column=0, padx=(8, 12), pady=8
+        )
+
+        self.btn_completed = ctk.CTkButton(
+            filters, text="✓ Completed", width=110, command=self._toggle_filter_completed, **button_style("secondary")
+        )
+        self.btn_completed.grid(row=0, column=1, padx=4, pady=8)
+
+        self.btn_not_completed = ctk.CTkButton(
+            filters, text="○ Not Completed", width=110, command=self._toggle_filter_not_completed, **button_style("secondary")
+        )
+        self.btn_not_completed.grid(row=0, column=2, padx=4, pady=8)
+
+        self.btn_linked = ctk.CTkButton(
+            filters, text="🔗 Linked", width=110, command=self._toggle_filter_linked, **button_style("secondary")
+        )
+        self.btn_linked.grid(row=0, column=3, padx=4, pady=8)
+
+        self.btn_not_linked = ctk.CTkButton(
+            filters, text="⊘ Not Linked", width=110, command=self._toggle_filter_not_linked, **button_style("secondary")
+        )
+        self.btn_not_linked.grid(row=0, column=4, padx=4, pady=8)
+
         self.results = ctk.CTkScrollableFrame(root)
-        self.results.grid(row=1, column=0, sticky="nsew")
+        self.results.grid(row=2, column=0, sticky="nsew")
         self.results.grid_columnconfigure(0, weight=1)
 
     def refresh_results(self):
@@ -224,26 +290,53 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
 
         linked_ids = {item.id for item in self.db_manager.get_project_board_items(self.board_id)}
         query = self.search_var.get().strip()
-        items = self.db_manager.search_items(query) if query else self.db_manager.get_all_items(status_filter="open", sort_by="updated_at", sort_desc=True)
+        items = self.db_manager.search_items(query) if query else self.db_manager.get_all_items(sort_by="updated_at", sort_desc=True)
 
-        filtered = [item for item in items if item.id not in linked_ids]
+        # Apply filters with AND logic
+        filtered = []
+        for item in items:
+            is_linked = item.id in linked_ids
+            is_completed = item.status == "completed"
+
+            # Apply each active filter
+            if self.filter_completed and not is_completed:
+                continue
+            if self.filter_not_completed and is_completed:
+                continue
+            if self.filter_linked and not is_linked:
+                continue
+            if self.filter_not_linked and is_linked:
+                continue
+
+            filtered.append(item)
+
         if not filtered:
-            ctk.CTkLabel(self.results, text="No action items available to link.", text_color=semantic_colors()["muted_text"]).grid(
+            ctk.CTkLabel(self.results, text="No action items match the selected filters.", text_color=semantic_colors()["muted_text"]).grid(
                 row=0, column=0, padx=10, pady=12, sticky="w"
             )
             return
 
-        for idx, item in enumerate(filtered[:100]):
+        for idx, item in enumerate(filtered[:200]):
             row = ctk.CTkFrame(self.results)
             row.grid(row=idx, column=0, sticky="ew", padx=4, pady=3)
-            row.grid_columnconfigure(0, weight=1)
+            row.grid_columnconfigure(1, weight=1)
+
+            # Checkbox
+            checkbox = ctk.CTkCheckBox(
+                row,
+                text="",
+                width=30,
+                command=lambda item_id=item.id: self._on_item_checkbox_toggled(item_id)
+            )
+            checkbox.grid(row=0, column=0, rowspan=2, sticky="w", padx=(8, 4), pady=8)
+
             title = item.title
-            meta = f"{item.who or '-'} | Start: {item.start_date or '-'} | Due: {item.due_date or '-'}"
+            meta = f"{item.who or '-'} | Start: {item.start_date or '-'} | Due: {item.due_date or '-'} | Status: {item.status}"
             ctk.CTkLabel(row, text=title, anchor="w", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=0, sticky="w", padx=8, pady=(6, 2)
+                row=0, column=1, sticky="w", padx=8, pady=(6, 2)
             )
             ctk.CTkLabel(row, text=meta, anchor="w").grid(
-                row=1, column=0, sticky="w", padx=8, pady=(0, 6)
+                row=1, column=1, sticky="w", padx=8, pady=(0, 6)
             )
             ctk.CTkButton(
                 row,
@@ -251,10 +344,63 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
                 width=72,
                 command=lambda item_id=item.id: self._link(item_id),
                 **button_style("primary"),
-            ).grid(row=0, column=1, rowspan=2, padx=8, pady=8)
+            ).grid(row=0, column=2, rowspan=2, padx=8, pady=8)
 
     def _link(self, item_id: str):
         self.db_manager.link_action_item_to_project_board(self.board_id, item_id)
+        if item_id in self.checked_items:
+            self.checked_items.remove(item_id)
+        if self.on_linked and callable(self.on_linked):
+            self.on_linked()
+        self.refresh_results()
+
+    def _on_item_checkbox_toggled(self, item_id: str):
+        if item_id in self.checked_items:
+            self.checked_items.remove(item_id)
+        else:
+            self.checked_items.add(item_id)
+
+    def _toggle_filter_completed(self):
+        self.filter_completed = not self.filter_completed
+        self._update_filter_button_appearance()
+        self.refresh_results()
+
+    def _toggle_filter_not_completed(self):
+        self.filter_not_completed = not self.filter_not_completed
+        self._update_filter_button_appearance()
+        self.refresh_results()
+
+    def _toggle_filter_linked(self):
+        self.filter_linked = not self.filter_linked
+        self._update_filter_button_appearance()
+        self.refresh_results()
+
+    def _toggle_filter_not_linked(self):
+        self.filter_not_linked = not self.filter_not_linked
+        self._update_filter_button_appearance()
+        self.refresh_results()
+
+    def _update_filter_button_appearance(self):
+        palette = semantic_colors()
+        for btn, is_active in [
+            (self.btn_completed, self.filter_completed),
+            (self.btn_not_completed, self.filter_not_completed),
+            (self.btn_linked, self.filter_linked),
+            (self.btn_not_linked, self.filter_not_linked),
+        ]:
+            if is_active:
+                btn.configure(fg_color=palette["primary"], hover_color=palette["primary_hover"])
+            else:
+                btn.configure(fg_color=palette["surface"], hover_color=palette["surface_hover"])
+
+    def _link_selected_items(self):
+        if not self.checked_items:
+            return
+
+        for item_id in list(self.checked_items):
+            self.db_manager.link_action_item_to_project_board(self.board_id, item_id)
+            self.checked_items.discard(item_id)
+
         if self.on_linked and callable(self.on_linked):
             self.on_linked()
         self.refresh_results()

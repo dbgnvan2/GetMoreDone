@@ -8,6 +8,22 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 
+class VisionElementHasDependentsError(Exception):
+    """Raised when a Vision Element cannot be deleted because child records
+    (annual plan records, projects, or linked action items) still exist.
+
+    Purpose: Force the user to delete or reassign child items before deleting a
+             Vision Element, instead of cascading away annual records / failing
+             with a raw RESTRICT foreign-key error on attached project boards.
+    Spec:    docs/changes/2026-06-15-project-ape-linking.md
+    Tests:   tests/test_vps_hub_crud.py::test_delete_vision_element_blocked_when_children_exist
+    """
+
+    def __init__(self, summary_lines: List[str]):
+        self.summary_lines = summary_lines
+        super().__init__("Cannot delete Vision Element: " + "; ".join(summary_lines))
+
+
 class VPSTaxonomyMixin:
     def sync_vision_elements_with_taxonomy(self):
         """Ensure every Segment/SubSegment/Category row has a Vision Element key row."""
@@ -577,8 +593,71 @@ class VPSTaxonomyMixin:
             self.db.conn.rollback()
             raise
 
+    def get_vision_element_dependents(self, vision_element_id: str) -> Dict[str, Any]:
+        """Summarize child records that block deleting a Vision Element.
+
+        Purpose: List the annual records, projects, and linked action items that
+                 must be removed/reassigned before a Vision Element can be deleted.
+        Spec:    docs/changes/2026-06-15-project-ape-linking.md
+        Tests:   tests/test_vps_hub_crud.py::test_delete_vision_element_blocked_when_children_exist
+        """
+        years = [
+            row["year"]
+            for row in self.db.conn.execute(
+                "SELECT DISTINCT year FROM annual_plan_elements WHERE vision_element_id = ? ORDER BY year",
+                (vision_element_id,),
+            ).fetchall()
+        ]
+        project_titles = [
+            row["title"]
+            for row in self.db.conn.execute(
+                """
+                SELECT pb.title
+                FROM project_boards pb
+                JOIN annual_plan_elements ape ON ape.id = pb.annual_plan_element_id
+                WHERE ape.vision_element_id = ?
+                ORDER BY pb.title COLLATE NOCASE
+                """,
+                (vision_element_id,),
+            ).fetchall()
+        ]
+        action_item_count = self.db.conn.execute(
+            """
+            SELECT COUNT(*) AS c
+            FROM action_items ai
+            JOIN annual_plan_elements ape ON ape.id = ai.annual_plan_element_id
+            WHERE ape.vision_element_id = ?
+            """,
+            (vision_element_id,),
+        ).fetchone()["c"]
+        return {
+            "years": years,
+            "project_titles": project_titles,
+            "action_item_count": action_item_count,
+        }
+
     def delete_vision_element(self, vision_element_id: str) -> bool:
-        """Delete one Vision Element and derived annual rows via FK cascade."""
+        """Delete one Vision Element and derived annual rows via FK cascade.
+
+        Refuses to delete (raising VisionElementHasDependentsError) when child
+        records still exist — annual plan records, attached projects, or linked
+        action items — so the user must delete or reassign them manually first.
+        """
+        deps = self.get_vision_element_dependents(vision_element_id)
+        if deps["years"] or deps["project_titles"] or deps["action_item_count"]:
+            summary_lines: List[str] = []
+            if deps["years"]:
+                summary_lines.append(
+                    f"{len(deps['years'])} annual record(s): {', '.join(str(y) for y in deps['years'])}"
+                )
+            if deps["project_titles"]:
+                summary_lines.append(
+                    f"{len(deps['project_titles'])} project(s): {', '.join(deps['project_titles'])}"
+                )
+            if deps["action_item_count"]:
+                summary_lines.append(f"{deps['action_item_count']} linked action item(s)")
+            raise VisionElementHasDependentsError(summary_lines)
+
         cur = self.db.conn.execute(
             "DELETE FROM vision_elements WHERE id = ?",
             (vision_element_id,),

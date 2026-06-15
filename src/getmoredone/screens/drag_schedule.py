@@ -51,6 +51,7 @@ class DragScheduleScreen(ctk.CTkFrame):
 
         self.drag_label = None
         self.drag_item: Optional[ActionItem] = None
+        self.drag_items: list[ActionItem] = []  # Items to drag (single or multiple)
         self.drag_hover_frame = None
         self.drag_hover_base_color = None
         self.date_box_colors = {}
@@ -59,6 +60,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.item_row_height = 86
         self._sync_ui_sizing_from_settings()
         self.palette = semantic_colors()
+        self.checked_items: set[str] = set()  # Set of checked item IDs
 
         self.segment_colors = {}
         self.subsegment_colors = {}
@@ -285,6 +287,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         for widget in self.projects_frame.winfo_children():
             widget.destroy()
 
+        self.checked_items.clear()
         self.date_boxes = []
         self.date_box_colors = {}
         self.selected_date_frames = {}
@@ -302,21 +305,25 @@ class DragScheduleScreen(ctk.CTkFrame):
         else:
             header = ctk.CTkFrame(self.items_frame, fg_color=self.palette["surface_subtle"])
             header.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 4))
-            header.grid_columnconfigure(0, minsize=self.TITLE_COL_MIN_WIDTH)
-            header.grid_columnconfigure(1, minsize=self.LINEAGE_COL_MIN_WIDTH)
+            header.grid_columnconfigure(0, minsize=40)
+            header.grid_columnconfigure(1, minsize=self.TITLE_COL_MIN_WIDTH)
             header.grid_columnconfigure(2, minsize=self.LINEAGE_COL_MIN_WIDTH)
-            header.grid_columnconfigure(3, minsize=self.LINEAGE_COL_MIN_WIDTH, weight=1)
-            ctk.CTkLabel(header, text="Title", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            header.grid_columnconfigure(3, minsize=self.LINEAGE_COL_MIN_WIDTH)
+            header.grid_columnconfigure(4, minsize=self.LINEAGE_COL_MIN_WIDTH, weight=1)
+            ctk.CTkLabel(header, text="", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=0, sticky="w", padx=(10, 4), pady=5
             )
-            ctk.CTkLabel(header, text="Segment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=1, sticky="w", padx=4, pady=5
+            ctk.CTkLabel(header, text="Title", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=1, sticky="w", padx=(10, 4), pady=5
             )
-            ctk.CTkLabel(header, text="SubSegment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            ctk.CTkLabel(header, text="Segment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=2, sticky="w", padx=4, pady=5
             )
-            ctk.CTkLabel(header, text="Category", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            ctk.CTkLabel(header, text="SubSegment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=3, sticky="w", padx=4, pady=5
+            )
+            ctk.CTkLabel(header, text="Category", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=4, sticky="w", padx=4, pady=5
             )
 
             row = 1
@@ -651,11 +658,12 @@ class DragScheduleScreen(ctk.CTkFrame):
     def create_item_row(self, item: ActionItem):
         frame = ctk.CTkFrame(self.items_frame, height=self.item_row_height)
         frame.grid_propagate(False)
-        frame.grid_columnconfigure(0, minsize=self.ITEM_TITLE_COL_WIDTH)
-        frame.grid_columnconfigure(1, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(0, minsize=40)
+        frame.grid_columnconfigure(1, minsize=self.ITEM_TITLE_COL_WIDTH)
         frame.grid_columnconfigure(2, minsize=self.ITEM_META_COL_WIDTH)
         frame.grid_columnconfigure(3, minsize=self.ITEM_META_COL_WIDTH)
-        frame.grid_columnconfigure(4, minsize=self.ITEM_META_COL_WIDTH, weight=1)
+        frame.grid_columnconfigure(4, minsize=self.ITEM_META_COL_WIDTH)
+        frame.grid_columnconfigure(5, minsize=self.ITEM_META_COL_WIDTH, weight=1)
 
         parsed = split_action_item_title(item.title)
         segment_name, subsegment_name, category_name = self._lineage_for_item(item)
@@ -683,6 +691,14 @@ class DragScheduleScreen(ctk.CTkFrame):
         title_bg = category_color
         start_date_text = item.start_date or "-"
 
+        checkbox = ctk.CTkCheckBox(
+            frame,
+            text="",
+            width=30,
+            command=lambda: self._on_item_checkbox_toggled(item.id)
+        )
+        checkbox.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=2)
+
         title_label = ctk.CTkLabel(
             frame,
             text=f" {format_column_text(title_text, self.ITEM_TITLE_CHARS)} ",
@@ -693,7 +709,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
             width=self.ITEM_TITLE_COL_WIDTH,
         )
-        title_label.grid(row=0, column=0, sticky="ew", padx=(8, 4), pady=2)
+        title_label.grid(row=0, column=1, sticky="ew", padx=(8, 4), pady=2)
 
         segment_label = ctk.CTkLabel(
             frame,
@@ -705,7 +721,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
             width=self.ITEM_META_COL_WIDTH,
         )
-        segment_label.grid(row=0, column=1, sticky="ew", padx=4, pady=2)
+        segment_label.grid(row=0, column=2, sticky="ew", padx=4, pady=2)
 
         subsegment_label = ctk.CTkLabel(
             frame,
@@ -717,7 +733,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
             width=self.ITEM_META_COL_WIDTH,
         )
-        subsegment_label.grid(row=0, column=2, sticky="ew", padx=4, pady=2)
+        subsegment_label.grid(row=0, column=3, sticky="ew", padx=4, pady=2)
 
         category_label = ctk.CTkLabel(
             frame,
@@ -729,7 +745,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
             width=self.ITEM_META_COL_WIDTH,
         )
-        category_label.grid(row=0, column=3, sticky="ew", padx=4, pady=2)
+        category_label.grid(row=0, column=4, sticky="ew", padx=4, pady=2)
 
         start_label = ctk.CTkLabel(
             frame,
@@ -741,9 +757,8 @@ class DragScheduleScreen(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
             width=self.ITEM_META_COL_WIDTH,
         )
-        start_label.grid(row=0, column=4, sticky="ew", padx=4, pady=2)
+        start_label.grid(row=0, column=5, sticky="ew", padx=4, pady=2)
 
-        self.bind_drag_handlers(frame, item)
         self.bind_drag_handlers(title_label, item)
         self.bind_drag_handlers(segment_label, item)
         self.bind_drag_handlers(subsegment_label, item)
@@ -1044,6 +1059,12 @@ class DragScheduleScreen(ctk.CTkFrame):
     def _date_background_for(self, date_text: str) -> str:
         return date_background_for(date_text)
 
+    def _on_item_checkbox_toggled(self, item_id: str):
+        if item_id in self.checked_items:
+            self.checked_items.remove(item_id)
+        else:
+            self.checked_items.add(item_id)
+
     def bind_drag_handlers(self, widget, item: ActionItem):
         widget.bind("<ButtonPress-1>", lambda e: self.start_drag(e, item))
         widget.bind("<B1-Motion>", self.on_drag_motion)
@@ -1052,10 +1073,20 @@ class DragScheduleScreen(ctk.CTkFrame):
     def start_drag(self, event, item: ActionItem):
         self.drag_item = item
         palette = self.palette
+
+        # Collect items to drag: if item is checked, drag all checked items; else drag just this one
+        if item.id in self.checked_items:
+            items = self.load_items()
+            self.drag_items = [i for i in items if i.id in self.checked_items]
+            drag_text = f"{len(self.drag_items)} item{'s' if len(self.drag_items) != 1 else ''}"
+        else:
+            self.drag_items = [item]
+            drag_text = item.title
+
         if self.drag_label is None:
             self.drag_label = ctk.CTkLabel(
                 self,
-                text=item.title,
+                text=drag_text,
                 fg_color=palette["chip_bg"],
                 text_color=palette["chip_text"],
                 corner_radius=6,
@@ -1063,7 +1094,7 @@ class DragScheduleScreen(ctk.CTkFrame):
                 pady=4
             )
         else:
-            self.drag_label.configure(text=item.title)
+            self.drag_label.configure(text=drag_text)
 
         self.drag_label.lift()
         self.update_drag_position()
@@ -1075,30 +1106,33 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.update_hover_target()
 
     def on_drag_release(self, _event):
-        if not self.drag_item:
+        if not self.drag_item or not self.drag_items:
             return
 
         target_date, target_project_id = self.get_drop_target()
         self.clear_hover_target()
 
         if target_date:
-            self.db_manager.reschedule_item(
-                self.drag_item.id,
-                target_date,
-                target_date,
-                "Drag-and-drop schedule"
-            )
+            for item in self.drag_items:
+                self.db_manager.reschedule_item(
+                    item.id,
+                    target_date,
+                    target_date,
+                    "Drag-and-drop schedule"
+                )
             self.refresh()
         elif target_project_id:
-            if target_project_id == "__none__":
-                self.db_manager.clear_item_project_links(self.drag_item.id)
-            else:
-                self.db_manager.link_item_to_project_exclusive(target_project_id, self.drag_item.id)
+            for item in self.drag_items:
+                if target_project_id == "__none__":
+                    self.db_manager.clear_item_project_links(item.id)
+                else:
+                    self.db_manager.link_item_to_project_exclusive(target_project_id, item.id)
             self.refresh()
 
         if self.drag_label:
             self.drag_label.place_forget()
         self.drag_item = None
+        self.drag_items = []
 
     def update_drag_position(self):
         if not self.drag_label:

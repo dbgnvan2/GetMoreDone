@@ -141,7 +141,8 @@ Header controls:
 
 Main area:
 - **Action Items list (left)** — What: Open items with no dates plus upcoming items in the selected window. Why: A short list of items worth scheduling.
-  - Columns: `Title`, `Segment`, `SubSegment`, `Category`
+  - Columns: `(checkbox)`, `Title`, `Segment`, `SubSegment`, `Category`, `Start`
+  - **Row checkbox** — What: A checkbox in the first column of each item row. Why: Select several items to move them together (see "Drag a group" below). Optional — leave them all unchecked to drag items one at a time.
 - **Date Boxes (right)** — What: Drop targets for dates. Why: Reschedule by drag-and-drop.
   - Date box columns: `Day`, `Date`, `Items`, `Time`
   - Weekday names use the full day name.
@@ -160,6 +161,7 @@ Drag behavior:
 - **Drag onto Date** — What: Drag an item title onto a date box or calendar day. Why: Sets both Start Date and Due Date to the drop date.
 - **Drag onto Project** — What: Drag an item title onto a project box. Why: Links the item to that project and synchronizes its planning lineage (APE).
 - **Drag onto No Project** — What: Drag a linked item onto the "Unlinked" box. Why: Removes existing project links and clears planning lineage.
+- **Drag a group (checkboxes)** — What: Check one or more item rows, then drag any *checked* row. Why: Every checked item moves together to the dropped date or project in one action. Dragging an *unchecked* row still moves just that one item, so single-item drag is unchanged. While dragging a group the drag label shows the count (e.g. "3 items").
 
 Filtering behavior:
 - **Click a date box or calendar day** — What: Filters the left list to that specific date. Why: Inspect what is already scheduled there.
@@ -170,12 +172,13 @@ Filtering behavior:
 - **Resize divider** — What: Drag the center divider between left and right panels. Why: Give more space to either the item list or the date/calendar/project panel.
 
 ### Projects
-- What: A board of project notes, with one note per Annual Plan Element (APE).
+- What: A board of project notes, each linked to an Annual Plan Element (APE).
 - Why: Gives you a visual project layer between planning and individual action items.
 
 Board behavior:
-- **One note per APE** — What: Each APE automatically creates one project note. Why: Keep strategic work visible on the board without manual setup.
-- **Color** — What: Note color comes from the APE category color. Why: Preserve planning lineage visually.
+- **Every project has an APE (required)** — What: A project must be linked to an Annual Plan Element; the editor defaults new projects to `Contribution - Projects - Projects` as a catch-all and refuses to save without an APE. Why: The APE supplies each project's Segment/SubSegment/Category lineage, which drives card color and the Scheduler's Segment/SubSegment filters.
+- **Multiple projects may share one APE** — What: Several projects can point at the same APE (for example, many under the catch-all `Contribution - Projects - Projects`). Why: You are not limited to one project per planning element. APEs still auto-create a starter project note, but you can add more.
+- **Color** — What: Note color comes from the APE category color. Why: Preserve planning lineage visually. If a card looks uncolored, its APE's category has no color set, or (on older data) the project had no APE — re-open the project, confirm the APE, and Save.
 - **Top title** — What: Each note shows `SubSegment - Category`. Why: Keep the planning context visible at a glance.
 - **Rank box** — What: A prominent number in the upper-left shows the board order position. Why: Make manual ordering obvious after dragging cards.
 - **Body** — What: Shows the project title, full next step (bolded), and as many notes as will fit. Why: Keep strategic work visible on the board without manual setup.
@@ -222,7 +225,12 @@ Action Items section:
 - **Edit / Complete / Unlink** — Per-row controls work as before.
 
 #### Toolbar buttons (right panel)
-- **Create Action Item** / **Link Action Item** — Add a task to this project.
+- **Create Action Item** — Add a new task to this project.
+- **Link Action Item** — What: Opens the Link Action Items dialog to attach existing tasks to this project. Why: Pull already-created items onto a project so they pick up its planning lineage.
+  - **Search** — Filter by title, description, next step, or who.
+  - **Filter buttons (AND logic)** — `Completed`, `Not Completed`, `Linked`, `Not Linked`. What: Toggle any combination; active filters highlight and all selected filters must match (e.g. `Not Completed` + `Not Linked` shows only open tasks not yet on any project). Why: Narrow a long task list to exactly the items you want to link.
+  - **Per-row checkbox + Link Selected** — What: Check several rows and click **Link Selected** to attach them all at once; the per-row **Link** button still links one item. Why: Bulk-link a batch without clicking each row.
+  - Linking an item also stamps the project's APE onto it, so it becomes filterable by Segment/SubSegment in the Scheduler.
 - **Bulk Edit** — See above; enabled when items are selected.
 - **Edit Project** — Open the project editor dialog.
 - **Create Note** / **Link Note** — Create a new Obsidian note (lands in your Project Notes Folder) or link an existing one.
@@ -330,6 +338,10 @@ Top buttons:
 - **APE Assignment** — Assign Annual Plan Elements into a selected quarter.
 - **APE Period View** — Assign quarter-selected APEs into a selected month.
 - **APE Weekly** — Work weekly parent records and their daily child Action Items.
+
+Deletion protection (child records):
+- **Delete a Vision Element** — What: Blocked when child records still exist (annual plan records, attached projects, or linked action items). A dialog lists what is attached and tells you to delete or reassign those child items first. Why: Prevent a single delete from silently cascading away annual records and projects.
+- **Delete an Annual Plan record (APE)** — What: Blocked when projects are attached to that APE — either more than its starter project note, or any project that has linked action items. The dialog lists the attached projects. Why: Now that multiple projects can share one APE, deletion must not destroy projects you parked there; delete or reassign them first.
 
 APE assignment behavior:
 - **Checkbox + Save** — What: The assignment screens still support explicit checkbox selection and save. Why: Keep the existing bulk workflow available.

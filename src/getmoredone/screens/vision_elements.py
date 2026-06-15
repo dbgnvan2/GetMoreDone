@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from ..theme import apply_segment_accent, button_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
+from ..vps_manager import VisionElementHasDependentsError
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
 if TYPE_CHECKING:
@@ -370,7 +371,18 @@ class VisionElementsScreen(ctk.CTkFrame):
         ):
             return
 
-        if self.vps_manager.delete_vision_element(row["id"]):
+        try:
+            deleted = self.vps_manager.delete_vision_element(row["id"])
+        except VisionElementHasDependentsError as exc:
+            details = "\n".join(f"  • {line}" for line in exc.summary_lines)
+            messagebox.showerror(
+                "Child Items Attached",
+                "You must delete or reassign all child items from a Vision Element "
+                f"before you can delete a Vision Element.\n\nStill attached:\n{details}",
+            )
+            return
+
+        if deleted:
             self.refresh_all()
         else:
             messagebox.showerror("Delete Failed", "Vision element could not be deleted.")

@@ -17,7 +17,25 @@ from .db_manager import DatabaseManager
 from .models import ActionItem
 from .paths import app_data_dir_path
 from .vps_manager_planning import VPSPlanningMixin
-from .vps_manager_taxonomy import VPSTaxonomyMixin
+from .vps_manager_taxonomy import VPSTaxonomyMixin, VisionElementHasDependentsError
+
+
+class ProjectBoardsAttachedError(Exception):
+    """Raised when an annual plan element cannot be deleted because user projects
+    are still attached to it.
+
+    Purpose: Prevent the APE-delete cascade from silently destroying multiple
+             project boards now that several projects may share one APE.
+    Spec:    docs/changes/2026-06-15-project-ape-linking.md
+    Tests:   tests/test_vps_hub_crud.py::test_delete_annual_record_blocked_when_projects_attached
+    """
+
+    def __init__(self, board_titles: List[str]):
+        self.board_titles = board_titles
+        joined = ", ".join(board_titles)
+        super().__init__(
+            f"Cannot delete: {len(board_titles)} project(s) attached ({joined})."
+        )
 
 
 def _get_weekly_debug_logger() -> logging.Logger:
@@ -138,8 +156,35 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
     # VISION ELEMENTS (Segment > SubSegment > Category)
     # ========================================================================
 
+    def get_attached_project_boards_for_ape(self, ape_id: str) -> List[Dict[str, Any]]:
+        """Return project boards linked to an APE, with their linked-item counts.
+
+        Purpose: Surface which projects would be lost if the APE were deleted.
+        Spec:    docs/changes/2026-06-15-project-ape-linking.md
+        Tests:   tests/test_vps_hub_crud.py::test_delete_annual_record_blocked_when_projects_attached
+        """
+        rows = self.db.conn.execute(
+            """
+            SELECT pb.id, pb.title,
+                   COUNT(pbi.item_id) AS item_count
+            FROM project_boards pb
+            LEFT JOIN project_board_items pbi ON pbi.project_board_id = pb.id
+            WHERE pb.annual_plan_element_id = ?
+            GROUP BY pb.id, pb.title
+            ORDER BY pb.title COLLATE NOCASE
+            """,
+            (ape_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def delete_annual_records_for_vision_element(self, year: int, vision_element_id: str) -> bool:
-        """Delete annual rows for one Vision Element in a specific year."""
+        """Delete annual rows for one Vision Element in a specific year.
+
+        Refuses to delete (raising ProjectBoardsAttachedError) when the user has
+        parked real projects on the APE — more than the lone empty auto-created
+        default board, or any board with linked action items — so the cascade can
+        no longer silently destroy multiple shared-APE projects.
+        """
         ape = self.db.conn.execute(
             "SELECT id FROM annual_plan_elements WHERE year = ? AND vision_element_id = ?",
             (year, vision_element_id),
@@ -147,6 +192,12 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         ape_id = ape["id"] if ape else None
 
         if ape_id:
+            attached = self.get_attached_project_boards_for_ape(ape_id)
+            has_real_projects = len(attached) > 1 or any(b["item_count"] > 0 for b in attached)
+            if has_real_projects:
+                raise ProjectBoardsAttachedError([b["title"] for b in attached])
+
+            # Only a single empty auto-created default board remains: safe to remove.
             self.db.conn.execute(
                 "DELETE FROM project_boards WHERE annual_plan_element_id = ?",
                 (ape_id,),

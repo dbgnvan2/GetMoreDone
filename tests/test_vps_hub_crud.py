@@ -1,7 +1,13 @@
 from pathlib import Path
 
-from src.getmoredone.models import ActionItem
-from src.getmoredone.vps_manager import VPSManager
+import pytest
+
+from src.getmoredone.models import ActionItem, ProjectBoard
+from src.getmoredone.vps_manager import (
+    VPSManager,
+    ProjectBoardsAttachedError,
+    VisionElementHasDependentsError,
+)
 
 
 def _manager(tmp_path: Path) -> VPSManager:
@@ -102,6 +108,104 @@ def test_delete_annual_records_for_vision_element_clears_links(tmp_path):
             (ape_id,),
         ).fetchone()
         assert board_row is None
+    finally:
+        manager.close()
+
+
+def test_delete_annual_record_blocked_when_extra_projects_attached(tmp_path):
+    """Multiple project boards share one APE -> deletion is refused, none lost."""
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Projects")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Projects")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+        ape_id = ids["annual_plan_element_id"]
+
+        # A user-created project parked on the same (catch-all) APE.
+        manager.db_manager.create_project_board(
+            ProjectBoard(title="My Parked Project", annual_plan_element_id=ape_id)
+        )
+
+        with pytest.raises(ProjectBoardsAttachedError) as excinfo:
+            manager.delete_annual_records_for_vision_element(2026, ve_id)
+
+        assert "My Parked Project" in excinfo.value.board_titles
+
+        # Nothing was deleted.
+        ape_count = manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM annual_plan_elements WHERE id = ?",
+            (ape_id,),
+        ).fetchone()["c"]
+        board_count = manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM project_boards WHERE annual_plan_element_id = ?",
+            (ape_id,),
+        ).fetchone()["c"]
+        assert ape_count == 1
+        assert board_count == 2
+    finally:
+        manager.close()
+
+
+def test_delete_annual_record_blocked_when_board_has_items(tmp_path):
+    """A single board that has linked action items also blocks deletion."""
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Projects")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Projects")
+        ids = manager.create_annual_records_from_vision_element(2026, ve_id)
+        ape_id = ids["annual_plan_element_id"]
+
+        board_id = manager.db.conn.execute(
+            "SELECT id FROM project_boards WHERE annual_plan_element_id = ?",
+            (ape_id,),
+        ).fetchone()["id"]
+
+        item = ActionItem(who="Me", title="Real Work")
+        manager.db_manager.create_action_item(item, apply_defaults=False)
+        manager.db_manager.link_action_item_to_project_board(board_id, item.id)
+
+        with pytest.raises(ProjectBoardsAttachedError):
+            manager.delete_annual_records_for_vision_element(2026, ve_id)
+    finally:
+        manager.close()
+
+
+def test_delete_vision_element_blocked_when_children_exist(tmp_path):
+    """A Vision Element with annual records / projects cannot be deleted."""
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Projects")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Projects")
+        manager.create_annual_records_from_vision_element(2026, ve_id)  # auto-creates APE + board
+
+        with pytest.raises(VisionElementHasDependentsError) as excinfo:
+            manager.delete_vision_element(ve_id)
+
+        # Year shows up in the human-readable summary.
+        assert any("2026" in line for line in excinfo.value.summary_lines)
+
+        # Nothing deleted.
+        still_there = manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM vision_elements WHERE id = ?", (ve_id,)
+        ).fetchone()["c"]
+        assert still_there == 1
+    finally:
+        manager.close()
+
+
+def test_delete_vision_element_succeeds_when_no_children(tmp_path):
+    """A Vision Element with no annual records / projects deletes normally."""
+    manager = _manager(tmp_path)
+    try:
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Projects")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Projects")
+        # No annual records created -> no dependents.
+
+        assert manager.delete_vision_element(ve_id) is True
+        gone = manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM vision_elements WHERE id = ?", (ve_id,)
+        ).fetchone()["c"]
+        assert gone == 0
     finally:
         manager.close()
 

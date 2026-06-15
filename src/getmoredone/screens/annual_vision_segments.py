@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
+from ..vps_manager import ProjectBoardsAttachedError
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
 if TYPE_CHECKING:
@@ -505,7 +506,19 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         ):
             return
 
-        if self.vps_manager.delete_annual_records_for_vision_element(year, vision_element_id):
+        try:
+            deleted = self.vps_manager.delete_annual_records_for_vision_element(year, vision_element_id)
+        except ProjectBoardsAttachedError as exc:
+            project_list = "\n".join(f"  • {title}" for title in exc.board_titles)
+            messagebox.showerror(
+                "Projects Attached",
+                "You must delete or reassign all Projects from an APE before you "
+                f"can delete an APE.\n\n{len(exc.board_titles)} project(s) attached:\n"
+                f"{project_list}",
+            )
+            return
+
+        if deleted:
             self.refresh_lists()
         else:
             messagebox.showerror("Delete Failed", "Annual record could not be deleted.")

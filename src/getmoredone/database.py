@@ -318,10 +318,11 @@ class Database:
             ON project_board_links(project_board_id)
         """)
 
-        conn.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_project_boards_unique_ape
-            ON project_boards(annual_plan_element_id)
-        """)
+        # NOTE: project_boards.annual_plan_element_id is intentionally NOT unique.
+        # Multiple projects may share one APE (e.g. a catch-all "Contribution -
+        # Projects - Projects" default), so only the regular lookup index above
+        # (idx_project_boards_ape) is used. Older DBs that created a UNIQUE index
+        # are relaxed in _run_migrations (drop idx_project_boards_unique_ape).
 
         conn.commit()
 
@@ -527,6 +528,14 @@ class Database:
                     ALTER TABLE project_board_links
                     ADD COLUMN status TEXT NOT NULL DEFAULT 'open'
                 """)
+
+        # Relax the old 1:1 APE<->project constraint. Earlier schema versions
+        # created UNIQUE INDEX idx_project_boards_unique_ape, which blocked
+        # linking more than one project to the same Annual Plan Element (and made
+        # the project editor's Save silently fail with a UNIQUE constraint error).
+        # Multiple projects may now share one APE; drop the unique index if present.
+        # The regular idx_project_boards_ape lookup index is retained.
+        conn.execute("DROP INDEX IF EXISTS idx_project_boards_unique_ape")
 
     def __enter__(self):
         """Context manager entry."""
