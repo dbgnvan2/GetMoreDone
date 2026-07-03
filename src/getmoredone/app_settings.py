@@ -69,6 +69,7 @@ class AppSettings:
     drag_schedule_date_text_color: str = "#FFFFFF"
     # Drag Schedule date/future box height in pixels
     drag_schedule_box_height_px: int = 86
+    drag_schedule_title_col_width: int = 220
 
     # Future date options (Drag Schedule)
     mid_term_offset_days: int = 90

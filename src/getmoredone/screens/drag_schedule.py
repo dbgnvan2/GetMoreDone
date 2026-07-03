@@ -77,6 +77,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.segment_filter_var = ctk.StringVar(value="All")
         self.subsegment_filter_var = ctk.StringVar(value="All")
         self.project_sort_var = ctk.StringVar(value="Title")
+        self.title_col_width = getattr(self.settings, "drag_schedule_title_col_width", 220)
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
@@ -265,7 +266,7 @@ class DragScheduleScreen(ctk.CTkFrame):
         if not hasattr(self, "splitter"):
             return
         width = self.splitter.winfo_width()
-        if width <= 0:
+        if width < 10:
             self.after(100, self._init_splitter_position)
             return
         self.splitter.sash_place(0, int(width * 0.5), 0)
@@ -303,27 +304,46 @@ class DragScheduleScreen(ctk.CTkFrame):
                 font=ctk.CTkFont(size=14)
             ).grid(row=0, column=0, pady=20)
         else:
-            header = ctk.CTkFrame(self.items_frame, fg_color=self.palette["surface_subtle"])
-            header.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 4))
-            header.grid_columnconfigure(0, minsize=40)
-            header.grid_columnconfigure(1, minsize=self.TITLE_COL_MIN_WIDTH)
-            header.grid_columnconfigure(2, minsize=self.LINEAGE_COL_MIN_WIDTH)
-            header.grid_columnconfigure(3, minsize=self.LINEAGE_COL_MIN_WIDTH)
-            header.grid_columnconfigure(4, minsize=self.LINEAGE_COL_MIN_WIDTH, weight=1)
-            ctk.CTkLabel(header, text="", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            self.items_header = ctk.CTkFrame(self.items_frame, fg_color=self.palette["surface_subtle"])
+            self.items_header.grid(row=0, column=0, sticky="ew", padx=2, pady=(0, 4))
+            self.items_header.grid_columnconfigure(0, minsize=40)
+            self.items_header.grid_columnconfigure(1, minsize=self.title_col_width)
+            self.items_header.grid_columnconfigure(2, minsize=self.ITEM_META_COL_WIDTH)
+            self.items_header.grid_columnconfigure(3, minsize=self.ITEM_META_COL_WIDTH)
+            self.items_header.grid_columnconfigure(4, minsize=self.ITEM_META_COL_WIDTH)
+            self.items_header.grid_columnconfigure(5, minsize=self.ITEM_META_COL_WIDTH, weight=1)
+            
+            ctk.CTkLabel(self.items_header, text="", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=0, sticky="w", padx=(10, 4), pady=5
             )
-            ctk.CTkLabel(header, text="Title", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
-                row=0, column=1, sticky="w", padx=(10, 4), pady=5
+            title_lbl = ctk.CTkLabel(self.items_header, text="Title", anchor="w", font=ctk.CTkFont(weight="bold"))
+            title_lbl.grid(row=0, column=1, sticky="w", padx=(10, 4), pady=5)
+            self.header_title_label = title_lbl
+
+            # Resize Handle (overlapping the right edge of column 1)
+            self.title_resize_handle = ctk.CTkFrame(
+                self.items_header, 
+                width=4, 
+                height=24,
+                fg_color=self.palette["surface_subtle"], 
+                cursor="sb_h_double_arrow"
             )
-            ctk.CTkLabel(header, text="Segment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            self.title_resize_handle.grid(row=0, column=1, sticky="ns,e", padx=0, pady=5)
+            self.title_resize_handle.bind("<Button-1>", self._on_title_resize_start)
+            self.title_resize_handle.bind("<B1-Motion>", self._on_title_resize_drag)
+            self.title_resize_handle.bind("<ButtonRelease-1>", self._on_title_resize_stop)
+
+            ctk.CTkLabel(self.items_header, text="Segment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=2, sticky="w", padx=4, pady=5
             )
-            ctk.CTkLabel(header, text="SubSegment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            ctk.CTkLabel(self.items_header, text="SubSegment", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=3, sticky="w", padx=4, pady=5
             )
-            ctk.CTkLabel(header, text="Category", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+            ctk.CTkLabel(self.items_header, text="Category", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
                 row=0, column=4, sticky="w", padx=4, pady=5
+            )
+            ctk.CTkLabel(self.items_header, text="Start Date", anchor="w", font=ctk.CTkFont(weight="bold")).grid(
+                row=0, column=5, sticky="w", padx=4, pady=5
             )
 
             row = 1
@@ -657,9 +677,10 @@ class DragScheduleScreen(ctk.CTkFrame):
 
     def create_item_row(self, item: ActionItem):
         frame = ctk.CTkFrame(self.items_frame, height=self.item_row_height)
+        frame.item = item  # Store item for dynamic text clamping during resize
         frame.grid_propagate(False)
         frame.grid_columnconfigure(0, minsize=40)
-        frame.grid_columnconfigure(1, minsize=self.ITEM_TITLE_COL_WIDTH)
+        frame.grid_columnconfigure(1, minsize=self.title_col_width)
         frame.grid_columnconfigure(2, minsize=self.ITEM_META_COL_WIDTH)
         frame.grid_columnconfigure(3, minsize=self.ITEM_META_COL_WIDTH)
         frame.grid_columnconfigure(4, minsize=self.ITEM_META_COL_WIDTH)
@@ -707,7 +728,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             text_color=pick_text_color(title_bg),
             corner_radius=6,
             font=ctk.CTkFont(size=14),
-            width=self.ITEM_TITLE_COL_WIDTH,
+            width=self.title_col_width,
         )
         title_label.grid(row=0, column=1, sticky="ew", padx=(8, 4), pady=2)
 
@@ -1232,3 +1253,54 @@ class DragScheduleScreen(ctk.CTkFrame):
                 self.drag_hover_frame.configure(border_width=0, border_color=self.palette["border"])
             self.drag_hover_frame = None
             self.drag_hover_base_color = None
+
+    def _on_title_resize_start(self, event):
+        """Begin resizing the Title column."""
+        self._resize_start_x = event.x_root
+        self._resize_start_width = self.title_col_width
+
+    def _on_title_resize_drag(self, event):
+        """Handle dragging the resize handle."""
+        dx = event.x_root - self._resize_start_x
+        new_width = self._resize_start_width + dx
+        
+        # Clamp width between 100 and 800 pixels
+        new_width = max(100, min(800, new_width))
+        
+        if new_width != self.title_col_width:
+            self.title_col_width = new_width
+            self._update_column_widths()
+
+    def _on_title_resize_stop(self, event):
+        """Finalize resize and persist settings."""
+        self.settings.drag_schedule_title_col_width = self.title_col_width
+        AppSettings.save(self.settings)
+
+    def _update_column_widths(self):
+        """Update the width of all Title labels and grid configurations."""
+        # Update header
+        if hasattr(self, "header_title_label"):
+            self.header_title_label.configure(width=self.title_col_width)
+        if hasattr(self, "items_header"):
+            self.items_header.grid_columnconfigure(1, minsize=self.title_col_width)
+            
+        # Update item rows
+        for widget in self.items_frame.winfo_children():
+            if isinstance(widget, ctk.CTkFrame) and hasattr(widget, "item"):
+                # 1. Update the grid configuration for the column
+                widget.grid_columnconfigure(1, minsize=self.title_col_width)
+                
+                # 2. Update the title label's width and text clamping
+                for child in widget.winfo_children():
+                    if isinstance(child, ctk.CTkLabel) and child.grid_info()["column"] == 1:
+                        child.configure(width=self.title_col_width)
+                        
+                        # Update text clamping based on new width
+                        # Estimate chars based on width (approx 8px per char for size 14)
+                        max_chars = self.title_col_width // 8
+                        item = widget.item
+                        from .title_format import format_column_text, split_action_item_title
+                        parsed = split_action_item_title(item.title)
+                        title_text = parsed.title or (item.title or "")
+                        child.configure(text=f" {format_column_text(title_text, max_chars)} ")
+                        break
