@@ -79,28 +79,16 @@ PRs must pass: tests + docs sync gate (`.github/workflows/agent-docs-gate.yml`).
 
 If code behavior, UI text, or dependencies changed → docs and `requirements.txt` must be updated in the same PR (or a linked Docs Agent PR).
 
-## File maintainability policy (`codex.md`)
+## Global standards
 
-Judge files by **responsibility and cohesion**, not line count. A file is acceptable when it has one clear purpose and is easy to navigate and test.
+Read the relevant file from `~/.claude/standards/` before starting work:
 
-Line count is a secondary signal: under 200 (fine), 200–400 (light review), 400–700 (careful review), 700+ (strong refactor candidate). Exceptions: generated files, schema declarations, declarative config.
-
-**Mandatory refactor triggers** — act on any of these:
-1. File has more than one clear reason to change
-2. Multiple unrelated concerns accumulating over time
-3. Functions are branch-heavy, deeply nested, or hard to reason about
-4. File is difficult to test in isolation
-5. Repeated merge-conflict hotspot
-6. Developers can't quickly find where a change belongs
-
-**Before finalizing any change, verify:**
-- One clear purpose
-- Cohesive contents
-- Readable functions (watch for deep nesting, excessive branching)
-- Consistent abstraction level
-- Easy navigation
-- Acceptable testability
-- No unnecessary dependency sprawl
+| Standard | When |
+|---|---|
+| `file-maintainability.md` | Any new file or significant refactor (replaces the inline policy previously here) |
+| `ui-regression.md` | Any change to the 50+ CustomTkinter screens — treat every screen's controls as a contract |
+| `security.md` | SQLite parameterised queries, input validation, no secrets in code |
+| `learnings.md` | P6 (trust status fields only after verifying the DB row), P8 (dirty-state tests for SQLite reads) |
 
 In tabular/dual-panel UIs, aligned columns are a design goal — matching columns must use consistent widths across rows and paired panels.
 
