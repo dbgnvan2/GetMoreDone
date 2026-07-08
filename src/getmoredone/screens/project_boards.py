@@ -642,6 +642,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self.app = app
         self.selected_board_id: Optional[str] = None
         self.board_rows: list[dict] = []
+        self.search_query = ""  # Track search query
         self.show_pending_var = ctk.BooleanVar(value=False)
         self.show_completed_var = ctk.BooleanVar(value=False)
         self.note_width_var = ctk.DoubleVar(value=float(self.CARD_WIDTH))
@@ -735,6 +736,33 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             text_color=semantic_colors()["muted_text"],
         ).grid(row=0, column=9, padx=8, pady=8, sticky="e")
 
+        # Search row
+        self.search_entry = ctk.CTkEntry(
+            header,
+            placeholder_text="Search title, next step, notes...",
+            width=240,
+        )
+        self.search_entry.grid(row=1, column=0, columnspan=2, padx=8, pady=(0, 8), sticky="w")
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        self.btn_search = ctk.CTkButton(
+            header,
+            text="Search",
+            width=80,
+            command=self.perform_search,
+            **button_style("secondary"),
+        )
+        self.btn_search.grid(row=1, column=2, padx=6, pady=(0, 8), sticky="w")
+
+        self.btn_clear_search = ctk.CTkButton(
+            header,
+            text="Clear",
+            width=60,
+            command=self.clear_search,
+            **button_style("secondary"),
+        )
+        self.btn_clear_search.grid(row=1, column=3, padx=6, pady=(0, 8), sticky="w")
+
         body = ctk.CTkFrame(self)
         body.grid(row=1, column=0, sticky="nsew", padx=12, pady=(0, 12))
         body.grid_columnconfigure(0, weight=0, minsize=520)
@@ -797,18 +825,57 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         self.items_frame.grid_columnconfigure(0, weight=1)
         body.bind("<Configure>", self._on_body_resize)
 
+    def perform_search(self):
+        """Perform search and update the view."""
+        self.search_query = self.search_entry.get().strip()
+        self.refresh()
+
+    def clear_search(self):
+        """Clear the search query and refresh."""
+        self.search_query = ""
+        self.search_entry.delete(0, "end")
+        self.refresh()
+
+    def _filter_board_rows(self, rows: list[dict]) -> list[dict]:
+        """Filter board rows by the current search query (title, next step, notes, segment/category)."""
+        if not self.search_query:
+            return rows
+        needle = self.search_query.lower()
+        fields = (
+            "title",
+            "next_step",
+            "notes",
+            "segment_name",
+            "subsegment_name",
+            "category_name",
+            "key_field",
+        )
+        return [
+            row
+            for row in rows
+            if any(needle in str(row.get(field) or "").lower() for field in fields)
+        ]
+
     def refresh(self):
         self.db_manager.ensure_project_boards_for_all_apes()
-        self.board_rows = self.db_manager.get_project_boards(
-            show_pending=self.show_pending_var.get(),
-            show_completed=self.show_completed_var.get(),
+        self.board_rows = self._filter_board_rows(
+            self.db_manager.get_project_boards(
+                show_pending=self.show_pending_var.get(),
+                show_completed=self.show_completed_var.get(),
+            )
         )
         # If we have a selected ID, verify it still exists in the DB at all
         if self.selected_board_id:
             exists = self.db_manager.get_project_board(self.selected_board_id)
             if not exists:
                 self.selected_board_id = None
-        
+
+        # When a search hides the selected board, fall back to a visible one
+        if self.search_query and self.selected_board_id:
+            visible_ids = {row["id"] for row in self.board_rows}
+            if self.selected_board_id not in visible_ids:
+                self.selected_board_id = None
+
         if not self.selected_board_id and self.board_rows:
             self.selected_board_id = self.board_rows[0]["id"]
         self._render_cards()
@@ -870,9 +937,14 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             self.cards_frame.grid_columnconfigure(idx, weight=1)
 
         if not self.board_rows:
+            empty_text = (
+                f'No projects match "{self.search_query}".'
+                if self.search_query
+                else "No project boards yet. Use + New Project to add one."
+            )
             ctk.CTkLabel(
                 self.cards_frame,
-                text="No project boards yet. Use + New Project to add one.",
+                text=empty_text,
                 text_color=semantic_colors()["muted_text"],
             ).grid(row=0, column=0, padx=12, pady=16, sticky="w")
             return
