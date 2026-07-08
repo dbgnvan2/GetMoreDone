@@ -70,6 +70,8 @@ class AppSettings:
     # Drag Schedule date/future box height in pixels
     drag_schedule_box_height_px: int = 86
     drag_schedule_title_col_width: int = 220
+    # Today view: width (px) of the resizable Title column
+    today_title_col_width: int = 260
 
     # Future date options (Drag Schedule)
     mid_term_offset_days: int = 90

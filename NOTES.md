@@ -1,3 +1,14 @@
+## Recent Changes (2026-07-07)
+
+### Today view: pinned column headers + resizable Title column
+
+- ✅ **Pinned column-heading row** — The Today screen now has a fixed heading row (Title, SubSegment, Category, Context, Who, Start, Due, Pri, Time) that stays put above the list while rows scroll. Column widths mirror the data rows.
+- ✅ **Resizable Title column** — The Title column (first text column) is now a fixed, draggable width. A 4px vertical divider at the right edge of the "Title" header doubles as the "end of column" line and the resize handle (`sb_h_double_arrow` cursor). Dragging live-resizes the column and re-clamps row titles with `…`; the width persists via the new `today_title_col_width` AppSettings field (default 260px, clamped 120–800). Mirrors the Scheduler pattern from `13cab10`.
+- ✅ **Tests** — New `tests/test_today_title_col_width.py` (default value, save/load round-trip over dirty state, clamp bounds). Full suite: **357 passed, 1 skipped**.
+- ⚠️ Pinned-header alignment uses a fixed `padx=25` inset to line up over the scrolled rows; verify visually and tune the inset if columns drift on your display.
+
+---
+
 ## Recent Changes (2026-06-15)
 
 ### Scheduler group-drag, Project↔APE linking fixes, and delete guards

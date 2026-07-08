@@ -66,6 +66,7 @@ GetMoreDone is a desktop task manager focused on prioritization and execution.
 ### Today
 - What: Shows items scheduled for today, split into open and completed today.
 - Why: A focused daily view of what matters right now.
+- **Column headers & resizable Title** — What: A pinned heading row (Title, SubSegment, Category, Context, Who, Start, Due, Pri, Time) stays put while the list scrolls. Drag the vertical divider at the right edge of the **Title** header to widen or narrow the Title column, spreadsheet-style; titles re-clamp with `…` as you drag. Why: Make room for long titles without losing the other columns. The width is remembered between sessions.
 
 Header controls:
 - **Search** — What: Searches title, description, and next action within Today scope. Why: Quickly find an item.
