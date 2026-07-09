@@ -1,23 +1,21 @@
-"""Tests for the resizable Today "Title" column width setting and clamping.
+"""Tests for the Today Title-column width settings.
 
-Covers the persisted `today_title_col_width` AppSettings field and the pure
-`clamp_title_col_width` helper used by the drag handlers in the Today screen.
-GUI drag behaviour itself is verified interactively in the running app.
+Covers the legacy `today_title_col_width` scalar and the newer
+`today_col_widths` dict (managed by screens/column_resize.py). Width-clamp and
+resizer logic live in tests/test_column_resize.py; GUI drag behaviour is
+verified interactively in the running app.
 """
 
 import json
 
 from src.getmoredone.app_settings import AppSettings
-from src.getmoredone.screens.today import (
-    clamp_title_col_width,
-    TITLE_COL_MIN_WIDTH,
-    TITLE_COL_MAX_WIDTH,
-)
 
 
 def test_default_today_title_col_width():
-    """Fresh settings default to 260px for the Title column."""
-    assert AppSettings().today_title_col_width == 260
+    """Fresh settings default to 260px (legacy scalar) and an empty width dict."""
+    settings = AppSettings()
+    assert settings.today_title_col_width == 260
+    assert settings.today_col_widths == {}
 
 
 def test_today_title_col_width_round_trips(tmp_path, monkeypatch):
@@ -40,11 +38,19 @@ def test_today_title_col_width_round_trips(tmp_path, monkeypatch):
     assert reloaded.today_title_col_width == 420
 
 
-def test_clamp_title_col_width_bounds():
-    """Requested widths are clamped into [MIN, MAX]."""
-    assert clamp_title_col_width(0) == TITLE_COL_MIN_WIDTH
-    assert clamp_title_col_width(TITLE_COL_MIN_WIDTH - 50) == TITLE_COL_MIN_WIDTH
-    assert clamp_title_col_width(TITLE_COL_MAX_WIDTH + 500) == TITLE_COL_MAX_WIDTH
-    assert clamp_title_col_width(300) == 300
-    # Float input is coerced to int.
-    assert clamp_title_col_width(255.9) == 255
+def test_today_col_widths_dict_round_trips(tmp_path, monkeypatch):
+    """The per-column width dict persists through save()/load()."""
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(json.dumps({"today_col_widths": {"title": 150}}))
+    monkeypatch.setattr(
+        AppSettings, "get_settings_path",
+        classmethod(lambda cls: settings_path),
+    )
+
+    settings = AppSettings.load()
+    assert settings.today_col_widths == {"title": 150}  # dirty prior value
+
+    settings.today_col_widths = {"title": 333}
+    settings.save()
+
+    assert AppSettings.load().today_col_widths == {"title": 333}

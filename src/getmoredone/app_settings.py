@@ -6,7 +6,7 @@ Stores user preferences like Obsidian vault path.
 import json
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, fields, field
 
 from .paths import default_settings_path
 
@@ -72,6 +72,10 @@ class AppSettings:
     drag_schedule_title_col_width: int = 220
     # Today view: width (px) of the resizable Title column
     today_title_col_width: int = 260
+    # Per-column widths (px) for resizable list columns, keyed by column id.
+    # Managed by screens/column_resize.py; the scalars above are legacy fallbacks.
+    today_col_widths: dict = field(default_factory=dict)
+    drag_schedule_col_widths: dict = field(default_factory=dict)
 
     # Future date options (Drag Schedule)
     mid_term_offset_days: int = 90

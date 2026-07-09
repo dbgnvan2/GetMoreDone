@@ -25,19 +25,10 @@ from .title_format import (
     CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
+from .column_resize import ColumnResizer, ColumnSpec
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
-
-
-# Bounds for the resizable Today "Title" column (pixels). Mirrors the Scheduler.
-TITLE_COL_MIN_WIDTH = 120
-TITLE_COL_MAX_WIDTH = 800
-
-
-def clamp_title_col_width(width: int) -> int:
-    """Clamp a requested Title-column width to the allowed range."""
-    return max(TITLE_COL_MIN_WIDTH, min(TITLE_COL_MAX_WIDTH, int(width)))
 
 
 class TodayScreen(ctk.CTkFrame):
@@ -63,9 +54,14 @@ class TodayScreen(ctk.CTkFrame):
         self.show_top_3_only = False  # Track Top 3 mode
         self.search_query = ""  # Track search query
         self.palette = semantic_colors()
-        # Width (px) of the resizable Title column
-        self.title_col_width = clamp_title_col_width(
-            getattr(self.settings, "today_title_col_width", 260)
+        # Resizable Title column (shared spreadsheet-style resizer). Today only
+        # makes the Title column resizable; the rest keep responsive widths.
+        self.resizer = ColumnResizer(
+            owner=self,
+            settings=self.settings,
+            prefix="today",
+            set_cell_width=False,  # title label sits inside a sub-frame
+            specs=[ColumnSpec("title", grid_col=1, default_width=260, min_width=120)],
         )
 
         self.grid_columnconfigure(0, weight=1)
@@ -169,7 +165,7 @@ class TodayScreen(ctk.CTkFrame):
         # header columns line up over the scrolled rows below.
         hdr.grid(row=1, column=0, sticky="ew", padx=25, pady=(0, 4))
         hdr.grid_columnconfigure(0, minsize=44)
-        hdr.grid_columnconfigure(1, minsize=self.title_col_width)
+        self.resizer.apply_grid(hdr)  # Title column minsize
         hdr.grid_columnconfigure(99, weight=1)
         self.column_header = hdr
 
@@ -177,20 +173,15 @@ class TodayScreen(ctk.CTkFrame):
         ctk.CTkLabel(hdr, text="", width=44).grid(
             row=0, column=0, padx=5, pady=4)
 
-        # Title header cell + resize handle overlapping its right edge
+        # Title header cell + draggable divider (managed by the shared resizer)
         self._header_title_label = ctk.CTkLabel(
-            hdr, text="Title", width=self.title_col_width,
+            hdr, text="Title", width=self.resizer.width("title"),
             anchor="w", font=header_font)
         self._header_title_label.grid(
             row=0, column=1, sticky="w", padx=5, pady=4)
-
-        self.title_resize_handle = ctk.CTkFrame(
-            hdr, width=4, height=22, corner_radius=0,
-            fg_color=self.palette["border"], cursor="sb_h_double_arrow")
-        self.title_resize_handle.grid(row=0, column=1, sticky="nse", padx=0, pady=2)
-        self.title_resize_handle.bind("<Button-1>", self._on_title_resize_start)
-        self.title_resize_handle.bind("<B1-Motion>", self._on_title_resize_drag)
-        self.title_resize_handle.bind("<ButtonRelease-1>", self._on_title_resize_stop)
+        self.resizer.build_dividers(
+            hdr, {"title": self._header_title_label},
+            fg_color=self.palette["border"])
 
         # Remaining column headers — widths match create_item_row()
         header_cols = [
@@ -207,48 +198,6 @@ class TodayScreen(ctk.CTkFrame):
             ctk.CTkLabel(
                 hdr, text=text, width=width, anchor="w", font=header_font
             ).grid(row=0, column=idx, padx=5, pady=4, sticky="w")
-
-    def _on_title_resize_start(self, event):
-        """Begin resizing the Title column."""
-        self._resize_start_x = event.x_root
-        self._resize_start_width = self.title_col_width
-
-    def _on_title_resize_drag(self, event):
-        """Live-resize the Title column while the divider is dragged."""
-        dx = event.x_root - self._resize_start_x
-        new_width = clamp_title_col_width(self._resize_start_width + dx)
-        if new_width != self.title_col_width:
-            self.title_col_width = new_width
-            self._update_title_column_width()
-
-    def _on_title_resize_stop(self, event):
-        """Persist the Title-column width on release."""
-        self.settings.today_title_col_width = self.title_col_width
-        self.settings.save()
-
-    def _title_max_chars(self, has_badge: bool) -> int:
-        """Chars that fit the current Title width (~8px/char; badge steals ~4)."""
-        return max(1, (self.title_col_width // 8) - (4 if has_badge else 0))
-
-    def _update_title_column_width(self):
-        """Apply the current Title width to the header and every open row."""
-        width = self.title_col_width
-        if self.column_header is not None:
-            self.column_header.grid_columnconfigure(1, minsize=width)
-        if self._header_title_label is not None:
-            self._header_title_label.configure(width=width)
-
-        for frame in self.scroll_frame.winfo_children():
-            item = getattr(frame, "item", None)
-            if item is None:
-                continue
-            frame.grid_columnconfigure(1, minsize=width)
-            label = getattr(frame, "_title_label", None)
-            if label is None:
-                continue
-            parsed = split_action_item_title(item.title)
-            label.configure(text=format_column_text(
-                parsed.title, self._title_max_chars(getattr(frame, "_title_has_badge", False))))
 
     def perform_search(self):
         """Perform search and update the view."""
@@ -289,6 +238,7 @@ class TodayScreen(ctk.CTkFrame):
             # Clear existing items
             for widget in self.scroll_frame.winfo_children():
                 widget.destroy()
+            self.resizer.clear_rows()
 
             # Get today's items (start_date <= today, includes completed)
             items = self.get_todays_items()
@@ -455,7 +405,7 @@ class TodayScreen(ctk.CTkFrame):
         # Fixed, resizable Title column (col 1); slack goes to a trailing spacer
         # so the row still fills width and leading columns stay aligned.
         frame.grid_columnconfigure(0, minsize=44)
-        frame.grid_columnconfigure(1, minsize=self.title_col_width, weight=0)
+        frame.grid_columnconfigure(1, minsize=self.resizer.width("title"), weight=0)
         frame.grid_columnconfigure(99, weight=1)
         limits = responsive_column_chars(max(self.winfo_width(), self.scroll_frame.winfo_width()))
         parsed = split_action_item_title(item.title)
@@ -512,9 +462,10 @@ class TodayScreen(ctk.CTkFrame):
                 text_color=palette["on_strong"],
                 font=ctk.CTkFont(size=11, weight="bold"),
             ).grid(row=0, column=0, padx=(0, 6), sticky="w")
+        title_reserve = 4 if has_badge else 0
         title_label = ctk.CTkLabel(
             title_cell,
-            text=format_column_text(parsed.title, self._title_max_chars(has_badge)),
+            text=self.resizer.cell_text("title", parsed.title, title_reserve),
             font=list_row_font(),
             anchor="w",
             text_color=row_text
@@ -522,10 +473,9 @@ class TodayScreen(ctk.CTkFrame):
         title_label.grid(row=0, column=1, sticky="ew")
         title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
-        # Refs for live Title-column resizing (see _update_title_column_width)
+        # Register the title cell for live resizing (shared ColumnResizer)
         frame.item = item
-        frame._title_label = title_label
-        frame._title_has_badge = has_badge
+        self.resizer.register_row(frame, [("title", title_label, parsed.title, title_reserve)])
 
         ctk.CTkLabel(
             frame,

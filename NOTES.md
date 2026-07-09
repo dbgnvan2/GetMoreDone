@@ -1,3 +1,16 @@
+## Recent Changes (2026-07-08)
+
+### Reusable column resizing + Scheduler all-columns resize / title-fill fix
+
+- ✅ **New shared module `screens/column_resize.py`** — `ColumnResizer` + `ColumnSpec` + `chars_for_width`. One instance per screen owns column widths, persistence, the draggable divider handles, and live text re-clamping. Both the Today and Scheduler screens now use it (the two prior duplicate implementations were deleted).
+- ✅ **Scheduler: all data columns resizable** — Title, Segment, SubSegment, Category, and Start Date each have a draggable divider ("end of column" line) at their right edge. Extra space goes to a trailing spacer column.
+- ✅ **Scheduler: title fills the column (bug fix)** — Previously the title was clamped to a fixed 20 chars at render (`ITEM_TITLE_CHARS`) while only the drag path recomputed `width//8`, so a wide Title column still showed "BTA Video Posting…". Clamp now follows the actual column width everywhere (e.g. ~87 chars at 700px). Removed the dead per-screen constants.
+- ✅ **Persistence** — widths stored in new `AppSettings.today_col_widths` / `drag_schedule_col_widths` dict fields (keyed by column id); legacy `*_title_col_width` scalars kept as fallback so existing Title widths survive.
+- ✅ **Today** — migrated onto the shared resizer (Title-only resizable, behavior unchanged; `set_cell_width=False` because its title label sits inside a sub-frame).
+- ✅ **Tests** — new `tests/test_column_resize.py` (chars-for-width, wide-title regression guard, legacy fallback, clamp bounds, dirty-state persistence); updated `tests/test_today_title_col_width.py` for the new dict field. Headless smoke test built both screens + simulated resizing all columns with 0 errors. Full suite: **365 passed, 1 skipped**.
+
+---
+
 ## Recent Changes (2026-07-07)
 
 ### Today view: pinned column headers + resizable Title column
