@@ -43,21 +43,8 @@ class ItemEditorNotesMixin:
         frame = ctk.CTkFrame(self.notes_frame)
         frame.pack(fill="x", pady=2, padx=5)
 
-        # Note icon and label
-        label_text = note.label or "Untitled Note"
-        ctk.CTkLabel(frame, text=f"📝 {label_text}", anchor="w").pack(
-            side="left", fill="x", expand=True, padx=5)
-
-        # Open button
-        btn_open = ctk.CTkButton(
-            frame,
-            text="Open",
-            width=60,
-            command=lambda: self.open_note(note)
-        )
-        btn_open.pack(side="left", padx=2)
-
-        # Delete button
+        # Pack the action buttons FIRST (side="right") so a long note title can
+        # never push them off the edge of the (narrow) notes panel.
         btn_delete = ctk.CTkButton(
             frame,
             text="×",
@@ -65,7 +52,22 @@ class ItemEditorNotesMixin:
             **button_style("danger"),
             command=lambda: self.delete_note(note.id)
         )
-        btn_delete.pack(side="left", padx=2)
+        btn_delete.pack(side="right", padx=2)
+
+        btn_open = ctk.CTkButton(
+            frame,
+            text="Open",
+            width=60,
+            command=lambda: self.open_note(note)
+        )
+        btn_open.pack(side="right", padx=2)
+
+        # Note icon and label fill the remaining space. Double-clicking the
+        # title opens the note as well.
+        label_text = note.label or "Untitled Note"
+        label = ctk.CTkLabel(frame, text=f"📝 {label_text}", anchor="w", justify="left")
+        label.pack(side="left", fill="x", expand=True, padx=5)
+        label.bind("<Double-Button-1>", lambda e: self.open_note(note))
 
     def save_item_if_needed(self) -> bool:
         """
@@ -154,6 +156,28 @@ class ItemEditorNotesMixin:
             self.error_label.configure(text=f"Error saving item: {str(e)}")
             return False
 
+    def _build_note_seed_content(self) -> str:
+        """Assemble the item's Description and Next Action as initial note content.
+
+        Reads the live form fields (not the last-saved item) so the note
+        captures whatever the user currently has on screen.
+        """
+        sections = []
+        try:
+            description = self.description_text.get("1.0", "end").strip()
+        except Exception:
+            description = ""
+        try:
+            next_action = self.next_action_text.get("1.0", "end").strip()
+        except Exception:
+            next_action = ""
+
+        if description:
+            sections.append(f"## Description\n\n{description}")
+        if next_action:
+            sections.append(f"## Next Action\n\n{next_action}")
+        return "\n\n".join(sections)
+
     def create_note(self):
         """Open dialog to create a new Obsidian note."""
         # Save item first if it's new
@@ -171,7 +195,8 @@ class ItemEditorNotesMixin:
 
         try:
             CreateNoteDialog(self, self.db_manager, "action_item",
-                             self.item_id, self.item.title if self.item else "Item")
+                             self.item_id, self.item.title if self.item else "Item",
+                             initial_content=self._build_note_seed_content())
         except Exception as e:
             self.error_label.configure(
                 text=f"Error opening note dialog: {str(e)}")

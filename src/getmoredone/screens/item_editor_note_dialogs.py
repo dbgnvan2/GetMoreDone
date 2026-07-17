@@ -15,16 +15,18 @@ from ..theme import button_style, status_text_color
 class CreateNoteDialog(ctk.CTkToplevel):
     """Dialog for creating a new Obsidian note."""
 
-    def __init__(self, parent, db_manager, entity_type: str, entity_id: str, entity_title: str):
+    def __init__(self, parent, db_manager, entity_type: str, entity_id: str,
+                 entity_title: str, initial_content: str = ""):
         super().__init__(parent)
         self.db_manager = db_manager
         self.entity_type = entity_type
         self.entity_id = entity_id
         self.entity_title = entity_title
+        self.initial_content = initial_content or ""
         self.parent_window = parent
 
         self.title(f"Create Note for: {entity_title}")
-        self.geometry("500x300")
+        self.geometry("560x460")
 
         self.create_form()
 
@@ -51,11 +53,13 @@ class CreateNoteDialog(ctk.CTkToplevel):
             main_frame, textvariable=self.title_var, width=400)
         self.title_entry.pack(pady=(0, 15))
 
-        # Initial content (optional)
-        ctk.CTkLabel(main_frame, text="Initial Content (optional):").pack(
-            pady=(0, 5))
-        self.content_text = ctk.CTkTextbox(main_frame, width=400, height=100)
-        self.content_text.pack(pady=(0, 15))
+        # Initial content — pre-filled from the item's Description / Next Action
+        # when creating a note from an Action Item (editable before saving).
+        ctk.CTkLabel(main_frame, text="Initial Content:").pack(pady=(0, 5))
+        self.content_text = ctk.CTkTextbox(main_frame, width=460, height=220)
+        self.content_text.pack(fill="both", expand=True, pady=(0, 15))
+        if self.initial_content:
+            self.content_text.insert("1.0", self.initial_content)
 
         # Buttons
         btn_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
@@ -182,8 +186,8 @@ class CreateNoteDialog(ctk.CTkToplevel):
         self.update_idletasks()
 
         # Get dialog dimensions
-        dialog_width = 500
-        dialog_height = 300
+        dialog_width = 560
+        dialog_height = 460
 
         # Get parent window position
         parent_x = self.master.winfo_rootx()
@@ -394,6 +398,17 @@ class LinkNoteDialog(ctk.CTkToplevel):
         frame = ctk.CTkFrame(self.notes_frame)
         frame.pack(fill="x", pady=2, padx=5)
 
+        # Select button — packed first (side="right") so a long note title can
+        # never push it off the edge of the panel.
+        btn_select = ctk.CTkButton(
+            frame,
+            text="Link This",
+            width=80,
+            command=lambda: self.link_note_file(note['path'], note['title']),
+            **button_style("primary"),
+        )
+        btn_select.pack(side="right", padx=5)
+
         # Note info
         info_frame = ctk.CTkFrame(frame, fg_color="transparent")
         info_frame.pack(side="left", fill="x", expand=True)
@@ -424,16 +439,6 @@ class LinkNoteDialog(ctk.CTkToplevel):
                 font=ctk.CTkFont(size=9),
                 text_color=status_text_color("muted")
             ).pack(anchor="w", padx=5)
-
-        # Select button
-        btn_select = ctk.CTkButton(
-            frame,
-            text="Link This",
-            width=80,
-            command=lambda: self.link_note_file(note['path'], note['title']),
-            **button_style("primary"),
-        )
-        btn_select.pack(side="right", padx=5)
 
     def link_note_file(self, file_path: str, default_label: str):
         """Link the selected note file."""
