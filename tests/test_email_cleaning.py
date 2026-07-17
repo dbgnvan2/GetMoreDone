@@ -6,7 +6,9 @@ screenshot, blank-line collapsing, separator stripping, and adversarial cases
 where a footer phrase must NOT truncate genuine content (P7).
 """
 
-from src.getmoredone.email_cleaning import clean_email_body
+import logging
+
+from src.getmoredone.email_cleaning import clean_email_body, _load_rules, _DEFAULT_RULES
 
 
 # The body as extracted from the reported email (unsubscribe footer + rulers).
@@ -92,3 +94,17 @@ def test_empty_and_none_inputs():
     assert clean_email_body("") == ""
     assert clean_email_body(None) == ""
     assert clean_email_body("   \n\n  \n") == ""
+
+
+def test_malformed_rules_file_falls_back_and_warns(tmp_path, caplog):
+    # P2/P16: a missing/malformed rules file must fall back to defaults AND log,
+    # so the degradation isn't silent.
+    bad = tmp_path / "broken.json"
+    bad.write_text("{ not valid json,,, }", encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        rules = _load_rules(bad)
+    assert rules == _DEFAULT_RULES
+    assert any("unreadable" in rec.message for rec in caplog.records)
+
+    missing = tmp_path / "does_not_exist.json"
+    assert _load_rules(missing) == _DEFAULT_RULES

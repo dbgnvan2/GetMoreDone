@@ -15,9 +15,12 @@ Tests:   tests/test_email_cleaning.py
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional
+
+_logger = logging.getLogger(__name__)
 
 _RULES_PATH = Path(__file__).parent / "email_cleaning_rules.json"
 
@@ -32,11 +35,17 @@ _DEFAULT_RULES = {
 }
 
 
-def _load_rules() -> dict:
+def _load_rules(path: Path = _RULES_PATH) -> dict:
     try:
-        with open(_RULES_PATH, "r", encoding="utf-8") as fh:
+        with open(path, "r", encoding="utf-8") as fh:
             return json.load(fh)
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        # Loud, not silent: a missing/malformed rules file otherwise disables
+        # almost all footer cleaning with no signal (P2/P16).
+        _logger.warning(
+            "email_cleaning rules unreadable at %s (%s); using minimal defaults",
+            path, exc,
+        )
         return dict(_DEFAULT_RULES)
 
 

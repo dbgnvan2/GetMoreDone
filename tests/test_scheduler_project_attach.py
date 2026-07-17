@@ -113,6 +113,20 @@ def test_project_filter_dropdown_selects_project(tmp_path):
         root.destroy(); vps.close(); dbm.close()
 
 
+def test_stale_selected_project_is_cleared_on_sync(tmp_path):
+    # P6 regression: if the selected project vanishes from the filter list
+    # (completed/deleted), syncing must clear selected_project_id so the item
+    # list and the combo don't disagree.
+    root, scr, dbm, vps, _a, _b, _items = _build_screen(tmp_path)
+    try:
+        scr.selected_project_id = "no-such-board-id"
+        scr._sync_project_filter_var()
+        assert scr.selected_project_id is None
+        assert scr.project_filter_var.get() == "All"
+    finally:
+        root.destroy(); vps.close(); dbm.close()
+
+
 def test_drag_release_attaches_items_to_project(tmp_path):
     root, scr, dbm, vps, _a, board_b, items = _build_screen(tmp_path)
     try:

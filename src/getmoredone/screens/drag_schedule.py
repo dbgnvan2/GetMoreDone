@@ -717,6 +717,9 @@ class DragScheduleScreen(ctk.CTkFrame):
                 if pid == self.selected_project_id:
                     self.project_filter_var.set(display)
                     return
+            # The selected project is no longer listed (completed/deleted) — clear
+            # the stale filter so the item list and the combo agree (P6).
+            self.selected_project_id = None
             self.project_filter_var.set("All")
 
     def on_project_filter_changed(self):

@@ -208,8 +208,18 @@ def import_labeled_emails(db_path: Optional[str] = None, cfg: Optional[GmailImpo
                 logger.info(f"Importing email: {subject} from {from_h}")
 
                 # Strip separators, footer boilerplate and excess blank lines
-                # before the body lands in the Action Item description.
-                body_text = clean_email_body(_extract_plain_text(payload))
+                # before the body lands in the Action Item description. Log how
+                # much was removed so aggressive over-cutting is visible, not
+                # silent (P2).
+                raw_body = _extract_plain_text(payload)
+                body_text = clean_email_body(raw_body)
+                raw_lines = raw_body.count("\n") + 1 if raw_body else 0
+                clean_lines = body_text.count("\n") + 1 if body_text else 0
+                if raw_lines - clean_lines > 0:
+                    logger.info(
+                        "Email cleaning removed %d of %d body lines (footer/blank/separator)",
+                        raw_lines - clean_lines, raw_lines,
+                    )
                 if cfg.max_body_chars and len(body_text) > cfg.max_body_chars:
                     body_text = body_text[: cfg.max_body_chars] + "\n\n[TRUNCATED]"
 
