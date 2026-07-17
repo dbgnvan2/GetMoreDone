@@ -70,6 +70,15 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.segment_filter_var = ctk.StringVar(value="All")
         self.subsegment_filter_var = ctk.StringVar(value="All")
         self.project_sort_var = ctk.StringVar(value="Title")
+        # Header "Project:" filter — shares selected_project_id with clicking a
+        # project box; project_filter_map maps a display name back to its id.
+        self.project_filter_var = ctk.StringVar(value="All")
+        self.project_filter_map: dict[str, str] = {}
+        # Per-refresh registry of row checkboxes so the header "select all" box
+        # can drive them, keyed by item id.
+        self.item_checkboxes: dict[str, ctk.CTkCheckBox] = {}
+        self.select_all_var = ctk.BooleanVar(value=False)
+        self.select_all_checkbox: Optional[ctk.CTkCheckBox] = None
         # All Action Items data columns are resizable, spreadsheet-style.
         self.resizer = ColumnResizer(
             owner=self,
@@ -101,7 +110,7 @@ class DragScheduleScreen(ctk.CTkFrame):
     def create_header(self):
         header = ctk.CTkFrame(self)
         header.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
-        header.grid_columnconfigure(11, weight=1)
+        header.grid_columnconfigure(13, weight=1)
 
         title = ctk.CTkLabel(
             header,
@@ -175,6 +184,19 @@ class DragScheduleScreen(ctk.CTkFrame):
             command=lambda _v: self.on_subsegment_filter_changed(),
         )
         self.subsegment_filter_combo.grid(row=0, column=10, padx=5, pady=10)
+
+        ctk.CTkLabel(header, text="Project:").grid(
+            row=0, column=11, padx=(14, 5), pady=10
+        )
+        self.project_filter_combo = ctk.CTkComboBox(
+            header,
+            values=["All"],
+            variable=self.project_filter_var,
+            width=180,
+            **combo_box_style(),
+            command=lambda _v: self.on_project_filter_changed(),
+        )
+        self.project_filter_combo.grid(row=0, column=12, padx=5, pady=10)
 
     def create_body(self):
         body = ctk.CTkFrame(self)
@@ -284,6 +306,8 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.palette = semantic_colors()
         self._reload_lineage_maps()
         self._refresh_filter_options()
+        self._refresh_project_filter_options()
+        self._sync_project_filter_var()
 
         for widget in self.items_frame.winfo_children():
             widget.destroy()
@@ -295,6 +319,8 @@ class DragScheduleScreen(ctk.CTkFrame):
             widget.destroy()
 
         self.checked_items.clear()
+        self.item_checkboxes = {}
+        self.select_all_var.set(False)
         self.date_boxes = []
         self.date_box_colors = {}
         self.selected_date_frames = {}
@@ -318,9 +344,16 @@ class DragScheduleScreen(ctk.CTkFrame):
             self.items_header.grid_columnconfigure(6, weight=1)  # trailing slack
 
             header_font = ctk.CTkFont(weight="bold")
-            ctk.CTkLabel(self.items_header, text="", anchor="w", font=header_font).grid(
-                row=0, column=0, sticky="w", padx=(10, 4), pady=5
+            # "Select all" toggle: checking it checks every row; unchecking
+            # clears them all.
+            self.select_all_checkbox = ctk.CTkCheckBox(
+                self.items_header,
+                text="",
+                width=30,
+                variable=self.select_all_var,
+                command=self._on_select_all_toggled,
             )
+            self.select_all_checkbox.grid(row=0, column=0, sticky="w", padx=(10, 4), pady=5)
             header_labels = {}
             for key, text in (
                 ("title", "Title"),
@@ -652,6 +685,52 @@ class DragScheduleScreen(ctk.CTkFrame):
             self.subsegment_filter_var.set(current_subsegment)
         self.subsegment_filter_combo.configure(values=subsegment_values)
 
+    def _refresh_project_filter_options(self):
+        """Rebuild the header Project filter's values + display→id map.
+
+        Only the value list and map are rebuilt here; ``selected_project_id`` is
+        the single source of truth and is reflected into the combo by
+        ``_sync_project_filter_var`` after the list is ready.
+        """
+        boards = self.db_manager.get_project_boards(show_pending=True)
+        self.project_filter_map = {}
+        display_values = ["All", "(Unlinked)"]
+        for board in boards:
+            title = (board.get("title") or "Untitled Project").strip()
+            display = title
+            n = 2
+            while display in self.project_filter_map:
+                display = f"{title} ({n})"
+                n += 1
+            self.project_filter_map[display] = board["id"]
+            display_values.append(display)
+        self.project_filter_combo.configure(values=display_values)
+
+    def _sync_project_filter_var(self):
+        """Point the Project combo at whatever ``selected_project_id`` holds."""
+        if self.selected_project_id is None:
+            self.project_filter_var.set("All")
+        elif self.selected_project_id == "__none__":
+            self.project_filter_var.set("(Unlinked)")
+        else:
+            for display, pid in self.project_filter_map.items():
+                if pid == self.selected_project_id:
+                    self.project_filter_var.set(display)
+                    return
+            self.project_filter_var.set("All")
+
+    def on_project_filter_changed(self):
+        selection = self.project_filter_var.get()
+        if selection == "All":
+            self.selected_project_id = None
+        elif selection == "(Unlinked)":
+            self.selected_project_id = "__none__"
+        else:
+            self.selected_project_id = self.project_filter_map.get(selection)
+        # A project filter and a single-date filter are mutually exclusive.
+        self.selected_date_filter = None
+        self.refresh()
+
     def on_segment_filter_changed(self):
         self._refresh_filter_options()
         self.refresh()
@@ -711,6 +790,7 @@ class DragScheduleScreen(ctk.CTkFrame):
             command=lambda: self._on_item_checkbox_toggled(item.id)
         )
         checkbox.grid(row=0, column=0, sticky="w", padx=(8, 4), pady=2)
+        self.item_checkboxes[item.id] = checkbox
 
         title_label = ctk.CTkLabel(
             frame,
@@ -1085,6 +1165,35 @@ class DragScheduleScreen(ctk.CTkFrame):
             self.checked_items.remove(item_id)
         else:
             self.checked_items.add(item_id)
+        self._sync_select_all_state()
+
+    def _on_select_all_toggled(self):
+        """Header check/uncheck drives every row checkbox."""
+        check = bool(self.select_all_var.get())
+        self.checked_items = set()
+        for item_id, cb in self.item_checkboxes.items():
+            try:
+                if check:
+                    cb.select()
+                    self.checked_items.add(item_id)
+                else:
+                    cb.deselect()
+            except Exception:
+                pass
+
+    def _sync_select_all_state(self):
+        """Reflect 'all rows checked' into the header box without firing its command."""
+        if not self.select_all_checkbox:
+            return
+        all_checked = bool(self.item_checkboxes) and (
+            len(self.checked_items) == len(self.item_checkboxes)
+        )
+        # .select()/.deselect() update the shared variable but do NOT invoke the
+        # checkbox command, so this cannot recurse into _on_select_all_toggled.
+        if all_checked:
+            self.select_all_checkbox.select()
+        else:
+            self.select_all_checkbox.deselect()
 
     def bind_drag_handlers(self, widget, item: ActionItem):
         widget.bind("<ButtonPress-1>", lambda e: self.start_drag(e, item))

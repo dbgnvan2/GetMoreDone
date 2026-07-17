@@ -327,6 +327,42 @@ def test_project_board_crud_and_filters(tmp_path):
         db.close()
 
 
+def test_get_project_boards_show_pending_keeps_active(tmp_path):
+    """Regression: show_pending=True must return active boards TOO, not replace them.
+
+    The Scheduler's Projects tab calls get_project_boards(show_pending=True); the
+    old code built statuses=[PENDING] and returned zero boards whenever none were
+    pending, so the tab rendered empty and items couldn't be dragged onto a project.
+    """
+    db_path = tmp_path / "boards_active_pending.db"
+    db = DatabaseManager(str(db_path))
+    manager = VPSManager(str(db_path))
+    try:
+        segment_name = manager.get_all_segments(active_only=False)[0]["name"]
+        manager.create_vision_subsegment(segment_name, "Board Test")
+        ve_active = manager.create_or_get_vision_element(segment_name, "Board Test", "Cat Active")
+        ve_pending = manager.create_or_get_vision_element(segment_name, "Board Test", "Cat Pending")
+        ape_active = manager.create_annual_records_from_vision_element(2026, ve_active)["annual_plan_element_id"]
+        ape_pending = manager.create_annual_records_from_vision_element(2026, ve_pending)["annual_plan_element_id"]
+
+        board_active = db.ensure_project_board_for_ape(ape_active)   # active by default
+        board_pending = db.ensure_project_board_for_ape(ape_pending)
+        db.set_project_board_status(board_pending, ProjectBoardStatus.PENDING)
+
+        # Default: active only.
+        active_ids = {r["id"] for r in db.get_project_boards()}
+        assert board_active in active_ids
+        assert board_pending not in active_ids
+
+        # show_pending=True: active AND pending both present (the fix).
+        with_pending_ids = {r["id"] for r in db.get_project_boards(show_pending=True)}
+        assert board_active in with_pending_ids
+        assert board_pending in with_pending_ids
+    finally:
+        manager.close()
+        db.close()
+
+
 def test_project_board_links_action_items(tmp_path):
     db_path = tmp_path / "project_board_links.db"
     db = DatabaseManager(str(db_path))

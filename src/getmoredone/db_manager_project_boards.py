@@ -83,15 +83,16 @@ class DBManagerProjectBoardsMixin:
         """Return project boards with joined APE metadata and linked-item counts."""
         self._normalize_project_board_order()
         
-        statuses = []
+        # Active boards are ALWAYS shown; show_pending / show_completed each
+        # ADD their status on top of active (they don't replace it). Previously
+        # passing show_pending=True returned *only* pending boards, so callers
+        # like the Scheduler's Projects tab saw zero boards when none were
+        # pending.
+        statuses = [ProjectBoardStatus.ACTIVE]
         if show_pending:
             statuses.append(ProjectBoardStatus.PENDING)
         if show_completed:
             statuses.append(ProjectBoardStatus.COMPLETED)
-            
-        # If no filters are selected, show only active projects
-        if not statuses:
-            statuses = [ProjectBoardStatus.ACTIVE]
             
         placeholders = ",".join("?" for _ in statuses)
         query = f"""
