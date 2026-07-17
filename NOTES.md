@@ -1,3 +1,16 @@
+## Recent Changes (2026-07-17)
+
+### Scheduler project attach + Item Editor UX + email-import cleaning
+
+- ✅ **Scheduler: attach items to projects (bug fix + filter + select-all)** — The Projects tab was empty because `get_project_boards(show_pending=True)` built `statuses=[PENDING]`, *replacing* active instead of augmenting it, so with zero pending boards it returned nothing. Fixed so active is always shown and the flags add pending/completed. With the tab populated, the existing drag-to-attach / click-to-filter machinery works: drag 1–N (checked) items onto a project box to attach them (links stay **exclusive** — one project per item), click a project (or the new header **Project:** filter) to list only its items, then move them to a date from the Date Boxes/Calendar tab. Added a **Select-All** checkbox in the item-list header row (checks/unchecks every row, stays in sync with individual toggles). Stale-filter guard (P6): if the selected project leaves the list, the filter clears.
+- ✅ **Item Editor: resizable window + draggable divider** — The editor is now resizable (`minsize` 700×500) with a draggable sash between the two columns; the right panel's right edge stays pinned to the window while dragging rebalances the split, and the right column's tab content fills the widened panel. Replaced broken reflow handlers that threw `AttributeError` on every resize.
+- ✅ **Notes: seed from item + reachable Open** — Creating a note from an Action Item pre-fills the note body with the item's Description and Next Action (markdown sections). The note-row **Open** button (and delete) were being pushed off the narrow notes panel by long titles — buttons now pack first so they stay reachable, and double-clicking the title opens the note too. Same packing fix applied to the Link-note dialog.
+- ✅ **Gmail import: strip footers + excess blank lines** — Imported email bodies are cleaned before landing in the description: blank-line runs collapse, decorative separator lines are removed, and trailing footer boilerplate (unsubscribe blocks, "you received this because…", copyright lines) is truncated. Editorial phrases live in `src/getmoredone/email_cleaning_rules.json` (config, not code); the importer logs how many lines were removed. Already-imported items are left unchanged.
+- ✅ **Tests** — new `tests/test_item_editor_sash.py`, `tests/test_note_seed_content.py`, `tests/test_email_cleaning.py`, `tests/test_scheduler_project_attach.py`, plus a `get_project_boards` regression in `tests/test_database.py`. Full suite: **387 passed, 1 skipped**.
+- ⚠️ **Known gaps** (from the learning-qa sweep): email footer detection is substring-based and aggressive by design for automated notifications — a *legitimate* mid-body mention of e.g. "unsubscribe" after the first content line would truncate what follows (mitigated: first-line phrase never cuts; drop count is logged). The Select-All per-checkbox loop keeps a broad `except` to tolerate a destroyed widget mid-refresh.
+
+---
+
 ## Recent Changes (2026-07-08)
 
 ### Reusable column resizing + Scheduler all-columns resize / title-fill fix

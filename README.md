@@ -20,6 +20,7 @@ User guide: `docs/USER_GUIDE.md`
 📆 **Google Calendar Integration** - Create calendar events directly from action items with automatic linking
 🧭 **Vision Strategy Plan (VSP)** - Strategic long-term planning from vision elements through annual, quarter, month, and weekly execution
 🗂️ **Project Board** - One project note per Annual Plan Element, color-coded by APE category and linked to action items and Obsidian notes
+🗓️ **Scheduler Projects tab** - Drag one or more action items onto a project to attach them, filter the list by project, then move a project's items to a date (one project per item)
 🎵 **Music Playback** - Background music during work sessions with volume control and format conversion tools
 ✨ **13 Comprehensive Screens** - Today, Upcoming, All Items, Hierarchical, Scheduler, Projects, Completed, Contacts, VSP Plan, Plan, Defaults, Status, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
