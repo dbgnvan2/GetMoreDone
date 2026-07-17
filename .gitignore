@@ -23,6 +23,8 @@ data/
 *.json
 !themes/
 !themes/*.json
+# Bundled editorial config that ships with the package (not runtime/user data).
+!src/getmoredone/email_cleaning_rules.json
 .DS_Store
 
 # Ignore specific duplicate/temp files

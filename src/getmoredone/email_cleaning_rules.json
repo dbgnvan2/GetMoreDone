@@ -1,0 +1,31 @@
+{
+  "_comment": "Editorial rules for cleaning imported email bodies (rule 9: editorial content lives in config, not Python). footer_start_phrases are matched case-insensitively as substrings; footer_start_regexes are Python regexes. The first footer marker found AFTER at least min_content_lines_before_footer lines of real content truncates everything from that line onward. separator_line_regex matches decorative divider lines (dashes/underscores/etc.) that are stripped everywhere. max_consecutive_blank_lines collapses runs of blank lines.",
+  "footer_start_phrases": [
+    "unsubscribe",
+    "you received this email because",
+    "you are receiving this email because",
+    "you received this message because",
+    "you received this notification because",
+    "to stop receiving these emails",
+    "to stop receiving emails",
+    "manage your preferences",
+    "manage your email preferences",
+    "manage your notification",
+    "update your preferences",
+    "update your email preferences",
+    "change your notification settings",
+    "view this email in your browser",
+    "view it in your browser",
+    "this email was sent to",
+    "no longer wish to receive",
+    "all rights reserved"
+  ],
+  "footer_start_regexes": [
+    "^\\s*©\\s*\\d{4}",
+    "^\\s*\\(c\\)\\s*\\d{4}",
+    "^\\s*sent from my i(phone|pad)\\b"
+  ],
+  "separator_line_regex": "^\\s*[-_=*~•·—–]{4,}\\s*$",
+  "min_content_lines_before_footer": 1,
+  "max_consecutive_blank_lines": 1
+}

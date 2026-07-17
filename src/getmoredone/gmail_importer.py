@@ -29,6 +29,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 from .db_manager import DatabaseManager
+from .email_cleaning import clean_email_body
 from .models import ActionItem, ItemLink
 from .paths import app_data_dir_path, legacy_dot_dir
 
@@ -206,7 +207,9 @@ def import_labeled_emails(db_path: Optional[str] = None, cfg: Optional[GmailImpo
 
                 logger.info(f"Importing email: {subject} from {from_h}")
 
-                body_text = _extract_plain_text(payload)
+                # Strip separators, footer boilerplate and excess blank lines
+                # before the body lands in the Action Item description.
+                body_text = clean_email_body(_extract_plain_text(payload))
                 if cfg.max_body_chars and len(body_text) > cfg.max_body_chars:
                     body_text = body_text[: cfg.max_body_chars] + "\n\n[TRUNCATED]"
 
