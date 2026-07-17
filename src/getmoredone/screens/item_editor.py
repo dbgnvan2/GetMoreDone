@@ -96,14 +96,18 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             self.title("New Action Item")
 
         self.geometry("920x550")
+        # Allow the user to resize the editor window; the draggable sash
+        # between the two columns (see create_form) rebalances the split.
+        self.resizable(True, True)
+        self.minsize(700, 500)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         self.palette = semantic_colors()
 
-        # Bind resize event
-        self.bind("<Configure>", self.on_resize)
-        self.last_width = 920  # Track width for responsive layout
+        # Width of the right-hand (metadata/tabs) column; adjusted by dragging
+        # the sash between the two columns.
+        self.right_pane_width = 350
 
         # Create form
         self.create_form()
@@ -136,21 +140,35 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         # Main container frame
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=10)
-        main_frame.grid_columnconfigure(0, weight=1)  # Left column
-        main_frame.grid_columnconfigure(1, weight=0)  # Right column - fixed width
+        main_frame.grid_columnconfigure(0, weight=1)  # Left column (fills)
+        main_frame.grid_columnconfigure(1, weight=0)  # Draggable sash
+        main_frame.grid_columnconfigure(2, weight=0)  # Right column - fixed width
         main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame = main_frame
 
         # Left column - Primary Info
         left_col = ctk.CTkFrame(main_frame)
-        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        left_col.grid(row=0, column=0, sticky="nsew", padx=(0, 0))
         left_col.grid_columnconfigure(1, weight=1)
+        self.left_col = left_col
+
+        # Draggable sash between the two columns.
+        self.sash = ctk.CTkFrame(main_frame, width=6, corner_radius=3,
+                                 cursor="sb_h_double_arrow",
+                                 fg_color=("gray70", "gray30"))
+        self.sash.grid(row=0, column=1, sticky="ns", padx=4)
+        self.sash.grid_propagate(False)
+        self.sash.bind("<Button-1>", self._start_sash_drag)
+        self.sash.bind("<B1-Motion>", self._do_sash_drag)
 
         # Right column - Metadata, Tabs, and Actions
-        right_col = ctk.CTkFrame(main_frame, width=350)
-        right_col.grid(row=0, column=1, sticky="nsew", padx=(5, 5))
+        right_col = ctk.CTkFrame(main_frame, width=self.right_pane_width)
+        right_col.grid(row=0, column=2, sticky="nsew", padx=(0, 0))
         right_col.grid_propagate(False)
+        right_col.grid_columnconfigure(0, weight=1) # Content fills the panel width
         right_col.grid_rowconfigure(0, weight=1) # Tabview takes most space
         right_col.grid_rowconfigure(1, weight=0) # Action buttons at bottom
+        self.right_col = right_col
 
         # === LEFT COLUMN CONTENT ===
         row_l = 0
@@ -1172,66 +1190,28 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             text=f"{score} ({importance}×{urgency}×{size}×{value})"
         )
 
-    def start_resize(self, event):
-        """Start resizing the text fields."""
-        self.resizing = True
-        self.resize_start_y = event.y_root
+    def _start_sash_drag(self, event):
+        """Begin dragging the sash between the left and right columns."""
+        self._sash_start_x = event.x_root
+        self._sash_start_width = self.right_col.winfo_width()
 
-    def do_resize(self, event):
-        """Handle the resizing between panel 1 (top form) and panel 2 (tabs)."""
-        if not self.resizing:
-            return
-        if not self.is_single_column:
-            return
+    def _do_sash_drag(self, event):
+        """Resize the right column as the user drags the sash.
 
-        delta = event.y_root - self.resize_start_y
-        self.resize_start_y = event.y_root
+        Dragging right shrinks the right (metadata/tabs) column and gives the
+        space to the left column; dragging left does the reverse. The width is
+        clamped so neither column can be squeezed out.
+        """
+        delta = event.x_root - self._sash_start_x
+        new_width = self._sash_start_width - delta
 
-        top_height = self.left_col.cget("height") or self.left_col.winfo_height()
-        middle_height = self.right_col.cget("height") or self.right_col.winfo_height()
+        total = self.main_frame.winfo_width()
+        # Leave room for the left column and the sash itself.
+        max_right = max(300, total - 320)
+        new_width = int(max(280, min(new_width, max_right)))
 
-        new_top_height = max(260, int(top_height + delta))
-        new_middle_height = max(220, int(middle_height - delta))
-
-        self.left_col.grid_propagate(False)
-        self.right_col.grid_propagate(False)
-        self.left_col.configure(height=new_top_height)
-        self.right_col.configure(height=new_middle_height)
-        self.tabview.configure(height=max(180, new_middle_height - 24))
-
-    def on_resize(self, event):
-        """Handle window resize to switch between 2-column and 1-column layout."""
-        if event.widget != self:
-            return
-
-        width = event.width
-        # Only update if width changed significantly (avoid flickering)
-        if abs(width - self.last_width) < 50:
-            return
-
-        self.last_width = width
-
-        # Switch to single column if window is narrow
-        if width < 900:
-            # Single column layout
-            self.is_single_column = True
-            self.left_col.grid(row=0, column=0, columnspan=2,
-                               sticky="nsew", padx=0, pady=(0, 5))
-            self.separator_frame.grid(
-                row=1, column=0, columnspan=2, sticky="ew", padx=0, pady=(0, 5)
-            )
-            self.right_col.grid(row=2, column=0, columnspan=2,
-                                sticky="nsew", padx=0, pady=(0, 0))
-        else:
-            # Two column layout
-            self.is_single_column = False
-            self.separator_frame.grid_forget()
-            self.left_col.grid_propagate(True)
-            self.right_col.grid_propagate(True)
-            self.left_col.grid(
-                row=0, column=0, sticky="nsew", padx=(0, 5), pady=0)
-            self.right_col.grid(
-                row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
+        self.right_pane_width = new_width
+        self.right_col.configure(width=new_width)
 
     def center_on_parent(self):
         """Center the dialog on the parent window."""

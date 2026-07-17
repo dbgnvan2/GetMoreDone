@@ -90,31 +90,27 @@ def test_item_editor_layout_contract(mock_app, mock_db):
             break
     
     assert main_frame is not None, "Missing main container frame"
-    
-    # Verify main_frame grid
-    # column 0 (left) should have weight 1, column 1 (right) weight 0
+
+    # Layout: [left col | draggable sash | right col].
+    # column 0 (left) fills (weight 1); the sash (col 1) and right col (col 2)
+    # are fixed-width (weight 0).
     assert main_frame.grid_columnconfigure(0)["weight"] == 1
     assert main_frame.grid_columnconfigure(1)["weight"] == 0
-    
-    # Verify right column width
-    right_col = None
-    for child in main_frame.winfo_children():
-        # The right column was configured with width=350 and padding (5, 5)
-        if isinstance(child, ctk.CTkFrame) and child.grid_info()["column"] == 1:
-            right_col = child
-            break
-            
-    assert right_col is not None, "Missing right column frame"
-    assert right_col.cget("width") == 350, f"Right column width should be 350, got {right_col.cget('width')}"
-    
+    assert main_frame.grid_columnconfigure(2)["weight"] == 0
+
+    # A draggable sash sits between the two columns at grid column 1.
+    assert hasattr(dialog, "sash"), "Missing draggable sash between columns"
+    assert dialog.sash.grid_info()["column"] == 1
+
+    # The right column carries the configured pane width and lives at column 2.
+    right_col = dialog.right_col
+    assert right_col.grid_info()["column"] == 2
+    assert right_col.cget("width") == dialog.right_pane_width == 350, \
+        f"Right column width should be 350, got {right_col.cget('width')}"
+
     # Verify left column row weights (Description and Next Action)
-    left_col = None
-    for child in main_frame.winfo_children():
-        if isinstance(child, ctk.CTkFrame) and child.grid_info()["column"] == 0:
-            left_col = child
-            break
-            
-    assert left_col is not None, "Missing left column frame"
+    left_col = dialog.left_col
+    assert left_col.grid_info()["column"] == 0, "Left column should be at grid column 0"
     
     # Check that at least two rows in the left column have weight > 0 (resizing rows)
     resizing_rows = 0
