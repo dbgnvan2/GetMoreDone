@@ -42,6 +42,9 @@ Last Updated: 2026-01-24
 ## 🐛 Known Bugs
 
 - [ ] Today listing shows all completed items (should only show today's)
+- [ ] Item editor: `save_and_close` / `save_and_new` / `duplicate_item` infer save success from the error-label text (`.startswith("Error:")`), so a validation message like "Title is required" is treated as success and the dialog closes/proceeds anyway. `save_item()` now returns a bool — migrate these three to use it (surfaced by the 2026-07-26 learning-qa sweep).
+- [ ] Item editor: the ⏱ Timer button stays enabled if the timer completes the item (Finished/Continue), so it can re-open a timer on a now-completed item (cosmetic; no data loss).
+- [ ] Item editor + timer are both non-modal: editing the editor's Description/Next Action *while* the timer is open can be overwritten by the on-close reload from the DB (inherent tradeoff of reload-on-close).
 
 ## 🎯 Feature Requests
 

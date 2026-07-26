@@ -1,3 +1,15 @@
+## Recent Changes (2026-07-26)
+
+### Timer button in the editor + music finder fix + Obsidian note-open fix
+
+- ✅ **⏱ Timer button on the Edit Action Item window** — The working-mode timer (countdown + break + background music + notes) was only reachable from Today/Upcoming/All Items. Added a full-width **⏱ Timer** button to the editor's action area, shown only for existing, non-completed items. It **saves pending edits first** (so the timer reflects the on-screen time block and notes), then opens the timer. On timer close it reloads notes/next-action **and planned-minutes** from the DB so a later Save in the editor can't clobber what the timer changed. `save_item()` now returns a success boolean.
+- ✅ **Timer music: "can't find music" fixed** — Two causes. (1) With no music folder configured the finder bailed out; it now falls back to the app's bundled `audio/` folder so music works out of the box. (2) `.aif`/`.aiff` were excluded from the format allowlist, so a folder of playable AIFF tracks looked *empty* (only MP3s were seen) — AIFF is now a recognized/preferred format (pygame/SDL loads it). Failures were console-only; the timer window now shows the real reason inline ("No music folder set…", "No playable music in …", "♫ *track*", or a playback error). Format list + folder resolution centralized in new `src/getmoredone/utils/music_library.py` (was duplicated in 3 places); new `paths.bundled_audio_dir()`.
+- ✅ **Obsidian "Open" note fix** — The Open button "blinked the screen but the note didn't open" for any note whose name contains spaces (every app-created note is `"{Title} - {date}.md"`). `open_in_obsidian()` built the `obsidian://` URI without percent-encoding (it only replaced backslashes, despite a comment claiming otherwise), so the raw space made the URI malformed. Now percent-encodes the vault name and file path (keeping `/`). Notes without spaces were unaffected, which had masked the bug.
+- ✅ **Tests** — new `tests/test_music_library.py` (12: AIFF recognition, bundled-folder fallback, per-status messages), `tests/test_obsidian_integration.py::TestOpenInObsidianURI` (4: space/subfolder/no-space/outside-vault), and timer/editor tests in `tests/test_timer.py` + `tests/test_item_editor.py` (save-first gating, dirty-state planned-minutes reload, play-button state on music failure). Full suite: **410 passed, 1 skipped**. Real-widget smoke test confirmed the editor button visibility rules and the timer's music status line.
+- ⚠️ **Known gaps** (learning-qa sweep, deferred to BACKLOG): `save_and_close`/`save_and_new`/`duplicate_item` still infer save success from the error-label text (misclassifies validation errors) — not worsened by the new bool return; the editor's ⏱ Timer button stays enabled if the timer completes the item (cosmetic); the timer is non-modal, so editing the editor's notes *while* the timer is open can be overwritten by the on-close reload.
+
+---
+
 ## Recent Changes (2026-07-17)
 
 ### Scheduler project attach + Item Editor UX + email-import cleaning

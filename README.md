@@ -21,7 +21,7 @@ User guide: `docs/USER_GUIDE.md`
 🧭 **Vision Strategy Plan (VSP)** - Strategic long-term planning from vision elements through annual, quarter, month, and weekly execution
 🗂️ **Project Board** - One project note per Annual Plan Element, color-coded by APE category and linked to action items and Obsidian notes
 🗓️ **Scheduler Projects tab** - Drag one or more action items onto a project to attach them, filter the list by project, then move a project's items to a date (one project per item)
-🎵 **Music Playback** - Background music during work sessions with volume control and format conversion tools
+🎵 **Music Playback** - Background music during work sessions (your own folder or built-in tracks) with volume control and format conversion tools
 ✨ **13 Comprehensive Screens** - Today, Upcoming, All Items, Hierarchical, Scheduler, Projects, Completed, Contacts, VSP Plan, Plan, Defaults, Status, Settings
 ⚡ **Quick Date Pickers** - Set dates with one-click buttons: Today, +1, Clear
 🎯 **Date Offset Defaults** - Automatically set start/due dates relative to today
@@ -222,7 +222,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 
 **Starting a Timer:**
 
-1. Click the **"⏱ Timer"** button on any open action item (found in TODAY, Upcoming, or All Items screens)
+1. Click the **"⏱ Timer"** button on any open action item — found in TODAY, Upcoming, and All Items, and in the **Edit Action Item** window (there it saves your edits first, then opens the timer so it reflects the current time block and notes)
 2. The timer window opens showing:
    - **Time Block**: Total allocated time (e.g., 30 minutes)
    - **Time To Finish**: Countdown for work time (e.g., 25 minutes)
@@ -230,7 +230,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
    - **Next Steps**: Shows the action item's description to help you get started
    - **Currently Playing**: Track name from your music folder (if configured)
 3. Optionally edit the Time Block value before starting
-4. Click **Start** to begin the countdown (music starts automatically if configured)
+4. Click **Start** to begin the countdown (background music starts automatically — from your configured folder, or the app's built-in tracks if you haven't set one)
 
 **Timer Controls:**
 
@@ -247,6 +247,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
   - Pausing the timer does NOT pause the music
   - You can control music anytime without affecting the timer
   - Music only stops when you click Stop or close the window
+- **If nothing plays**: the window tells you why — "No music folder set…", "No playable music in …", or "♫ *track*". Set a folder in **Settings → Timer & Audio**, or leave it blank to use the app's built-in tracks. Supported formats: MP3, WAV, OGG, AIFF (FLAC/M4A/AAC may vary by system).
 
 **Visual Indicators:**
 
