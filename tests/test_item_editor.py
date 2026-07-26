@@ -416,3 +416,60 @@ def test_duplicate_saves_current_changes(temp_db):
     assert duplicate.description == "Updated description"
     assert duplicate.title == "Original Task"
     assert duplicate.id != original_id
+
+
+# --- ⏱ Timer button on the editor (save-first, then open the working-mode timer) ---
+
+def test_start_timer_aborts_when_save_fails(monkeypatch):
+    """If the save-first step fails validation, the timer must not open."""
+    import src.getmoredone.screens.timer_window as tw
+    opened = []
+    monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
+
+    dialog = SimpleNamespace(
+        save_item=lambda: False,
+        item=SimpleNamespace(id="x"),
+        db_manager=object(),
+        _on_timer_closed=lambda: None,
+    )
+    ItemEditorDialog.start_timer(dialog)
+
+    assert opened == []
+
+
+def test_start_timer_opens_timer_after_successful_save(monkeypatch):
+    """A successful save opens the timer on the current item with a close callback."""
+    import src.getmoredone.screens.timer_window as tw
+    opened = []
+    monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
+
+    item = SimpleNamespace(id="abc")
+    db = object()
+    def closer():
+        return None
+    dialog = SimpleNamespace(
+        save_item=lambda: True,
+        item=item,
+        db_manager=db,
+        _on_timer_closed=closer,
+    )
+    ItemEditorDialog.start_timer(dialog)
+
+    assert len(opened) == 1
+    args, kwargs = opened[0]
+    assert args[0] is dialog          # parent
+    assert args[1] is db              # db_manager
+    assert args[2] is item           # the item being edited
+    assert kwargs.get("on_close") is closer
+
+
+def test_on_timer_closed_reloads_notes_and_refreshes_parent():
+    """Closing the timer reloads notes (so a later Save won't clobber them) and refreshes."""
+    calls = []
+    dialog = SimpleNamespace(
+        winfo_exists=lambda: True,
+        _reload_editable_notes=lambda: calls.append("reload"),
+        on_close_callback=lambda: calls.append("refresh"),
+    )
+    ItemEditorDialog._on_timer_closed(dialog)
+    assert calls == ["reload", "refresh"]

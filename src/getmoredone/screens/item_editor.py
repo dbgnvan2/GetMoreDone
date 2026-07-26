@@ -9,7 +9,7 @@ import customtkinter as ctk
 from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
 
-from ..models import ActionItem, PriorityFactors, ItemLink
+from ..models import ActionItem, PriorityFactors, ItemLink, Status
 from ..validation import Validator
 from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
@@ -286,6 +286,15 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
 
         # Existing item secondary
         if self.item_id:
+            # Focus timer (working mode) — only while the item is still open.
+            if self.item and self.item.status != Status.COMPLETED:
+                self.btn_timer = ctk.CTkButton(
+                    s_frame, text="⏱ Timer", command=self.start_timer,
+                    **button_style("secondary"))
+                self.btn_timer.grid(row=row_s, column=0, columnspan=2,
+                                    sticky="ew", padx=2, pady=(2, 6))
+                row_s += 1
+
             self.btn_duplicate = ctk.CTkButton(s_frame, text="Duplicate", command=self.duplicate_item, **button_style("secondary"))
             self.btn_duplicate.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
             self.btn_followup = ctk.CTkButton(s_frame, text="Add Follow-up", command=self.create_followup, **button_style("secondary"))
@@ -959,8 +968,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         except Exception:
             return None
 
-    def save_item(self):
-        """Save the item."""
+    def save_item(self) -> bool:
+        """Save the item. Returns True on success, False on validation/save error."""
         try:
             # Create or update item
             if self.item_id:
@@ -1032,7 +1041,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                     if due < start:
                         self.error_label.configure(
                             text="Error: Due date cannot be before Start date")
-                        return
+                        return False
                 except ValueError:
                     # Let the validator handle invalid date formats
                     pass
@@ -1041,7 +1050,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             errors = Validator.validate_action_item(item)
             if errors:
                 self.error_label.configure(text=errors[0].message)
-                return
+                return False
 
             # Save
             if self.item_id:
@@ -1055,9 +1064,11 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             self.error_label.configure(text="✓ Saved")
             # Reset the message after 2 seconds
             self.after(2000, lambda: self.error_label.configure(text=""))
+            return True
 
         except Exception as e:
             self.error_label.configure(text=f"Error: {str(e)}")
+            return False
 
     def save_and_new(self):
         """Save and open a new item editor."""
@@ -1110,6 +1121,50 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 ItemEditorDialog(self.master, self.db_manager, new_id,
                                  vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
                                  x=new_x, y=new_y)
+
+    def start_timer(self):
+        """Save pending edits, then open the focus timer (working mode) for this item."""
+        # Save-first so the timer reflects what's on screen (planned minutes, notes).
+        # If validation fails, save_item() shows the reason and we stop here.
+        if not self.save_item():
+            return
+        if not self.item:
+            return
+
+        from .timer_window import TimerWindow
+        TimerWindow(self, self.db_manager, self.item,
+                    on_close=self._on_timer_closed)
+
+    def _on_timer_closed(self):
+        """After the timer closes, pick up any note edits / completion it made."""
+        # The timer can edit the notes and can complete the item (Finished/Continue).
+        # Reload so a later Save from this editor won't clobber those changes, then
+        # refresh whatever list opened this editor.
+        if self.winfo_exists():
+            self._reload_editable_notes()
+        if self.on_close_callback:
+            try:
+                self.on_close_callback()
+            except Exception:
+                pass
+
+    def _reload_editable_notes(self):
+        """Re-read notes / next-action from the DB (e.g. after the timer edited them)."""
+        if not self.item_id:
+            return
+        fresh = self.db_manager.get_action_item(self.item_id)
+        if not fresh:
+            return
+        self.item = fresh
+        try:
+            self.description_text.delete("1.0", "end")
+            if fresh.description:
+                self.description_text.insert("1.0", fresh.description)
+            self.next_action_text.delete("1.0", "end")
+            if fresh.next_action:
+                self.next_action_text.insert("1.0", fresh.next_action)
+        except Exception:
+            pass  # widgets may be gone if the window is closing
 
     def complete_item(self):
         """Mark item as complete."""
