@@ -7,7 +7,6 @@ import customtkinter as ctk
 import tkinter as tk
 from datetime import datetime, timedelta, date
 from typing import Optional, Callable
-import random
 from pathlib import Path
 from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
@@ -15,6 +14,7 @@ from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from ..theme import button_style, semantic_colors, status_text_color
 from ..utils.audio_playback import play_audio_file_async, play_system_beep
+from ..utils.music_library import select_track
 from ..utils.icon_loader import load_music_note_icon
 from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow, NextStepsDialog
 
@@ -216,6 +216,19 @@ class TimerWindow(ctk.CTkToplevel):
             state="disabled"
         )
         self.music_pause_button.grid(row=0, column=2, padx=5, pady=5)
+
+        # Music status line — surfaces why music did/didn't start (no folder,
+        # no playable files, now playing) instead of only printing to console.
+        self.music_status_label = ctk.CTkLabel(
+            music_frame,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=palette["muted_text"],
+            wraplength=380,
+            justify="left",
+        )
+        self.music_status_label.grid(
+            row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="w")
 
         # Status label
         self.status_label = ctk.CTkLabel(
@@ -945,135 +958,84 @@ class TimerWindow(ctk.CTkToplevel):
         """Play system beep/alert sound."""
         play_system_beep()
 
-    def _get_random_music_file(self) -> Optional[str]:
-        """Get a random music file from the configured music folder."""
-        if not self.settings.music_folder:
-            return None
-
-        music_folder = Path(self.settings.music_folder)
-        if not music_folder.exists() or not music_folder.is_dir():
-            return None
-
-        # Supported audio formats (pygame has best support for these)
-        # Note: M4A/AAC/WMA may not work reliably on all systems
-        preferred_formats = {'.mp3', '.wav', '.ogg'}
-        problematic_formats = {'.flac', '.m4a', '.aac', '.wma'}
-        all_formats = preferred_formats | problematic_formats
-
-        # Get all audio files in the folder
-        music_files = [
-            f for f in music_folder.iterdir()
-            if f.is_file() and f.suffix.lower() in all_formats
-        ]
-
-        if not music_files:
-            return None
-
-        # Prefer well-supported formats
-        preferred_files = [
-            f for f in music_files if f.suffix.lower() in preferred_formats]
-        if preferred_files:
-            return str(random.choice(preferred_files))
-
-        # Fall back to any file, but warn
-        selected = random.choice(music_files)
-        print(
-            f"[WARNING] Selected {selected.suffix} file - this format may not play correctly")
-        print(f"[WARNING] For best results, use MP3, WAV, or OGG files")
-        return str(selected)
+    def _set_music_status(self, text: str, level: str = "muted"):
+        """Show a music message in the timer window itself, not just the console."""
+        try:
+            if level == "muted":
+                color = semantic_colors()["muted_text"]
+            else:
+                color = status_text_color(level)
+            self.music_status_label.configure(text=text, text_color=color)
+        except (tk.TclError, AttributeError):
+            pass  # window torn down, or label not built yet
 
     def _start_music(self):
-        """Start playing music from the configured folder."""
+        """Start background music, surfacing in the UI why it can't when it can't."""
+        # Resolve a track (configured folder, else bundled) with an explicit status.
+        selection = select_track(self.settings.music_folder)
+        if selection.track is None:
+            self._set_music_status(selection.message, "warning")
+            print(f"[INFO] Music: {selection.message}")
+            self.current_track_name = None
+            self.music_is_playing = False
+            self.music_play_button.configure(state="normal")
+            self.music_pause_button.configure(state="disabled", text="⏸ Pause")
+            return
+
+        music_file = selection.track
+        self.current_music_file = music_file
+        file_ext = Path(music_file).suffix.lower()
+
         try:
-            # Check if music folder is configured
-            if not self.settings.music_folder:
-                print(
-                    "[INFO] No music folder configured. Go to Settings > Timer & Audio to set up music playback.")
+            import pygame
+        except ImportError:
+            msg = "pygame not installed — music unavailable."
+            self._set_music_status(msg, "warning")
+            print(f"[INFO] {msg} Install with: pip install pygame")
+            return
+
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(44100, -16, 2, 512)
+
+            pygame.mixer.music.load(music_file)
+            pygame.mixer.music.set_volume(self.settings.music_volume)
+            pygame.mixer.music.play(-1)  # -1 loops indefinitely
+
+            # Give playback a moment to actually start before checking.
+            import time
+            time.sleep(0.1)
+
+            if not pygame.mixer.music.get_busy():
+                self.current_track_name = None
+                self._set_music_status(
+                    f"Couldn't play {Path(music_file).name} — "
+                    "try converting to MP3, WAV, or OGG.",
+                    "error",
+                )
+                print(f"[ERROR] Loaded but won't play: {music_file}")
                 return
 
-            # Get a random music file
-            music_file = self._get_random_music_file()
-            if not music_file:
-                print(
-                    f"[INFO] No music files found in: {self.settings.music_folder}")
-                print("[INFO] Supported formats: MP3, WAV, OGG, FLAC, M4A, AAC, WMA")
-                return
+            # Playing.
+            self.current_track_name = Path(music_file).name
+            self.music_is_playing = True
+            self.music_play_button.configure(state="disabled")
+            self.music_pause_button.configure(state="normal", text="⏸ Pause")
+            self._update_status_with_track()
 
-            self.current_music_file = music_file
-
-            # Initialize pygame mixer if not already initialized
-            try:
-                import pygame
-                if not pygame.mixer.get_init():
-                    # Initialize with better compatibility settings
-                    # frequency=44100, size=-16, channels=2, buffer=512
-                    pygame.mixer.init(44100, -16, 2, 512)
-                    print(
-                        f"[DEBUG] Pygame mixer initialized: {pygame.mixer.get_init()}")
-
-                # Load and play the music file
-                file_ext = Path(music_file).suffix.lower()
-                pygame.mixer.music.load(music_file)
-
-                # Set volume from settings
-                volume = self.settings.music_volume
-                pygame.mixer.music.set_volume(volume)
-                print(f"[DEBUG] Music volume set to: {volume:.1%}")
-
-                pygame.mixer.music.play(-1)  # -1 means loop indefinitely
-
-                # Check if playback actually started
-                # Give it a moment to start
-                import time
-                time.sleep(0.1)
-
-                if not pygame.mixer.music.get_busy():
-                    print(
-                        f"[ERROR] Music file loaded but won't play: {file_ext} format may not be supported")
-                    print(f"[ERROR] File: {Path(music_file).name}")
-                    print(
-                        f"[INFO] SOLUTION: Convert your music to MP3, WAV, or OGG format")
-                    print(
-                        f"[INFO] M4A/AAC files often don't work with pygame on macOS")
-                    self.current_track_name = None
-                    return
-
-                # Store track name and update status
-                self.current_track_name = Path(music_file).name
-                self._update_status_with_track()
-                print(f"[INFO] ✓ Playing music: {self.current_track_name}")
-                print(f"[INFO] Volume: {volume:.0%}")
-
-                # Update music state and button states
-                self.music_is_playing = True
-                self.music_play_button.configure(state="disabled")
-                self.music_pause_button.configure(
-                    state="normal", text="⏸ Pause")
-
-                if file_ext in ['.m4a', '.aac', '.wma', '.flac']:
-                    print(
-                        f"[INFO] Note: {file_ext} format may have playback issues")
-                    print(
-                        f"[INFO] If you hear clicks/silence, convert to MP3 or WAV")
-            except ImportError:
-                print("[INFO] pygame not installed - music playback disabled")
-                print("[INFO] Install pygame with: pip install pygame")
-            except Exception as e:
-                print(f"[ERROR] Error playing music: {e}")
-                print(
-                    f"[ERROR] File: {Path(music_file).name if music_file else 'unknown'}")
-                if 'music_file' in locals():
-                    file_ext = Path(music_file).suffix.lower()
-                    if file_ext in ['.m4a', '.aac', '.wma']:
-                        print(
-                            f"[ERROR] {file_ext} format is not well-supported by pygame")
-                        print(
-                            f"[INFO] Convert to MP3, WAV, or OGG for reliable playback")
-                import traceback
-                traceback.print_exc()
-
+            if selection.status == "fallback_only":
+                self._set_music_status(
+                    f"Playing {self.current_track_name} ({file_ext} may be "
+                    "unreliable — MP3/WAV/OGG recommended).",
+                    "warning",
+                )
+            else:
+                self._set_music_status(f"♫ {self.current_track_name}", "success")
+            print(f"[INFO] Playing music: {self.current_track_name}")
         except Exception as e:
-            print(f"[ERROR] Error starting music: {e}")
+            self.current_track_name = None
+            self._set_music_status(f"Error playing music: {e}", "error")
+            print(f"[ERROR] Error playing music: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1089,6 +1051,7 @@ class TimerWindow(ctk.CTkToplevel):
                 self.music_play_button.configure(state="normal")
                 self.music_pause_button.configure(
                     state="disabled", text="⏸ Pause")
+                self._set_music_status("")
                 print("[DEBUG] Music stopped")
         except ImportError:
             pass  # pygame not installed

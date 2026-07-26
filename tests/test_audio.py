@@ -20,8 +20,9 @@ except Exception:  # pragma: no cover - pygame missing in some environments
     pygame = None  # type: ignore
 
 from src.getmoredone.app_settings import AppSettings
-
-SUPPORTED_EXTENSIONS = (".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma")
+# Single source of truth for playable formats — keep the timer window, settings
+# copy, and this guard rail in agreement.
+from src.getmoredone.utils.music_library import SUPPORTED_FORMATS as SUPPORTED_EXTENSIONS
 
 
 def _iter_audio_files(folder: Path) -> Iterable[Path]:

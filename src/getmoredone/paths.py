@@ -94,6 +94,15 @@ def bundled_themes_dir() -> Path:
     return resource_root() / "themes"
 
 
+def bundled_audio_dir() -> Path:
+    """Directory of background-music tracks shipped with the app.
+
+    Used as the default timer music folder when the user has not configured
+    one of their own (Settings > Timer & Audio).
+    """
+    return resource_root() / "audio"
+
+
 def resolve_theme_path(theme_name: str) -> Path:
     """Resolve a named theme file from bundled themes, fallback to apple_grey."""
     slug = (theme_name or "").strip().lower() or "apple_grey"

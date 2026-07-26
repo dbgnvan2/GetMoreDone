@@ -735,8 +735,9 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             row=3, column=1, sticky="w", padx=10, pady=10)
 
         # Info
-        info_text = ("Select a folder containing music files (MP3, WAV, OGG, FLAC, M4A).\n"
-                     "When you start a timer, a random music file from this folder will play.\n"
+        info_text = ("Select a folder of music files (MP3, WAV, OGG, AIFF; FLAC/M4A/AAC may vary).\n"
+                     "When you start a timer, a random track from this folder plays.\n"
+                     "Leave blank to use the app's built-in music. MP3/WAV/OGG/AIFF are most reliable.\n"
                      "Adjust volume to control music playback loudness (70% recommended).")
         self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
             row=4, column=0, columnspan=3, sticky="w", padx=10, pady=5
