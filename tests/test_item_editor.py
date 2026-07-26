@@ -438,12 +438,12 @@ def test_start_timer_aborts_when_save_fails(monkeypatch):
 
 
 def test_start_timer_opens_timer_after_successful_save(monkeypatch):
-    """A successful save opens the timer on the current item with a close callback."""
+    """A successful save opens the timer on the current (open) item with a callback."""
     import src.getmoredone.screens.timer_window as tw
     opened = []
     monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
 
-    item = SimpleNamespace(id="abc")
+    item = SimpleNamespace(id="abc", status="open")
     db = object()
     def closer():
         return None
@@ -452,6 +452,8 @@ def test_start_timer_opens_timer_after_successful_save(monkeypatch):
         item=item,
         db_manager=db,
         _on_timer_closed=closer,
+        _current_timer_field_values=lambda: {
+            "description": "", "next_action": "", "planned_minutes": ""},
     )
     ItemEditorDialog.start_timer(dialog)
 
@@ -461,36 +463,78 @@ def test_start_timer_opens_timer_after_successful_save(monkeypatch):
     assert args[1] is db              # db_manager
     assert args[2] is item           # the item being edited
     assert kwargs.get("on_close") is closer
+    # A snapshot is captured so the on-close reload can avoid clobbering edits.
+    assert hasattr(dialog, "_pre_timer_field_values")
+
+
+def test_start_timer_aborts_on_completed_item(monkeypatch):
+    """Even if save succeeds, a completed item must not open a timer."""
+    import src.getmoredone.screens.timer_window as tw
+    opened = []
+    monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
+    dialog = SimpleNamespace(
+        save_item=lambda: True,
+        item=SimpleNamespace(id="x", status="completed"),
+    )
+    ItemEditorDialog.start_timer(dialog)
+    assert opened == []
 
 
 def test_on_timer_closed_reloads_notes_and_refreshes_parent():
-    """Closing the timer reloads notes (so a later Save won't clobber them) and refreshes."""
+    """Closing the timer reloads notes, refreshes the button state, then the parent."""
     calls = []
     dialog = SimpleNamespace(
         winfo_exists=lambda: True,
         _reload_editable_notes=lambda: calls.append("reload"),
+        _refresh_timer_button_state=lambda: calls.append("btnstate"),
         on_close_callback=lambda: calls.append("refresh"),
     )
     ItemEditorDialog._on_timer_closed(dialog)
-    assert calls == ["reload", "refresh"]
+    assert calls == ["reload", "btnstate", "refresh"]
+
+
+def test_refresh_timer_button_state_disables_when_completed():
+    states = []
+    dialog = SimpleNamespace(
+        btn_timer=SimpleNamespace(configure=lambda **k: states.append(k)),
+        item=SimpleNamespace(status="completed"),
+    )
+    ItemEditorDialog._refresh_timer_button_state(dialog)
+    assert states == [{"state": "disabled"}]
+
+
+def test_refresh_timer_button_state_noop_when_open():
+    states = []
+    dialog = SimpleNamespace(
+        btn_timer=SimpleNamespace(configure=lambda **k: states.append(k)),
+        item=SimpleNamespace(status="open"),
+    )
+    ItemEditorDialog._refresh_timer_button_state(dialog)
+    assert states == []
+
+
+def test_refresh_timer_button_state_noop_without_button():
+    # Completed item whose editor never built a Timer button (must not raise).
+    dialog = SimpleNamespace(item=SimpleNamespace(status="completed"))
+    ItemEditorDialog._refresh_timer_button_state(dialog)
 
 
 class _FakeWidget:
     """Minimal stand-in for a CTk text/entry widget in reload tests."""
-    def __init__(self):
-        self.content = None
+    def __init__(self, initial=""):
+        self.content = initial
+    def get(self, *args):
+        return self.content
     def delete(self, *args):
         self.content = ""
     def insert(self, index, text):
         self.content = text
 
 
-def test_reload_editable_notes_refreshes_planned_minutes():
-    """Dirty-state: the timer changed planned_minutes in the DB; reload must pick
-    it up so a later Save in the editor doesn't revert it (P8/P12)."""
-    fresh = SimpleNamespace(
-        description="notes from timer", next_action="do X", planned_minutes=60)
-    desc, nxt, pm = _FakeWidget(), _FakeWidget(), _FakeWidget()
+def _reload_dialog(fresh, snapshot, current):
+    desc = _FakeWidget(current["description"])
+    nxt = _FakeWidget(current["next_action"])
+    pm = _FakeWidget(current["planned_minutes"])
     dialog = SimpleNamespace(
         item_id="id1",
         item=None,
@@ -498,29 +542,58 @@ def test_reload_editable_notes_refreshes_planned_minutes():
         description_text=desc,
         next_action_text=nxt,
         planned_minutes_entry=pm,
+        _pre_timer_field_values=snapshot,
+        _current_timer_field_values=lambda: {
+            "description": desc.get().strip(),
+            "next_action": nxt.get().strip(),
+            "planned_minutes": pm.get().strip(),
+        },
     )
+    return dialog, desc, nxt, pm
 
+
+def test_reload_refreshes_untouched_fields():
+    """Dirty-state: the timer changed fields in the DB and the user touched none
+    here; all reload (incl. planned_minutes, the P8/P12 revert fix)."""
+    fresh = SimpleNamespace(
+        description="notes from timer", next_action="do X", planned_minutes=60)
+    snap = {"description": "orig", "next_action": "orig na", "planned_minutes": "30"}
+    current = dict(snap)  # user left everything untouched -> current == snapshot
+
+    dialog, desc, nxt, pm = _reload_dialog(fresh, snap, current)
     ItemEditorDialog._reload_editable_notes(dialog)
 
-    assert pm.content == "60"            # the reverted-value bug is fixed
     assert desc.content == "notes from timer"
     assert nxt.content == "do X"
+    assert pm.content == "60"
     assert dialog.item is fresh
 
 
-def test_reload_editable_notes_handles_none_planned_minutes():
+def test_reload_preserves_field_user_edited_during_timer():
+    """A field the user edited here while the timer was open must NOT be clobbered
+    by the on-close reload; untouched fields still reload from the DB."""
+    fresh = SimpleNamespace(
+        description="timer note", next_action="timer na", planned_minutes=60)
+    snap = {"description": "orig", "next_action": "orig na", "planned_minutes": "30"}
+    # User edited description in the editor; left next_action / planned_minutes alone.
+    current = {"description": "MY LIVE EDIT",
+               "next_action": "orig na", "planned_minutes": "30"}
+
+    dialog, desc, nxt, pm = _reload_dialog(fresh, snap, current)
+    ItemEditorDialog._reload_editable_notes(dialog)
+
+    assert desc.content == "MY LIVE EDIT"   # in-flight edit preserved
+    assert nxt.content == "timer na"        # untouched -> reloaded
+    assert pm.content == "60"               # untouched -> reloaded
+
+
+def test_reload_handles_none_planned_minutes():
     """A cleared planned_minutes should blank the entry, not insert 'None'."""
     fresh = SimpleNamespace(description=None, next_action=None, planned_minutes=None)
-    desc, nxt, pm = _FakeWidget(), _FakeWidget(), _FakeWidget()
-    dialog = SimpleNamespace(
-        item_id="id1",
-        item=None,
-        db_manager=SimpleNamespace(get_action_item=lambda i: fresh),
-        description_text=desc,
-        next_action_text=nxt,
-        planned_minutes_entry=pm,
-    )
+    snap = {"description": "", "next_action": "", "planned_minutes": "30"}
+    current = dict(snap)
 
+    dialog, desc, nxt, pm = _reload_dialog(fresh, snap, current)
     ItemEditorDialog._reload_editable_notes(dialog)
 
     assert pm.content == ""              # blanked, never the string "None"

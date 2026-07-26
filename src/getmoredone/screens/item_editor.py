@@ -1122,46 +1122,80 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         # If validation fails, save_item() shows the reason and we stop here.
         if not self.save_item():
             return
-        if not self.item:
+        if not self.item or self.item.status == Status.COMPLETED:
             return
+
+        # Snapshot the fields the timer can also change, so on close we can tell
+        # which ones the user edited *here* meanwhile and leave those untouched.
+        self._pre_timer_field_values = self._current_timer_field_values()
 
         from .timer_window import TimerWindow
         TimerWindow(self, self.db_manager, self.item,
                     on_close=self._on_timer_closed)
 
+    def _current_timer_field_values(self) -> dict:
+        """Snapshot of the editor fields the timer can also change."""
+        return {
+            "description": self.description_text.get("1.0", "end").strip(),
+            "next_action": self.next_action_text.get("1.0", "end").strip(),
+            "planned_minutes": self.planned_minutes_entry.get().strip(),
+        }
+
     def _on_timer_closed(self):
-        """After the timer closes, pick up any note edits / completion it made."""
+        """After the timer closes, pick up note edits / completion it made."""
         # The timer can edit the notes and can complete the item (Finished/Continue).
-        # Reload so a later Save from this editor won't clobber those changes, then
-        # refresh whatever list opened this editor.
         if self.winfo_exists():
             self._reload_editable_notes()
+            self._refresh_timer_button_state()
         if self.on_close_callback:
             try:
                 self.on_close_callback()
             except Exception:
                 pass
 
+    def _refresh_timer_button_state(self):
+        """Disable the Timer button once the item is completed (e.g. the timer's
+        Finished/Continue completed it), so it can't reopen on a done item."""
+        btn = getattr(self, "btn_timer", None)
+        if btn is None:
+            return
+        try:
+            if self.item and self.item.status == Status.COMPLETED:
+                btn.configure(state="disabled")
+        except Exception:
+            pass
+
     def _reload_editable_notes(self):
-        """Re-read fields the timer can change from the DB, so a later Save here
-        doesn't clobber them: notes, next-action, and planned minutes (the timer
-        persists the time-block value on Start)."""
+        """Re-read fields the timer can change (notes, next-action, planned
+        minutes) from the DB, but keep any field the user edited in this editor
+        while the timer was open — only reload the ones they left untouched, so a
+        non-modal edit here isn't clobbered by the reload."""
         if not self.item_id:
             return
         fresh = self.db_manager.get_action_item(self.item_id)
         if not fresh:
             return
         self.item = fresh
+        snap = getattr(self, "_pre_timer_field_values", {})
         try:
-            self.description_text.delete("1.0", "end")
-            if fresh.description:
-                self.description_text.insert("1.0", fresh.description)
-            self.next_action_text.delete("1.0", "end")
-            if fresh.next_action:
-                self.next_action_text.insert("1.0", fresh.next_action)
-            self.planned_minutes_entry.delete(0, "end")
-            if fresh.planned_minutes is not None:
-                self.planned_minutes_entry.insert(0, str(fresh.planned_minutes))
+            current = self._current_timer_field_values()
+        except Exception:
+            return  # widgets gone
+        try:
+            # A field is safe to reload only if the user hasn't changed it here
+            # since the timer opened (current value still equals the snapshot).
+            if current["description"] == snap.get("description"):
+                self.description_text.delete("1.0", "end")
+                if fresh.description:
+                    self.description_text.insert("1.0", fresh.description)
+            if current["next_action"] == snap.get("next_action"):
+                self.next_action_text.delete("1.0", "end")
+                if fresh.next_action:
+                    self.next_action_text.insert("1.0", fresh.next_action)
+            if current["planned_minutes"] == snap.get("planned_minutes"):
+                self.planned_minutes_entry.delete(0, "end")
+                if fresh.planned_minutes is not None:
+                    self.planned_minutes_entry.insert(0, str(fresh.planned_minutes))
         except Exception:
             pass  # widgets may be gone if the window is closing
 

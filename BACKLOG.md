@@ -43,8 +43,8 @@ Last Updated: 2026-01-24
 
 - [ ] Today listing shows all completed items (should only show today's)
 - [x] Item editor: `save_and_close` / `save_and_new` / `duplicate_item` inferred save success from the error-label text, so they closed/proceeded even on a validation error. Fixed 2026-07-26 — all three now gate on the `save_item()` bool, with tests.
-- [ ] Item editor: the ⏱ Timer button stays enabled if the timer completes the item (Finished/Continue), so it can re-open a timer on a now-completed item (cosmetic; no data loss).
-- [ ] Item editor + timer are both non-modal: editing the editor's Description/Next Action *while* the timer is open can be overwritten by the on-close reload from the DB (inherent tradeoff of reload-on-close).
+- [x] Item editor: the ⏱ Timer button stayed enabled if the timer completed the item, allowing a re-open on a done item. Fixed 2026-07-26 — `_on_timer_closed` disables the button once the reloaded item is completed (guard also added in `start_timer`).
+- [x] Item editor + timer non-modal reload could clobber edits: editing the editor's Description/Next Action *while* the timer is open was overwritten by the on-close reload. Fixed 2026-07-26 — `start_timer` snapshots the editable fields and the on-close reload only refreshes fields the user left untouched (their in-flight edit wins); untouched fields still pick up the timer's DB changes.
 
 ## 🎯 Feature Requests
 
