@@ -524,3 +524,83 @@ def test_reload_editable_notes_handles_none_planned_minutes():
     ItemEditorDialog._reload_editable_notes(dialog)
 
     assert pm.content == ""              # blanked, never the string "None"
+
+
+# --- save_item() bool return gates close / reopen / duplicate (validation errors) ---
+
+def test_save_and_close_stays_open_on_save_failure():
+    calls = []
+    dialog = SimpleNamespace(
+        save_item=lambda: False,
+        on_dialog_close=lambda: calls.append("close"),
+    )
+    ItemEditorDialog.save_and_close(dialog)
+    assert calls == []  # validation error -> dialog stays open
+
+
+def test_save_and_close_closes_on_success():
+    calls = []
+    dialog = SimpleNamespace(
+        save_item=lambda: True,
+        on_dialog_close=lambda: calls.append("close"),
+    )
+    ItemEditorDialog.save_and_close(dialog)
+    assert calls == ["close"]
+
+
+def test_save_and_new_does_not_reopen_on_failure(monkeypatch):
+    import src.getmoredone.screens.item_editor as ie
+    real = ie.ItemEditorDialog.save_and_new
+    created, closed = [], []
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: created.append((a, k)))
+    dialog = SimpleNamespace(
+        on_close_callback="cb", save_item=lambda: False,
+        on_dialog_close=lambda: closed.append(1),
+        master="m", db_manager="db", vps_manager="vps",
+    )
+    real(dialog)
+    assert created == [] and closed == []
+
+
+def test_save_and_new_reopens_on_success(monkeypatch):
+    import src.getmoredone.screens.item_editor as ie
+    real = ie.ItemEditorDialog.save_and_new
+    created, closed = [], []
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: created.append((a, k)))
+    dialog = SimpleNamespace(
+        on_close_callback="cb", save_item=lambda: True,
+        on_dialog_close=lambda: closed.append(1),
+        master="m", db_manager="db", vps_manager="vps",
+    )
+    real(dialog)
+    assert closed == [1] and len(created) == 1
+
+
+def test_duplicate_item_skips_on_save_failure(monkeypatch):
+    import src.getmoredone.screens.item_editor as ie
+    real = ie.ItemEditorDialog.duplicate_item
+    created, dup = [], []
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: created.append((a, k)))
+    dialog = SimpleNamespace(
+        item_id="id1", save_item=lambda: False,
+        db_manager=SimpleNamespace(
+            duplicate_action_item=lambda i: dup.append(i) or "new"),
+    )
+    real(dialog)
+    assert dup == [] and created == []  # no save -> no duplicate
+
+
+def test_duplicate_item_duplicates_on_success(monkeypatch):
+    import src.getmoredone.screens.item_editor as ie
+    real = ie.ItemEditorDialog.duplicate_item
+    created, dup = [], []
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: created.append((a, k)))
+    dialog = SimpleNamespace(
+        item_id="id1", save_item=lambda: True,
+        db_manager=SimpleNamespace(
+            duplicate_action_item=lambda i: dup.append(i) or "newid"),
+        winfo_x=lambda: 10, winfo_y=lambda: 20,
+        master="m", vps_manager="vps", on_close_callback="cb",
+    )
+    real(dialog)
+    assert dup == ["id1"] and len(created) == 1

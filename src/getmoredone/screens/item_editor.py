@@ -1073,39 +1073,33 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
     def save_and_new(self):
         """Save and open a new item editor."""
         callback = self.on_close_callback  # Save callback before save closes this dialog
-        self.save_item()
-        if self.winfo_exists():
-            # Item was saved successfully (window still exists)
+        # Only close + reopen if the save actually succeeded; on a validation
+        # error save_item() shows the reason and returns False, so we stay put.
+        if self.save_item():
             self.on_dialog_close()
             ItemEditorDialog(self.master, self.db_manager,
                              vps_manager=self.vps_manager, on_close_callback=callback)
 
     def save_and_close(self):
         """Save the item and close the dialog."""
-        self.save_item()
-        # Only close if save was successful (no error shown)
-        if self.winfo_exists() and not self.error_label.cget("text").startswith("Error:"):
+        # Close only on a successful save (False => validation/save error shown).
+        if self.save_item():
             self.on_dialog_close()
 
     def duplicate_item(self):
         """Save current changes, duplicate the saved item, and open it in a new editor."""
-        if self.item_id:
-            # First save any current changes
-            self.save_item()
+        # Duplicate only after the current edits save cleanly.
+        if self.item_id and self.save_item():
+            new_id = self.db_manager.duplicate_action_item(self.item_id)
+            if new_id:
+                # Calculate offset position (shifted right)
+                new_x = self.winfo_x() + 100
+                new_y = self.winfo_y() + 40
 
-            # Check if save was successful (no error)
-            if self.winfo_exists() and not self.error_label.cget("text").startswith("Error:"):
-                # Now duplicate the saved version
-                new_id = self.db_manager.duplicate_action_item(self.item_id)
-                if new_id:
-                    # Calculate offset position (shifted right)
-                    new_x = self.winfo_x() + 100
-                    new_y = self.winfo_y() + 40
-                    
-                    # Open the duplicate in a NEW editor window (don't close current one)
-                    ItemEditorDialog(self.master, self.db_manager, new_id,
-                                     vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
-                                     x=new_x, y=new_y)
+                # Open the duplicate in a NEW editor window (don't close current one)
+                ItemEditorDialog(self.master, self.db_manager, new_id,
+                                 vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
+                                 x=new_x, y=new_y)
 
     def create_followup(self):
         """Create a follow-up item linked to the current item and open in a new offset window."""
