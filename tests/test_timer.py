@@ -686,3 +686,44 @@ class TestContinueWorkflow:
 
         assert new_item.start_date == new_item.due_date
         assert new_item.status == Status.OPEN
+
+
+class TestMusicPlayButtonState:
+    """play_music must delegate control state to _start_music, not fake success."""
+
+    def _dialog(self, start_result):
+        from types import SimpleNamespace
+        calls = []
+        dialog = SimpleNamespace(
+            music_is_playing=False,
+            _start_music=lambda: (calls.append("start"), start_result)[1],
+            _resume_music=lambda: calls.append("resume"),
+            music_play_button=SimpleNamespace(
+                configure=lambda **k: calls.append(("play_btn", k))),
+            music_pause_button=SimpleNamespace(
+                configure=lambda **k: calls.append(("pause_btn", k))),
+        )
+        return dialog, calls
+
+    def test_play_music_does_not_fake_playing_on_failure(self):
+        """When _start_music fails, play_music must not flip controls to 'playing'."""
+        from src.getmoredone.screens.timer_window import TimerWindow
+        dialog, calls = self._dialog(start_result=False)
+
+        TimerWindow.play_music(dialog)
+
+        assert "start" in calls
+        # No button reconfiguration and no resume on the failure path —
+        # _start_music already left the controls in the stopped state.
+        assert ("play_btn", {"state": "disabled"}) not in calls
+        assert all(c == "start" for c in calls)
+
+    def test_play_music_delegates_to_start_music_on_success(self):
+        from src.getmoredone.screens.timer_window import TimerWindow
+        dialog, calls = self._dialog(start_result=True)
+
+        TimerWindow.play_music(dialog)
+
+        # _start_music owns the 'playing' button state on success; play_music
+        # must not double-set it here.
+        assert calls == ["start"]

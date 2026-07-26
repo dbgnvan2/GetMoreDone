@@ -473,3 +473,54 @@ def test_on_timer_closed_reloads_notes_and_refreshes_parent():
     )
     ItemEditorDialog._on_timer_closed(dialog)
     assert calls == ["reload", "refresh"]
+
+
+class _FakeWidget:
+    """Minimal stand-in for a CTk text/entry widget in reload tests."""
+    def __init__(self):
+        self.content = None
+    def delete(self, *args):
+        self.content = ""
+    def insert(self, index, text):
+        self.content = text
+
+
+def test_reload_editable_notes_refreshes_planned_minutes():
+    """Dirty-state: the timer changed planned_minutes in the DB; reload must pick
+    it up so a later Save in the editor doesn't revert it (P8/P12)."""
+    fresh = SimpleNamespace(
+        description="notes from timer", next_action="do X", planned_minutes=60)
+    desc, nxt, pm = _FakeWidget(), _FakeWidget(), _FakeWidget()
+    dialog = SimpleNamespace(
+        item_id="id1",
+        item=None,
+        db_manager=SimpleNamespace(get_action_item=lambda i: fresh),
+        description_text=desc,
+        next_action_text=nxt,
+        planned_minutes_entry=pm,
+    )
+
+    ItemEditorDialog._reload_editable_notes(dialog)
+
+    assert pm.content == "60"            # the reverted-value bug is fixed
+    assert desc.content == "notes from timer"
+    assert nxt.content == "do X"
+    assert dialog.item is fresh
+
+
+def test_reload_editable_notes_handles_none_planned_minutes():
+    """A cleared planned_minutes should blank the entry, not insert 'None'."""
+    fresh = SimpleNamespace(description=None, next_action=None, planned_minutes=None)
+    desc, nxt, pm = _FakeWidget(), _FakeWidget(), _FakeWidget()
+    dialog = SimpleNamespace(
+        item_id="id1",
+        item=None,
+        db_manager=SimpleNamespace(get_action_item=lambda i: fresh),
+        description_text=desc,
+        next_action_text=nxt,
+        planned_minutes_entry=pm,
+    )
+
+    ItemEditorDialog._reload_editable_notes(dialog)
+
+    assert pm.content == ""              # blanked, never the string "None"

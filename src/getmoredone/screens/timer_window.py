@@ -969,8 +969,13 @@ class TimerWindow(ctk.CTkToplevel):
         except (tk.TclError, AttributeError):
             pass  # window torn down, or label not built yet
 
-    def _start_music(self):
-        """Start background music, surfacing in the UI why it can't when it can't."""
+    def _start_music(self) -> bool:
+        """Start background music. Returns True if playing, False otherwise.
+
+        On any failure it sets the failure button/flag state and shows why, so
+        callers must NOT assume success — check the return value before flipping
+        the controls to a 'playing' state.
+        """
         # Resolve a track (configured folder, else bundled) with an explicit status.
         selection = select_track(self.settings.music_folder)
         if selection.track is None:
@@ -980,7 +985,7 @@ class TimerWindow(ctk.CTkToplevel):
             self.music_is_playing = False
             self.music_play_button.configure(state="normal")
             self.music_pause_button.configure(state="disabled", text="⏸ Pause")
-            return
+            return False
 
         music_file = selection.track
         self.current_music_file = music_file
@@ -991,8 +996,11 @@ class TimerWindow(ctk.CTkToplevel):
         except ImportError:
             msg = "pygame not installed — music unavailable."
             self._set_music_status(msg, "warning")
+            self.music_is_playing = False
+            self.music_play_button.configure(state="normal")
+            self.music_pause_button.configure(state="disabled", text="⏸ Pause")
             print(f"[INFO] {msg} Install with: pip install pygame")
-            return
+            return False
 
         try:
             if not pygame.mixer.get_init():
@@ -1008,13 +1016,16 @@ class TimerWindow(ctk.CTkToplevel):
 
             if not pygame.mixer.music.get_busy():
                 self.current_track_name = None
+                self.music_is_playing = False
+                self.music_play_button.configure(state="normal")
+                self.music_pause_button.configure(state="disabled", text="⏸ Pause")
                 self._set_music_status(
                     f"Couldn't play {Path(music_file).name} — "
                     "try converting to MP3, WAV, or OGG.",
                     "error",
                 )
                 print(f"[ERROR] Loaded but won't play: {music_file}")
-                return
+                return False
 
             # Playing.
             self.current_track_name = Path(music_file).name
@@ -1032,12 +1043,17 @@ class TimerWindow(ctk.CTkToplevel):
             else:
                 self._set_music_status(f"♫ {self.current_track_name}", "success")
             print(f"[INFO] Playing music: {self.current_track_name}")
+            return True
         except Exception as e:
             self.current_track_name = None
+            self.music_is_playing = False
+            self.music_play_button.configure(state="normal")
+            self.music_pause_button.configure(state="disabled", text="⏸ Pause")
             self._set_music_status(f"Error playing music: {e}", "error")
             print(f"[ERROR] Error playing music: {e}")
             import traceback
             traceback.print_exc()
+            return False
 
     def _stop_music(self):
         """Stop playing music."""
@@ -1085,13 +1101,13 @@ class TimerWindow(ctk.CTkToplevel):
     def play_music(self):
         """Public method to play music - triggered by Play button."""
         if not self.music_is_playing:
-            # Start fresh music
-            self._start_music()
-            self.music_is_playing = True
-            # Update button states
-            self.music_play_button.configure(state="disabled")
-            self.music_pause_button.configure(state="normal", text="⏸ Pause")
-            print("[INFO] Music play button pressed - music started")
+            # Start fresh music. _start_music sets the button/flag state itself —
+            # on success it shows "playing", on failure it shows why and leaves
+            # the controls in the stopped state. Don't override that here.
+            if self._start_music():
+                print("[INFO] Music play button pressed - music started")
+            else:
+                print("[INFO] Music play button pressed - could not start music")
         else:
             # Resume paused music
             self._resume_music()

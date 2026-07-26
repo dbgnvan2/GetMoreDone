@@ -1149,7 +1149,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 pass
 
     def _reload_editable_notes(self):
-        """Re-read notes / next-action from the DB (e.g. after the timer edited them)."""
+        """Re-read fields the timer can change from the DB, so a later Save here
+        doesn't clobber them: notes, next-action, and planned minutes (the timer
+        persists the time-block value on Start)."""
         if not self.item_id:
             return
         fresh = self.db_manager.get_action_item(self.item_id)
@@ -1163,6 +1165,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             self.next_action_text.delete("1.0", "end")
             if fresh.next_action:
                 self.next_action_text.insert("1.0", fresh.next_action)
+            self.planned_minutes_entry.delete(0, "end")
+            if fresh.planned_minutes is not None:
+                self.planned_minutes_entry.insert(0, str(fresh.planned_minutes))
         except Exception:
             pass  # widgets may be gone if the window is closing
 
