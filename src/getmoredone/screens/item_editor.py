@@ -6,6 +6,7 @@ import calendar
 import logging
 import re
 import customtkinter as ctk
+import tkinter as tk
 from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
 
@@ -1162,8 +1163,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         try:
             if self.item and self.item.status == Status.COMPLETED:
                 btn.configure(state="disabled")
-        except Exception:
-            pass
+        except (tk.TclError, AttributeError):
+            pass  # widget torn down during window close
 
     def _reload_editable_notes(self):
         """Re-read fields the timer can change (notes, next-action, planned
@@ -1179,8 +1180,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         snap = getattr(self, "_pre_timer_field_values", {})
         try:
             current = self._current_timer_field_values()
-        except Exception:
-            return  # widgets gone
+        except (tk.TclError, AttributeError):
+            return  # widgets gone (window closing)
         try:
             # A field is safe to reload only if the user hasn't changed it here
             # since the timer opened (current value still equals the snapshot).
@@ -1196,7 +1197,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 self.planned_minutes_entry.delete(0, "end")
                 if fresh.planned_minutes is not None:
                     self.planned_minutes_entry.insert(0, str(fresh.planned_minutes))
-        except Exception:
+        except (tk.TclError, AttributeError):
             pass  # widgets may be gone if the window is closing
 
     def complete_item(self):

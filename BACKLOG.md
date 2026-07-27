@@ -82,6 +82,7 @@ Last Updated: 2026-01-24
 
 ## 🔧 Technical Debt
 
+- [ ] Item editor timer merge: a whitespace-only edit to a notes field while the timer is open is treated as "untouched" (the merge compares stripped values) and gets reloaded from the DB. Cosmetic — `save_item` strips anyway, so no substantive data is lost. Known, deliberate property (2026-07-26 learning-qa sweep).
 - [ ] Add GUI automation tests (PyAutoGUI)
 - [ ] Refactor item_editor.py (currently 1800+ lines)
 - [ ] Add type hints to all functions

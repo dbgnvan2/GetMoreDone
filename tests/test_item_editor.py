@@ -677,3 +677,18 @@ def test_duplicate_item_duplicates_on_success(monkeypatch):
     )
     real(dialog)
     assert dup == ["id1"] and len(created) == 1
+
+
+def test_reload_swallows_widget_teardown_error():
+    """A widget-teardown error (window closing) during reload must be swallowed,
+    not propagated out of the timer's on-close callback (narrowed except)."""
+    def boom():
+        raise AttributeError("widget gone")
+    dialog = SimpleNamespace(
+        item_id="id1", item=None,
+        db_manager=SimpleNamespace(get_action_item=lambda i: SimpleNamespace(
+            description="d", next_action="n", planned_minutes=1)),
+        _pre_timer_field_values={},
+        _current_timer_field_values=boom,
+    )
+    ItemEditorDialog._reload_editable_notes(dialog)  # must not raise
