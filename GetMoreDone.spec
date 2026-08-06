@@ -66,6 +66,6 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="GetMoreDone.app",
-    icon=None,
+    icon=str(PROJECT_ROOT / "assets" / "icons" / "app_icon.icns"),
     bundle_identifier=None,
 )

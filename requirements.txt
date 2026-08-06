@@ -22,6 +22,7 @@ pygame>=2.5.0  # Audio playback for timer music
 python-dotenv>=1.0.0
 platformdirs>=4.0.0  # Correct per-OS user data dirs (DB/settings) + PyInstaller-friendly
 Pillow>=10.0.0  # Image handling for icons
+pyobjc-framework-Cocoa>=9.0; sys_platform == "darwin"  # macOS Dock icon (replaces the Python launcher rocket at runtime)
 
 # Google Calendar Integration
 google-auth>=2.25.0

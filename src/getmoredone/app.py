@@ -12,6 +12,7 @@ from .app_settings import AppSettings
 from .db_manager import DatabaseManager
 from .paths import app_data_dir_path
 from .theme import apply_theme_settings, button_style
+from .utils.app_icon import set_app_icon
 from .vps_manager import VPSManager
 
 
@@ -32,6 +33,11 @@ class GetMoreDoneApp(ctk.CTk):
         mode_tag = "[PROD]" if getattr(sys, "frozen", False) else "[DEV]"
         self.title(f"GetMoreDone {mode_tag} - {day_of_week}, {date_str}")
         self.geometry("1200x700")
+
+        # Show the GMD brand check-mark icon instead of the default Python
+        # launcher rocket (macOS Dock + Windows/Linux taskbar). Cosmetic and
+        # fully guarded, so it can never block startup.
+        set_app_icon(self)
 
         # Initialize database
         self.db_manager = DatabaseManager()
