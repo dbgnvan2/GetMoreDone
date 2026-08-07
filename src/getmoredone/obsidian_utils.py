@@ -8,34 +8,30 @@ import subprocess
 import platform
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 from urllib.parse import quote
 
 
 def create_obsidian_note(
     vault_path: str,
     subfolder: str,
-    entity_type: str,
     entity_id: str,
     title: str,
     initial_content: str = "",
-    who: Optional[str] = None,
-    due_date: Optional[str] = None,
-    priority_score: Optional[int] = None
 ) -> str:
     """
     Create a new Obsidian note file.
 
+    The note's frontmatter contains exactly these Obsidian properties, in this
+    display order: Prev, Next, tags, title, entity_id, created, Summary.
+    Prev/Next/tags are written empty (list/tags-typed in the vault); title,
+    entity_id and created are populated; Summary is left for the user to fill in.
+
     Args:
         vault_path: Path to Obsidian vault
         subfolder: Subfolder within vault (e.g., "GetMoreDone")
-        entity_type: "action_item" or "contact"
-        entity_id: ID of the entity
+        entity_id: ID of the linked entity (stored as the entity_id property)
         title: Title for the note
-        initial_content: Optional initial markdown content
-        who: Optional who field for action items
-        due_date: Optional due date for action items
-        priority_score: Optional priority score for action items
+        initial_content: Optional initial markdown content (note body)
 
     Returns:
         Full file path to created note
@@ -69,29 +65,21 @@ def create_obsidian_note(
         file_path = notes_folder / filename
         counter += 1
 
-    # Create frontmatter with Obsidian properties
+    # Frontmatter — exactly the Obsidian properties the Notes-table export
+    # defines, in display order. Prev/Next are empty (list-typed in the vault),
+    # tags is empty (Obsidian tags), title/entity_id/created are populated, and
+    # Summary is left empty for the user.
     frontmatter_lines = [
         "---",
-        f"type: {entity_type}",
-        f"entity_id: {entity_id}",
+        "Prev:",
+        "Next:",
+        "tags:",
         f'title: "{title}"',
+        f"entity_id: {entity_id}",
         f"created: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
-        "PREV: ",
-        "NEXT: ",
-        "TAG: ",
-        "Summary: "
+        "Summary:",
+        "---",
     ]
-
-    # Add action item specific metadata
-    if entity_type == "action_item":
-        if who:
-            frontmatter_lines.append(f'who: "{who}"')
-        if due_date:
-            frontmatter_lines.append(f"due_date: {due_date}")
-        if priority_score is not None:
-            frontmatter_lines.append(f"priority_score: {priority_score}")
-
-    frontmatter_lines.append("---")
     frontmatter = "\n".join(frontmatter_lines)
 
     # Create note content

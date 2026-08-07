@@ -111,13 +111,9 @@ class TestNoteCreation:
         file_path = create_obsidian_note(
             vault_path=temp_vault,
             subfolder="GetMoreDone",
-            entity_type="action_item",
             entity_id=test_item.id,
             title="Test Note",
             initial_content="# My Notes\nTest content",
-            who=test_item.who,
-            due_date=test_item.due_date,
-            priority_score=test_item.priority_score
         )
 
         # Verify file was created
@@ -138,45 +134,51 @@ class TestNoteCreation:
         # Verify content
         content = Path(file_path).read_text()
         assert "---" in content  # Frontmatter
-        assert "type: action_item" in content
         assert f"entity_id: {test_item.id}" in content
-        assert "Test Note" in content
+        assert 'title: "Test Note"' in content
         assert "# My Notes" in content
-        # Check for new Obsidian properties
-        assert "PREV:" in content
-        assert "NEXT:" in content
-        assert "TAG:" in content
+        # Exactly the Obsidian properties defined by the Notes-table export
+        assert "Prev:" in content
+        assert "Next:" in content
+        assert "tags:" in content
+        assert "created:" in content
         assert "Summary:" in content
 
-    def test_create_note_with_metadata(self, temp_vault, test_item):
-        """Test that note includes all metadata."""
+    def test_create_note_has_only_the_export_properties(self, temp_vault, test_item):
+        """Frontmatter contains exactly the 7 export properties (Prev, Next,
+        tags, title, entity_id, created, Summary) and none of the legacy keys
+        (type / who / due_date / priority_score / PREV / NEXT / TAG)."""
         file_path = create_obsidian_note(
             vault_path=temp_vault,
             subfolder="GetMoreDone",
-            entity_type="action_item",
             entity_id=test_item.id,
             title="Metadata Test",
-            who="John Doe",
-            due_date="2026-12-31",
-            priority_score=1600
         )
 
         content = Path(file_path).read_text()
-        assert 'who: "John Doe"' in content
-        assert "due_date: 2026-12-31" in content
-        assert "priority_score: 1600" in content
-        # Check for new Obsidian properties
-        assert "PREV:" in content
-        assert "NEXT:" in content
-        assert "TAG:" in content
-        assert "Summary:" in content
+
+        # The 7 properties from the image spec must all be present.
+        for key in ("Prev:", "Next:", "tags:", "title:",
+                    "entity_id:", "created:", "Summary:"):
+            assert key in content, f"missing required property: {key}"
+
+        # Legacy/removed properties must NOT leak back in.
+        for key in ("type:", "who:", "due_date:", "priority_score:",
+                    "PREV:", "NEXT:", "TAG:"):
+            assert key not in content, f"legacy property leaked: {key}"
+
+        # Property order matches the image (Prev → Next → tags → title →
+        # entity_id → created → Summary).
+        order = ["Prev:", "Next:", "tags:", "title:",
+                 "entity_id:", "created:", "Summary:"]
+        positions = [content.index(k) for k in order]
+        assert positions == sorted(positions), "frontmatter order does not match spec"
 
     def test_create_note_sanitizes_filename(self, temp_vault, test_item):
         """Test that special characters in title are sanitized."""
         file_path = create_obsidian_note(
             vault_path=temp_vault,
             subfolder="GetMoreDone",
-            entity_type="action_item",
             entity_id=test_item.id,
             title="Test / Note: With * Special? Chars!"
         )
@@ -384,7 +386,6 @@ class TestIntegrationFlow:
         file_path = create_obsidian_note(
             vault_path=settings.obsidian_vault_path,
             subfolder=settings.obsidian_notes_subfolder,
-            entity_type="action_item",
             entity_id=test_item.id,
             title="Integration Test Note",
             initial_content="# Test\nThis is a test note."

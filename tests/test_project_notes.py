@@ -257,7 +257,6 @@ class TestM7Settings:
         create_obsidian_note(
             vault_path=str(vault),
             subfolder="ProjectFolder",
-            entity_type="project_board",
             entity_id="p1",
             title="Test",
         )
@@ -307,7 +306,6 @@ class TestM7Routing:
 
         def fake_create_obsidian_note(vault_path, subfolder, **kwargs):
             captured["subfolder"] = subfolder
-            captured["entity_type"] = kwargs.get("entity_type")
             return str(tmp_path / "fake_note.md")
 
         monkeypatch.setattr(obsidian_mod, "create_obsidian_note",
@@ -336,7 +334,6 @@ class TestM7Routing:
         )
         dlg.title_var.set("MyNote")
         dlg.create_note()
-        assert d["captured"]["entity_type"] == "project_board"
         assert d["captured"]["subfolder"] == "ProjectNotesHere"
 
     def test_create_note_for_action_item_still_uses_generic_folder(self, stubbed_dialog):
@@ -349,7 +346,6 @@ class TestM7Routing:
         )
         dlg.title_var.set("ActionNote")
         dlg.create_note()
-        assert d["captured"]["entity_type"] == "action_item"
         assert d["captured"]["subfolder"] == "GenericNotes"
 
     def test_create_note_for_project_falls_back_when_blank(

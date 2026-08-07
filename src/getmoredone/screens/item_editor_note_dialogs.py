@@ -105,22 +105,6 @@ class CreateNoteDialog(ctk.CTkToplevel):
             return
 
         try:
-            # Get additional metadata based on entity type
-            who = None
-            due_date = None
-            priority_score = None
-
-            if self.entity_type == "action_item":
-                item = self.db_manager.get_action_item(self.entity_id)
-                if item:
-                    who = item.who
-                    due_date = item.due_date
-                    priority_score = item.priority_score
-            elif self.entity_type == "project_board":
-                board = self.db_manager.get_project_board(self.entity_id)
-                if board and board.importance is not None:
-                    priority_score = board.importance
-
             # M7.A.5 — Project notes go to the configured Project Notes Folder
             # (falls back to obsidian_notes_subfolder when blank). Other entity
             # types continue to use obsidian_notes_subfolder.
@@ -135,13 +119,9 @@ class CreateNoteDialog(ctk.CTkToplevel):
             file_path = create_obsidian_note(
                 vault_path=settings.obsidian_vault_path,
                 subfolder=target_subfolder,
-                entity_type=self.entity_type,
                 entity_id=self.entity_id,
                 title=title,
                 initial_content=content,
-                who=who,
-                due_date=due_date,
-                priority_score=priority_score
             )
 
             # Create link in database
