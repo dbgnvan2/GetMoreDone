@@ -79,6 +79,7 @@ Last Updated: 2026-01-24
 - [ ] Better date picker widget
 - [ ] Auto-save drafts when editing
 - [ ] Undo/redo support
+- [ ] Obsidian "Create Note" export writes `Prev`/`Next`/`tags` as empty (bare `key:`), which renders as List/Tags only in a vault where those property types are already registered. In a brand-new vault an empty property defaults to Text until its type is set once. If needed, emit `[]` to force List typing everywhere (trade-off: diverges from Obsidian's own empty-list serialization). Noted 2026-08-06.
 
 ## 🔧 Technical Debt
 

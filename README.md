@@ -464,6 +464,7 @@ pytest tests/test_database.py -v
 - **SQLite** - Embedded database (no server required)
 - **CustomTkinter** - Modern, customizable GUI framework
 - **pygame** - Audio playback for timer music and sound effects
+- **pyobjc-framework-Cocoa** *(macOS only)* - Sets the GetMoreDone check-mark Dock icon at runtime (replaces the default Python launcher rocket)
 - **pytest** - Comprehensive testing framework
 - **Google Calendar API** - OAuth 2.0 integration for calendar events
 - **tzlocal** - Automatic timezone detection for accurate event scheduling
