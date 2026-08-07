@@ -135,6 +135,43 @@ def test_extract_inline_tags(temp_vault_with_notes):
     assert "innovation" in inline_tags or "creativity" in inline_tags
 
 
+def test_frontmatter_tags_inline_form():
+    """The real extractor parses inline `tags: [a, b]`."""
+    from src.getmoredone.screens.item_editor_note_dialogs import _extract_frontmatter_tags
+    content = "---\ntags: [meeting, work, project-alpha]\n---\n# X\n"
+    assert set(_extract_frontmatter_tags(content)) == {"meeting", "work", "project-alpha"}
+
+
+def test_frontmatter_tags_block_form_scoped_to_tags_key():
+    """Block-list tags are extracted, and sibling list-typed properties
+    (Prev/Next — written by the Create-Note export) must NOT leak into tags."""
+    from src.getmoredone.screens.item_editor_note_dialogs import _extract_frontmatter_tags
+    content = (
+        "---\n"
+        "Prev:\n"
+        '  - "[[Earlier Note]]"\n'
+        "Next:\n"
+        '  - "[[Later Note]]"\n'
+        "tags:\n"
+        "  - realtag\n"
+        "  - work\n"
+        'title: "X"\n'
+        "---\n"
+        "# X\n"
+    )
+    tags = _extract_frontmatter_tags(content)
+    assert set(tags) == {"realtag", "work"}
+    assert not any("Note" in t for t in tags), f"Prev/Next leaked into tags: {tags}"
+
+
+def test_frontmatter_tags_absent_returns_empty():
+    """No tags: key → no tags, even when other list properties are present."""
+    from src.getmoredone.screens.item_editor_note_dialogs import _extract_frontmatter_tags
+    assert _extract_frontmatter_tags("# no frontmatter\n") == []
+    content = "---\nPrev:\n  - \"[[A]]\"\ntitle: \"X\"\n---\n# X\n"
+    assert _extract_frontmatter_tags(content) == []
+
+
 def test_file_prefix_search():
     """Test file: prefix searches only in filename."""
     notes = [

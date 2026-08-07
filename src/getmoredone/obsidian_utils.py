@@ -11,6 +11,16 @@ from datetime import datetime
 from urllib.parse import quote
 
 
+def _yaml_dq(value: str) -> str:
+    """Escape a string for use inside a YAML double-quoted scalar.
+
+    Backslash must be escaped before the quote. Without this, a title
+    containing a double quote (e.g. Say "hi") would emit invalid YAML and
+    break parsing of the entire frontmatter block.
+    """
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def create_obsidian_note(
     vault_path: str,
     subfolder: str,
@@ -74,7 +84,7 @@ def create_obsidian_note(
         "Prev:",
         "Next:",
         "tags:",
-        f'title: "{title}"',
+        f'title: "{_yaml_dq(title)}"',
         f"entity_id: {entity_id}",
         f"created: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
         "Summary:",

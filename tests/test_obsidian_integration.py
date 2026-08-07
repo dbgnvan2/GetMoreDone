@@ -174,6 +174,21 @@ class TestNoteCreation:
         positions = [content.index(k) for k in order]
         assert positions == sorted(positions), "frontmatter order does not match spec"
 
+    def test_note_title_with_quotes_is_valid_yaml(self, temp_vault, test_item):
+        """A title with quotes/backslashes is YAML-escaped so it can't break
+        the frontmatter block (P14-adjacent data integrity)."""
+        file_path = create_obsidian_note(
+            vault_path=temp_vault,
+            subfolder="GetMoreDone",
+            entity_id=test_item.id,
+            title='Say "hi" \\o/',
+        )
+        content = Path(file_path).read_text()
+        # Double-quoted scalar with escaped " -> \" and \ -> \\
+        assert r'title: "Say \"hi\" \\o/"' in content
+        # Frontmatter still opens and closes correctly (two --- fences).
+        assert content.count("---") == 2
+
     def test_create_note_sanitizes_filename(self, temp_vault, test_item):
         """Test that special characters in title are sanitized."""
         file_path = create_obsidian_note(

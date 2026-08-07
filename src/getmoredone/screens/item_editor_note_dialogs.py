@@ -12,6 +12,53 @@ from ..app_settings import AppSettings
 from ..models import ItemLink
 from ..theme import button_style, status_text_color
 
+
+def _extract_frontmatter_tags(content: str) -> list:
+    """Extract Obsidian frontmatter tags from a note's raw text.
+
+    Supports the inline form ``tags: [a, b]`` and the block form::
+
+        tags:
+          - a
+          - b
+
+    The block form is scoped to the ``tags:`` key only, so sibling list-typed
+    properties (e.g. Prev/Next, which the Create-Note export now writes) do not
+    leak their list items into tag results. Inline ``#tags`` in the body are
+    handled separately by the caller.
+    """
+    fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
+    if not fm_match:
+        return []
+    frontmatter = fm_match.group(1)
+
+    # Inline form: tags: [a, b]
+    inline = re.search(r'^[ \t]*tags:[ \t]*\[(.*?)\]', frontmatter, re.MULTILINE)
+    if inline:
+        return [t.strip().strip('"\'') for t in inline.group(1).split(',') if t.strip()]
+
+    # Block form — collect list items only within the tags: block. The block
+    # starts at a bare `tags:` line and ends at the next top-level key (or any
+    # other non-list line).
+    tags = []
+    in_block = False
+    for line in frontmatter.splitlines():
+        if re.match(r'^[ \t]*tags:[ \t]*$', line):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        item = re.match(r'^[ \t]*-[ \t]*(.+?)[ \t]*$', line)
+        if item:
+            val = item.group(1).strip().strip('"\'')
+            if val:
+                tags.append(val)
+        elif line.strip() == '':
+            continue  # tolerate blank lines within the block
+        else:
+            break  # a new key (or any non-list line) ends the tags block
+    return tags
+
 class CreateNoteDialog(ctk.CTkToplevel):
     """Dialog for creating a new Obsidian note."""
 
@@ -284,29 +331,12 @@ class LinkNoteDialog(ctk.CTkToplevel):
         try:
             self.available_notes = []
             for md_file in search_path.rglob("*.md"):
-                # Extract tags from frontmatter
+                # Extract frontmatter tags (scoped to the tags: key) plus
+                # inline #tags from the body.
                 tags = []
                 try:
                     content = md_file.read_text(encoding='utf-8')
-                    # Look for YAML frontmatter
-                    frontmatter_match = re.match(
-                        r'^---\s*\n(.*?)\n---\s*\n', content, re.DOTALL)
-                    if frontmatter_match:
-                        frontmatter = frontmatter_match.group(1)
-                        # Extract tags (supports: tags: [tag1, tag2] or tags:\n- tag1\n- tag2)
-                        tags_match = re.search(
-                            r'tags:\s*\[(.*?)\]', frontmatter)
-                        if tags_match:
-                            tags = [t.strip().strip('"\'')
-                                    for t in tags_match.group(1).split(',')]
-                        else:
-                            # Look for YAML list format
-                            tags_lines = re.findall(
-                                r'^\s*-\s*(.+)$', frontmatter, re.MULTILINE)
-                            if 'tags:' in frontmatter:
-                                tags = [t.strip()
-                                        for t in tags_lines if t.strip()]
-
+                    tags = _extract_frontmatter_tags(content)
                     # Also look for inline tags (#tag format)
                     inline_tags = re.findall(r'#(\w+)', content)
                     tags.extend(inline_tags)
