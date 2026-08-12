@@ -1,3 +1,14 @@
+## Recent Changes (2026-08-12)
+
+### Today: drag-to-top pin + inline date "From today" offset ladder
+
+- ✅ **Drag an Action Item to the top of Today to pin it above all others** — Each open Today row now has a drag handle (`⣿`) at its left edge; dragging it upward pins the item above every other row and keeps it there. Backed by a new nullable `action_items.today_pin_rank` column (schema + idempotent `ADD COLUMN` migration), kept **independent of the derived `priority_score`** (still `I×U×S×V`), so pinning never corrupts scores. `DatabaseManager.pin_item_to_today_top()` sets rank = `MAX(today_pin_rank over open items) + 1`; pin-aware sort keys float pinned rows first in normal, Top-3, and search modes. The pin survives editor saves, priority edits, and reschedules; `update_action_item` now inherits `today_pin_rank` from the DB so a stale full-object save can't wipe it (the column is owned solely by the targeted pin update). Scoped to the Today list only.
+- ✅ **Drag mechanics** — The pin decision comes purely from the press→release `y_root` delta (`PIN_DRAG_THRESHOLD`); press and release are bound on the grip itself. The first cut gated on `<B1-Motion>` + a live-cursor drop-zone; `<B1-Motion>` does not fire reliably on a CTkLabel, so no gesture ever pinned. Diagnosed via real Tk `event_generate` on the grip (handler-level tests had passed while the live bindings were dead).
+- ✅ **Inline date editor: "From today" offset ladder** — Clicking a row's Start/Due date opens the inline date dialog, which now shows `+1 +2 +3 +4 +5 +6 +7 +10 +14` buttons (below the date field) that set the date to today + N (weekend-aware). Replaces the single current-date `+1`. Offsets live in `TODAY_OFFSET_BUTTONS`. Dialog widened; buttons sized to fit.
+- ✅ **Tests** — new `tests/test_today_pin.py` (migration, pin ordering, round-trip persistence, stale-save P22 guard, adversarial sort), `tests/test_today_pin_drag.py` (handler-level up/down/click + a real `event_generate` drag through the actual bindings), `tests/test_inline_date_offsets.py` (ladder presence + today+N). learning-qa pre-push sweep: clean (two low-severity findings fixed — the P22 stale-save and a dead `_first_open_row`). Full suite: **443 passed, 1 skipped**.
+
+---
+
 ## Recent Changes (2026-08-06)
 
 ### App Dock icon (rocket → GMD check-mark) + Obsidian "Create Note" properties

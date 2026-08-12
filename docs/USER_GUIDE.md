@@ -76,9 +76,11 @@ Header controls:
 - **Refresh** — What: Reloads the list. Why: Pull in updates after edits.
 
 Row controls (open items):
+- **Drag to top (pin)** — What: Each open row has a small drag handle (`⣿`) at its left edge. Drag it upward to pin the item above every other Today row. Why: Force a task to the top regardless of its priority score. The pin sticks (it survives edits, priority changes, and reschedules) and is independent of the calculated priority — dragging another item to the top puts that one above. Pinning affects the Today list only.
 - **Complete checkbox** — What: Marks item completed. Why: Clear finished work and log progress.
 - **Timer** — What: Opens the focused timer window. Why: Work in a time block and log actual time.
 - **Edit** — What: Opens the Item Editor. Why: Adjust details or add context.
+- **Quick date edit** — What: Click a row's **Start** or **Due** cell to open the inline date editor. Alongside `Today`, `-1`, and `Clear`, a **From today** row offers `+1 +2 +3 +4 +5 +6 +7 +10 +14` buttons that set the date to that many days from today (weekend-aware). Why: Reschedule in one click without typing a date.
 - **Push** — What: Moves start/due dates forward by 1 day using weekend settings. Why: Reschedule quickly.
 
 Completion feedback:
