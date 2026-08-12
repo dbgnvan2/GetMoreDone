@@ -11,6 +11,11 @@ from ..date_utils import increment_date
 from ..models import PriorityFactors
 from ..theme import button_style
 
+# Quick "days from today" offsets shown below the date field. Each button sets
+# the date to today + N (weekend-aware). Kept here as config rather than inline
+# literals so the ladder is easy to adjust.
+TODAY_OFFSET_BUTTONS = [1, 2, 3, 4, 5, 6, 7, 10, 14]
+
 
 class InlineDateDialog(ctk.CTkToplevel):
     """Popup date editor with quick adjust controls."""
@@ -18,7 +23,7 @@ class InlineDateDialog(ctk.CTkToplevel):
     def __init__(self, parent, title: str, initial_date: Optional[str]):
         super().__init__(parent)
         self.title(title)
-        self.geometry("540x130")
+        self.geometry("600x175")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -35,8 +40,17 @@ class InlineDateDialog(ctk.CTkToplevel):
 
         ctk.CTkButton(row, text="Today", width=70, command=lambda: self.set_today(0)).pack(side="left", padx=3)
         ctk.CTkButton(row, text="-1", width=55, command=lambda: self.adjust(-1)).pack(side="left", padx=3)
-        ctk.CTkButton(row, text="+1", width=55, command=lambda: self.adjust(1)).pack(side="left", padx=3)
         ctk.CTkButton(row, text="Clear", width=60, **button_style("secondary"), command=self.clear).pack(side="left", padx=3)
+
+        # Days-from-today ladder: each button sets the date to today + N.
+        offsets = ctk.CTkFrame(self, fg_color="transparent")
+        offsets.pack(fill="x", padx=10, pady=(0, 6))
+        ctk.CTkLabel(offsets, text="From today:").pack(side="left", padx=(0, 4))
+        for days in TODAY_OFFSET_BUTTONS:
+            ctk.CTkButton(
+                offsets, text=f"+{days}", width=34,
+                command=lambda d=days: self.set_today(d),
+            ).pack(side="left", padx=1)
 
         actions = ctk.CTkFrame(self, fg_color="transparent")
         actions.pack(fill="x", padx=10, pady=(4, 10))
