@@ -54,6 +54,7 @@ class ActionItem:
     segment_description_id: Optional[str] = None  # References segment_descriptions.id for VSP integration
     is_habit: bool = False  # VSP: Indicates if this is a habit item
     percent_complete: int = 0  # VSP: Completion percentage (0-100)
+    today_pin_rank: Optional[int] = None  # Today list manual pin: higher = nearer top; None = unpinned
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())

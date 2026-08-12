@@ -98,6 +98,7 @@ class Database:
                 completed_at      TEXT,
                 item_type         TEXT NOT NULL DEFAULT 'daily',
                 annual_plan_element_id TEXT,
+                today_pin_rank    INTEGER,
 
                 created_at        TEXT NOT NULL,
                 updated_at        TEXT NOT NULL
@@ -456,6 +457,14 @@ class Database:
             conn.execute("""
                 ALTER TABLE action_items
                 ADD COLUMN next_action TEXT
+            """)
+
+        if 'today_pin_rank' not in columns:
+            # Add today_pin_rank column to action_items. Nullable manual pin used
+            # by the Today list: higher rank sorts nearer the top; NULL = unpinned.
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN today_pin_rank INTEGER
             """)
 
         cursor = conn.execute(

@@ -77,8 +77,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 week_action_id, annual_plan_element_id, item_type, segment_description_id, is_habit, percent_complete,
+                today_pin_rank,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
             item.next_action,
@@ -89,6 +90,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item.planned_minutes, item.status, item.completed_at,
             item.week_action_id, item.annual_plan_element_id, item.item_type, item.segment_description_id, 1 if item.is_habit else 0,
             item.percent_complete,
+            item.today_pin_rank,
             item.created_at, item.updated_at
         ))
 
@@ -144,6 +146,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
                 priority_score = ?, "group" = ?, category = ?,
                 planned_minutes = ?, status = ?, completed_at = ?,
                 week_action_id = ?, annual_plan_element_id = ?, item_type = ?, segment_description_id = ?, is_habit = ?, percent_complete = ?,
+                today_pin_rank = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
@@ -155,6 +158,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item.planned_minutes, item.status, item.completed_at,
             item.week_action_id, item.annual_plan_element_id, item.item_type, item.segment_description_id, 1 if item.is_habit else 0,
             item.percent_complete,
+            item.today_pin_rank,
             item.updated_at, item.id
         ))
 
@@ -749,6 +753,31 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         item.due_date = new_due
         self.update_action_item(item, normalize_week_dates=False)
 
+    def pin_item_to_today_top(self, item_id: str) -> bool:
+        """Pin an item to the top of the Today list.
+
+        Assigns a ``today_pin_rank`` one greater than the current maximum across
+        all open items, so this item sorts above every other Today row (and above
+        any previously pinned item). The pin is independent of ``priority_score``
+        (which stays equal to importance x urgency x size x value) and survives
+        later edits, since it is only ever changed here.
+
+        Returns:
+            True if the item was found and pinned.
+        """
+        row = self.db.conn.execute(
+            "SELECT MAX(today_pin_rank) AS max_rank FROM action_items WHERE status = 'open'"
+        ).fetchone()
+        current_max = row["max_rank"] if row and row["max_rank"] is not None else 0
+        new_rank = current_max + 1
+
+        cursor = self.db.conn.execute(
+            "UPDATE action_items SET today_pin_rank = ?, updated_at = ? WHERE id = ?",
+            (new_rank, datetime.now().isoformat(), item_id),
+        )
+        self.db.conn.commit()
+        return cursor.rowcount > 0
+
     # ==================== LINKS ====================
 
     def add_item_link(self, link: ItemLink):
@@ -1337,6 +1366,11 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             percent_complete = 0
 
         try:
+            today_pin_rank = row["today_pin_rank"]
+        except (KeyError, IndexError):
+            today_pin_rank = None
+
+        try:
             next_action = row["next_action"]
         except (KeyError, IndexError):
             next_action = None
@@ -1370,6 +1404,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             segment_description_id=segment_description_id,
             is_habit=is_habit,
             percent_complete=percent_complete,
+            today_pin_rank=today_pin_rank,
             created_at=row["created_at"],
             updated_at=row["updated_at"]
         )

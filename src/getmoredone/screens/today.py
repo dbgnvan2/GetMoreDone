@@ -34,6 +34,14 @@ if TYPE_CHECKING:
 class TodayScreen(ctk.CTkFrame):
     """Screen showing today's items (start <= today), including completed items."""
 
+    # Width of column 0 (drag grip + checkbox on open rows, badge on completed
+    # rows). Header spacer and every row share this so columns stay aligned.
+    COL0_WIDTH = 56
+
+    # Minimum upward travel (pixels) of a grip drag that counts as "drag to top"
+    # rather than an accidental click.
+    PIN_DRAG_THRESHOLD = 12
+
     def __init__(self, parent, db_manager: DatabaseManager, app: 'GetMoreDoneApp'):
         super().__init__(parent)
         self.db_manager = db_manager
@@ -49,6 +57,10 @@ class TodayScreen(ctk.CTkFrame):
         self._completion_badge_image = None
         self._session_completed_count = 0
         self._confetti_overlay = None
+        # Drag-to-top (pin) state for the Today list
+        self._pin_drag_item_id = None
+        self._pin_drag_start_y = None
+        self._first_open_row = None
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
@@ -164,13 +176,13 @@ class TodayScreen(ctk.CTkFrame):
         # padx (25) ≈ scroll_frame outer padx (20) + per-row padx (5), so the
         # header columns line up over the scrolled rows below.
         hdr.grid(row=1, column=0, sticky="ew", padx=25, pady=(0, 4))
-        hdr.grid_columnconfigure(0, minsize=44)
+        hdr.grid_columnconfigure(0, minsize=self.COL0_WIDTH)
         self.resizer.apply_grid(hdr)  # Title column minsize
         hdr.grid_columnconfigure(99, weight=1)
         self.column_header = hdr
 
-        # Column 0 (checkbox / badge) spacer
-        ctk.CTkLabel(hdr, text="", width=44).grid(
+        # Column 0 (grip / checkbox / badge) spacer
+        ctk.CTkLabel(hdr, text="", width=self.COL0_WIDTH).grid(
             row=0, column=0, padx=5, pady=4)
 
         # Title header cell + draggable divider (managed by the shared resizer)
@@ -230,6 +242,8 @@ class TodayScreen(ctk.CTkFrame):
     def load_items(self):
         """Load and display today's items."""
         self.palette = semantic_colors()
+        # Reset the "top rendered open row" reference (rebuilt below).
+        self._first_open_row = None
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -266,13 +280,15 @@ class TodayScreen(ctk.CTkFrame):
             completed_items = [
                 item for item in items if item.status == "completed"]
 
-            # Filter to top 3 by priority if toggle is on
-            # Items are already sorted by priority_score DESC in the query
+            # Order open items: pinned rows first (drag-to-top), then the usual
+            # date/priority ordering. Top-3 mode keeps its priority-only ranking
+            # but still floats pinned rows to the front.
             if self.show_top_3_only and len(open_items) > 3:
-                # Sort open items by priority_score descending to ensure top 3
-                open_items_sorted = sorted(
-                    open_items, key=lambda x: x.priority_score, reverse=True)
-                open_items = open_items_sorted[:3]
+                open_items = sorted(
+                    open_items, key=self._today_top3_sort_key)[:3]
+            else:
+                open_items = sorted(
+                    open_items, key=self._today_open_sort_key)
 
             row = 0
 
@@ -289,10 +305,12 @@ class TodayScreen(ctk.CTkFrame):
                 ).pack(padx=10, pady=5, anchor="w")
                 row += 1
 
-                for item in open_items:
+                for idx, item in enumerate(open_items):
                     item_frame = self.create_item_row(item)
                     item_frame.grid(row=row, column=0,
                                     sticky="ew", pady=2, padx=5)
+                    if idx == 0:
+                        self._first_open_row = item_frame
                     row += 1
 
             # Completed items section
@@ -377,6 +395,52 @@ class TodayScreen(ctk.CTkFrame):
             query, (today, today)).fetchall()
         return [self.db_manager._row_to_action_item(row) for row in rows]
 
+    @staticmethod
+    def _pin_sort_prefix(item: ActionItem):
+        """Ordering prefix that floats pinned rows to the top.
+
+        Pinned items sort before unpinned ones; among pinned items a higher
+        today_pin_rank (most recently dragged to top) comes first.
+        """
+        return (item.today_pin_rank is None, -(item.today_pin_rank or 0))
+
+    @classmethod
+    def _today_open_sort_key(cls, item: ActionItem):
+        """Normal Today ordering: pinned first, then earliest start/due date,
+        then higher priority score."""
+        coalesced_date = item.start_date or item.due_date or "9999-12-31"
+        return cls._pin_sort_prefix(item) + (coalesced_date, -item.priority_score)
+
+    @classmethod
+    def _today_top3_sort_key(cls, item: ActionItem):
+        """Top-3 ordering: pinned first, then highest priority score."""
+        return cls._pin_sort_prefix(item) + (-item.priority_score,)
+
+    def _start_pin_drag(self, item_id: str, event):
+        """Begin a drag-to-top gesture from an open row's grip handle.
+
+        Records where the drag started (screen Y). The decision to pin is made
+        purely from how far the grip is dragged upward by release time, so it
+        does not depend on <B1-Motion> (which is unreliable on CTkLabel) or on
+        polling the live cursor position.
+        """
+        self._pin_drag_item_id = item_id
+        self._pin_drag_start_y = event.y_root
+
+    def _finish_pin_drag(self, event):
+        """Finish a drag-to-top gesture: dragging the grip upward pins the item
+        above all other Today rows. A plain click (no upward travel) is ignored."""
+        item_id = self._pin_drag_item_id
+        start_y = self._pin_drag_start_y
+        self._pin_drag_item_id = None
+        self._pin_drag_start_y = None
+        if not item_id or start_y is None:
+            return
+        # Upward travel (start higher Y number, release lower Y number).
+        if start_y - event.y_root >= self.PIN_DRAG_THRESHOLD:
+            if self.db_manager.pin_item_to_today_top(item_id):
+                self.refresh()
+
     def create_item_row(self, item: ActionItem, is_completed: bool = False) -> ctk.CTkFrame:
         """Create a row for an action item."""
         palette = self.palette
@@ -404,7 +468,7 @@ class TodayScreen(ctk.CTkFrame):
         apply_segment_accent(frame, segment_color)
         # Fixed, resizable Title column (col 1); slack goes to a trailing spacer
         # so the row still fills width and leading columns stay aligned.
-        frame.grid_columnconfigure(0, minsize=44)
+        frame.grid_columnconfigure(0, minsize=self.COL0_WIDTH)
         frame.grid_columnconfigure(1, minsize=self.resizer.width("title"), weight=0)
         frame.grid_columnconfigure(99, weight=1)
         limits = responsive_column_chars(max(self.winfo_width(), self.scroll_frame.winfo_width()))
@@ -437,16 +501,35 @@ class TodayScreen(ctk.CTkFrame):
                     width=44
                 ).grid(row=0, column=0, padx=5, pady=5)
         else:
-            # Complete checkbox for open items
+            # Drag grip + complete checkbox for open items. Dragging the grip
+            # upward pins the item to the top of Today (see _start_pin_drag /
+            # _finish_pin_drag). Release is bound on the grip itself: Tk's
+            # implicit button grab keeps press/release on the grip for the whole
+            # gesture, so no toplevel binding is needed.
+            col0 = ctk.CTkFrame(frame, fg_color="transparent")
+            col0.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+            grip = ctk.CTkLabel(
+                col0,
+                text="⣿",  # Braille dots — a compact drag handle
+                width=14,
+                cursor="fleur",
+                text_color=palette["border"],
+                font=list_row_font(),
+            )
+            grip.pack(side="left", padx=(0, 2))
+            grip.bind("<ButtonPress-1>",
+                      lambda e, iid=item.id: self._start_pin_drag(iid, e))
+            grip.bind("<ButtonRelease-1>", self._finish_pin_drag)
+
             var = ctk.BooleanVar(value=False)
             checkbox = ctk.CTkCheckBox(
-                frame,
+                col0,
                 text="",
                 variable=var,
-                width=30,
+                width=24,
                 command=lambda: self.complete_item(item.id)
             )
-            checkbox.grid(row=0, column=0, padx=5, pady=5)
+            checkbox.pack(side="left")
 
         has_badge = item.item_type == "week"
         title_cell = ctk.CTkFrame(frame, fg_color="transparent")
