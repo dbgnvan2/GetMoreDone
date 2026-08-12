@@ -119,6 +119,13 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         """
         # Get existing item to preserve original_due_date if it exists
         existing = self.get_action_item(item.id)
+        if existing is not None:
+            # today_pin_rank is owned exclusively by pin_item_to_today_top (a
+            # targeted, column-only update). A full-object save must never
+            # change or wipe it — otherwise a stale in-memory copy (e.g. an item
+            # editor opened before the item was pinned) would drop the pin on
+            # Save. Always inherit the current DB value here.
+            item.today_pin_rank = existing.today_pin_rank
         if existing and existing.original_due_date:
             # Preserve original_due_date - it's read-only once set
             item.original_due_date = existing.original_due_date

@@ -68,6 +68,18 @@ def _grips(screen):
     return found
 
 
+def _first_open_row_title(screen):
+    """Title of the top-most rendered OPEN row, read from the widget tree."""
+    rows = []
+    for w in screen.scroll_frame.winfo_children():
+        item = getattr(w, "item", None)
+        if item is not None and item.status == "open":
+            grid_row = int(w.grid_info().get("row", 0))
+            rows.append((grid_row, item.title))
+    rows.sort()
+    return rows[0][1] if rows else None
+
+
 # ----------------------- handler-level tests -----------------------
 
 def test_upward_drag_pins(tmp_path):
@@ -128,7 +140,7 @@ def test_real_grip_events_pin_on_upward_drag(tmp_path):
         root.update()
         grips = _grips(screen)
         assert len(grips) == 3
-        assert screen._first_open_row.item.title == "A"  # default order
+        assert _first_open_row_title(screen) == "A"  # default order
 
         # Drag the BOTTOM row's grip (item C) upward ~80px and release.
         inner = grips[-1]._label  # CTkLabel forwards binds to this inner Label
@@ -139,7 +151,7 @@ def test_real_grip_events_pin_on_upward_drag(tmp_path):
         pinned = _item_by_title(db, "C")
         assert db.get_action_item(pinned).today_pin_rank is not None
         # refresh() re-rendered with C floated to the top.
-        assert screen._first_open_row.item.title == "C"
+        assert _first_open_row_title(screen) == "C"
     finally:
         db.close()
         root.destroy()
@@ -149,13 +161,12 @@ def test_pinned_item_renders_as_first_open_row(tmp_path):
     """End-to-end: after a real pin + re-render, the pinned item is the top row."""
     root, db, screen = _make_screen(tmp_path, titles=("A", "B"))
     try:
-        assert screen._first_open_row is not None
-        assert screen._first_open_row.item.title == "A"
+        assert _first_open_row_title(screen) == "A"
 
         db.pin_item_to_today_top(_item_by_title(db, "B"))
         screen.load_items()  # real render, no mocks
 
-        assert screen._first_open_row.item.title == "B"
+        assert _first_open_row_title(screen) == "B"
     finally:
         db.close()
         root.destroy()

@@ -128,6 +128,37 @@ def test_today_pin_rank_persists_through_update(tmp_path):
         db.close()
 
 
+def test_stale_in_memory_save_does_not_wipe_pin(tmp_path):
+    """P22: a full-object save from a copy that predates the pin must not wipe it.
+
+    Emulates an item editor opened (loading today_pin_rank=None) BEFORE the item
+    was dragged to the top, then Saved afterwards. update_action_item must
+    inherit the current DB pin, not the stale None.
+    """
+    db = DatabaseManager(str(tmp_path / "t.db"))
+    try:
+        item = _make_item(title="Pinned", start_date="2026-08-12",
+                          importance=5, urgency=5, size=4, value=4)
+        db.create_action_item(item)
+
+        # Stale copy captured before pinning (rank is None).
+        stale = db.get_action_item(item.id)
+        assert stale.today_pin_rank is None
+
+        # Meanwhile the item is dragged to the top.
+        db.pin_item_to_today_top(item.id)
+        pinned_rank = db.get_action_item(item.id).today_pin_rank
+        assert pinned_rank is not None
+
+        # The stale editor now saves an unrelated field.
+        stale.title = "Pinned (edited later)"
+        db.update_action_item(stale)
+
+        assert db.get_action_item(item.id).today_pin_rank == pinned_rank
+    finally:
+        db.close()
+
+
 def test_today_open_sort_key_pin_wins():
     """AC4 (adversarial): a pinned item with a LATER date and LOWER priority
     still sorts ahead of an unpinned earlier/higher-priority item."""

@@ -60,7 +60,6 @@ class TodayScreen(ctk.CTkFrame):
         # Drag-to-top (pin) state for the Today list
         self._pin_drag_item_id = None
         self._pin_drag_start_y = None
-        self._first_open_row = None
         # Track column visibility state (use setting)
         self.columns_expanded = self.settings.default_columns_expanded
         self.show_top_3_only = False  # Track Top 3 mode
@@ -242,8 +241,6 @@ class TodayScreen(ctk.CTkFrame):
     def load_items(self):
         """Load and display today's items."""
         self.palette = semantic_colors()
-        # Reset the "top rendered open row" reference (rebuilt below).
-        self._first_open_row = None
         # Temporarily remove scroll_frame from grid to prevent flickering during rebuild
         grid_info = self.scroll_frame.grid_info()
         self.scroll_frame.grid_remove()
@@ -305,12 +302,10 @@ class TodayScreen(ctk.CTkFrame):
                 ).pack(padx=10, pady=5, anchor="w")
                 row += 1
 
-                for idx, item in enumerate(open_items):
+                for item in open_items:
                     item_frame = self.create_item_row(item)
                     item_frame.grid(row=row, column=0,
                                     sticky="ew", pady=2, padx=5)
-                    if idx == 0:
-                        self._first_open_row = item_frame
                     row += 1
 
             # Completed items section
