@@ -49,6 +49,9 @@ First downloadable release. Everything before this was source-only.
 
 ### Changed
 
+- **The download is 68 MB instead of 160 MB.** PyInstaller was bundling a
+  Google API discovery document for every Google API in existence — 569 files,
+  around 93 MB — while the app uses exactly two of them.
 - **The date picker no longer uses `tkcalendar`**, which is GPLv3 and cannot
   ship inside a binary under this licence. It is reimplemented on Python's
   standard `calendar` module, keeps the same interface, honours the
