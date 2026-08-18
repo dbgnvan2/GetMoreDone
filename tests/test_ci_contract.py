@@ -76,6 +76,22 @@ def _run_step_lines(text: str) -> list[str]:
     return collected
 
 
+def _code_only(text: str) -> str:
+    """Drop `#` comments so a check judges what a file *does*, not what it says.
+
+    These workflows and scripts carry comments naming the very constructs the
+    tests prohibit (`$LASTEXITCODE`, `--onefile`) in order to explain *why* they
+    are prohibited. Matching on the explanation would pressure the next person
+    into deleting the reasoning to get back to green.
+    """
+    out = []
+    for line in text.splitlines():
+        if line.strip().startswith("#"):
+            continue
+        out.append(line.split("#", 1)[0])
+    return "\n".join(out)
+
+
 # --------------------------------------------------------------------------
 # R-M3.A — the workflow exists and runs the real suite on a blank machine
 # --------------------------------------------------------------------------
@@ -413,16 +429,52 @@ def test_rm4a_selftest_runs_before_anything_is_published():
                 )
 
 
-def test_rm4a_windows_job_checks_the_selftest_exit_code():
-    """pwsh does not abort on a native non-zero exit mid-script.
+def test_rm4a_windows_job_waits_for_the_windowed_exe_and_reads_its_exit_code():
+    """GetMoreDone.exe is console=False, so `& app.exe` does not wait for it.
 
-    Without an explicit $LASTEXITCODE check, a failing selftest would print its
-    errors and the job would carry on and publish the broken build.
+    Observed on run 32191324517: the step threw "Packaged build failed its
+    selftest (exit )" — $LASTEXITCODE unset — while the selftest was still
+    running, and it then reported 4/4 checks passed. The shell had already
+    moved on. Only Start-Process -Wait -PassThru yields a real exit code for a
+    windowed-subsystem process.
     """
-    body = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-windows"]
-    assert "LASTEXITCODE" in body, (
-        "the Windows job must check $LASTEXITCODE after --selftest, or a failed "
-        "selftest is printed and ignored"
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-windows"])
+    selftest_at = body.index("--selftest")
+    # Look at the step containing the selftest, not the whole job.
+    step = body[max(0, selftest_at - 800):selftest_at + 800]
+
+    assert "Start-Process" in step and "-Wait" in step, (
+        "the Windows selftest must use Start-Process -Wait: a windowed exe "
+        "launched with & returns immediately and the job checks nothing"
+    )
+    assert "PassThru" in step and "ExitCode" in step, (
+        "the Windows selftest must read .ExitCode from the waited process"
+    )
+
+
+def test_rm4a_windows_selftest_does_not_rely_on_lastexitcode():
+    """$LASTEXITCODE is empty after launching a windowed exe, so `-ne 0` is
+    always true and the step fails even on a healthy build."""
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-windows"])
+    selftest_at = body.index("--selftest")
+    step = body[max(0, selftest_at - 800):selftest_at + 800]
+    assert "LASTEXITCODE" not in step, (
+        "the Windows selftest step still consults $LASTEXITCODE, which a "
+        "windowed exe never sets"
+    )
+
+
+def test_rm4a_local_windows_build_script_waits_too():
+    """Same bug class in build_windows.ps1 — fix one, fix the siblings (P5)."""
+    script = _code_only((REPO_ROOT / "build_windows.ps1").read_text(encoding="utf-8"))
+    if "--selftest" not in script:
+        pytest.skip("build_windows.ps1 does not run a selftest")
+    assert "Start-Process" in script and "-Wait" in script and "ExitCode" in script, (
+        "build_windows.ps1 launches the windowed exe without waiting for it, so "
+        "its selftest check is decorative"
+    )
+    assert "LASTEXITCODE" not in script, (
+        "build_windows.ps1 still consults $LASTEXITCODE for a windowed exe"
     )
 
 

@@ -12,14 +12,22 @@ python -m PyInstaller --noconfirm --clean GetMoreDone.spec
 
 # Prove the bundle actually starts before calling the build a success.
 # A temp DB keeps the build from touching the developer's real database.
+# GetMoreDone.exe is built console=False (windowed subsystem): `& app.exe`
+# returns immediately without waiting and never sets $LASTEXITCODE. Use
+# Start-Process -Wait -PassThru for a real exit code, and redirect the output
+# because a windowed process has no console to write to.
 $SelftestDb = Join-Path ([System.IO.Path]::GetTempPath()) ("gmd-selftest-" + [guid]::NewGuid() + ".db")
+$SelftestOut = Join-Path ([System.IO.Path]::GetTempPath()) ("gmd-selftest-" + [guid]::NewGuid() + ".log")
 $env:GETMOREDONE_DB = $SelftestDb
 try {
-    & "dist\GetMoreDone\GetMoreDone.exe" --selftest
+    $proc = Start-Process -FilePath "dist\GetMoreDone\GetMoreDone.exe" `
+        -ArgumentList "--selftest" -Wait -PassThru `
+        -RedirectStandardOutput $SelftestOut
+    if (Test-Path $SelftestOut) { Get-Content $SelftestOut }
+    if ($proc.ExitCode -ne 0) { throw "Packaged build failed its selftest (exit $($proc.ExitCode))" }
 } finally {
-    Remove-Item -Path $SelftestDb -ErrorAction SilentlyContinue
+    Remove-Item -Path $SelftestDb, $SelftestOut -ErrorAction SilentlyContinue
     Remove-Item Env:\GETMOREDONE_DB -ErrorAction SilentlyContinue
 }
-if ($LASTEXITCODE -ne 0) { throw "Packaged build failed its selftest (exit $LASTEXITCODE)" }
 
 Write-Host "Built: dist\GetMoreDone\GetMoreDone.exe"

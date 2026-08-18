@@ -51,15 +51,23 @@ jobs:
           python -m PyInstaller --noconfirm --clean GetMoreDone.spec
 
       - name: Verify the packaged bundle starts
-        # R-M4.A. pwsh does not abort on a native non-zero exit mid-script, so
-        # $LASTEXITCODE is checked explicitly — otherwise a failed selftest
-        # would print its errors and the job would publish the broken build.
+        # R-M4.A. GetMoreDone.exe is built console=False (windowed subsystem),
+        # so `& app.exe` returns IMMEDIATELY without waiting and leaves
+        # $LASTEXITCODE unset — the first version of this step threw
+        # "(exit )" while the selftest was still running and went on to pass
+        # 4/4. Start-Process -Wait -PassThru gives a real exit code; the output
+        # is redirected to files because a windowed process has no console.
         shell: pwsh
         env:
           GETMOREDONE_DB: ${{ runner.temp }}\selftest.db
         run: |
-          & "dist\GetMoreDone\GetMoreDone.exe" --selftest
-          if ($LASTEXITCODE -ne 0) { throw "Packaged build failed its selftest (exit $LASTEXITCODE)" }
+          $proc = Start-Process -FilePath "dist\GetMoreDone\GetMoreDone.exe" `
+            -ArgumentList "--selftest" -Wait -PassThru `
+            -RedirectStandardOutput selftest-out.txt `
+            -RedirectStandardError selftest-err.txt
+          if (Test-Path selftest-out.txt) { Get-Content selftest-out.txt }
+          if (Test-Path selftest-err.txt) { Get-Content selftest-err.txt }
+          if ($proc.ExitCode -ne 0) { throw "Packaged build failed its selftest (exit $($proc.ExitCode))" }
 
       - name: Zip Windows build
         shell: pwsh
