@@ -45,6 +45,16 @@ EXCLUDED_FROM_BUNDLE = frozenset({
 })
 
 
+# Filesystem and editor debris that gets swept up from source folders. These
+# exist only on the machine that built, so leaving them in makes a local build
+# differ from a CI build for no reason.
+EXCLUDED_BASENAMES = frozenset({
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+})
+
+
 def _normalise(dest: str) -> str:
     """PyInstaller emits OS-native separators; compare on one form."""
     return PurePosixPath(str(dest).replace("\\", "/")).as_posix()
@@ -58,6 +68,9 @@ def should_bundle(dest: str) -> bool:
               records it in ``Analysis.datas`` (element 0 of each tuple).
     """
     path = _normalise(dest)
+
+    if PurePosixPath(path).name in EXCLUDED_BASENAMES:
+        return False
 
     if path in EXCLUDED_FROM_BUNDLE:
         return False

@@ -57,12 +57,12 @@ Bootstrap with:
 PRs must satisfy:
 - tests pass (project test workflow)
 - docs sync gate passes (`.github/workflows/agent-docs-gate.yml`)
-- UI regression coverage satisfied (per `AGENT_UI_REGRESSION_POLICY.md`)
+- UI regression coverage satisfied (per `docs/AGENT_UI_REGRESSION_POLICY.md`)
 - PR checklist completed
 
 ## UI Regression Guardrail
 
-Follow `AGENT_UI_REGRESSION_POLICY.md` for any UI change. Existing user-visible controls are part of the contract and must not be removed, hidden, renamed, or relocated without explicit approval and regression coverage. Before modifying any existing UI, identify the current user-visible actions and preserve them.
+Follow `docs/AGENT_UI_REGRESSION_POLICY.md` for any UI change. Existing user-visible controls are part of the contract and must not be removed, hidden, renamed, or relocated without explicit approval and regression coverage. Before modifying any existing UI, identify the current user-visible actions and preserve them.
 
 ## Rule of thumb
 

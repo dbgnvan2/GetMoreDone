@@ -1,7 +1,7 @@
 
 """
 UI Presence and Regression Tests.
-These tests enforce the "Screen Contract" defined in AGENT_UI_REGRESSION_POLICY.md.
+These tests enforce the "Screen Contract" defined in ../docs/AGENT_UI_REGRESSION_POLICY.md.
 Every critical user-visible control must be verified here to prevent accidental removal.
 """
 

@@ -19,7 +19,7 @@ pytest tests/test_vps_integration.py -v        # Single file
 pytest --cov=src/getmoredone                   # With coverage
 
 # Create demo data
-python create_demo_data.py
+python tools/create_demo_data.py
 ```
 
 ## Architecture

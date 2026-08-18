@@ -93,7 +93,7 @@ pip install -r requirements.txt
 #### 2. Create Demo Data (Optional)
 
 ```bash
-python create_demo_data.py
+python tools/create_demo_data.py
 ```
 
 #### 3. Run Application
@@ -144,7 +144,7 @@ GetMoreDone/
 │   └── ...
 ├── data/                       # Database files (gitignored)
 ├── run.py                      # Run script
-├── create_demo_data.py         # Demo data generator
+├── tools/create_demo_data.py         # Demo data generator
 └── requirements.txt            # Dependencies
 ```
 
@@ -332,7 +332,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 - **Track Display**: Currently playing track name shown in status (♫ Track Name)
 - **Volume Control**: Adjustable volume slider in Settings > Timer & Audio (0-100%)
 - **Supported Formats**: MP3, WAV, OGG (best compatibility)
-- **Format Conversion**: Use `convert_music_to_mp3.py` script to convert M4A/AAC/WMA/FLAC to MP3
+- **Format Conversion**: Use `tools/convert_music_to_mp3.py` script to convert M4A/AAC/WMA/FLAC to MP3
 - **Configuration**: Set music folder path in Settings > Timer & Audio
 
 **Audio Alerts:**
@@ -551,7 +551,7 @@ pytest tests/test_database.py -v
   - Volume control slider (0-100%)
   - Currently playing track display (♫ Track Name)
   - Automatic pause/resume with timer controls
-  - Format conversion tool for M4A/AAC to MP3 (`convert_music_to_mp3.py`)
+  - Format conversion tool for M4A/AAC to MP3 (`tools/convert_music_to_mp3.py`)
 - **SVG icon support**: Modern, scalable icons for play, pause, stop, volume, and music controls
   - Icon caching system for performance
   - cairosvg-based rendering

@@ -80,7 +80,7 @@ After clearing cache:
 
 1. **Run the debug script** to confirm files are correct:
    ```bash
-   python3 debug_auth_loading.py
+   python3 ../tools/diagnostics/debug_auth_loading.py
    ```
 
    Should show:
@@ -205,7 +205,7 @@ If nothing works:
 
 ```bash
 # 1. Verify files are correct
-python3 diagnose_client_id.py
+python3 ../tools/diagnostics/diagnose_client_id.py
 
 # 2. Force delete any tokens
 rm -rf ~/.getmoredone/token.pickle

@@ -51,7 +51,7 @@ rm -f ~/.credentials/*.pickle  # If this directory exists
 Check that your `~/.getmoredone/credentials.json` has the correct client_id:
 
 ```bash
-python3 diagnose_client_id.py
+python3 ../tools/diagnostics/diagnose_client_id.py
 ```
 
 Expected output:
@@ -133,7 +133,7 @@ After applying the fix, verify everything is correct:
 ### 1. Check credentials.json
 
 ```bash
-python3 diagnose_client_id.py
+python3 ../tools/diagnostics/diagnose_client_id.py
 ```
 
 Should show:
@@ -242,14 +242,14 @@ Delete the old token and re-authenticate? (y/N):
 Run the diagnostic before authentication:
 
 ```bash
-python3 diagnose_client_id.py
+python3 ../tools/diagnostics/diagnose_client_id.py
 ```
 
 This will catch mismatches before they cause problems.
 
 ## Tools Provided
 
-### 1. `diagnose_client_id.py`
+### 1. `../tools/diagnostics/diagnose_client_id.py`
 
 Comprehensive diagnostic tool that checks:
 - ✅ credentials.json client_id
@@ -258,10 +258,10 @@ Comprehensive diagnostic tool that checks:
 - 📋 Detailed recommendations
 
 ```bash
-python3 diagnose_client_id.py
+python3 ../tools/diagnostics/diagnose_client_id.py
 ```
 
-### 2. `fix_client_id_mismatch.sh`
+### 2. `../tools/diagnostics/fix_client_id_mismatch.sh`
 
 Interactive fix script that:
 - 🔍 Detects the problem
@@ -295,7 +295,7 @@ python3 tools/diagnose_google_auth.py
 
 **The problem**: Cached `token.pickle` from "Bowen1rag" project (888606952491...)
 **The solution**: Delete cached token, verify correct `credentials.json`, clear browser cache
-**The tools**: `diagnose_client_id.py`, `fix_client_id_mismatch.sh`, `tools/diagnose_google_auth.py`
+**The tools**: `../tools/diagnostics/diagnose_client_id.py`, `../tools/diagnostics/fix_client_id_mismatch.sh`, `tools/diagnose_google_auth.py`
 
 Your system is now configured correctly with:
 - ✅ credentials.json from "getmoredone" project (592866309318...)

@@ -9,7 +9,7 @@ This file provides project-specific instructions and context for Gemini CLI.
 - **Run App:** `./start.sh` (Mac/Linux) or `start.bat` (Windows)
 - **Manual Run:** `python run.py`
 - **Tests:** `pytest` (all), `pytest -v` (verbose), `pytest <path_to_test> -v` (single file)
-- **Demo Data:** `python create_demo_data.py`
+- **Demo Data:** `python ../tools/create_demo_data.py`
 
 ## Architecture Summary
 - **GUI:** `src/getmoredone/screens/` (CustomTkinter)

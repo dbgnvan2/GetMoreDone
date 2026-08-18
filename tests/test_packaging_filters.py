@@ -175,3 +175,20 @@ def test_spec_applies_the_filter():
     code = "\n".join(l for l in spec.splitlines() if not l.strip().startswith("#"))
     assert "filter_datas" in code, "GetMoreDone.spec never applies the packaging filter"
     assert "a.datas" in code
+
+
+@pytest.mark.parametrize("path", [
+    "assets/.DS_Store",
+    "assets/icons/.DS_Store",
+    "themes/Thumbs.db",
+])
+def test_os_debris_is_dropped(path):
+    """A .DS_Store from the building Mac would make a local build differ from
+    a CI build, and ships a file no end user needs."""
+    assert should_bundle(path) is False
+
+
+def test_os_debris_exclusion_does_not_catch_real_files():
+    """Adversarial: matching too broadly would drop legitimate resources."""
+    assert should_bundle("assets/icons/app_icon.icns") is True
+    assert should_bundle("themes/apple_grey.json") is True

@@ -231,7 +231,7 @@ Integration tests for VPS:
 
 ## Utility Scripts
 
-### convert_music_to_mp3.py
+### ../tools/convert_music_to_mp3.py
 
 Convert audio files to MP3 format:
 
@@ -239,7 +239,7 @@ Convert audio files to MP3 format:
 - Batch conversion
 - Quality settings
 
-### create_demo_data.py
+### ../tools/create_demo_data.py
 
 Create sample data for testing:
 
@@ -247,15 +247,15 @@ Create sample data for testing:
 - Contacts
 - VPS records
 
-### diagnose_calendar.py
+### ../tools/diagnostics/diagnose_calendar.py
 
 Diagnose Google Calendar issues
 
-### diagnose_client_id.py
+### ../tools/diagnostics/diagnose_client_id.py
 
 Check OAuth client ID configuration
 
-### debug_auth_loading.py
+### ../tools/diagnostics/debug_auth_loading.py
 
 Debug authentication loading issues
 
@@ -289,19 +289,19 @@ One-command startup script:
 
 Windows startup script
 
-### fix_client_id_mismatch.sh
+### ../tools/diagnostics/fix_client_id_mismatch.sh
 
 Automated client ID fix
 
-### fix_wrong_project.sh
+### ../tools/diagnostics/fix_wrong_project.sh
 
 Fix wrong Google Cloud project
 
-### fix_zombie_token.sh
+### ../tools/diagnostics/fix_zombie_token.sh
 
 Automated token cleanup
 
-### verify_auth.sh
+### ../tools/diagnostics/verify_auth.sh
 
 Verify authentication setup
 
