@@ -606,3 +606,71 @@ def test_rm4d_required_archive_files_exist_in_the_repo():
     """The workflow copies these by name; a rename would fail the job."""
     missing = [f for f in REQUIRED_ARCHIVE_FILES if not (REPO_ROOT / f).exists()]
     assert not missing, f"the release workflow copies files that do not exist: {missing}"
+
+
+# --------------------------------------------------------------------------
+# Action versions — pinned, and consistent across every workflow
+# --------------------------------------------------------------------------
+
+def _action_uses() -> dict[str, set[str]]:
+    """{action name: {versions used}} across every workflow."""
+    found: dict[str, set[str]] = {}
+    for wf in _workflows():
+        for line in _code_only(wf.read_text(encoding="utf-8")).splitlines():
+            match = re.search(r"uses:\s*([\w.-]+/[\w.-]+)@(\S+)", line)
+            if match:
+                found.setdefault(match.group(1), set()).add(match.group(2))
+    return found
+
+
+def test_actions_are_used_at_one_version_across_all_workflows():
+    """Three workflows drifting apart is how one gets left on a dead runtime.
+
+    The Node 20 deprecation landed on all three at once; bumping only the one
+    being edited would have left the others behind.
+    """
+    drifted = {a: sorted(v) for a, v in _action_uses().items() if len(v) > 1}
+    assert not drifted, (
+        f"the same action is pinned to different versions in different "
+        f"workflows: {drifted}"
+    )
+
+
+def test_actions_are_pinned_to_a_version_not_a_branch():
+    """`@main` silently changes under you; a major tag does not."""
+    floating = {
+        f"{action}@{version}"
+        for action, versions in _action_uses().items()
+        for version in versions
+        if version in {"main", "master", "latest", "HEAD"}
+    }
+    assert not floating, f"actions pinned to a moving ref: {sorted(floating)}"
+
+
+def test_no_workflow_uses_a_node20_action_version():
+    """GitHub force-runs these on Node 24 with a deprecation warning today, and
+    will stop running them. Versions below are the last Node 20 majors.
+
+    Verified against the actions' own latest releases on 2026-08-18:
+    checkout v7.0.1, setup-python v7.0.0, upload-artifact v7.0.1,
+    action-gh-release v3.0.2.
+    """
+    LAST_NODE20_MAJOR = {
+        "actions/checkout": 4,
+        "actions/setup-python": 5,
+        "actions/upload-artifact": 4,
+        "softprops/action-gh-release": 2,
+    }
+    stale = []
+    for action, versions in _action_uses().items():
+        limit = LAST_NODE20_MAJOR.get(action)
+        if limit is None:
+            continue
+        for version in versions:
+            match = re.match(r"v(\d+)", version)
+            if match and int(match.group(1)) <= limit:
+                stale.append(f"{action}@{version}")
+    assert not stale, (
+        f"actions on a deprecated Node 20 runtime: {sorted(stale)}. "
+        "Bump them across every workflow, not just the one being edited."
+    )

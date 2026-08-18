@@ -30,10 +30,10 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -94,7 +94,7 @@ jobs:
           "$hash  GetMoreDone-win64.zip" | Out-File -Encoding ascii -NoNewline GetMoreDone-win64.zip.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GetMoreDone-win64
           path: |
@@ -112,7 +112,7 @@ jobs:
 
       - name: Upload to GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
           # R-M4.C — the notes come from CHANGELOG.md rather than being typed
@@ -125,10 +125,10 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
 
@@ -164,7 +164,7 @@ jobs:
           shasum -a 256 GetMoreDone-mac.zip > GetMoreDone-mac.zip.sha256
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GetMoreDone-mac
           path: |
@@ -180,7 +180,7 @@ jobs:
 
       - name: Upload to GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
           # R-M4.C — the notes come from CHANGELOG.md rather than being typed
