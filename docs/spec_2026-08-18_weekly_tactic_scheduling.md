@@ -46,6 +46,7 @@ being the same link.
 | WT-D5 | The item's **due/end date must also fall inside** the tactic's date range. An Action Item never spans weeks. |
 | WT-D6 | "Make a new one" walks the chain back from the APE: new Quarter only when the move crosses a quarter end and none exists; new Month only when it crosses a month end and none exists; new Week whenever absent. |
 | WT-D7 | Rolling into a **new year is allowed**. Copy the APE lineage forward and build Quarter / Month / Week. |
+| WT-D7a | **Split by row type on rollover.** Structural rows (`annual_vision_elements`, `annual_plan_elements`, `annual_initiatives`, `quarter_initiatives`, `month_tactics`, week item) are auto-created by copying the prior year's lineage. Editorial year-level rows (`annual_visions`, `annual_plans`) are created as **empty stubs** — their vision statements, key priorities, themes and objectives are never copied forward and never invented. The user is told which stubs were created and that they need filling in. |
 | WT-D8 | Exactly **one Weekly Tactic per week per APE**. Existing duplicates are cleaned up and their children repointed. |
 | WT-D9 | Project start/end dates are **informational and manually edited**. No validation, no auto-extension. |
 | WT-D10 | The **first week of a year** is a user setting with a choice of rules. No backfill of `weekly_tactic_start_date` on existing items (follows from WT-D2). |
@@ -173,9 +174,9 @@ with no tactic (WT-D2) is exempt from all of them.
   - **WT-M4.B.4** — Nothing is created when the corresponding record already exists
     (idempotent on a second identical move).
     → `::test_wt_m4b4_cascade_is_idempotent`
-- **WT-M4.C** — Year rollover (WT-D7, WT-F3). Structural rows are copied forward from
-  the prior year's lineage; editorial year-level rows are created as **empty stubs**
-  and the user is told.
+- **WT-M4.C** — Year rollover (WT-D7, WT-D7a, WT-F3). Structural rows are copied
+  forward from the prior year's lineage; editorial year-level rows are created as
+  **empty stubs** and the user is told.
   - **WT-M4.C.1** — Moving an item into a year with no plan structure produces a
     complete chain: `annual_visions` → `annual_plans` → `annual_vision_elements` →
     `annual_plan_elements` → `annual_initiatives` → `quarter_initiatives` →
@@ -184,9 +185,20 @@ with no tactic (WT-D2) is exempt from all of them.
   - **WT-M4.C.2** — The new APE keeps the same `vision_element_id` and `key_field` as
     the source year, satisfying `UNIQUE(year, vision_element_id)`.
     → `::test_wt_m4c2_rollover_preserves_vision_element_lineage`
-  - **WT-M4.C.3** — `annual_visions.vision_statement` / `key_priorities` and
-    `annual_plans.theme` / `objective` are created **empty**, never copied or invented.
+  - **WT-M4.C.3** — `annual_visions.vision_statement` / `key_priorities` / `title` and
+    `annual_plans.theme` / `objective` / `description` are created **empty**, never
+    copied from the prior year and never invented (WT-D7a).
     → `::test_wt_m4c3_editorial_year_rows_created_empty`
+  - **WT-M4.C.3a** — The structural rows are the ones that *are* copied: the new
+    `annual_vision_elements` and `annual_plan_elements` rows carry the prior year's
+    `segment_name`, `subsegment_name`, `category_name` and `key_field` verbatim, so
+    the lineage and titles stay consistent across the boundary.
+    → `::test_wt_m4c3a_structural_rows_copied_verbatim`
+  - **WT-M4.C.3b** — A stub is identifiable after the fact without a schema change:
+    an `annual_visions` / `annual_plans` row created this way is detectable by its
+    empty editorial fields, and a helper returns the list of stubs needing attention
+    for a given year.
+    → `::test_wt_m4c3b_stubs_are_discoverable_after_creation`
   - **WT-M4.C.4** — The caller receives a structured report naming every record created,
     so the UI can tell the user which stubs need filling in. It is not a bare boolean.
     → `::test_wt_m4c4_rollover_returns_created_record_report`
@@ -298,7 +310,8 @@ Per the global rule on old code: found while specifying, deliberately left alone
 
 ## 10. Criteria needing human review
 
-- **WT-M4.C.3 / WT-M6.B.2** are code-testable for content and messaging, but the
-  resulting year-rollover stubs should be eyeballed once on the VSP Planning and
-  Vision Planning Hub screens in the running app — an empty `annual_visions` row
-  rendering badly is not something these assertions would catch.
+- **WT-M4.C.3 / WT-M4.C.3b / WT-M6.B.2** are code-testable for content, discovery
+  and messaging, but the resulting year-rollover stubs should be eyeballed once on
+  the VSP Planning and Vision Planning Hub screens in the running app — an empty
+  `annual_visions` row rendering badly, or a stub that reads as a real plan, is not
+  something these assertions would catch.
