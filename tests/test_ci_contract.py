@@ -17,6 +17,11 @@ Workflows are inspected as text rather than parsed YAML on purpose: PyYAML is
 not a dependency of this project, and adding one so the tests can read CI config
 would be a poor trade. Every assertion here is a presence/absence check that
 text handles correctly.
+
+R-M4.C (release body from CHANGELOG.md) and R-M4.D (LICENSE and
+THIRD_PARTY_NOTICES.md inside every archive) are **not** covered here yet: both
+depend on files Phase 5 creates. Writing their tests now would leave the suite
+permanently red, and a red build people learn to ignore is worse than no CI.
 """
 
 from __future__ import annotations
@@ -306,3 +311,155 @@ def test_rm3e_run_step_parser_actually_finds_run_blocks():
 
     # And it finds real content in the checked-in workflows.
     assert any(_run_step_lines(wf.read_text(encoding="utf-8")) for wf in _workflows())
+
+
+# --------------------------------------------------------------------------
+# R-M4 — release pipeline hardening
+# --------------------------------------------------------------------------
+
+RELEASE_WORKFLOW = WORKFLOW_DIR / "build-release.yml"
+
+# Where each OS job's packaged executable lands, per GetMoreDone.spec.
+PACKAGED_EXECUTABLES = {
+    "build-macos": "dist/GetMoreDone.app/Contents/MacOS/GetMoreDone",
+    "build-windows": "GetMoreDone.exe",
+}
+
+
+def _job_blocks(text: str) -> dict[str, str]:
+    """Split a workflow into {job_name: job_text}."""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if l.rstrip() == "jobs:")
+    except StopIteration:
+        return {}
+
+    jobs: dict[str, list[str]] = {}
+    current = None
+    for line in lines[start + 1:]:
+        if not line.strip() or line.strip().startswith("#"):
+            if current:
+                jobs[current].append(line)
+            continue
+        indent = len(line) - len(line.lstrip())
+        match = re.match(r"^\s{2}([A-Za-z0-9_-]+):\s*$", line)
+        if indent == 2 and match:
+            current = match.group(1)
+            jobs[current] = []
+            continue
+        if indent == 0:
+            break
+        if current:
+            jobs[current].append(line)
+    return {name: "\n".join(body) for name, body in jobs.items()}
+
+
+def test_rm4_job_splitter_finds_both_os_jobs():
+    """Adversarial: an empty splitter makes every R-M4 check below vacuous."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    assert set(PACKAGED_EXECUTABLES).issubset(jobs), (
+        f"expected jobs {sorted(PACKAGED_EXECUTABLES)}, found {sorted(jobs)}"
+    )
+    for name in PACKAGED_EXECUTABLES:
+        assert "pyinstaller" in jobs[name].lower(), f"{name} body looks empty"
+
+
+# R-M4.A — the packaged bundle must prove it starts
+
+def test_rm4a_release_workflow_runs_selftest_on_the_packaged_bundle():
+    """Every OS job must run --selftest against the BUILT executable.
+
+    This is the automated guard against F1 recurring. Running
+    `python run.py --selftest` instead would test the source tree, which is
+    exactly the thing that was never broken.
+    """
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job, executable in PACKAGED_EXECUTABLES.items():
+        body = jobs[job]
+        assert "--selftest" in body, f"{job} never runs --selftest on its build"
+        assert executable in body, (
+            f"{job} runs --selftest but not against {executable}"
+        )
+
+
+def test_rm4a_selftest_does_not_run_from_source():
+    """`python run.py --selftest` in a release job would prove nothing."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        assert not re.search(r"python\s+run\.py\s+--selftest", jobs[job]), (
+            f"{job} selftests the source tree, not the packaged bundle"
+        )
+
+
+def test_rm4a_selftest_runs_after_the_build():
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job]
+        assert body.lower().index("pyinstaller") < body.index("--selftest"), (
+            f"{job} runs --selftest before it builds anything"
+        )
+
+
+def test_rm4a_selftest_runs_before_anything_is_published():
+    """A bundle that cannot start must never reach an artifact or a release."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job]
+        selftest_at = body.index("--selftest")
+        for publish in ("upload-artifact", "action-gh-release"):
+            if publish in body:
+                assert selftest_at < body.index(publish), (
+                    f"{job} publishes via {publish} before the selftest runs"
+                )
+
+
+def test_rm4a_windows_job_checks_the_selftest_exit_code():
+    """pwsh does not abort on a native non-zero exit mid-script.
+
+    Without an explicit $LASTEXITCODE check, a failing selftest would print its
+    errors and the job would carry on and publish the broken build.
+    """
+    body = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-windows"]
+    assert "LASTEXITCODE" in body, (
+        "the Windows job must check $LASTEXITCODE after --selftest, or a failed "
+        "selftest is printed and ignored"
+    )
+
+
+def test_rm4a_selftest_uses_a_scratch_database():
+    """The selftest must not be pointed at whatever default path the runner has."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        assert "GETMOREDONE_DB" in jobs[job], (
+            f"{job} should give --selftest an explicit scratch DB path"
+        )
+
+
+# R-M4.B — checksums published beside each artifact
+
+def test_rm4b_release_workflow_publishes_checksums():
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job].lower()
+        assert "sha256" in body, f"{job} publishes no SHA-256 checksum"
+
+
+def test_rm4b_checksum_files_are_uploaded_as_artifacts():
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job]
+        assert ".sha256" in body, (
+            f"{job} computes a checksum but never uploads a .sha256 file"
+        )
+
+
+def test_rm4b_checksums_reach_the_github_release():
+    """A checksum only in the Actions artifact does not help a downloader."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job]
+        release_at = body.find("action-gh-release")
+        assert release_at != -1, f"{job} has no release step"
+        assert ".sha256" in body[release_at:], (
+            f"{job} does not attach its .sha256 file to the GitHub Release"
+        )
