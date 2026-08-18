@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
 # PyInstaller provides SPECPATH pointing at the directory containing this spec.
 PROJECT_ROOT = Path(SPECPATH).resolve()
 SRC_PATH = str(PROJECT_ROOT / "src")
+
+# Which collected files belong in a distribution is decided in a real module so
+# it can be unit-tested; a spec file cannot be imported. See
+# tests/test_packaging_filters.py.
+sys.path.insert(0, str(PROJECT_ROOT))
+from tools.packaging_filters import filter_datas
 
 # Be conservative with hidden imports; GUI + google libs sometimes need nudging.
 hiddenimports = []
@@ -46,6 +53,14 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+# Drop what an end user running the app does not need. Overwhelmingly this is
+# googleapiclient's discovery cache: PyInstaller collects a discovery document
+# for every Google API (~93 MB, 569 files) and this app builds exactly two
+# services. Report the drop rather than shrinking the build silently.
+a.datas, _dropped = filter_datas(a.datas)
+print(f"[packaging] excluded {len(_dropped)} file(s) not needed at runtime; "
+      f"{len(a.datas)} remain")
 
 pyz = PYZ(a.pure)
 
