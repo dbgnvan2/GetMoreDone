@@ -144,10 +144,10 @@ def test_rm4c_cli_writes_the_output_file(tmp_path):
 # Against the real CHANGELOG — the contract that actually ships
 # --------------------------------------------------------------------------
 
-def test_rm4c_real_changelog_has_a_v0_1_0_section_the_extractor_can_read():
+def test_rm4c_real_changelog_has_a_v0_2_0_section_the_extractor_can_read():
     """Verified against the real artifact, not a synthetic sample (P19)."""
-    body = extract_section(CHANGELOG.read_text(encoding="utf-8"), "v0.1.0")
-    assert len(body) > 200, "the v0.1.0 release body is suspiciously short"
+    body = extract_section(CHANGELOG.read_text(encoding="utf-8"), "v0.2.0")
+    assert len(body) > 200, "the v0.2.0 release body is suspiciously short"
     assert "crashed on launch" in body.lower(), (
         "the extracted body is missing the headline fix — check the section "
         "boundaries, not just that something was returned"
@@ -155,7 +155,7 @@ def test_rm4c_real_changelog_has_a_v0_1_0_section_the_extractor_can_read():
 
 
 def test_rm4c_real_changelog_extraction_excludes_unreleased():
-    body = extract_section(CHANGELOG.read_text(encoding="utf-8"), "v0.1.0")
+    body = extract_section(CHANGELOG.read_text(encoding="utf-8"), "v0.2.0")
     assert "[Unreleased]" not in body
 
 
@@ -163,7 +163,7 @@ def test_rm4c_script_runs_as_a_subprocess_the_way_ci_invokes_it(tmp_path):
     """CI runs `python tools/extract_release_notes.py <tag> --output ...`."""
     out = tmp_path / "RELEASE_NOTES.md"
     result = subprocess.run(
-        [sys.executable, "tools/extract_release_notes.py", "v0.1.0",
+        [sys.executable, "tools/extract_release_notes.py", "v0.2.0",
          "--output", str(out)],
         cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120,
     )

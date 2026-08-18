@@ -7,9 +7,14 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-08-18
+## [0.2.0] - 2026-08-18
 
-First downloadable release. Everything before this was source-only.
+The first release whose binaries actually run.
+
+Versions v0.1.0, v0.1.2 and v0.1.05 (February 2026) shipped binaries that
+crashed on launch before showing a window — see "Fixed" below. This release
+skips to 0.2.0 rather than reusing a version number that already has a
+published release.
 
 ### Added
 
@@ -69,5 +74,5 @@ First downloadable release. Everything before this was source-only.
 - No auto-update. New versions are downloaded manually.
 - No bundled music. Point Settings at a folder of your own.
 
-[Unreleased]: https://github.com/dbgnvan2/GetMoreDone/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/dbgnvan2/GetMoreDone/releases/tag/v0.1.0
+[Unreleased]: https://github.com/dbgnvan2/GetMoreDone/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/dbgnvan2/GetMoreDone/releases/tag/v0.2.0

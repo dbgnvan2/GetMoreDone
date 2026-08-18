@@ -170,10 +170,10 @@ def test_rm6d_changelog_exists():
     assert CHANGELOG.exists(), "no CHANGELOG.md"
 
 
-def test_rm6d_changelog_has_v0_1_0_entry():
+def test_rm6d_changelog_has_v0_2_0_entry():
     text = CHANGELOG.read_text(encoding="utf-8")
-    assert re.search(r"^## \[0\.1\.0\]", text, re.MULTILINE), (
-        "CHANGELOG.md has no [0.1.0] section"
+    assert re.search(r"^## \[0\.2\.0\]", text, re.MULTILINE), (
+        "CHANGELOG.md has no [0.2.0] section"
     )
 
 
