@@ -61,13 +61,13 @@ pytest collected it and found nothing (`rc=5` when run alone). Moved to
 | `tools/diagnose_google_auth.py` imports standalone | OK (`main` present; not executed — it performs real Google auth) |
 | Stale `test_auth.py` references | Zero, outside the moved file's own docstring |
 | Shell scripts re-parse | `bash -n` clean on all four |
-| **CI green on a real runner (R-M3.A)** | **Pending** — see below |
+| **CI green on a real runner (R-M3.A)** | **Green.** Run `32190623464`: 3.11, 3.12 and 3.13 all `527 passed, 1 skipped`, exit 0 |
 
 ## R-M3 criteria
 
 | ID | Status | Verified by |
 |---|---|---|
-| R-M3.A | pending CI run | `test_rm3a_*` (6 tests) assert the workflow's shape; a green run proves the rest |
+| R-M3.A | done | `test_rm3a_*` (6 tests) assert the workflow's shape; run `32190623464` proves the rest — green on all three Python versions, first attempt |
 | R-M3.B | done | `test_rm3b_workflow_provides_a_virtual_display`, `test_rm3b_ui_tests_are_not_skipped_headless` (CI-only, fails loudly there instead of skipping silently) |
 | R-M3.C | done | `test_rm3c_no_workflow_greps_for_pass_token`, `test_rm3c_test_step_does_not_swallow_the_exit_code` |
 | R-M3.D | done | `test_rm3d_no_test_files_at_the_repo_root`, `test_rm3d_all_test_files_are_collected` (real `--collect-only` subprocess), `test_rm3d_every_test_file_is_importable_on_its_own` |
@@ -87,10 +87,15 @@ pytest collected it and found nothing (`rc=5` when run alone). Moved to
 
 ## Follow-ups
 
-- **R-M3.A is not yet proven.** It needs a green run on a real runner. Python
-  3.12/3.13 have never been exercised here; if a dependency lacks wheels for one
-  of them the honest fix is to narrow the README's "3.11+" claim, not to drop
-  the version from the matrix quietly.
+- **R-M3.A is proven.** Run `32190623464` was green on 3.11, 3.12 and 3.13 on
+  the first attempt, so the README's "Python 3.11+" claim now holds against a
+  blank machine rather than against this Mac.
+- **The skip count is the evidence for R-M3.B.** Locally the suite reports
+  `526 passed, 2 skipped`; on CI it reports `527 passed, 1 skipped`. The extra
+  pass is `test_rm3b_ui_tests_are_not_skipped_headless`, which only runs when
+  `CI` is set — so a display really was present, and the nine Tk files executed
+  instead of skipping. Had xvfb been missing, the skip count would have jumped,
+  not stayed at one.
 - Phases 4–6 remain: release-pipeline hardening, `LICENSE` /
   `THIRD_PARTY_NOTICES.md` / `INSTALL.md` / `CHANGELOG.md`, hygiene.
 - `learning-qa` over the full diff is still scheduled for Phase 6 step 25.
@@ -100,6 +105,10 @@ pytest collected it and found nothing (`rc=5` when run alone). Moved to
 - Carried forward: two tests in `tests/test_vps_segments.py` `return` a bool
   instead of asserting; `themes/base_dark_blue.json` ships but is not in
   `theme.THEME_NAMES`; `requirements.txt` mixes test and runtime dependencies.
+- **All three workflows use `actions/checkout@v4` and `actions/setup-python@v5`,
+  which GitHub now force-runs on Node 24 with a deprecation annotation.** Not a
+  failure yet; it will become one. Flagged, not fixed — it touches
+  `build-release.yml` and `agent-docs-gate.yml` as well as `tests.yml`.
 - The repo root still holds `debug_auth_loading.py`, `diagnose_calendar.py`,
   `diagnose_client_id.py`, `fix_*.sh`, `verify_auth.sh` and several `*.md`
   troubleshooting docs. R-M7.A/R-M7.C cover these in Phase 6.
