@@ -121,7 +121,7 @@ If you ever:
 rm ~/.getmoredone/token.pickle
 
 # Test authentication again
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 **Solution (Using Test Script):**
@@ -129,7 +129,7 @@ python3 test_auth.py
 The test script now automatically detects zombie tokens:
 
 ```bash
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 If a zombie token is detected, you'll see:
@@ -154,7 +154,7 @@ After deleting the zombie token and re-authenticating:
 2. Complete authentication
 3. Verify new token.pickle matches your credentials:
    ```bash
-   python3 test_auth.py
+   python3 tools/diagnose_google_auth.py
    ```
 4. You should see "✅ Successfully authenticated with Google Calendar API!"
 
@@ -269,7 +269,7 @@ Use this test script to verify authentication without launching the full app:
 
 ```bash
 cd /home/user/GetMoreDone
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 This will:
@@ -365,7 +365,7 @@ If you're still experiencing issues:
 | credentials.json | OAuth client secrets | ~/.getmoredone/credentials.json |
 | token.pickle | Authorization token (auto-created) | ~/.getmoredone/token.pickle |
 | google_calendar.py | Authentication code | /home/user/GetMoreDone/src/getmoredone/google_calendar.py |
-| test_auth.py | Test script | /home/user/GetMoreDone/test_auth.py |
+| tools/diagnose_google_auth.py | Test script | /home/user/GetMoreDone/tools/diagnose_google_auth.py |
 
 ## ✨ What's New
 

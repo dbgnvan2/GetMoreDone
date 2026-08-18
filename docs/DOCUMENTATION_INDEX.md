@@ -263,7 +263,7 @@ Debug authentication loading issues
 
 Test audio playback functionality
 
-### test_auth.py
+### tools/diagnose_google_auth.py
 
 Test OAuth authentication
 

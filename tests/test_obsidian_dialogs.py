@@ -4,11 +4,17 @@ Test script for Obsidian integration dialogs.
 Run this to verify dialogs can be instantiated and work properly.
 """
 
+# Keep src/ importable when this file is run directly (it has a __main__
+# block). Under pytest the repo-root conftest.py does the same thing; this
+# must come before the getmoredone imports either way.
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "src"))
+
 import sys
 from pathlib import Path
 
 # Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 def test_imports():
     """Test that all required modules can be imported."""

@@ -163,7 +163,7 @@ try:
 
     # Don't actually initialize, just show what would happen
     print("\nTo see the actual OAuth URL, run:")
-    print("   python3 test_auth.py")
+    print("   python3 tools/diagnose_google_auth.py")
 
 except Exception as e:
     print(f"\n❌ Failed to import: {e}")

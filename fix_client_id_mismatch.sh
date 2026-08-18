@@ -165,8 +165,8 @@ echo ""
 echo "Now let's test authentication with the correct credentials..."
 echo ""
 
-if [ -f "test_auth.py" ]; then
-    python3 test_auth.py
+if [ -f "tools/diagnose_google_auth.py" ]; then
+    python3 tools/diagnose_google_auth.py
     exit_code=$?
 
     if [ $exit_code -eq 0 ]; then
@@ -196,8 +196,8 @@ if [ -f "test_auth.py" ]; then
         echo ""
     fi
 else
-    echo -e "${YELLOW}⚠️  test_auth.py not found. Run manually:${NC}"
-    echo "    python3 test_auth.py"
+    echo -e "${YELLOW}⚠️  tools/diagnose_google_auth.py not found. Run manually:${NC}"
+    echo "    python3 tools/diagnose_google_auth.py"
     echo ""
 fi
 

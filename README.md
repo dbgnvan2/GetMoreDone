@@ -406,7 +406,7 @@ rm ~/.getmoredone/token.pickle
 ./fix_zombie_token.sh
 
 # Then re-authenticate
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 **Other Issues:** See `docs/EMAIL-AUTH-TROUBLESHOOTING.md` or run `./verify_auth.sh` to diagnose problems.

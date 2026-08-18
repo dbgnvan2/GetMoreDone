@@ -91,7 +91,7 @@ After clearing cache:
 
 2. **Run the auth test**:
    ```bash
-   python3 test_auth.py
+   python3 tools/diagnose_google_auth.py
    ```
 
 3. **Check the OAuth URL carefully**:
@@ -169,7 +169,7 @@ Your current system state:
 ## 🎯 Next Steps
 
 1. **Use incognito window** (fastest fix)
-2. Run `python3 test_auth.py`
+2. Run `python3 tools/diagnose_google_auth.py`
 3. When browser opens, **verify the URL** shows `client_id=592866309318...`
 4. Complete OAuth flow
 5. Verify app works
@@ -190,7 +190,7 @@ Your current system state:
 
 If you're having persistent browser issues, you can use the manual code entry method:
 
-1. Run: `python3 test_auth.py`
+1. Run: `python3 tools/diagnose_google_auth.py`
 2. When it opens OAuth URL, **copy the URL**
 3. Open the URL in incognito window on **another device** (phone, tablet)
 4. Complete OAuth flow
@@ -219,7 +219,7 @@ curl -s ~/.getmoredone/credentials.json | jq .installed.client_id
 # Should output: "592866309318-7r1aor9ln8von3vlbqgrineslrl91e6u.apps.googleusercontent.com"
 
 # 5. Try with incognito
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 ---

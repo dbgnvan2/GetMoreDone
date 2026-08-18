@@ -153,9 +153,9 @@ read -r response
 if [[ "$response" =~ ^([yY][eE][sS]|[yY])$ ]]; then
     echo ""
     echo "Running test authentication..."
-    python3 test_auth.py
+    python3 tools/diagnose_google_auth.py
 else
-    echo "   Skipped (run 'python3 test_auth.py' to test manually)"
+    echo "   Skipped (run 'python3 tools/diagnose_google_auth.py' to test manually)"
 fi
 echo ""
 

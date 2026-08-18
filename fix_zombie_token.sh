@@ -42,7 +42,7 @@ if [ ! -f "$TOKEN_FILE" ]; then
     echo "✅ Token deleted successfully!"
     echo ""
     echo "Next steps:"
-    echo "  1. Run: python3 test_auth.py"
+    echo "  1. Run: python3 tools/diagnose_google_auth.py"
     echo "  2. Complete the authentication in your browser"
     echo "  3. A new token.pickle will be created with the correct project"
     echo ""

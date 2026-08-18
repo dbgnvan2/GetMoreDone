@@ -27,7 +27,7 @@ cd /home/user/GetMoreDone
 ### Method 2: Test Script with Auto-Detection
 ```bash
 cd /home/user/GetMoreDone
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 # It will detect zombie token and offer to delete it
 ```
 
@@ -37,14 +37,14 @@ python3 test_auth.py
 rm ~/.getmoredone/token.pickle
 
 # Test authentication
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 ## After Deletion
 
 1. Run authentication test:
    ```bash
-   python3 test_auth.py
+   python3 tools/diagnose_google_auth.py
    ```
 
 2. Complete OAuth flow in browser
@@ -74,7 +74,7 @@ After fixing, check these:
 python3 -c "import json; print('Credentials project:', json.load(open('$HOME/.getmoredone/credentials.json'))['installed']['project_id'])"
 
 # 2. Test authentication
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 
 # 3. Should see:
 # ✅ Successfully authenticated with Google Calendar API!
@@ -96,5 +96,5 @@ Or run diagnostic script:
 
 **TL;DR:**
 ```bash
-rm ~/.getmoredone/token.pickle && python3 test_auth.py
+rm ~/.getmoredone/token.pickle && python3 tools/diagnose_google_auth.py
 ```

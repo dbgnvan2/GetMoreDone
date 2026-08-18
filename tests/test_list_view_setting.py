@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Test script to verify list view expansion setting implementation."""
 
+# Keep src/ importable when this file is run directly (it has a __main__
+# block). Under pytest the repo-root conftest.py does the same thing; this
+# must come before the getmoredone imports either way.
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "src"))
+
 from getmoredone.app_settings import AppSettings
 import sys
 from pathlib import Path
 
 # Add src directory to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
 
 
 def test_default_setting():

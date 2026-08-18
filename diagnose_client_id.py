@@ -235,7 +235,7 @@ def main():
             print()
 
         print("🧪 TEST authentication:")
-        print("  python3 test_auth.py")
+        print("  python3 tools/diagnose_google_auth.py")
         print()
 
         print("🌐 CLEAR browser cache:")

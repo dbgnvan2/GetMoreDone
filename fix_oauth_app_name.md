@@ -43,7 +43,7 @@ rm ~/.getmoredone/token.pickle
 
 # Test authentication
 cd /home/user/GetMoreDone
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 ### Step 6: Verify
@@ -102,7 +102,7 @@ Should show: `Project: getmoredone`
 
 ```bash
 cd /home/user/GetMoreDone
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 The OAuth screen should now show the correct app name!
@@ -114,12 +114,12 @@ The OAuth screen should now show the correct app name!
 ```bash
 # Option 1: Just change app name in console, then:
 rm ~/.getmoredone/token.pickle
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 
 # Option 2: Create new credentials, then:
 mv ~/.getmoredone/credentials.json ~/.getmoredone/credentials.json.backup
 # (download new credentials from console)
 mv ~/Downloads/client_secret_*.json ~/.getmoredone/credentials.json
 chmod 600 ~/.getmoredone/credentials.json
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```

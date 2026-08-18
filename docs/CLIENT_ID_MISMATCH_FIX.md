@@ -74,7 +74,7 @@ The browser may have cached OAuth sessions. Clear them:
 #### Step 4: Re-authenticate
 
 ```bash
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 When the OAuth URL opens, verify it shows the **correct** client_id:
@@ -147,7 +147,7 @@ Should show:
 
 When you run the app, check the OAuth URL carefully:
 ```bash
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 The URL should contain:
@@ -169,7 +169,7 @@ The consent screen should show:
 1. **Browser cache**: Use incognito/private mode
    ```bash
    # On Linux, you can specify browser:
-   BROWSER=/usr/bin/google-chrome python3 test_auth.py
+   BROWSER=/usr/bin/google-chrome python3 tools/diagnose_google_auth.py
    ```
 
 2. **Multiple credentials files**: Search for all credentials.json files
@@ -223,10 +223,10 @@ This automatically deletes the old token.
 
 ### 2. Zombie Token Detection
 
-The `test_auth.py` script now has built-in zombie token detection:
+The `tools/diagnose_google_auth.py` script now has built-in zombie token detection:
 
 ```python
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 It will warn you:
@@ -273,7 +273,7 @@ Interactive fix script that:
 ./fix_client_id_mismatch.sh
 ```
 
-### 3. `test_auth.py`
+### 3. `tools/diagnose_google_auth.py`
 
 Enhanced test script with:
 - 🧟 Zombie token detection
@@ -282,7 +282,7 @@ Enhanced test script with:
 - ✅ Calendar API verification
 
 ```bash
-python3 test_auth.py
+python3 tools/diagnose_google_auth.py
 ```
 
 ## Related Issues
@@ -295,7 +295,7 @@ python3 test_auth.py
 
 **The problem**: Cached `token.pickle` from "Bowen1rag" project (888606952491...)
 **The solution**: Delete cached token, verify correct `credentials.json`, clear browser cache
-**The tools**: `diagnose_client_id.py`, `fix_client_id_mismatch.sh`, `test_auth.py`
+**The tools**: `diagnose_client_id.py`, `fix_client_id_mismatch.sh`, `tools/diagnose_google_auth.py`
 
 Your system is now configured correctly with:
 - ✅ credentials.json from "getmoredone" project (592866309318...)

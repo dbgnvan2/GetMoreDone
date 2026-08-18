@@ -1,0 +1,62 @@
+name: Tests
+
+# Spec: docs/spec_2026-08-18_downloadable_release.md#r-m3
+#
+# The value of this workflow is the blank machine: no built venv, no packages
+# installed here months ago, no ~/Library state. It catches what "works on my
+# Mac" hides — which matters more because this repo is shared between two Macs.
+#
+# Two rules this file must keep:
+#   * Success is decided by pytest's EXIT CODE. Never grep stdout for "passed" —
+#     `2 failed, 2181 passed` contains that word and would report green.
+#   * No check lives only here. Every assertion belongs in the pytest suite so it
+#     can fail before a push; this workflow only invokes that suite.
+# Both are enforced by tests/test_ci_contract.py.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # README claims "Python 3.11+", so every one of those is tested.
+        # tests/test_ci_contract.py asserts this matrix covers the claim.
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system packages for headless Tk
+        # python3-tk: CustomTkinter needs real Tk; the setup-python build has it,
+        # but xvfb supplies the display the GUI tests would otherwise skip for.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb python3-tk
+
+      - name: Install dependencies
+        # From requirements.txt only — an undeclared dependency must fail here.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run test suite
+        # xvfb-run provides the display, so the Tk tests execute instead of
+        # skipping. The step's success is pytest's exit code, nothing else.
+        env:
+          CI: 'true'
+        run: |
+          xvfb-run -a python -m pytest -q

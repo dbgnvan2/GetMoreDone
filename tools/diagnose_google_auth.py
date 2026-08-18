@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Test script for Google Calendar authentication."""
+"""Diagnostic for Google Calendar authentication.
+
+Not a pytest test — it has no test functions and talks to real Google
+credentials on disk. It lived at the repo root as ``test_auth.py``, where
+pytest collected it and found nothing to run. Invoke it directly:
+
+    python3 tools/diagnose_google_auth.py
+"""
 
 import os
 import sys
@@ -7,8 +14,7 @@ import json
 import pickle
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from getmoredone.google_calendar import GoogleCalendarManager
 
