@@ -19,9 +19,9 @@ would be a poor trade. Every assertion here is a presence/absence check that
 text handles correctly.
 
 R-M4.C (release body from CHANGELOG.md) and R-M4.D (LICENSE and
-THIRD_PARTY_NOTICES.md inside every archive) are **not** covered here yet: both
-depend on files Phase 5 creates. Writing their tests now would leave the suite
-permanently red, and a red build people learn to ignore is worse than no CI.
+THIRD_PARTY_NOTICES.md inside every archive) were held back during Phase 4
+because their input files did not exist yet — a permanently red suite is worse
+than no CI. Phase 5 created them, so they are covered below.
 """
 
 from __future__ import annotations
@@ -515,3 +515,70 @@ def test_rm4b_checksums_reach_the_github_release():
         assert ".sha256" in body[release_at:], (
             f"{job} does not attach its .sha256 file to the GitHub Release"
         )
+
+
+# R-M4.C — release body comes from CHANGELOG.md
+
+def test_rm4c_release_body_sourced_from_changelog():
+    """Typed-by-hand release notes drift from the repo; generated ones cannot."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = _code_only(jobs[job])
+        assert "body_path" in body, f"{job} publishes a release with no notes"
+        assert "extract_release_notes" in body, (
+            f"{job} does not generate its notes from CHANGELOG.md"
+        )
+
+
+def test_rm4c_extractor_script_exists_and_is_not_inline_yaml():
+    """R-M3.E: the logic must be runnable and testable outside CI."""
+    script = REPO_ROOT / "tools/extract_release_notes.py"
+    assert script.exists(), (
+        "the workflow calls tools/extract_release_notes.py but it does not exist"
+    )
+    assert (REPO_ROOT / "tests/test_release_notes.py").exists(), (
+        "the extractor has no tests, so CI is the only place it is exercised"
+    )
+
+
+def test_rm4c_notes_are_generated_before_the_release_step():
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job]
+        assert body.index("extract_release_notes") < body.index("action-gh-release"), (
+            f"{job} generates its release notes after publishing the release"
+        )
+
+
+# R-M4.D — LICENSE and notices travel inside the archive
+
+REQUIRED_ARCHIVE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md", "licenses")
+
+
+def test_rm4d_archives_include_license_and_notices():
+    """A notice that ships only in the repo never reaches a binary downloader,
+    and the LGPL requires the licence text to accompany the distribution."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = _code_only(jobs[job])
+        for required in REQUIRED_ARCHIVE_FILES:
+            assert required in body, (
+                f"{job} does not put {required} inside its archive (R-M4.D)"
+            )
+
+
+def test_rm4d_licence_files_are_staged_before_the_archive_is_made():
+    """Copying them after the zip step would ship an archive without them."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job, zip_marker in (("build-windows", "Compress-Archive"),
+                            ("build-macos", "ditto -c -k")):
+        body = jobs[job]
+        assert body.index("THIRD_PARTY_NOTICES.md") < body.index(zip_marker), (
+            f"{job} stages the licence files after zipping"
+        )
+
+
+def test_rm4d_required_archive_files_exist_in_the_repo():
+    """The workflow copies these by name; a rename would fail the job."""
+    missing = [f for f in REQUIRED_ARCHIVE_FILES if not (REPO_ROOT / f).exists()]
+    assert not missing, f"the release workflow copies files that do not exist: {missing}"

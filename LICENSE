@@ -1,0 +1,114 @@
+GetMoreDone — Proprietary, Source-Available Licence
+Copyright (c) 2026 Dave Galloway. All rights reserved.
+
+DRAFT — NOT REVIEWED BY A LAWYER
+This text was drafted from a source-available template by an AI assistant at the
+copyright holder's request. It is not legal advice. Have a lawyer review it
+before the first paid sale, before granting any licence to a third party, and
+before relying on it in a dispute. If any of it does not match your intent, your
+intent governs — change the text.
+
+--------------------------------------------------------------------------------
+
+1. DEFINITIONS
+
+   "Software" means the GetMoreDone application, its source code, build scripts,
+   documentation, and any binaries distributed by the copyright holder.
+
+   "You" means the individual or single legal entity exercising the permissions
+   granted below.
+
+2. GRANT
+
+   The copyright holder grants You a worldwide, royalty-free, non-exclusive,
+   non-transferable, revocable licence to:
+
+   a) download, install, and run the Software for Your own personal use or for
+      the internal business use of Your organisation, at no cost;
+
+   b) view and modify the source code for those same purposes; and
+
+   c) make backup copies for Your own use.
+
+3. RESERVED RIGHTS
+
+   All rights not expressly granted in Section 2 are reserved. In particular,
+   without prior written permission from the copyright holder, You may not:
+
+   a) redistribute, publish, sublicense, sell, rent, lease, or lend the Software
+      or any modified version of it, in source or binary form;
+
+   b) offer the Software, or any service based on it, to third parties, whether
+      or not for a fee, including as a hosted or managed service;
+
+   c) remove or alter this licence, the copyright notice, or the third-party
+      notices in THIRD_PARTY_NOTICES.md; or
+
+   d) use the name "GetMoreDone", or the copyright holder's name, to endorse or
+      promote products derived from the Software.
+
+   The copyright holder intends to offer the Software commercially. Nothing in
+   this licence transfers ownership or grants any right to resell.
+
+4. SOURCE AVAILABILITY
+
+   The source code is published for transparency and for the permitted uses in
+   Section 2. Publication does not make the Software open source, and does not
+   grant any right beyond Section 2. Neither this licence nor any public
+   repository hosting grants redistribution rights.
+
+5. CONTRIBUTIONS
+
+   If You submit a contribution (code, documentation, or other material) to the
+   Software, You grant the copyright holder a perpetual, irrevocable, worldwide,
+   royalty-free licence to use, modify, and distribute that contribution as part
+   of the Software, including in commercial versions, and You confirm You have
+   the right to grant that licence.
+
+6. THIRD-PARTY COMPONENTS
+
+   The Software incorporates third-party components under their own licences,
+   listed in THIRD_PARTY_NOTICES.md. Those licences govern those components and
+   nothing in this licence limits any right they grant You.
+
+   In particular, the Software links the pygame library under the GNU Lesser
+   General Public Licence. The Software is distributed in one-folder form so
+   that pygame's libraries remain separate, replaceable files, as that licence
+   requires. See THIRD_PARTY_NOTICES.md.
+
+7. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. THE SOFTWARE IS NOT
+   CERTIFIED FOR ANY USE IN WHICH FAILURE COULD LEAD TO DEATH, PERSONAL INJURY,
+   OR SEVERE PHYSICAL OR ENVIRONMENTAL DAMAGE.
+
+   You are responsible for Your own data. The Software stores its database on
+   Your machine and performs no backups on Your behalf.
+
+8. LIMITATION OF LIABILITY
+
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL THE
+   COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+   WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF,
+   OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE, INCLUDING ANY LOSS OF DATA.
+
+   Nothing in this licence excludes or limits liability that cannot lawfully be
+   excluded or limited.
+
+9. TERMINATION
+
+   This licence terminates automatically if You breach any of its terms. On
+   termination You must stop using the Software and destroy all copies in Your
+   possession. Sections 3, 5, 7, and 8 survive termination.
+
+10. GENERAL
+
+   If any provision of this licence is held unenforceable, the remaining
+   provisions remain in full force. Failure to enforce any provision is not a
+   waiver of it.
+
+   For permissions beyond the scope of this licence — including redistribution,
+   commercial use, or a site licence — contact the copyright holder.

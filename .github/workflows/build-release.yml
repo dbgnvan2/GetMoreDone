@@ -7,11 +7,10 @@ name: Build binaries
 # this workflow it produced binaries that died on launch because GetMoreDone.spec
 # never bundled themes/, and nothing here ever ran them.
 #
-# Still to come in Phase 5, once their input files exist:
-#   R-M4.C — release body sourced from CHANGELOG.md
-#   R-M4.D — LICENSE and THIRD_PARTY_NOTICES.md inside every archive
-# Their contract tests are deliberately absent from tests/test_ci_contract.py
-# until then, rather than sitting red.
+# R-M4.C sources the release body from CHANGELOG.md, and R-M4.D puts LICENSE,
+# THIRD_PARTY_NOTICES.md and licenses/ inside every archive — the LGPL requires
+# the licence text to accompany the distribution, and a notice that ships only
+# in the repo never reaches someone who downloaded a binary.
 
 on:
   workflow_dispatch:
@@ -69,6 +68,13 @@ jobs:
           if (Test-Path selftest-err.txt) { Get-Content selftest-err.txt }
           if ($proc.ExitCode -ne 0) { throw "Packaged build failed its selftest (exit $($proc.ExitCode))" }
 
+      - name: Stage licence files into the build (R-M4.D)
+        shell: pwsh
+        run: |
+          Copy-Item LICENSE dist\GetMoreDone\
+          Copy-Item THIRD_PARTY_NOTICES.md dist\GetMoreDone\
+          Copy-Item -Recurse -Force licenses dist\GetMoreDone\licenses
+
       - name: Zip Windows build
         shell: pwsh
         run: |
@@ -90,11 +96,23 @@ jobs:
             GetMoreDone-win64.zip
             GetMoreDone-win64.zip.sha256
 
+      - name: Extract release notes from CHANGELOG (R-M4.C)
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        shell: pwsh
+        run: |
+          $tag = if ($env:INPUT_TAG) { $env:INPUT_TAG } else { "${{ github.ref_name }}" }
+          python tools/extract_release_notes.py $tag --output RELEASE_NOTES.md
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+
       - name: Upload to GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          # R-M4.C — the notes come from CHANGELOG.md rather than being typed
+          # by hand, so the release and the repo cannot disagree.
+          body_path: RELEASE_NOTES.md
           files: |
             GetMoreDone-win64.zip
             GetMoreDone-win64.zip.sha256
@@ -126,6 +144,11 @@ jobs:
         run: |
           ./dist/GetMoreDone.app/Contents/MacOS/GetMoreDone --selftest
 
+      - name: Stage licence files into the bundle (R-M4.D)
+        run: |
+          cp LICENSE THIRD_PARTY_NOTICES.md "dist/GetMoreDone.app/Contents/Resources/"
+          cp -R licenses "dist/GetMoreDone.app/Contents/Resources/licenses"
+
       - name: Zip macOS app
         run: |
           ditto -c -k --sequesterRsrc --keepParent "dist/GetMoreDone.app" "GetMoreDone-mac.zip"
@@ -142,11 +165,21 @@ jobs:
             GetMoreDone-mac.zip
             GetMoreDone-mac.zip.sha256
 
+      - name: Extract release notes from CHANGELOG (R-M4.C)
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        run: |
+          TAG="${{ inputs.release_tag }}"
+          if [ -z "$TAG" ]; then TAG="${{ github.ref_name }}"; fi
+          python tools/extract_release_notes.py "$TAG" --output RELEASE_NOTES.md
+
       - name: Upload to GitHub Release (if tag)
         if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
+          # R-M4.C — the notes come from CHANGELOG.md rather than being typed
+          # by hand, so the release and the repo cannot disagree.
+          body_path: RELEASE_NOTES.md
           files: |
             GetMoreDone-mac.zip
             GetMoreDone-mac.zip.sha256

@@ -59,5 +59,20 @@ Result:
 
 ## 3) Notes / gotchas
 
-- If audio or SVG conversion fails in a frozen build, it’s usually a missing hidden-import. We can add a `.spec` file later if needed.
-- If you want a true single-file executable (`--onefile`), it’s possible, but startup time is slower and debugging is harder. I recommend one-folder initially.
+- `GetMoreDone.spec` is the supported build definition and is checked in. It is the only supported path — both build scripts and the release workflow use it. If a frozen build fails on a missing module, add it to `hiddenimports` there; if it fails on a missing *file*, add the folder to `datas` (that omission is what made every pre-0.1.0 binary crash on launch).
+- **Do not switch to `--onefile`.** Beyond the slower startup, pygame is LGPL and one-folder packaging is what keeps its libraries separately replaceable, as that licence requires. See `THIRD_PARTY_NOTICES.md`; `tests/test_packaging_resources.py` enforces it.
+
+## 4) Verifying a build
+
+Both build scripts run the packaged app's selftest and fail if it does not
+start. To check a build by hand:
+
+```bash
+./dist/GetMoreDone.app/Contents/MacOS/GetMoreDone --selftest
+```
+
+It prints one line per check and exits non-zero on failure. On Windows the
+executable is built windowed, so a console will not wait for it or report its
+exit code — use `Start-Process -Wait -PassThru` as `build_windows.ps1` does.
+
+The release workflow runs this on both platforms before publishing anything.

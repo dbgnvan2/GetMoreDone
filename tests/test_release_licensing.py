@@ -15,8 +15,8 @@ and AGPL are not.** The second test walks the whole installed dependency tree
 rather than naming tkcalendar, so a *future* GPL dependency is caught too
 (meta-rule: fix the class, not the instance).
 
-Third-party notices (R-M2.C) and the audio-file check (R-M2.D) arrive in Phase 5
-alongside THIRD_PARTY_NOTICES.md; they are not in this file yet.
+R-M2.A (LICENSE exists), R-M2.C (third-party notices) and R-M2.D (no audio
+committed) are covered below as of Phase 5.
 """
 
 from __future__ import annotations
@@ -213,3 +213,143 @@ def test_rm2b3_pygame_is_recognised_as_lgpl_not_gpl():
     if strings is None:
         pytest.skip("pygame is not installed in this environment")
     assert _classify(strings) == "lgpl", f"pygame classified wrongly from {strings}"
+
+
+# --------------------------------------------------------------------------
+# R-M2.A — a LICENSE exists and says what D1 decided
+# --------------------------------------------------------------------------
+
+LICENSE_FILE = REPO_ROOT / "LICENSE"
+NOTICES_FILE = REPO_ROOT / "THIRD_PARTY_NOTICES.md"
+
+
+def test_rm2a_license_file_exists_and_is_not_empty():
+    """A public repo with no LICENSE is 'all rights reserved' — nobody may run it."""
+    assert LICENSE_FILE.exists(), "no LICENSE at the repo root (finding F4)"
+    assert len(LICENSE_FILE.read_text(encoding="utf-8").strip()) > 500
+
+
+def test_rm2a_license_names_the_copyright_holder_and_year():
+    text = LICENSE_FILE.read_text(encoding="utf-8")
+    assert "Dave Galloway" in text, "LICENSE does not name the copyright holder"
+    assert re.search(r"Copyright \(c\) 20\d\d", text), "LICENSE has no copyright line"
+
+
+def test_rm2a_license_implements_the_d1_decision():
+    """D1: no cost to use, copyright retained, redistribution and commercial
+    use reserved so the app can be sold later."""
+    text = LICENSE_FILE.read_text(encoding="utf-8").lower()
+    for phrase in ("at no cost", "all rights not expressly granted", "redistribute"):
+        assert phrase in text, f"LICENSE does not express D1: missing {phrase!r}"
+
+
+def test_rm2a_license_carries_the_unreviewed_draft_warning():
+    """This text was drafted by an AI assistant, not a lawyer. Until someone
+    qualified has read it, the file must say so — removing this line is a
+    decision for the copyright holder, not a tidy-up."""
+    text = LICENSE_FILE.read_text(encoding="utf-8")
+    assert "NOT REVIEWED BY A LAWYER" in text, (
+        "the draft warning was removed from LICENSE. If that was deliberate "
+        "(a lawyer has now reviewed it), delete this test in the same commit."
+    )
+
+
+def test_rm2a_readme_links_the_license():
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "LICENSE" in readme, "README does not reference the licence"
+
+
+# --------------------------------------------------------------------------
+# R-M2.C — every runtime dependency has a notice
+# --------------------------------------------------------------------------
+
+def test_rm2c_third_party_notices_exists():
+    assert NOTICES_FILE.exists(), "no THIRD_PARTY_NOTICES.md"
+
+
+def test_rm2c_third_party_notices_covers_every_runtime_dep():
+    """Fails when a dependency is added without a notice — that is the point."""
+    notices = NOTICES_FILE.read_text(encoding="utf-8").lower()
+    missing = [
+        name for name in _declared_requirements()
+        if name.lower() not in TEST_ONLY_PACKAGES and name.lower() not in notices
+    ]
+    assert not missing, (
+        f"runtime dependencies with no entry in THIRD_PARTY_NOTICES.md: {missing}"
+    )
+
+
+def test_rm2c_pygame_lgpl_notice_present():
+    """F3: LGPL is only permissible here with a notice and a relink statement."""
+    notices = NOTICES_FILE.read_text(encoding="utf-8")
+    lowered = notices.lower()
+    assert "lgpl" in lowered, "no LGPL notice for pygame"
+    assert "one-folder" in lowered, "no relink statement (one-folder packaging)"
+    assert "replace" in lowered, "the notice does not state the user may relink"
+
+
+def test_rm2c_bundled_lgpl_text_exists_and_is_verbatim():
+    """The LGPL requires the licence to accompany the distribution.
+
+    The notices claim the text ships with the app; this asserts the file is
+    really there and is really the LGPL, rather than a paraphrase.
+    """
+    lgpl = REPO_ROOT / "licenses/pygame-LGPL-2.1.txt"
+    assert lgpl.exists(), (
+        "THIRD_PARTY_NOTICES.md says the LGPL text ships with the application, "
+        "but licenses/pygame-LGPL-2.1.txt does not exist"
+    )
+    text = lgpl.read_text(encoding="utf-8")
+    assert "GNU LESSER GENERAL PUBLIC LICENSE" in text
+    assert "Version 2.1, February 1999" in text
+    assert len(text.splitlines()) > 400, "LGPL text looks truncated"
+
+
+def test_rm2c_spec_bundles_the_licence_files():
+    """A notice that ships only in the repo does not reach the person who
+    downloaded a binary (R-M4.D)."""
+    spec = (REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8")
+    for required in ("licenses", "LICENSE", "THIRD_PARTY_NOTICES.md"):
+        assert required in spec, f"GetMoreDone.spec does not bundle {required}"
+
+
+def test_rm2c_notices_paths_match_the_real_bundle_layout():
+    """The relink instructions name real directories.
+
+    Verified against the archives produced by run 32191656386:
+    macOS `GetMoreDone.app/Contents/Resources/pygame/`, Windows `_internal/pygame/`.
+    """
+    notices = NOTICES_FILE.read_text(encoding="utf-8")
+    assert "Contents/Resources/pygame" in notices, "macOS relink path missing or wrong"
+    assert "_internal" in notices and "pygame" in notices, "Windows relink path missing"
+
+
+# --------------------------------------------------------------------------
+# R-M2.D — no audio ships (D3)
+# --------------------------------------------------------------------------
+
+AUDIO_EXTENSIONS = (".mp3", ".wav", ".aif", ".aiff", ".m4a", ".flac", ".ogg")
+
+
+def test_rm2d_no_audio_files_tracked():
+    """D3: users point Settings at their own music folder; none is distributed."""
+    import subprocess
+
+    result = subprocess.run(
+        ["git", "ls-files"], cwd=str(REPO_ROOT),
+        capture_output=True, text=True, timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    tracked_audio = [
+        line for line in result.stdout.splitlines()
+        if line.lower().endswith(AUDIO_EXTENSIONS)
+    ]
+    assert not tracked_audio, f"audio files tracked in git: {tracked_audio}"
+
+
+def test_rm2d_spec_does_not_bundle_an_audio_folder():
+    spec = (REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8")
+    code = "\n".join(
+        line for line in spec.splitlines() if not line.strip().startswith("#")
+    )
+    assert '"audio"' not in code, "GetMoreDone.spec bundles an audio folder (D3 says none ships)"

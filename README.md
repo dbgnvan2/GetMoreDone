@@ -2,7 +2,8 @@
 
 A comprehensive Python task management application with GUI interface and SQLite database. Built to help you prioritize tasks, track time, and improve productivity through data-driven insights.
 
-User guide: `docs/USER_GUIDE.md`
+**[Download for macOS or Windows](https://github.com/dbgnvan2/GetMoreDone/releases)** ·
+[Install guide](INSTALL.md) · [User guide](docs/USER_GUIDE.md) · [Licence](LICENSE)
 
 ## Features
 
@@ -28,6 +29,30 @@ User guide: `docs/USER_GUIDE.md`
 🖥️ **Responsive UI** - Two-column layout that adapts to window size, floating timer window, resizable planning/board panels
 
 ## Quick Start
+
+### Download a build (recommended)
+
+Grab the archive for your system from the
+[Releases page](https://github.com/dbgnvan2/GetMoreDone/releases):
+
+| System | File |
+|---|---|
+| macOS | `GetMoreDone-mac.zip` |
+| Windows | `GetMoreDone-win64.zip` |
+
+**macOS needs one extra step on first launch.** The build is unsigned, so macOS
+quarantines it:
+
+```bash
+xattr -d com.apple.quarantine /Applications/GetMoreDone.app
+```
+
+Full instructions, checksum verification, and where your data is stored are in
+**[INSTALL.md](INSTALL.md)**.
+
+No Linux build — run from source instead.
+
+### Run from source
 
 ### One-Command Startup (Recommended)
 
@@ -708,3 +733,14 @@ See [docs/VPS_TESTING_SUMMARY.md](docs/VPS_TESTING_SUMMARY.md) for detailed test
 ### Test Results
 
 All tests pass consistently with 100% success rate. Tests use in-memory databases for isolation and run in < 1 second total.
+
+## Licence
+
+GetMoreDone is **proprietary and source-available**. It is free to use for
+personal and internal business purposes; the copyright is retained and
+redistribution and commercial use are reserved. See [LICENSE](LICENSE).
+
+Third-party components and their licences are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Release history is in [CHANGELOG.md](CHANGELOG.md).

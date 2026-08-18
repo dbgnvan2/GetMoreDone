@@ -32,6 +32,11 @@ a = Analysis(
     datas=[
         (str(PROJECT_ROOT / "assets"), "assets"),
         (str(PROJECT_ROOT / "themes"), "themes"),
+        # Licence texts must accompany the distribution — the LGPL requires it
+        # for pygame. Guarded by tests/test_release_licensing.py.
+        (str(PROJECT_ROOT / "licenses"), "licenses"),
+        (str(PROJECT_ROOT / "LICENSE"), "."),
+        (str(PROJECT_ROOT / "THIRD_PARTY_NOTICES.md"), "."),
     ],
     hiddenimports=hiddenimports,
     hookspath=[],
