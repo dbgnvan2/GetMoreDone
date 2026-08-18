@@ -11,17 +11,23 @@ from .paths import resolve_theme_path
 
 APPEARANCE_MODES = ("system", "dark", "light")
 THEME_NAMES = ("green", "orange", "pink", "grey", "blue", "purple", "apple_grey", "black_white")
+DEFAULT_THEME_NAME = "apple_grey"
 LIST_ROW_FONT_SIZE = 14
 
 
 def normalize_appearance_mode(value: str) -> str:
-    mode = (value or "").strip().lower()
+    mode = str(value or "").strip().lower()
     return mode if mode in APPEARANCE_MODES else "dark"
 
 
 def normalize_theme_name(value: str) -> str:
-    name = (value or "").strip().lower()
-    return name if name in THEME_NAMES else "apple_grey"
+    """Coerce any persisted value to a known theme name.
+
+    ``str()`` first: settings.json is user-writable, so the stored value may be a
+    number, null, or anything else a hand-edit left behind.
+    """
+    name = str(value or "").strip().lower()
+    return name if name in THEME_NAMES else DEFAULT_THEME_NAME
 
 
 def theme_path_for(theme_name: str) -> Path:
@@ -29,7 +35,12 @@ def theme_path_for(theme_name: str) -> Path:
 
 
 def apply_theme_settings(settings) -> Tuple[str, str]:
-    """Apply appearance mode + color theme from settings."""
+    """Apply appearance mode + color theme from settings.
+
+    Purpose: set the CustomTkinter theme at startup without ever raising.
+    Spec:    docs/spec_2026-08-18_downloadable_release.md#r-m1a2
+    Tests:   tests/test_packaging_resources.py::test_rm1a2_apply_theme_settings_never_raises_on_bad_name
+    """
     global LIST_ROW_FONT_SIZE
     mode = normalize_appearance_mode(getattr(settings, "appearance_mode", "dark"))
     theme_name = normalize_theme_name(getattr(settings, "theme_name", "apple_grey"))
@@ -41,8 +52,17 @@ def apply_theme_settings(settings) -> Tuple[str, str]:
 
     ctk.set_appearance_mode(mode)
 
+    # A missing or unreadable theme file must not stop the app from starting —
+    # this runs before the first window exists, so an exception here is a launch
+    # crash with no UI to report it. Degrade to CustomTkinter's built-in default.
     theme_path = theme_path_for(theme_name)
-    ctk.set_default_color_theme(str(theme_path))
+    if theme_path.exists():
+        try:
+            ctk.set_default_color_theme(str(theme_path))
+        except (OSError, ValueError, KeyError) as exc:
+            print(f"[WARN] Could not load theme {theme_path}: {exc}. Using the built-in default.")
+    else:
+        print(f"[WARN] Theme file not found: {theme_path}. Using the built-in default.")
 
     return mode, theme_name
 

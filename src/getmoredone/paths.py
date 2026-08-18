@@ -33,8 +33,21 @@ def project_root() -> Path:
 def resource_root() -> Path:
     """Root for bundled resources.
 
-    When packaged via PyInstaller, files added with --add-data land under sys._MEIPASS.
+    Purpose: locate read-only resources (themes, assets) in both source and frozen runs.
+    Spec:    docs/spec_2026-08-18_downloadable_release.md#r-m1a
+    Tests:   tests/test_packaging_resources.py::test_rm1a_frozen_mode_resource_root_finds_bundled_themes
+
+    Precedence:
+      1. ``GETMOREDONE_RESOURCE_ROOT`` — explicit override, used by ``--selftest``
+         and by tests that need to exercise a specific bundle layout.
+      2. ``sys._MEIPASS`` — PyInstaller extracts ``datas`` entries here.
+      3. The repo root, when running from source.
     """
+    import os
+
+    override = (os.environ.get("GETMOREDONE_RESOURCE_ROOT") or "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return Path(getattr(sys, "_MEIPASS")).resolve()
     return project_root()
@@ -103,14 +116,40 @@ def bundled_audio_dir() -> Path:
     return resource_root() / "audio"
 
 
+DEFAULT_THEME_SLUG = "apple_grey"
+
+
 def resolve_theme_path(theme_name: str) -> Path:
-    """Resolve a named theme file from bundled themes, fallback to apple_grey."""
-    slug = (theme_name or "").strip().lower() or "apple_grey"
+    """Resolve a named theme file, preferring one that actually exists.
+
+    Purpose: never hand CustomTkinter a path it will fail to open.
+    Spec:    docs/spec_2026-08-18_downloadable_release.md#r-m1a2
+    Tests:   tests/test_packaging_resources.py::test_rm1a2_unknown_theme_name_falls_back_to_existing_file
+
+    Order: the requested theme, then the default theme, then any theme file
+    present. Only when the themes folder is empty or absent does this return a
+    path that does not exist — callers must guard on ``.exists()`` rather than
+    assume, because a broken bundle must degrade rather than crash on startup.
+    """
+    slug = str(theme_name or "").strip().lower() or DEFAULT_THEME_SLUG
     themes_dir = bundled_themes_dir()
+
     candidate = themes_dir / f"{slug}.json"
     if candidate.exists():
         return candidate
-    return themes_dir / "apple_grey.json"
+
+    default = themes_dir / f"{DEFAULT_THEME_SLUG}.json"
+    if default.exists():
+        return default
+
+    try:
+        available = sorted(themes_dir.glob("*.json"))
+    except OSError:
+        available = []
+    if available:
+        return available[0]
+
+    return default
 
 
 def legacy_dot_dir() -> Path:

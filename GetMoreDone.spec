@@ -23,7 +23,16 @@ a = Analysis(
     ["run.py"],
     pathex=[SRC_PATH],
     binaries=[],
-    datas=[(str(PROJECT_ROOT / "assets"), "assets")],
+    # Every folder the app reads through paths.resource_root() at runtime must
+    # appear here, or the frozen build dies before its first window. themes/ was
+    # missing until 2026-08-18 and every binary ever released crashed on launch
+    # (FileNotFoundError inside CustomTkinter's ThemeManager.load_theme).
+    # Guarded by tests/test_packaging_resources.py::test_rm1a_frozen_mode_resource_root_finds_bundled_themes
+    # No audio/ entry: no music ships (spec D3); users point Settings at their own folder.
+    datas=[
+        (str(PROJECT_ROOT / "assets"), "assets"),
+        (str(PROJECT_ROOT / "themes"), "themes"),
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -53,6 +62,10 @@ exe = EXE(
     entitlements_file=None,
 )
 
+# One-folder output (COLLECT), never --onefile. pygame ships under the LGPL,
+# which permits use in a proprietary product only if the user can replace/relink
+# the library — that requires the shared libraries to stay as separate files.
+# Guarded by tests/test_packaging_resources.py::test_rm1d_spec_uses_onefolder_not_onefile
 coll = COLLECT(
     exe,
     a.binaries,
