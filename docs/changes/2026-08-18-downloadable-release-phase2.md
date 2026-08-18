@@ -86,3 +86,23 @@ nothing else, and needed no change.
   runtime ones. The licensing test has to carry a hardcoded `TEST_ONLY_PACKAGES`
   set to tell them apart. A `requirements-dev.txt` split would remove that
   guesswork.
+
+## Correction — unrelated work swept into this commit
+
+Commit `81f9b54` was staged with `git add -A`, which picked up two files that
+are **not** part of Phase 2 and were being edited concurrently in another
+session on this same working tree:
+
+- `src/getmoredone/screens/item_editor_weekly_tactic_dialog.py` — assigns
+  `self.palette = semantic_colors()`, fixing a `SetWeeklyTacticDialog` that
+  referenced `self.palette` without ever setting it
+- `tests/test_weekly_item_filters.py` — the regression test for that fix
+
+Nothing was lost and both are correct — `tests/test_weekly_item_filters.py`
+passes (2 passed), and the full-suite result of 511 quoted above already
+included them. But the commit message describes only the tkcalendar work, so
+`81f9b54` contains more than it claims.
+
+History was left alone rather than rewritten: `main` is already pushed, and the
+other session may have work based on it. Staging for the remaining phases uses
+explicit paths instead of `git add -A`.
