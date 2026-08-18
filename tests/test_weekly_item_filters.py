@@ -147,3 +147,75 @@ def test_weekly_item_helpers_return_records(tmp_path):
         assert color == "#CC8844"
     finally:
         manager.close()
+
+
+def test_set_weekly_tactic_dialog_renders_rows(tmp_path):
+    """The picker must actually draw a row per weekly tactic, not just query them.
+
+    Regression: `SetWeeklyTacticDialog` used `self.palette` without ever
+    assigning it (the assignment was left behind in `item_editor_dialogs.py`
+    when the class was extracted). `refresh_actions()` then raised
+    AttributeError as soon as there was at least one row to draw, so a
+    populated database produced a blank list while the query-level tests above
+    kept passing.
+
+    Skips when CustomTkinter or a display is unavailable. Run under the venv:
+        ./venv/bin/python -m pytest tests/test_weekly_item_filters.py -v
+    """
+    import pytest
+
+    ctk = pytest.importorskip("customtkinter")
+    from datetime import date
+
+    from src.getmoredone.screens.item_editor_weekly_tactic_dialog import (
+        SetWeeklyTacticDialog,
+    )
+
+    manager = VPSManager(db_path=str(tmp_path / "weekly.db"))
+    root = None
+    try:
+        _seed_weekly_item(manager)
+
+        try:
+            root = ctk.CTk()
+        except Exception as exc:  # no display
+            pytest.skip(f"No GUI display available: {exc}")
+        root.withdraw()
+
+        selections = []
+        dialog = SetWeeklyTacticDialog(
+            parent=root,
+            db_manager=manager.db_manager,
+            vps_manager=manager,
+            item_id=None,
+            item_title="Some Action Item",
+            first_day_of_week=0,
+            anchor_date=date(2026, 2, 25),
+            segment_name_map={"seg-test": "Creative"},
+            on_select=lambda *args: selections.append(args),
+        )
+        root.update_idletasks()
+
+        labels = [
+            child.cget("text")
+            for frame in dialog.list_frame.winfo_children()
+            for child in frame.winfo_children()
+            if isinstance(child, ctk.CTkLabel)
+        ]
+        assert "C|W|APW Book - W9" in labels, f"weekly tactic row not drawn: {labels}"
+
+        buttons = [
+            child
+            for frame in dialog.list_frame.winfo_children()
+            for child in frame.winfo_children()
+            if isinstance(child, ctk.CTkButton)
+        ]
+        assert len(buttons) == 1, "expected one Select button per weekly tactic"
+
+        buttons[0].invoke()
+        assert selections, "selecting a weekly tactic must invoke the callback"
+        assert selections[0][3] is not None, "callback must carry the week item id"
+    finally:
+        if root is not None:
+            root.destroy()
+        manager.close()

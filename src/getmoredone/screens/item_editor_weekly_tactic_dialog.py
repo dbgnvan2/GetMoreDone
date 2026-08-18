@@ -51,6 +51,7 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         self.on_select = on_select
         self.current_selection: Optional[str] = None
         self.rolling_mode = True
+        self.palette = semantic_colors()
 
         self.month_default_label = "Rolling Window (Prev/Current/Next)"
         self.month_past_week_label = "Past Week"
