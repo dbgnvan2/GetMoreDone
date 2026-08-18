@@ -555,27 +555,51 @@ def test_rm4c_notes_are_generated_before_the_release_step():
 REQUIRED_ARCHIVE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md", "licenses")
 
 
-def test_rm4d_archives_include_license_and_notices():
-    """A notice that ships only in the repo never reaches a binary downloader,
-    and the LGPL requires the licence text to accompany the distribution."""
-    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in PACKAGED_EXECUTABLES:
-        body = _code_only(jobs[job])
-        for required in REQUIRED_ARCHIVE_FILES:
-            assert required in body, (
-                f"{job} does not put {required} inside its archive (R-M4.D)"
-            )
+def test_rm4d_licence_files_reach_every_archive():
+    """Two routes, one requirement.
 
-
-def test_rm4d_licence_files_are_staged_before_the_archive_is_made():
-    """Copying them after the zip step would ship an archive without them."""
-    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job, zip_marker in (("build-windows", "Compress-Archive"),
-                            ("build-macos", "ditto -c -k")):
-        body = jobs[job]
-        assert body.index("THIRD_PARTY_NOTICES.md") < body.index(zip_marker), (
-            f"{job} stages the licence files after zipping"
+    macOS relies on GetMoreDone.spec, which bundles the files into
+    Contents/Resources. Windows adds a copy at the folder root as well, because
+    a user who unzips sees only GetMoreDone.exe and _internal/ — a licence
+    buried in there is not "included" in any useful sense.
+    """
+    spec = _code_only((REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8"))
+    for required in REQUIRED_ARCHIVE_FILES:
+        assert required in spec, (
+            f"GetMoreDone.spec must bundle {required} — it is the only route "
+            "that puts it inside the macOS archive (R-M4.D)"
         )
+
+    windows = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-windows"])
+    for required in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
+        assert required in windows, (
+            f"the Windows job should place {required} beside the executable"
+        )
+
+
+def test_rm4d_macos_job_does_not_restage_what_the_spec_already_bundles():
+    """Regression: `cp -R licenses dest/licenses` when dest/licenses already
+    exists copies *into* it, producing Resources/licenses/licenses/.
+
+    Observed in run 32193099401. The spec is the single source on macOS.
+    """
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-macos"])
+    assert "cp -R licenses" not in body, (
+        "the macOS job copies licenses/ into a directory the spec already "
+        "created, which nests it one level deeper"
+    )
+    assert "Contents/Resources/licenses" not in body, (
+        "the macOS job stages into Contents/Resources/licenses, which the spec "
+        "already populates"
+    )
+
+
+def test_rm4d_windows_licence_files_are_staged_before_the_archive_is_made():
+    """Copying them after the zip step would ship an archive without them."""
+    body = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-windows"]
+    assert body.index("THIRD_PARTY_NOTICES.md") < body.index("Compress-Archive"), (
+        "the Windows job stages the licence files after zipping"
+    )
 
 
 def test_rm4d_required_archive_files_exist_in_the_repo():

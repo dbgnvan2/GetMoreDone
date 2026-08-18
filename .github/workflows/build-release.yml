@@ -68,7 +68,12 @@ jobs:
           if (Test-Path selftest-err.txt) { Get-Content selftest-err.txt }
           if ($proc.ExitCode -ne 0) { throw "Packaged build failed its selftest (exit $($proc.ExitCode))" }
 
-      - name: Stage licence files into the build (R-M4.D)
+      - name: Stage licence files beside the executable (R-M4.D)
+        # The spec also bundles these into _internal/, but a user who unzips
+        # sees only GetMoreDone.exe and _internal/ — a licence buried in there
+        # is not "included" in any useful sense. These land at the folder root.
+        # Unlike the macOS case there is no nesting: the spec's copies go to
+        # _internal/, so these target paths do not already exist.
         shell: pwsh
         run: |
           Copy-Item LICENSE dist\GetMoreDone\
@@ -144,10 +149,11 @@ jobs:
         run: |
           ./dist/GetMoreDone.app/Contents/MacOS/GetMoreDone --selftest
 
-      - name: Stage licence files into the bundle (R-M4.D)
-        run: |
-          cp LICENSE THIRD_PARTY_NOTICES.md "dist/GetMoreDone.app/Contents/Resources/"
-          cp -R licenses "dist/GetMoreDone.app/Contents/Resources/licenses"
+      # No staging step here on purpose. GetMoreDone.spec already bundles
+      # LICENSE, THIRD_PARTY_NOTICES.md and licenses/ into Contents/Resources.
+      # Copying them again produced Resources/licenses/licenses/ — `cp -R src
+      # dest` copies *into* dest when dest already exists. R-M4.D is satisfied
+      # by the spec on macOS; tests/test_ci_contract.py asserts both halves.
 
       - name: Zip macOS app
         run: |

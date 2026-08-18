@@ -44,10 +44,12 @@ Not distributed in the binaries; listed for completeness.
 
 GetMoreDone links **pygame**, which is distributed under the GNU Lesser General
 Public Licence (LGPL), version 2.1. A verbatim copy of that licence — the one
-pygame itself ships — is distributed with the application at
-`licenses/pygame-LGPL-2.1.txt`, inside the application folder and inside every
-release archive. It is also available at
-https://www.gnu.org/licenses/lgpl-2.1.html
+pygame itself ships — is distributed inside every release archive:
+
+- macOS: `GetMoreDone.app/Contents/Resources/licenses/pygame-LGPL-2.1.txt`
+- Windows: `licenses\pygame-LGPL-2.1.txt`, beside `GetMoreDone.exe`
+
+It is also available at https://www.gnu.org/licenses/lgpl-2.1.html
 
 In accordance with that licence, GetMoreDone is distributed in **one-folder**
 form rather than as a single self-extracting executable, so that pygame's
