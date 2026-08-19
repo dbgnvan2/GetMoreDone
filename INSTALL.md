@@ -91,6 +91,11 @@ those tools do not set the flag, only browsers do.
 Run from source instead — see below. There is no Gatekeeper involved, because there is
 no binary to check.
 
+> Builds can be signed and notarised, which removes all of the above and makes the app
+> open on a double-click. It needs a paid Apple Developer account; the release workflow
+> is already wired for it and turns itself on when the credentials are present. See
+> [docs/CODE_SIGNING.md](docs/CODE_SIGNING.md).
+
 ---
 
 ## Windows: first launch

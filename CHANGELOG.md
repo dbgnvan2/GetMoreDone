@@ -17,8 +17,19 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   two are not equally strict — `if-no-files-found` fires only when a step's whole path
   set matches nothing, while `fail_on_unmatched_files` is per-pattern.
 
+### Added
+
+- **The release workflow can now sign and notarise the macOS build**, which removes the
+  Gatekeeper prompt entirely. It is off until six Apple credentials are configured as
+  repository secrets, and skips itself cleanly when they are absent — see
+  `docs/CODE_SIGNING.md`. With credentials present, any signing failure fails the build
+  rather than quietly publishing an unsigned one.
+
 ### Changed
 
+- Gatekeeper instructions now lead with the macOS 15 (Sequoia) System Settings route.
+  Apple removed the Control-click override in macOS 15, so the old advice was wrong for
+  every current Mac.
 - All GitHub Actions moved off the deprecated Node 20 runtime: `actions/checkout` v7,
   `actions/setup-python` v7, `actions/upload-artifact` v7,
   `softprops/action-gh-release` v3.

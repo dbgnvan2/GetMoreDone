@@ -153,6 +153,114 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean GetMoreDone.spec
 
+      # ------------------------------------------------------------------
+      # Code signing and notarisation (macOS). Entirely optional: with no
+      # signing secrets configured every step below is skipped and the job
+      # behaves exactly as it did before, producing an unsigned build.
+      #
+      # Add the six secrets in docs/CODE_SIGNING.md and it turns itself on.
+      # What it must never do is ship an UNSIGNED build while appearing to
+      # have signed one — so the only thing that skips these steps is the
+      # absence of credentials. Once present, any failure fails the job.
+      # ------------------------------------------------------------------
+      - name: Are signing credentials configured?
+        id: signing
+        # The secret goes through env, never interpolated into the script body:
+        # a value with quotes or newlines would otherwise break or leak.
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$IDENTITY" ] && [ -n "$NOTARY_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "Signing credentials present: this build will be signed and notarised."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing credentials configured — producing an UNSIGNED build. Users will need the Gatekeeper step in INSTALL.md. See docs/CODE_SIGNING.md to enable signing."
+          fi
+
+      - name: Import signing certificate
+        if: steps.signing.outputs.available == 'true'
+        env:
+          CERT_B64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          printf '%s' "$CERT_B64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Sign the app bundle
+        if: steps.signing.outputs.available == 'true'
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          # Sign inside-out rather than with --deep: Apple documents --deep as
+          # unsuitable for real bundles, and a PyInstaller app is full of
+          # nested .so/.dylib files that each need their own signature.
+          APP="dist/GetMoreDone.app"
+          find "$APP" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
+            | xargs -0 -I{} codesign --force --timestamp --options runtime \
+                --entitlements packaging/entitlements.plist \
+                --sign "$IDENTITY" {}
+          find "$APP/Contents/Frameworks" -maxdepth 1 -type f -perm -111 -print0 2>/dev/null \
+            | xargs -0 -r -I{} codesign --force --timestamp --options runtime \
+                --entitlements packaging/entitlements.plist \
+                --sign "$IDENTITY" {}
+          codesign --force --timestamp --options runtime \
+            --entitlements packaging/entitlements.plist \
+            --sign "$IDENTITY" "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Notarise and staple
+        if: steps.signing.outputs.available == 'true'
+        env:
+          NOTARY_KEY_B64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: |
+          printf '%s' "$NOTARY_KEY_B64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --keepParent "dist/GetMoreDone.app" "$RUNNER_TEMP/notarize.zip"
+
+          # --wait makes a rejection fail this step rather than pass silently.
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+
+          # Staple the ticket into the bundle so it validates offline.
+          xcrun stapler staple "dist/GetMoreDone.app"
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/notarize.zip"
+
+      - name: Verify the signature and notarisation
+        if: steps.signing.outputs.available == 'true'
+        # Reconcile against the artifact rather than trusting the previous
+        # steps' exit codes (P6). spctl is what Gatekeeper itself runs.
+        run: |
+          APP="dist/GetMoreDone.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+          echo "Signed, notarised and stapled — this build opens without a Gatekeeper prompt."
+
+      - name: Clean up the signing keychain
+        if: always() && steps.signing.outputs.available == 'true'
+        run: |
+          security delete-keychain "$KEYCHAIN" || true
+
       - name: Verify the packaged bundle starts
         # R-M4.A. bash steps run with -e, so a non-zero exit fails the job.
         env:

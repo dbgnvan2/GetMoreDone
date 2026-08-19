@@ -870,3 +870,203 @@ def test_publish_hardening_is_present_in_both_os_jobs():
         body = _code_only(jobs[job])
         assert "if-no-files-found: error" in body, f"{job} upload is not hardened"
         assert "fail_on_unmatched_files: true" in body, f"{job} release is not hardened"
+
+
+# --------------------------------------------------------------------------
+# macOS code signing — optional, but it must fail loudly when it is on
+# --------------------------------------------------------------------------
+
+SIGNING_GATE = "steps.signing.outputs.available == 'true'"
+SIGNING_SECRETS = (
+    "APPLE_CERTIFICATE_P12_BASE64",
+    "APPLE_CERTIFICATE_PASSWORD",
+    "APPLE_SIGNING_IDENTITY",
+    "APPLE_NOTARY_KEY_BASE64",
+    "APPLE_NOTARY_KEY_ID",
+    "APPLE_NOTARY_ISSUER_ID",
+)
+
+
+def _macos_steps() -> list[dict]:
+    """The macOS job's steps, as (name, if, body) dicts parsed from the YAML text.
+
+    Hand-parsed for the same reason as everything else in this file: PyYAML is
+    not a project dependency.
+    """
+    body = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))["build-macos"]
+    steps, current = [], None
+    for line in body.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- name:") or stripped.startswith("- uses:"):
+            current = {"name": stripped.split(":", 1)[1].strip(),
+                       "if": "", "body": [], "raw": []}
+            steps.append(current)
+        elif current is not None:
+            if stripped.startswith("if:"):
+                current["if"] = stripped.split(":", 1)[1].strip()
+            current["raw"].append(stripped)
+            # `body` excludes comments: several of these steps explain in a
+            # comment the very construct the tests prohibit ("rather than
+            # --deep"), and matching the explanation instead of the code would
+            # pressure the next person into deleting the reasoning.
+            if not stripped.startswith("#"):
+                current["body"].append(stripped)
+    for step in steps:
+        step["body"] = "\n".join(step["body"])
+        step["raw"] = "\n".join(step["raw"])
+    return steps
+
+
+def test_signing_step_parser_finds_the_macos_steps():
+    """Adversarial: an empty parser makes every signing assertion vacuous."""
+    steps = _macos_steps()
+    names = [s["name"] for s in steps]
+    assert len(steps) >= 10, f"parsed only {len(steps)} steps: {names}"
+    assert any("Build (PyInstaller)" in n for n in names), names
+
+
+def test_signing_is_optional_and_defaults_to_skipped():
+    """With no credentials the job must behave exactly as it did before.
+
+    Every signing step carries the same gate, so absent secrets produce an
+    unsigned build and a green job rather than a failure.
+    """
+    gated = [s for s in _macos_steps() if SIGNING_GATE in s["if"]]
+    assert len(gated) >= 4, (
+        f"expected the signing steps to be gated on credentials, found "
+        f"{len(gated)}: {[s['name'] for s in gated]}"
+    )
+
+
+def test_every_signing_step_is_gated():
+    """An ungated signing step would fail every build that has no certificate."""
+    ungated = [
+        s["name"] for s in _macos_steps()
+        if any(k in s["name"].lower() for k in ("sign", "notaris", "notariz", "keychain"))
+        and SIGNING_GATE not in s["if"]
+        and "credentials configured" not in s["name"].lower()
+    ]
+    assert not ungated, (
+        f"signing steps that run unconditionally: {ungated}. Without secrets "
+        "these fail, breaking builds for anyone without a certificate."
+    )
+
+
+def test_signing_gate_does_not_interpolate_secrets_into_the_script():
+    """A secret pasted into a shell body can break on quotes or leak in traces.
+
+    It must arrive through `env:` instead.
+    """
+    offenders = []
+    for step in _macos_steps():
+        for line in step["body"].splitlines():
+            if "secrets." not in line:
+                continue
+            # The only acceptable shape is an env mapping: NAME: ${{ secrets.X }}
+            if not re.match(r"^[A-Z][A-Z0-9_]*:\s*\$\{\{\s*secrets\.", line):
+                offenders.append(f"{step['name']}: {line}")
+    assert not offenders, (
+        "secrets interpolated somewhere other than an env: mapping — a value "
+        f"containing quotes or newlines would break or leak: {offenders}"
+    )
+
+    gate = next(s for s in _macos_steps() if "credentials configured" in s["name"].lower())
+    assert "env:" in gate["body"], (
+        "the credential check should read secrets via env, not inline them"
+    )
+    assert 'echo "available=' in gate["body"], "the gate must publish a step output"
+
+
+def test_signing_runs_before_the_archive_is_made():
+    """Signing after zipping would ship the unsigned bundle."""
+    names = [s["name"] for s in _macos_steps()]
+    sign_at = next(i for i, n in enumerate(names) if "Sign the app" in n)
+    zip_at = next(i for i, n in enumerate(names) if "Zip macOS app" in n)
+    assert sign_at < zip_at, f"signing happens after zipping: {names}"
+
+
+def test_selftest_runs_after_signing_so_it_exercises_the_shipped_bundle():
+    """Signing rewrites the binary; the selftest should see the final artifact."""
+    names = [s["name"] for s in _macos_steps()]
+    staple_at = next(i for i, n in enumerate(names) if "Notaris" in n or "Notariz" in n)
+    selftest_at = next(i for i, n in enumerate(names) if "packaged bundle starts" in n)
+    assert staple_at < selftest_at, (
+        "the selftest runs before notarisation, so it does not exercise the "
+        "bundle that actually ships"
+    )
+
+
+def test_signing_is_verified_against_the_artifact():
+    """P6: trusting codesign's exit code is not the same as asking Gatekeeper.
+
+    `spctl --assess` is what Gatekeeper itself runs, and `stapler validate`
+    proves the ticket is embedded rather than merely issued.
+    """
+    body = " ".join(s["body"] for s in _macos_steps())
+    assert "spctl --assess" in body, "nothing runs spctl to confirm Gatekeeper accepts it"
+    assert "stapler validate" in body, "nothing confirms the notarisation ticket stapled"
+
+
+def test_signing_keychain_is_always_cleaned_up():
+    """A failure mid-signing must not leave a certificate on the runner."""
+    cleanup = [s for s in _macos_steps() if "keychain" in s["name"].lower()
+               and "clean" in s["name"].lower()]
+    assert cleanup, "no keychain cleanup step"
+    assert "always()" in cleanup[0]["if"], (
+        f"keychain cleanup is not unconditional: {cleanup[0]['if']}"
+    )
+
+
+def test_signing_does_not_use_codesign_deep_for_the_bundle():
+    """Apple documents --deep as unsuitable for real bundles; a PyInstaller app
+    needs its nested .so/.dylib files signed individually."""
+    sign_step = next(s for s in _macos_steps() if "Sign the app" in s["name"])
+    assert "--deep" not in sign_step["body"], (
+        "signing uses --deep, which Apple advises against for distribution; "
+        "sign nested binaries inside-out instead"
+    )
+
+
+def test_signing_entitlements_exist_and_are_minimal():
+    """Hardened runtime forces a few entitlements; it must not grant more."""
+    plist = REPO_ROOT / "packaging/entitlements.plist"
+    assert plist.exists(), "the workflow references packaging/entitlements.plist"
+    text = plist.read_text(encoding="utf-8")
+
+    for required in ("com.apple.security.cs.allow-jit",
+                     "com.apple.security.cs.allow-unsigned-executable-memory",
+                     "com.apple.security.cs.disable-library-validation"):
+        assert required in text, f"CPython needs {required} under hardened runtime"
+
+    for forbidden in ("com.apple.security.device.camera",
+                      "com.apple.security.device.microphone",
+                      "com.apple.security.personal-information.location",
+                      "com.apple.security.personal-information.addressbook",
+                      "com.apple.security.cs.disable-executable-page-protection"):
+        assert forbidden not in text, (
+            f"{forbidden} is granted but nothing in the app needs it"
+        )
+
+
+def test_signing_setup_is_documented():
+    """Six secrets nobody can guess; the doc is the only way in."""
+    doc = REPO_ROOT / "docs/CODE_SIGNING.md"
+    assert doc.exists(), "no docs/CODE_SIGNING.md"
+    text = doc.read_text(encoding="utf-8")
+    missing = [s for s in SIGNING_SECRETS if s not in text]
+    assert not missing, f"docs/CODE_SIGNING.md does not name these secrets: {missing}"
+
+
+def test_documented_secrets_match_the_ones_the_workflow_reads():
+    """Doc-vs-artifact drift: a documented secret the workflow ignores, or a
+    secret the workflow needs and the doc never mentions, both waste an hour."""
+    workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    used = set(re.findall(r"secrets\.([A-Z0-9_]+)", workflow))
+    documented = set(
+        re.findall(r"\b(APPLE_[A-Z0-9_]+)\b",
+                   (REPO_ROOT / "docs/CODE_SIGNING.md").read_text(encoding="utf-8"))
+    )
+    assert used, "the workflow reads no secrets at all"
+    assert used <= documented, (
+        f"the workflow reads secrets the doc never explains: {sorted(used - documented)}"
+    )
