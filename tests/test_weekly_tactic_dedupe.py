@@ -991,6 +991,11 @@ def test_bc2_a_tactic_that_could_not_snap_is_still_deduped(tmp_path):
         assert rows[0]["due_date"] == "2026-03-01"
         assert report["groups"] == 1
         assert report["merged"] == 1
+        assert report["snapped"] == 1, (
+            "the survivor was moved but the report does not say so — that "
+            "counter is the only signal this destructive-adjacent write happened")
+        assert report["snapped_ids"] == [rows[0]["id"]]
+        assert report["deleted_ids"], "the merge deleted a row and did not name it"
     finally:
         vps.close()
 
@@ -1041,5 +1046,91 @@ def test_bc2_2_dedupe_stays_idempotent_and_leaves_clean_weeks_alone(tmp_path):
         rows = _week_rows(conn, ape_id)
         assert [r["start_date"] for r in rows] == ["2026-02-23", "2026-03-02"]
         assert other_week in {r["id"] for r in rows}
+    finally:
+        vps.close()
+
+
+def test_bc2_3_an_unparseable_start_date_is_still_deduped(tmp_path):
+    """A date no calendar can read is still a duplicate of the same bad date.
+
+    The first version of the week-grouping skipped these rows. The unique index
+    is on the raw column, so it rejects them regardless — meaning the guard that
+    uses this function and the index it protects disagreed, and index creation
+    could raise straight out of schema initialisation, which the app cannot
+    recover from because nothing commits before that point.
+    """
+    from src.getmoredone.weekly_tactic_maintenance import find_duplicate_weekly_tactics
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        _drop_index(vps)
+        first = _raw_week_item(vps, ape_id, "Bad one", start="not-a-date",
+                               due="not-a-date")
+        second = _raw_week_item(vps, ape_id, "Bad two", start="not-a-date",
+                                due="not-a-date")
+
+        groups = find_duplicate_weekly_tactics(conn)
+
+        assert len(groups) == 1, f"the unreadable pair was dropped: {groups}"
+        assert sorted(groups[0]["member_ids"]) == sorted([first, second])
+    finally:
+        vps.close()
+
+
+def test_bc2_4_an_unparseable_pair_does_not_break_schema_init(tmp_path):
+    """The whole migration must survive it — this runs at every app start."""
+    from src.getmoredone.weekly_tactic_migrations import run_weekly_tactic_migrations
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        _drop_index(vps)
+        _raw_week_item(vps, ape_id, "Bad one", start="not-a-date", due="not-a-date")
+        _raw_week_item(vps, ape_id, "Bad two", start="not-a-date", due="not-a-date")
+
+        report = run_weekly_tactic_migrations(conn)
+
+        # Either it merged them or it declined to create the index and said so —
+        # both are recoverable. What it must not do is raise.
+        assert report["unique_index_enforced"] or report["unique_index_error"]
+    finally:
+        vps.close()
+
+
+def test_bc2_5_the_repair_does_not_treat_a_snapped_survivor_as_blocked(tmp_path):
+    """The collision list handed to the repair must reflect what the dedupe did.
+
+    The repair is given the *pre-dedupe* normalisation report. Once the dedupe
+    snaps a collided survivor onto its week start, that tactic is fine — but the
+    repair went on skipping its children and writing a warning saying it could
+    not be snapped, into the one audit log the user has (P6).
+    """
+    from src.getmoredone.weekly_tactic_migrations import run_weekly_tactic_migrations
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        on_boundary, mid_week, _ = _seed_unsnappable_pair(vps, ape_id)
+        # The stray holds the children, so it wins the survivor tie-break and is
+        # the row that gets snapped.
+        for index in range(3):
+            make_daily_item(vps, f"Stray child {index}", weekly_tactic_id=mid_week,
+                            refile=False)
+
+        report = run_weekly_tactic_migrations(conn)
+
+        assert report["dedupe"]["snapped"] >= 1
+        assert report["collisions_resolved_by_dedupe"] >= 1, (
+            "the repair was handed a collision the dedupe had already resolved")
+        skipped_reasons = [
+            entry.get("reason", "")
+            for entry in report["invariant_repair"].get("skipped_details", [])
+        ]
+        assert not any("could not be snapped" in reason for reason in skipped_reasons), (
+            f"the repair still calls a fixed tactic unrepairable: {skipped_reasons}")
     finally:
         vps.close()

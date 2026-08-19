@@ -193,13 +193,17 @@ def create_weekly_tactic_unique_index(conn: sqlite3.Connection) -> bool:
     if already:
         return False
 
-    remaining = find_duplicate_weekly_tactics(conn)
+    from . import week_calendar
+
+    remaining = find_duplicate_weekly_tactics(
+        conn, week_calendar.WeekCalendar.from_settings())
     if remaining:
         raise WeeklyTacticMigrationError(
             "Cannot create the Weekly Tactic unique index: "
             f"{len(remaining)} duplicate group(s) remain after dedupe — "
             + ", ".join(
-                f"APE {g['ape_id']} week {g['start_date']} x{g['count']}"
+                f"APE {g['ape_id']} week {g['start_date']} x{g['count']} "
+                f"({', '.join(g['member_ids'])})"
                 for g in remaining[:5]
             )
         )
@@ -260,7 +264,7 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
     report["unique_index_error"] = None
     try:
         report["unique_index_created"] = create_weekly_tactic_unique_index(conn)
-    except WeeklyTacticMigrationError as exc:
+    except (WeeklyTacticMigrationError, sqlite3.IntegrityError) as exc:
         report["unique_index_enforced"] = False
         report["unique_index_error"] = str(exc)
 
@@ -269,8 +273,25 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
     # WT-M7.B runs last: it needs the columns, a deduped set of tactics, and the
     # normalisation report, because a tactic that could not snap to its week
     # start makes its children genuinely unrepairable.
+    # The dedupe resolves collisions: it merges the duplicate that held the week
+    # start and snaps the survivor onto it. Handing the repair the pre-dedupe
+    # list would have it skip children of a tactic that is now fine, and log a
+    # warning saying so — wrong, in the only audit record of an automatic data
+    # change (P6: a status believed without checking what it now describes).
+    resolved = set(report["dedupe"].get("snapped_ids", []))
+    resolved |= set(report["dedupe"].get("deleted_ids", []))
+    still_blocked = {
+        "collisions": [
+            entry for entry in report["week_start_normalization"].get("collisions", [])
+            if entry["id"] not in resolved
+        ]
+    }
+    report["collisions_resolved_by_dedupe"] = (
+        len(report["week_start_normalization"].get("collisions", []))
+        - len(still_blocked["collisions"])
+    )
     report["invariant_repair"] = repair_weekly_tactic_invariants(
-        conn, normalization=report["week_start_normalization"]
+        conn, normalization=still_blocked
     )
 
     conn.commit()

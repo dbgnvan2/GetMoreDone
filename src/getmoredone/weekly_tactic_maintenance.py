@@ -248,8 +248,14 @@ def find_duplicate_weekly_tactics(
     for row in rows:
         bounds = cal.bounds_iso(row["start_date"])
         if bounds is None:
-            # An unparseable date cannot be assigned to a week. Left alone
-            # rather than lumped in with a group it may not belong to.
+            # An unparseable date belongs to no week — but rows sharing that
+            # exact string are still duplicates of each other, and the unique
+            # index is on the raw column, so it will reject them whatever this
+            # function thinks. Grouping them by the raw value keeps the guard
+            # and the index agreeing about what a duplicate is; skipping them
+            # (as the first version of this did) let the index creation raise
+            # straight out of schema init, which the app cannot recover from.
+            groups.setdefault((row["ape_id"], row["start_date"]), []).append(row["id"])
             continue
         groups.setdefault((row["ape_id"], bounds[0]), []).append(row["id"])
 
@@ -387,6 +393,12 @@ def dedupe_weekly_tactics(
         "repointed": 0,
         "retitled": 0,
         "snapped": 0,
+        # The ids behind the two counts above. The invariant repair runs after
+        # this and is handed the *pre-dedupe* collision list; without these it
+        # goes on treating a tactic this pass just fixed as unrepairable, and
+        # writes a false warning into the one audit log the user has.
+        "snapped_ids": [],
+        "deleted_ids": [],
         "blocked": 0,
         "blocked_rows": {},
         "dropped": {},
@@ -456,6 +468,7 @@ def dedupe_weekly_tactics(
                 )
                 survivor_start = week_start
                 report["snapped"] += 1
+                report["snapped_ids"].append(survivor["id"])
             except sqlite3.IntegrityError as exc:
                 # Another APE-week pair still holds it. Reported, not raised:
                 # this runs at start-up and must not stop the app opening.
@@ -478,6 +491,7 @@ def dedupe_weekly_tactics(
 
         report["groups"] += 1
         report["merged"] += len(deleted_ids)
+        report["deleted_ids"].extend(deleted_ids)
         report["repointed"] += repointed
         report["retitled"] += 1 if retitled else 0
         for key, value in dropped_total.items():

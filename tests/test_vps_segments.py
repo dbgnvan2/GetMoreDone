@@ -83,6 +83,23 @@ def test_bc3_the_colour_picker_is_wired_to_a_real_chooser():
         "pick_color no longer calls askcolor")
 
 
+def test_bc3_the_editor_initialises_its_colour_state():
+    """Restored: the conversion dropped this, and it was one of the few old
+    checks that could actually fail.
+
+    A source check because the dialog cannot be constructed without a parent
+    window and a vps_manager; what it guards is that the editor sets up the
+    colour it will later save.
+    """
+    source = inspect.getsource(VPSSegmentEditorDialog.__init__)
+
+    assert "selected_color" in source, (
+        "the editor no longer initialises selected_color — the colour picker "
+        "has nothing to write to")
+    assert "color_hex" in source, (
+        "the editor no longer seeds its colour from the segment's color_hex")
+
+
 # -------------------------------------------------------- colour validation
 
 
@@ -178,9 +195,46 @@ def test_bc3_the_refusal_counts_every_linked_row(vps):
     assert sum(counts.values()) == 3, counts
 
 
-def test_bc3_settings_reports_the_counts_it_is_given(vps):
-    """The dict must reach the message, or the user is told nothing useful."""
+def test_bc3_settings_consumes_the_counts_as_a_mapping(vps):
+    """Pin the shape, not the word.
+
+    The original bug was a return-contract drift: `delete_segment` went from
+    `tuple[bool, int]` to `tuple[bool, dict]`, and the test guarding it grepped
+    for a name that no longer existed. `"counts" in source` would have passed on
+    a comment, which is the same failure shape.
+
+    Behaviour is not reachable here without a display — the consumer builds a
+    CTkToplevel for typed confirmation — so this asserts the two expressions
+    that would break if the return shape changed again.
+    """
     source = inspect.getsource(SettingsScreen.delete_segment)
 
-    assert "counts" in source, (
-        "the Settings screen no longer reads the counts delete_segment returns")
+    assert "counts.items()" in source, (
+        "the Settings screen no longer iterates the counts mapping — if "
+        "delete_segment went back to returning a scalar, this is what breaks")
+    assert "sum(counts.values())" in source, (
+        "the total shown to the user is no longer derived from the counts")
+
+
+def test_bc3_delete_segment_returns_a_mapping_not_a_scalar(vps):
+    """The contract the Settings screen depends on, asserted on the real call."""
+    segment_id = vps.create_segment("Contract", "desc", "#123456", 95)
+    vps.db.conn.execute(
+        """
+        INSERT INTO tl_visions (id, segment_description_id, start_year, end_year,
+                                title, is_active, created_at, updated_at)
+        VALUES ('vis-contract', ?, 2026, 2030, 'A vision', 1, '2026-01-01', '2026-01-01')
+        """,
+        (segment_id,),
+    )
+    vps.db.conn.commit()
+
+    result = vps.delete_segment(segment_id)
+
+    assert isinstance(result, tuple) and len(result) == 2
+    success, counts = result
+    assert success is False
+    assert isinstance(counts, dict), (
+        f"delete_segment returned {type(counts).__name__}, and the Settings "
+        f"screen calls .items() and sum(.values()) on it")
+    assert all(isinstance(value, int) for value in counts.values())

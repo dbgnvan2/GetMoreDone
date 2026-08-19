@@ -36,6 +36,36 @@ import pytest
 
 
 @pytest.fixture(autouse=True, scope="session")
+def _isolate_user_settings(tmp_path_factory):
+    """Keep the suite out of the user's real settings.json.
+
+    Purpose: several tests call ``AppSettings.load()`` and ``.save()`` with no
+             path. ``get_settings_path`` resolves to the real application data
+             directory, so a test run rewrote the user's settings file — and
+             ``save()`` writes ``asdict(self)`` while ``load()`` filters to the
+             dataclass fields, so any key the file carried that the dataclass no
+             longer has would be destroyed by a test. One of those tests
+             (``test_list_view_setting``) flips a value with no try/finally, so
+             a failing assert left the real setting flipped.
+    Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-1
+    Tests:   tests/test_settings_isolation.py
+
+    Session-scoped and autouse, the same shape as the log fixture below: this
+    has to be in place before the first test that touches settings, whichever
+    file that turns out to be.
+    """
+    from src.getmoredone.app_settings import AppSettings
+
+    settings_path = tmp_path_factory.mktemp("settings") / "settings.json"
+    original = AppSettings.get_settings_path
+    AppSettings.get_settings_path = classmethod(lambda cls: settings_path)
+    try:
+        yield settings_path
+    finally:
+        AppSettings.get_settings_path = original
+
+
+@pytest.fixture(autouse=True, scope="session")
 def _isolate_weekly_tactic_log(tmp_path_factory):
     """Redirect the weekly-tactic log away from the real app data directory.
 

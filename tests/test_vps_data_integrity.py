@@ -123,12 +123,11 @@ def test_deletion_protection_completeness():
     initiative_count = cursor.fetchone()[0]
     print(f"  Quarter Initiatives remaining: {initiative_count}")
 
-    if plan_count == 0 and initiative_count == 0:
-        print("✓ CASCADE DELETE worked: Children were auto-deleted")
-        print("  This is GOOD for data integrity")
-    else:
-        print("✗ CASCADE DELETE failed: Children still exist")
-        print("  This is BAD - orphaned records!")
+    # BC3: this printed "✗ CASCADE DELETE failed" and passed. Orphaned rows are
+    # the outcome this whole file exists to detect.
+    assert plan_count == 0 and initiative_count == 0, (
+        f"deleting the TL Vision left orphans: {plan_count} plan(s), "
+        f"{initiative_count} initiative(s)")
 
     # Now the critical test: Can we delete segment with no TL Visions?
     print("\n--- Critical Test: Delete Segment ---")
@@ -155,6 +154,20 @@ def test_deletion_protection_completeness():
 
     # Try to delete segment - NOW WITH COMPREHENSIVE CHECKING
     success, counts = manager.delete_segment(segment_id2)
+
+    # BC3: this test passed whichever arm it took, so the test named for
+    # deletion protection could not fail on deletion protection.
+    #
+    # What this half actually establishes: deleting the TL Vision cascaded and
+    # took its Annual Plan and Quarter Initiative with it, so by the time the
+    # segment is deleted nothing references it. Deletion is therefore *allowed*,
+    # with empty counts — and must leave no orphans behind. The blocked case is
+    # asserted in the first half of this test, where the TL Vision is still
+    # present.
+    assert success is True, (
+        f"nothing references this segment any more, yet deletion was refused "
+        f"(counts={counts})")
+    assert counts == {}, f"deletion was allowed but reported counts: {counts}"
 
     if success:
         print(f"✓ Deletion ALLOWED with counts={counts}")
@@ -349,11 +362,9 @@ def test_segment_name_update_propagation():
     row = cursor.fetchone()
     print(f"  Vision now shows segment: '{row[1]}'")
 
-    if row[1] == "Updated Name":
-        print("✓ SUCCESS: Segment name update propagated via JOIN")
-        print("  This is CORRECT behavior - foreign key relationship works")
-    else:
-        print("✗ FAILURE: Segment name didn't update")
+    # BC3: printed "✗ FAILURE" and passed.
+    assert row[1] == "Updated Name", (
+        f"a renamed segment did not propagate through the JOIN: {row[1]!r}")
 
     manager.close()
 

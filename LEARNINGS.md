@@ -134,11 +134,24 @@ source grepped wherever cheap (`validate_color` now gets real inputs,
 `delete_segment` a real linked row). Every database in a test is a temporary
 one. `PytestReturnNotNoneWarning` count is now 0, which is the regression guard:
 it goes back above zero the moment someone adds another.
+**And the first fix did not close the class.** The pre-push sweep found the
+other half: several tests call `AppSettings.load()` / `.save()` with no path, so
+every full-suite run rewrote the real `settings.json` — and `save()` writes every
+dataclass field while `load()` filters to them, so a key the file carried that
+the dataclass had dropped would be destroyed. One of those tests flips a value
+with no `try/finally`. Closed with an autouse session fixture in `conftest.py`
+that redirects `get_settings_path`, plus `tests/test_settings_isolation.py`
+asserting the redirect is in force. No data was lost — the live file still holds
+exactly its 46 dataclass fields — but the mtime shows it was written.
 **Rule** → **A test that returns is a test that does not assert.** Treat
 `PytestReturnNotNoneWarning` as a failure, not a warning. And **never construct a
 production object with default arguments in a test** — the default is production:
 its path, its database, its config directory. Pass a `tmp_path` explicitly, and
 be suspicious of any constructor that does I/O before reading its own arguments.
+**When you find one instance, enumerate the whole class before claiming it
+closed** — "every database is temporary now" was true and still left the settings
+file exposed. The check is a grep for every default-argument construction and
+every `.load()`/`.save()` classmethod, not a memory of the one you fixed.
 
 ### 2026-08-19 — the Who field was dead, and Tk hid the reason
 
