@@ -9,12 +9,16 @@ and the *newer* row is titled ``W9`` and holds one reschedule_history row.
 wrong number (WT-F5). Both halves of that are tested here.
 """
 
+import logging
 from datetime import datetime
 from uuid import uuid4
 
 from src.getmoredone.db_manager import DatabaseManager
-from src.getmoredone.models import ItemLink, ProjectBoard, WorkLog
-from src.getmoredone.weekly_tactic_maintenance import dedupe_weekly_tactics
+from src.getmoredone.models import ItemLink, ProjectBoard, TimeBlock, WorkLog
+from src.getmoredone.weekly_tactic_maintenance import (
+    dedupe_weekly_tactics,
+    referencing_tables,
+)
 from src.getmoredone.weekly_tactic_migrations import WEEKLY_TACTIC_UNIQUE_INDEX
 from tests.weekly_tactic_fixtures import (
     make_daily_item,
@@ -160,6 +164,160 @@ def test_wt_m7a3_no_cascade_data_lost(tmp_path):
             assert moved >= 1, f"{table} was not repointed onto the survivor"
     finally:
         vps.close()
+
+
+def test_wt_m7a3_every_referencing_table_is_derived_from_the_schema(tmp_path):
+    """The repoint list comes from the schema, not from a list someone maintains.
+
+    The hand-written list shipped two bugs at once: ``time_blocks`` was absent
+    and has no ON DELETE clause, so deleting a merged tactic raised FOREIGN KEY
+    constraint failed inside schema init — an unrecoverable start-up crash loop;
+    and ``habit_tracking`` was absent and *is* ON DELETE CASCADE, so its rows
+    vanished while the report said nothing was dropped.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        derived = {(e["table"], e["column"]): e["on_delete"]
+                   for e in referencing_tables(conn)}
+
+        # Every table that actually holds a foreign key into action_items.
+        assert ("time_blocks", "item_id") in derived
+        assert derived[("time_blocks", "item_id")] == "NO ACTION"
+        assert ("habit_tracking", "action_item_id") in derived
+        assert derived[("habit_tracking", "action_item_id")] == "CASCADE"
+        for table, column in (("reschedule_history", "item_id"),
+                              ("item_links", "item_id"),
+                              ("work_logs", "item_id"),
+                              ("project_board_items", "item_id")):
+            assert (table, column) in derived
+
+        # action_items' own self-references are handled explicitly, not here.
+        assert not any(table == "action_items" for table, _ in derived)
+    finally:
+        vps.close()
+
+
+def test_wt_m7a3_time_block_on_the_loser_does_not_crash_the_merge(tmp_path):
+    """time_blocks has no ON DELETE, so an unrepointed row makes DELETE raise.
+
+    This ran inside ``Database.initialize_schema``, so the failure was an app
+    that would not start — and would not start on any subsequent launch either,
+    because the transaction never committed and the duplicate was still there.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        conn = manager.db.conn
+        ape_id = seed_ape(vps)
+        survivor = make_week_item(vps, ape_id, title="Keeper")
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        _drop_index(vps)
+        loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
+
+        manager.create_time_block(TimeBlock(
+            item_id=loser, block_date="2026-02-24", start_time="09:00",
+            end_time="09:30", planned_minutes=30,
+        ))
+        before = _count(conn, "time_blocks")
+        assert before == 1
+
+        report = dedupe_weekly_tactics(conn)   # must not raise
+        conn.commit()
+
+        assert report["merged"] == 1
+        assert report["blocked"] == 0
+        assert _count(conn, "time_blocks") == before, "the time block must survive"
+        moved = conn.execute(
+            "SELECT item_id FROM time_blocks"
+        ).fetchone()["item_id"]
+        assert moved == survivor.id
+    finally:
+        vps.close()
+
+
+def test_wt_m7a3_habit_tracking_rows_are_repointed_not_destroyed(tmp_path):
+    """habit_tracking is ON DELETE CASCADE — an unrepointed row is destroyed."""
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        survivor = make_week_item(vps, ape_id, title="Keeper")
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        _drop_index(vps)
+        loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
+
+        conn.execute(
+            """
+            INSERT INTO habit_tracking (id, action_item_id, tracking_date,
+                                        is_completed, created_at)
+            VALUES ('habit-1', ?, '2026-02-24', 1, '2026-02-24T09:00:00')
+            """,
+            (loser,),
+        )
+        conn.commit()
+        before = _count(conn, "habit_tracking")
+        assert before == 1
+
+        report = dedupe_weekly_tactics(conn)
+        conn.commit()
+
+        assert _count(conn, "habit_tracking") == before, (
+            "the merge destroyed habit rows and reported nothing dropped"
+        )
+        assert conn.execute(
+            "SELECT action_item_id FROM habit_tracking"
+        ).fetchone()["action_item_id"] == survivor.id
+        assert report["dropped"] == {}
+    finally:
+        vps.close()
+
+
+def test_wt_m7a5_dedupe_log_reaches_a_handler(tmp_path):
+    """The merge log is the only record of what was deleted — it must land.
+
+    The handler used to be installed by VPSManager, which app.py builds *after*
+    the DatabaseManager that runs the migration. So at migration time the logger
+    had no handler and every INFO line was discarded.
+    """
+    from src.getmoredone.weekly_tactic_logging import LOGGER_NAME, get_weekly_tactic_logger
+
+    live = get_weekly_tactic_logger()
+    assert live.handlers, "the weekly tactic logger must have a handler"
+    assert live.isEnabledFor(logging.INFO)
+
+    vps = make_vps(tmp_path, "logged.db")
+    db_path = vps.db_manager.db.db_path
+    try:
+        ape_id = seed_ape(vps)
+        survivor = make_week_item(vps, ape_id, title="Keeper")
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        _drop_index(vps)
+        loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
+    finally:
+        vps.close()
+
+    # caplog cannot be used: this logger sets propagate = False, so records
+    # never reach the root handler pytest installs. Listen on the logger itself,
+    # which is what the app's file handler does.
+    records = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    probe = _Capture(level=logging.INFO)
+    live.addHandler(probe)
+    try:
+        reopened = DatabaseManager(db_path)
+        reopened.close()
+    finally:
+        live.removeHandler(probe)
+
+    text = "\n".join(records)
+    assert "merged" in text, f"the merge summary never reached the log: {text!r}"
+    assert loser in text, "the deleted row's id must appear in the log"
+    assert survivor.id in text, "the surviving row's id must appear in the log"
 
 
 def test_wt_m7a4_tiebreak_when_both_have_children(tmp_path):

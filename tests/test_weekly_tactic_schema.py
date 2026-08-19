@@ -244,7 +244,11 @@ def test_wt_m1c5_first_day_change_collision_reported(tmp_path):
         stored.due_date = "2026-02-24"
         stored.next_action = "edited alongside the move"
 
-        manager.update_action_item(stored)  # must not raise
+        moved = manager.update_action_item(stored)  # must not raise
+        assert moved is False, (
+            "a save that quietly did not move the week must say so to its "
+            "caller, not only to the log"
+        )
 
         assert manager.last_week_collision is not None
         assert manager.last_week_collision["item_id"] == mover.id
@@ -257,8 +261,61 @@ def test_wt_m1c5_first_day_change_collision_reported(tmp_path):
             "the rest of the save must still land"
         )
         assert manager.get_action_item(keeper.id).start_date == "2026-02-16"
+
+        # The flag must not stick: the DatabaseManager lives for the session, so
+        # a flag that is only ever set reads as a collision on every later save.
+        ordinary = manager.get_action_item(keeper.id)
+        ordinary.next_action = "an ordinary save"
+        assert manager.update_action_item(ordinary) is True
+        assert manager.last_week_collision is None, (
+            "a clean save must clear the previous collision"
+        )
     finally:
         vps.close()
+
+
+def test_wt_m1c5_a_genuine_failure_is_not_swallowed_as_a_collision(tmp_path):
+    """The revert path only applies when the week actually moved.
+
+    Reverting on *any* IntegrityError from a week item would turn unrelated
+    failures into silent no-ops that report success.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        tactic = make_week_item(vps, seed_ape(vps))
+
+        stored = manager.get_action_item(tactic.id)
+        stored.weekly_tactic_id = "no-such-tactic"
+        with pytest.raises(ValueError):
+            manager.update_action_item(stored)
+
+        # Dates unchanged, so nothing to revert to — the error must surface.
+        unchanged = manager.get_action_item(tactic.id)
+        assert unchanged.start_date == "2026-02-23"
+        assert manager.last_week_collision is None
+    finally:
+        vps.close()
+
+
+def test_wt_m1c3_both_creation_paths_report_collisions(tmp_path):
+    """WT-M1.C.3 — the drag path reports a refusal, not just the button (P5).
+
+    ``_finish_row_drag`` used to refresh only when something was created, so a
+    drag that collided produced no refresh, no status and no visible sign at
+    all. Both callers now describe the outcome through one helper.
+    """
+    from src.getmoredone.screens.weekly_items import WeeklyItemsScreen
+
+    describe = WeeklyItemsScreen._describe_week_creation
+    quiet = describe(2, 1, 0)
+    assert "Created 2" in quiet and "skipped 1" in quiet
+    assert "already existed" not in quiet
+
+    loud = describe(0, 0, 1)
+    assert "already existed" in loud, (
+        "a refused week must be named, not left as a silently smaller count"
+    )
 
 
 # --------------------------------------------------------------------------

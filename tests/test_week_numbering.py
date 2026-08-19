@@ -7,6 +7,7 @@ and threw the ISO year away, and week *identity* was decided in three different
 places — settings-driven in one, hardcoded to Monday in two.
 """
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -108,13 +109,24 @@ def test_wt_m2a_completed_at_datetime_is_accepted():
 WEEK_MATH_ALLOWLIST = {"week_calendar.py", "date_utils.py"}
 
 def _is_week_start_arithmetic(code: str) -> bool:
-    """A line that derives a week boundary from ``weekday()`` itself.
+    """Does this snippet derive a week boundary from ``weekday()`` itself?
 
-    Deliberately blunt — ``weekday()`` and ``% 7`` on one line is week-start
-    arithmetic in every form it takes in this codebase, and a narrower pattern
-    missed ``(6 - value.weekday()) % 7`` on the first attempt.
+    Two forms, because the first version of this guard only caught one and so
+    could not have detected most of what the conversion removed (P24 — a check
+    that is green on both the passing and the failing input):
+
+    * ``(d.weekday() - first_day) % 7`` — the settings-aware offset;
+    * ``timedelta(days=month_start.weekday())`` — the hardcoded-Monday form,
+      which *is* WT-F2c, the exact defect this guard exists to prevent.
+
+    ``weekday()`` on its own is fine: ``date_utils`` uses it to skip weekends,
+    which is business-day arithmetic, not week identity.
     """
-    return "weekday()" in code and "% 7" in code
+    if "weekday()" not in code:
+        return False
+    if "% 7" in code:
+        return True
+    return bool(re.search(r"timedelta\s*\(\s*days\s*=[^)]*weekday\(\)", code))
 
 
 def _source_files():
@@ -122,6 +134,21 @@ def _source_files():
         if "__pycache__" in path.parts:
             continue
         yield path
+
+
+def _logical_lines(text: str):
+    """Yield (line number, code) with continuations joined.
+
+    ``offset = (start.weekday() - self.first_day_of_week)`` and its ``% 7`` sat
+    on separate physical lines in one of the converted call sites, so a
+    line-at-a-time scan could not see it.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        window = " ".join(
+            raw.split("#", 1)[0] for raw in lines[index:index + 3]
+        )
+        yield index + 1, line.split("#", 1)[0], window
 
 
 def test_wt_m2b1_no_direct_week_math_callers():
@@ -136,11 +163,10 @@ def test_wt_m2b1_no_direct_week_math_callers():
         if path.name in WEEK_MATH_ALLOWLIST:
             continue
         text = path.read_text(encoding="utf-8")
-        for number, line in enumerate(text.splitlines(), start=1):
-            code = line.split("#", 1)[0]
+        for number, code, window in _logical_lines(text):
             if "isocalendar()" in code:
                 iso_offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}")
-            if _is_week_start_arithmetic(code):
+            if _is_week_start_arithmetic(code) or _is_week_start_arithmetic(window):
                 start_offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}")
 
     assert not iso_offenders, (
@@ -153,11 +179,48 @@ def test_wt_m2b1_no_direct_week_math_callers():
     )
 
 
-def test_wt_m2b1_the_scan_can_actually_fail(tmp_path):
-    """Guards the guard: a scan that matches nothing proves nothing (P24)."""
-    assert _is_week_start_arithmetic("offset = (d.weekday() - first_day) % 7")
-    assert _is_week_start_arithmetic("start += timedelta(days=(6 - value.weekday()) % 7)")
-    assert not _is_week_start_arithmetic("if current_date.weekday() >= 5:")
+# The exact lines this conversion deleted. If the guard cannot flag these, it
+# cannot have prevented the defect it was written for.
+REMOVED_WEEK_MATH = [
+    "week_start = month_start - timedelta(days=month_start.weekday())",
+    "current = anchor - timedelta(days=anchor.weekday())",
+    "offset = (d.weekday() - first_day) % 7",
+    "start += timedelta(days=(6 - value.weekday()) % 7)",
+    "offset_end = (last_day_index - end.weekday()) % 7",
+]
+
+# Continuation form: the offset and its % 7 on separate physical lines.
+REMOVED_SPLIT_WEEK_MATH = (
+    "        offset = (start.weekday() - self.first_day_of_week)\n"
+    "        start -= timedelta(days=offset % 7)\n"
+)
+
+NOT_WEEK_MATH = [
+    "if current_date.weekday() >= 5:",              # date_utils weekend skip
+    "weekday = current_date.weekday()  # 0=Monday",
+    "return day.isoformat()",
+]
+
+
+def test_wt_m2b1_the_scan_can_actually_fail():
+    """Guards the guard (P24).
+
+    The first version of this scan required ``weekday()`` and ``% 7`` on one
+    physical line, so it flagged none of the hardcoded-Monday forms below — it
+    was green on the defect it existed to catch as well as on the fix.
+    """
+    for line in REMOVED_WEEK_MATH:
+        assert _is_week_start_arithmetic(line), f"the guard cannot see: {line}"
+
+    flagged = [
+        number
+        for number, code, window in _logical_lines(REMOVED_SPLIT_WEEK_MATH)
+        if _is_week_start_arithmetic(code) or _is_week_start_arithmetic(window)
+    ]
+    assert flagged, "the guard cannot see week math split across two lines"
+
+    for line in NOT_WEEK_MATH:
+        assert not _is_week_start_arithmetic(line), f"false positive on: {line}"
 
 
 def test_wt_m2b2_title_week_number_follows_setting(tmp_path, monkeypatch):

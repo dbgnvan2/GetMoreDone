@@ -18,27 +18,53 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from . import week_calendar
+from .weekly_tactic_logging import get_weekly_tactic_logger
 from .weekly_tactic_titles import canonical_weekly_tactic_title
 
-logger = logging.getLogger("getmoredone.weekly_tactic")
+logger = get_weekly_tactic_logger()
 
-# Tables that reference action_items(id) with ON DELETE CASCADE. Every one must
-# be repointed onto the survivor *before* a loser is deleted, or the merge
-# silently destroys rows the user cannot get back (WT-M7.A.3).
-CASCADE_CHILD_TABLES = (
-    ("reschedule_history", "item_id"),
-    ("item_links", "item_id"),
-    ("work_logs", "item_id"),
-    ("project_board_items", "item_id"),
-)
+def referencing_tables(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+    """Every (table, column) holding a foreign key into ``action_items``.
 
+    Purpose: derive the repoint list from the schema instead of maintaining it
+             by hand.
+    Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m7a3
+    Tests:   tests/test_weekly_tactic_dedupe.py::test_wt_m7a3_every_referencing_table_is_derived_from_the_schema
 
-def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-        (table,),
-    ).fetchone()
-    return row is not None
+    A hand-written list shipped two bugs at once: ``time_blocks`` was missing and
+    has no ON DELETE clause, so deleting a merged tactic raised FOREIGN KEY
+    constraint failed during schema init — an unrecoverable start-up crash loop;
+    and ``habit_tracking`` was missing and *is* ON DELETE CASCADE, so its rows
+    were destroyed while the report said nothing was dropped. Both are the same
+    root cause, and the next table added to the schema would have reopened them.
+
+    ``on_delete`` is carried through because it decides what a leftover row
+    means: CASCADE leftovers are destroyed by the delete (report them), while
+    NO ACTION / RESTRICT leftovers make the delete fail (skip the merge).
+    """
+    found: List[Dict[str, Any]] = []
+    tables = [
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        )
+    ]
+    for table in tables:
+        if table == "action_items":
+            continue  # parent_id / weekly_tactic_id are handled explicitly
+        try:
+            fks = conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+        except sqlite3.Error:
+            continue
+        for fk in fks:
+            if fk["table"] != "action_items":
+                continue
+            found.append({
+                "table": table,
+                "column": fk["from"],
+                "on_delete": (fk["on_delete"] or "NO ACTION").upper(),
+            })
+    return sorted(found, key=lambda entry: (entry["table"], entry["column"]))
 
 
 def normalize_week_item_starts(
@@ -211,6 +237,7 @@ def _repoint_children(conn: sqlite3.Connection, loser_id: str, survivor_id: str)
     """
     counts: Dict[str, int] = {}
     dropped: Dict[str, int] = {}
+    blocking: Dict[str, int] = {}
 
     cursor = conn.execute(
         "UPDATE action_items SET weekly_tactic_id = ? WHERE weekly_tactic_id = ?",
@@ -226,13 +253,13 @@ def _repoint_children(conn: sqlite3.Connection, loser_id: str, survivor_id: str)
     )
     counts["action_items.parent_id"] = cursor.rowcount
 
-    for table, column in CASCADE_CHILD_TABLES:
-        if not _table_exists(conn, table):
-            continue
-        # OR IGNORE: project_board_items is keyed (board, item), so a loser and
-        # survivor already on the same board would collide. That row is a real
-        # duplicate once merged — but it is still a row about to be cascaded
-        # away, so it is counted below rather than lost in silence.
+    for entry in referencing_tables(conn):
+        table, column = entry["table"], entry["column"]
+        # OR IGNORE: some of these carry a uniqueness constraint —
+        # project_board_items is keyed (board, item), habit_tracking is keyed
+        # (item, date) — so a loser and survivor already sharing that key would
+        # collide. Such a row is a genuine duplicate once merged, but it is
+        # still a row about to disappear, so it is counted rather than lost.
         cursor = conn.execute(
             f"UPDATE OR IGNORE {table} SET {column} = ? WHERE {column} = ?",
             (survivor_id, loser_id),
@@ -242,15 +269,29 @@ def _repoint_children(conn: sqlite3.Connection, loser_id: str, survivor_id: str)
         left = conn.execute(
             f"SELECT COUNT(*) AS n FROM {table} WHERE {column} = ?", (loser_id,)
         ).fetchone()["n"]
-        if left:
-            dropped[f"{table}.{column}"] = left
+        if not left:
+            continue
+
+        key = f"{table}.{column}"
+        if entry["on_delete"] == "CASCADE":
+            dropped[key] = left
             logger.warning(
                 "[weekly_tactic] %d %s row(s) could not move from %s to %s and "
                 "will be removed with the merged tactic",
                 left, table, loser_id, survivor_id,
             )
+        else:
+            # No ON DELETE clause: the delete would fail with FOREIGN KEY
+            # constraint failed, which at migration time is an app that will
+            # not start. Refuse the merge instead.
+            blocking[key] = left
+            logger.error(
+                "[weekly_tactic] %d %s row(s) still reference %s and cannot be "
+                "moved to %s; the merge is skipped rather than crashing",
+                left, table, loser_id, survivor_id,
+            )
 
-    return counts, dropped
+    return counts, dropped, blocking
 
 
 def _ape_key_field(conn: sqlite3.Connection, ape_id: Optional[str]) -> Optional[str]:
@@ -284,6 +325,7 @@ def dedupe_weekly_tactics(
         "merged": 0,
         "repointed": 0,
         "retitled": 0,
+        "blocked": 0,
         "dropped": {},
         "details": [],
     }
@@ -307,12 +349,37 @@ def dedupe_weekly_tactics(
 
         repointed = 0
         dropped_total: Dict[str, int] = {}
+        blocked_total: Dict[str, int] = {}
+        deleted_ids: List[str] = []
         for loser in losers:
-            counts, dropped = _repoint_children(conn, loser["id"], survivor["id"])
+            counts, dropped, blocking = _repoint_children(
+                conn, loser["id"], survivor["id"]
+            )
             repointed += sum(counts.values())
             for key, value in dropped.items():
                 dropped_total[key] = dropped_total.get(key, 0) + value
+            if blocking:
+                for key, value in blocking.items():
+                    blocked_total[key] = blocked_total.get(key, 0) + value
+                continue
             conn.execute("DELETE FROM action_items WHERE id = ?", (loser["id"],))
+            deleted_ids.append(loser["id"])
+
+        if blocked_total:
+            report["blocked"] += 1
+            report["details"].append({
+                "ape_id": group["ape_id"],
+                "start_date": group["start_date"],
+                "survivor_id": survivor["id"],
+                "deleted_ids": deleted_ids,
+                "title_before": survivor["title"],
+                "title_after": survivor["title"],
+                "repointed": repointed,
+                "dropped": dropped_total,
+                "blocked": blocked_total,
+            })
+            report["merged"] += len(deleted_ids)
+            continue
 
         canonical = canonical_weekly_tactic_title(
             _ape_key_field(conn, group["ape_id"]), survivor["start_date"], cal
@@ -326,7 +393,7 @@ def dedupe_weekly_tactics(
             retitled = True
 
         report["groups"] += 1
-        report["merged"] += len(losers)
+        report["merged"] += len(deleted_ids)
         report["repointed"] += repointed
         report["retitled"] += 1 if retitled else 0
         for key, value in dropped_total.items():
@@ -335,11 +402,12 @@ def dedupe_weekly_tactics(
             "ape_id": group["ape_id"],
             "start_date": group["start_date"],
             "survivor_id": survivor["id"],
-            "deleted_ids": [row["id"] for row in losers],
+            "deleted_ids": deleted_ids,
             "title_before": survivor["title"],
             "title_after": canonical if retitled else survivor["title"],
             "repointed": repointed,
             "dropped": dropped_total,
+            "blocked": {},
         })
 
     return report

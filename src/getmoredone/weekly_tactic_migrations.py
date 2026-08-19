@@ -18,7 +18,9 @@ import logging
 import sqlite3
 from typing import Any, Dict, List, Set
 
-logger = logging.getLogger("getmoredone.weekly_tactic")
+from .weekly_tactic_logging import get_weekly_tactic_logger
+
+logger = get_weekly_tactic_logger()
 
 # WT-M1.C — the partial unique index enforcing WT-INV5.
 WEEKLY_TACTIC_UNIQUE_INDEX = "idx_action_items_weekly_tactic_unique"
@@ -291,6 +293,18 @@ def _log_report(report: Dict[str, Any]) -> None:
         )
 
     dedupe = report.get("dedupe", {})
+    if dedupe.get("blocked"):
+        logger.error(
+            "[weekly_tactic_migration] %d duplicate group(s) could not be merged "
+            "because rows still reference the loser through a foreign key with "
+            "no ON DELETE clause; nothing was deleted for those groups",
+            dedupe["blocked"],
+        )
+    if dedupe.get("dropped"):
+        logger.warning(
+            "[weekly_tactic_migration] rows removed with merged tactics: %s",
+            dedupe["dropped"],
+        )
     if dedupe.get("groups"):
         logger.info(
             "[weekly_tactic_migration] merged %d duplicate tactic(s) across %d group(s); "

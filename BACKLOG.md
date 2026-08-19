@@ -170,6 +170,29 @@ single release call. Recorded in `LEARNINGS.md` under Open risks.
 
 ---
 
+## Weekly Tactic scheduling — carried forward
+
+### 2026-08-18 - Type: Bug
+
+**Title:** A week item that cannot snap to its week start is never repaired
+**Description:** `normalize_week_item_starts` (`weekly_tactic_maintenance.py`) snaps
+every week item onto its week boundary at start-up. On the very first run the
+WT-INV5 unique index does not exist yet, so a collision simply happens and the
+dedupe merges the pair. On every run afterwards the index does exist, the UPDATE
+raises, the row is left mid-week, and it is counted in the returned `collisions`
+list. `dedupe_weekly_tactics` will never see it, because it groups by the raw
+`start_date` the row still holds — so the WT-INV5 violation is permanent and its
+only trace is a warning in `weekly_tactic_debug.log`.
+**Priority:** Medium
+**Effort:** Small
+**Notes:** Found by the learning-qa sweep of commit 55f1b36 (finding 8, P1/P3 — a
+repairable condition recorded as a terminal one). WT-M7.B (the invariant repair)
+must consume `week_start_normalization["collisions"]` rather than only scanning
+for out-of-range item dates. Tracked against
+`docs/implementation_plan_2026-08-18_weekly_tactic_scheduling.md` step 10.
+
+---
+
 ## Quick Add Template
 
 ```markdown

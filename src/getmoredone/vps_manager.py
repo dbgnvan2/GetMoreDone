@@ -15,6 +15,7 @@ from calendar import monthrange
 from .database import Database
 from .db_manager import DatabaseManager
 from . import week_calendar
+from .weekly_tactic_logging import get_weekly_tactic_logger
 from . import weekly_tactic_titles
 from .models import ActionItem
 from .paths import app_data_dir_path
@@ -41,16 +42,12 @@ class ProjectBoardsAttachedError(Exception):
 
 
 def _get_weekly_debug_logger() -> logging.Logger:
-    logger = logging.getLogger("getmoredone.weekly_tactic")
-    if logger.handlers:
-        return logger
-    logger.setLevel(logging.INFO)
-    log_path = app_data_dir_path() / "weekly_tactic_debug.log"
-    handler = logging.FileHandler(log_path, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(handler)
-    logger.propagate = False
-    return logger
+    """The weekly-tactic logger.
+
+    Implementation moved to weekly_tactic_logging so the migration — which runs
+    before any VPSManager exists — writes to a logger that has a handler.
+    """
+    return get_weekly_tactic_logger()
 
 
 class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):

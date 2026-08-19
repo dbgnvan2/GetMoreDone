@@ -287,14 +287,26 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             collided += int(result.get("collided_count", 0))
 
         self.refresh()
-        # WT-M1.C.3 — say when a week was refused, rather than reporting a
-        # smaller "created" number and letting the difference vanish (P2).
+        self.status_label.configure(
+            text=self._describe_week_creation(created, skipped, collided)
+        )
+
+    @staticmethod
+    def _describe_week_creation(created: int, skipped: int, collided: int) -> str:
+        """WT-M1.C.3 — one wording for every path that creates weekly tactics.
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1c3
+        Tests: tests/test_weekly_tactic_schema.py::test_wt_m1c3_both_creation_paths_report_collisions
+
+        Both callers of ``create_week_action_items_for_ape`` report through here.
+        Hardening only the button and leaving the drag silent is the sibling
+        problem P5 describes — and the drag was the one that showed nothing at
+        all when a week was refused.
+        """
         status = f"Created {created} weekly tactic(s); skipped {skipped} existing item(s)."
         if collided:
-            status += (
-                f" {collided} already existed for that week and were not duplicated."
-            )
-        self.status_label.configure(text=status)
+            status += f" {collided} already existed for that week and were not duplicated."
+        return status
 
     def _render_lists(self):
         self._clear_scroll(self.left_frame)
@@ -462,8 +474,17 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             if parsed:
                 week_start, year, _quarter, month = parsed
                 result = self.vps_manager.create_week_action_items_for_ape(row["id"], year, month, [week_start])
-                if result.get("created_count"):
-                    self.refresh()
+                # Always refresh and always say what happened: a drag that
+                # collided used to produce no refresh, no status and no visible
+                # sign it had been rejected.
+                self.refresh()
+                self.status_label.configure(
+                    text=self._describe_week_creation(
+                        int(result.get("created_count", 0)),
+                        int(result.get("skipped_count", 0)),
+                        int(result.get("collided_count", 0)),
+                    )
+                )
 
     def _bind_drag_widgets(self, widgets: tuple, row: Dict[str, object]):
         for widget in widgets:

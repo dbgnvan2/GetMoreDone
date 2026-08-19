@@ -17,8 +17,9 @@ from .models import (
 )
 from .app_settings import AppSettings
 from . import week_calendar
+from .weekly_tactic_logging import get_weekly_tactic_logger
 
-logger = logging.getLogger("getmoredone.weekly_tactic")
+logger = get_weekly_tactic_logger()
 
 
 class DatabaseManager(DBManagerProjectBoardsMixin):
@@ -118,14 +119,28 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             return self._row_to_action_item(row)
         return None
 
-    def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True):
+    def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True) -> bool:
         """Update an existing action item.
+
+        Returns:
+            True when the item was saved as given. False when it was a week item
+            whose new week is already taken: the rest of the save landed, the
+            week did not move, and ``last_week_collision`` says why.
 
         Args:
             item: Action item to persist.
-            normalize_week_dates: When True, week-typed items are snapped to week bounds.
-                Inline list edits and quick reschedules can disable this to preserve
-                user-entered day-level dates.
+            normalize_week_dates: Retained for callers that pass it, but it no
+                longer suppresses week-item snapping. A Weekly Tactic's dates
+                *are* its week: WT-INV5 and the WT-M1.C unique index are both
+                keyed on the week start, and the start-up normaliser snaps any
+                stray week item back anyway. Leaving a week item mid-week here
+                only meant the migration moved it later, silently. Day-level
+                dates on ordinary items are untouched either way — the snapping
+                never applied to them.
+
+        Raises:
+            ValueError: the item names a Weekly Tactic that is not a week item,
+                or is a week item with no Annual Plan Element.
         """
         # Get existing item to preserve original_due_date if it exists
         existing = self.get_action_item(item.id)
@@ -153,9 +168,15 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         self._validate_week_item(item)
         self._validate_weekly_tactic_link(item)
         self._stamp_segment_from_relationships(item)
-        if normalize_week_dates:
-            self._normalize_week_item_dates(item)
+        # WT-INV5: week items always snap. See the note on normalize_week_dates.
+        self._normalize_week_item_dates(item)
         self._normalize_week_item_group(item)
+
+        # WT-M1.C.5 — cleared on every save, so a stale collision from an
+        # earlier save cannot be read as this one's result. The DatabaseManager
+        # is long-lived (app.py builds one for the session), so a flag that is
+        # only ever set is a flag that is permanently true after the first clash.
+        self.last_week_collision = None
 
         original_dates = (existing.start_date, existing.due_date) if existing else None
         try:
@@ -164,6 +185,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             self._handle_week_collision(item, original_dates, exc)
 
         self.db.conn.commit()
+        return self.last_week_collision is None
 
     def _handle_week_collision(self, item: ActionItem, original_dates, exc):
         """WT-M1.C.5 — a re-snapped week collided with an existing tactic.
@@ -178,14 +200,28 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         save proceeds with the item's original dates, and the clash is recorded
         on ``last_week_collision`` and logged so it is never silent (P2). If the
         write still fails with the original dates, the error is genuinely not
-        about the re-snap and is re-raised.
+        about the week move and is re-raised.
+
+        The caller learns what happened from the return value of
+        ``update_action_item``, not only from the log. A week that quietly did
+        not move, reported as a clean save, is the silent-drop shape of P2 —
+        the user drags a tactic onto an occupied week and nothing says no.
         """
         if item.item_type != "week" or original_dates is None:
             raise exc
 
         snapped = (item.start_date, item.due_date)
+        if snapped == original_dates:
+            # The dates did not move, so the clash is not about the week at all.
+            raise exc
+
         item.start_date, item.due_date = original_dates
-        self._write_action_item(item)
+        try:
+            self._write_action_item(item)
+        except sqlite3.IntegrityError:
+            # The original dates collide too — this was never a re-snap problem.
+            item.start_date, item.due_date = snapped
+            raise exc
 
         self.last_week_collision = {
             "item_id": item.id,
