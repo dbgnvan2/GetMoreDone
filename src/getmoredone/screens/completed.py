@@ -12,7 +12,6 @@ from ..theme import apply_segment_accent, semantic_colors, button_style, combo_b
 from .title_format import (
     split_action_item_title,
     format_column_text,
-    CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
 
@@ -231,16 +230,6 @@ class CompletedScreen(ctk.CTkFrame):
                 title_label.grid(row=0, column=1, sticky="ew")
                 title_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_item(item_id))
 
-                # Context
-                ctk.CTkLabel(
-                    item_frame,
-                    text=format_column_text(parsed.context, CONTEXT_COL_CHARS),
-                    width=140,
-                    anchor="w",
-                    text_color=row_text,
-                    font=list_row_font(),
-                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
-
                 # Who
                 ctk.CTkLabel(
                     item_frame,
@@ -249,7 +238,7 @@ class CompletedScreen(ctk.CTkFrame):
                     anchor="w",
                     text_color=row_text,
                     font=list_row_font(),
-                ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
+                ).grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
                 # Completed date
                 if item.completed_at:
@@ -260,7 +249,7 @@ class CompletedScreen(ctk.CTkFrame):
                         text_color=row_text,
                         font=list_row_font()
                     )
-                    completed_label.grid(row=0, column=4, padx=5, pady=5)
+                    completed_label.grid(row=0, column=3, padx=5, pady=5)
 
                 # Priority score
                 is_priority_critical = item.importance == 20 or item.urgency == 20
@@ -273,14 +262,14 @@ class CompletedScreen(ctk.CTkFrame):
                     corner_radius=6 if is_priority_critical else 0,
                     font=list_row_font()
                 )
-                score_label.grid(row=0, column=5, padx=5, pady=5)
+                score_label.grid(row=0, column=4, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
                     factors_frame = ctk.CTkFrame(
                         item_frame, fg_color="transparent")
-                    factors_frame.grid(row=0, column=6, padx=5, pady=5)
+                    factors_frame.grid(row=0, column=5, padx=5, pady=5)
                     columns = [
                         ("G", item.group, 120),
                         ("C", item.category, 120),
@@ -314,7 +303,7 @@ class CompletedScreen(ctk.CTkFrame):
                     **button_style("secondary"),
                     command=lambda i=item.id: self.uncomplete_item(i)
                 )
-                btn_uncomplete.grid(row=0, column=7+col_offset, padx=2, pady=5)
+                btn_uncomplete.grid(row=0, column=6+col_offset, padx=2, pady=5)
         finally:
             # Restore scroll_frame to grid - this ensures it's shown even if an error occurs
             self.scroll_frame.grid(**grid_info)

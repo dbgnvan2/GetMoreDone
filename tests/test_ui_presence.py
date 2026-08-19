@@ -41,7 +41,9 @@ def test_item_editor_ui_elements_presence(mock_app, mock_db):
     
     # Left column fields
     assert hasattr(dialog, "who_entry"), "Missing 'Who' entry"
-    assert hasattr(dialog, "title_context_entry"), "Missing Context entry"
+    # The Context entry was removed: it was never a field of its own, only the
+    # front half of the Title string.
+    assert not hasattr(dialog, "title_context_entry"), "Context entry is meant to be gone"
     assert hasattr(dialog, "title_entry"), "Missing Title entry"
     assert hasattr(dialog, "description_text"), "Missing Description text"
     assert hasattr(dialog, "next_action_text"), "Missing Next Action text"

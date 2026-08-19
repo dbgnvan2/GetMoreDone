@@ -9,7 +9,6 @@ from ..models import ActionItem, ItemLink
 from ..theme import button_style, status_text_color
 from ..validation import Validator
 from .item_editor_dialogs import CreateNoteDialog, LinkNoteDialog
-from .title_format import build_action_item_title
 
 
 class ItemEditorNotesMixin:
@@ -85,10 +84,7 @@ class ItemEditorNotesMixin:
             # Set fields
             item.who = self.who_var.get().strip()
             item.contact_id = self.selected_contact_id
-            item.title = build_action_item_title(
-                self.title_context_entry.get(),
-                self.title_entry.get(),
-            ).strip()
+            item.title = self.title_entry.get().strip()
             if item.item_type == "week":
                 item.title = self._canonical_weekly_tactic_title(
                     item.title,

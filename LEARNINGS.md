@@ -90,6 +90,35 @@ Newest first. Format:
 > **Issue** → **Root cause** (tag the pattern `Pn`) → **What would have caught it** →
 > **Fix** → **Rule**
 
+### 2026-08-19 — the Who field was dead, and Tk hid the reason
+
+**Issue** → Typing in the Item Editor's **Who** box did nothing: no contact dropdown,
+no error, no clue. Saving a new item could also fail with only a generic
+"Error: …" in the dialog's status label.
+**Root cause** → `ItemEditorContactsMixin.on_who_search` opens with
+`if self.suggestions_hide_job:`, and nothing ever initialised
+`suggestions_hide_job`, `contact_suggestions_frame` or `selected_contact_id`. The
+mixin read state that its host dialog was silently expected to create. The first
+keystroke raised `AttributeError` **inside a Tk callback**, and Tk's default
+`report_callback_exception` prints the traceback to stderr and carries on — so a
+hard failure presented as an inert widget. A GUI app launched from a double-click
+has nowhere for stderr to go, so the traceback was never seen by anyone.
+**What would have caught it** → one test that calls `on_who_search` on a freshly
+built dialog. There were 800+ tests and none of them typed in Who: every editor
+test either drove `save_item` on a stub that supplied `selected_contact_id`
+itself, or asserted a widget *exists* rather than *works* (P25's corollary — a
+control that renders is not a control that is wired).
+**Fix** → the three attributes are declared as class-level defaults on
+`ItemEditorContactsMixin`, where the code that reads them lives, so no future host
+class can forget them. Seven tests in `tests/test_item_editor_contacts.py` drive a
+real dialog against a real DatabaseManager — typing, filtering, selecting, and
+saving with and without a contact.
+**Rule** → **A mixin owns its own state.** State a mixin reads must be declared on
+the mixin, not assumed to be initialised by whatever class mixes it in.
+And: **in a Tk app, an exception inside a callback is invisible** — a widget that
+"does nothing" is a raised exception until proven otherwise, so test event handlers
+by calling them, not by asserting the widget exists.
+
 ### 2026-08-18 — two publish steps could succeed while publishing nothing
 
 **Issue** → `upload-artifact@v7` defaulted `if-no-files-found` to `warn`, and

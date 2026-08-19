@@ -15,7 +15,6 @@ from .title_format import (
     split_action_item_title,
     format_column_text,
     responsive_column_chars,
-    CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
 
@@ -284,21 +283,12 @@ class HierarchicalScreen(ctk.CTkFrame):
 
         ctk.CTkLabel(
             frame,
-            text=format_column_text(parsed.context, limits["context"]),
-            width=max(90, limits["context"] * 8),
-            anchor="w",
-            text_color=row_text,
-            font=list_row_font(),
-        ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
-
-        ctk.CTkLabel(
-            frame,
             text=format_column_text(item.who, limits["who"]),
             width=max(52, limits["who"] * 8),
             anchor="w",
             text_color=row_text,
             font=list_row_font(),
-        ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
         # Priority score
         is_priority_critical = item.importance == 20 or item.urgency == 20
@@ -311,7 +301,7 @@ class HierarchicalScreen(ctk.CTkFrame):
             corner_radius=6 if is_priority_critical else 0,
             font=list_row_font()
         )
-        score_label.grid(row=0, column=5, padx=5, pady=5)
+        score_label.grid(row=0, column=4, padx=5, pady=5)
 
         # Due date
         if item.due_date:
@@ -322,11 +312,11 @@ class HierarchicalScreen(ctk.CTkFrame):
                 text_color=row_text,
                 font=list_row_font()
             )
-            due_label.grid(row=0, column=6, padx=5, pady=5)
+            due_label.grid(row=0, column=5, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=110).grid(
-                row=0, column=6, padx=5, pady=5)
+                row=0, column=5, padx=5, pady=5)
 
         # Child count
         children = self.db_manager.get_children(item.id)
@@ -338,11 +328,11 @@ class HierarchicalScreen(ctk.CTkFrame):
                 text_color=row_text,
                 font=list_row_font()
             )
-            child_count_label.grid(row=0, column=7, padx=5, pady=5)
+            child_count_label.grid(row=0, column=6, padx=5, pady=5)
         else:
             # Empty space to maintain alignment
             ctk.CTkLabel(frame, text="", width=70).grid(
-                row=0, column=7, padx=5, pady=5)
+                row=0, column=6, padx=5, pady=5)
 
         return frame
 

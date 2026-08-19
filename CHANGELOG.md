@@ -54,6 +54,13 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The Who field works again.** Typing in Who did nothing — no contact dropdown, no
+  error — because the autocomplete read three attributes (`suggestions_hide_job`,
+  `contact_suggestions_frame`, `selected_contact_id`) that nothing ever initialised, so
+  the first keystroke raised inside a Tk callback, where the traceback goes to stderr and
+  the app carries on. The same hole could make saving a brand-new item fail with only a
+  generic error message. The state now lives on the mixin that reads it.
+
 - **Duplicate Weekly Tactics are merged**, one per Annual Plan Element per week, and a
   unique index keeps it that way. The surviving tactic keeps whichever row held more
   children, every reference is moved onto it before the other is deleted, and its title
@@ -87,6 +94,14 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than quietly publishing an unsigned one.
 
 ### Changed
+
+- **The Context box is gone from the Item Editor, and the Context column from Today,
+  Upcoming, All Items, Completed and Hierarchical.** Context was never a field of its
+  own — only the front half of the Title string, rejoined on save — and it only read
+  back out of titles whose prefix ended in a week marker (`W8`), so most items showed
+  it empty while their title still carried the prefix. Title now holds and saves the
+  whole title verbatim; no stored title changes. The Scheduler still colours rows by
+  segment and subsegment, which is derived from the same title prefix.
 
 - **The item editor's Duplicate button is gone; Add Follow-up is the one copy path.** A
   follow-up is a copy that also keeps the link back to the original, and it now saves the

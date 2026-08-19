@@ -23,7 +23,6 @@ from .title_format import (
     split_action_item_title,
     format_column_text,
     responsive_column_chars,
-    CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
 from .column_resize import ColumnResizer, ColumnSpec
@@ -199,7 +198,6 @@ class TodayScreen(ctk.CTkFrame):
         header_cols = [
             ("SubSegment", max(56, limits["subsegment"] * 8)),
             ("Category", max(56, limits["category"] * 8)),
-            ("Context", max(90, limits["context"] * 8)),
             ("Who", max(52, limits["who"] * 8)),
             ("Start", 60),
             ("Due", 60),
@@ -574,16 +572,6 @@ class TodayScreen(ctk.CTkFrame):
             font=list_row_font(),
         ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
-        # Context
-        ctk.CTkLabel(
-            frame,
-            text=format_column_text(parsed.context, limits["context"]),
-            width=max(90, limits["context"] * 8),
-            anchor="w",
-            text_color=row_text,
-            font=list_row_font(),
-        ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
-
         # Who
         ctk.CTkLabel(
             frame,
@@ -592,7 +580,7 @@ class TodayScreen(ctk.CTkFrame):
             anchor="w",
             text_color=row_text,
             font=list_row_font(),
-        ).grid(row=0, column=5, padx=5, pady=5, sticky="w")
+        ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
 
         # Start Date
         start_date_text = item.start_date if item.start_date else "-"
@@ -610,7 +598,7 @@ class TodayScreen(ctk.CTkFrame):
             text_color=row_text,
             font=list_row_font()
         )
-        start_label.grid(row=0, column=6, padx=5, pady=5)
+        start_label.grid(row=0, column=5, padx=5, pady=5)
         start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
         # Due Date
@@ -629,7 +617,7 @@ class TodayScreen(ctk.CTkFrame):
             text_color=row_text,
             font=list_row_font()
         )
-        due_label.grid(row=0, column=7, padx=5, pady=5)
+        due_label.grid(row=0, column=6, padx=5, pady=5)
         due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
         # Priority score
@@ -643,7 +631,7 @@ class TodayScreen(ctk.CTkFrame):
             corner_radius=6 if is_priority_critical else 0,
             font=list_row_font(),
         )
-        score_label.grid(row=0, column=8, padx=5, pady=5)
+        score_label.grid(row=0, column=7, padx=5, pady=5)
         score_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
         # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
@@ -656,12 +644,12 @@ class TodayScreen(ctk.CTkFrame):
             text_color=row_text,
             font=list_row_font()
         )
-        time_label.grid(row=0, column=9, padx=5, pady=5)
+        time_label.grid(row=0, column=8, padx=5, pady=5)
 
         # Factor chips (I, U, E, V) - only shown when expanded
         factors_frame = ctk.CTkFrame(frame, fg_color="transparent")
         if self.columns_expanded:
-            factors_frame.grid(row=0, column=10, padx=5, pady=5)
+            factors_frame.grid(row=0, column=9, padx=5, pady=5)
             columns = [
                 ("G", item.group, 120),
                 ("C", item.category, 120),

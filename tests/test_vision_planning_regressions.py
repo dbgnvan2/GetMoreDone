@@ -141,4 +141,5 @@ def test_list_view_column_budget_preserves_immediate_subsegment_and_category():
     assert narrow["category"] == wide["category"] == 15
     assert wide["who"] == 10
     assert narrow["who"] == 10
-    assert narrow["context"] == wide["context"] == 10
+    # No "context" budget: the Context column was removed from every list view.
+    assert "context" not in wide

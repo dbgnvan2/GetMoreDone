@@ -9,6 +9,32 @@ from ..theme import button_style
 
 
 class ItemEditorContactsMixin:
+    """Contact autocomplete for the Who field.
+
+    The three attributes below are the mixin's own state, and they are declared
+    here rather than in the host dialog's ``__init__`` because that is where
+    they went missing: ``on_who_search`` opens with ``if self.suggestions_hide_job``,
+    so the very first keystroke in Who raised AttributeError. Tk swallows an
+    exception raised inside a widget callback — it prints a traceback to stderr
+    and carries on — so the field looked simply dead: typing did nothing, no
+    dropdown, no error on screen. ``selected_contact_id`` had the same hole and
+    took out saving a new item, where the failure surfaced only as the editor's
+    generic "Error: …" label.
+
+    Keeping them with the code that reads them means a future host class cannot
+    forget to initialise them.
+
+    Tests: tests/test_item_editor_contacts.py
+    """
+
+    #: Currently linked contact, or None. Written by select_contact and by the
+    #: editor's load_item_data / apply_defaults_to_form.
+    selected_contact_id = None
+    #: The open suggestions dropdown, or None when nothing is showing.
+    contact_suggestions_frame = None
+    #: Pending `after` job that hides the dropdown, or None.
+    suggestions_hide_job = None
+
     def on_who_changed(self):
         """Handle when Who field changes - re-apply defaults for fields that are empty."""
         if self.item_id:

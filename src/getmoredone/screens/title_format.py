@@ -14,7 +14,6 @@ _DATE_ONLY_RE = re.compile(r"^\(?\d{4}-\d{2}-\d{2}\)?$")
 _LEADING_DATE_STUB_RE = re.compile(r"^\(?\d{4}-\d{2}-\d{2}\)?\s*[-–—:]\s*")
 
 TITLE_COL_CHARS = 30
-CONTEXT_COL_CHARS = 14
 CONTACT_COL_CHARS = 10
 
 
@@ -26,6 +25,11 @@ class ParsedTitle:
 
 def split_action_item_title(raw_title: str | None) -> ParsedTitle:
     """Split title into context and body.
+
+    The editor no longer offers a Context field and no list view shows a
+    Context column; this remains because list views display the short task
+    body, and the Scheduler and item lineage derive segment/subsegment colours
+    from the prefix (see item_lineage.resolve_lineage_colors).
 
     Expected structured format examples:
     - ``PW|LS|Blog - W8 - write blog 3``
@@ -82,7 +86,6 @@ def responsive_column_chars(available_width: int) -> dict[str, int]:
         "title": TITLE_COL_CHARS,
         "subsegment": 15,
         "category": 15,
-        "context": 10,
         "who": 10,
     }
     return limits

@@ -17,7 +17,6 @@ from .title_format import (
     split_action_item_title,
     format_column_text,
     responsive_column_chars,
-    CONTEXT_COL_CHARS,
     CONTACT_COL_CHARS,
 )
 
@@ -211,7 +210,7 @@ class AllItemsScreen(ctk.CTkFrame):
                               pady=(0, 5), padx=5)
             header_frame.grid_columnconfigure(1, weight=1)
 
-            headers = ["✓", "Immediate Step", "SubSegment", "Category", "Context", "Who", "Start", "Due",
+            headers = ["✓", "Immediate Step", "SubSegment", "Category", "Who", "Start", "Due",
                        "Priority", "Est. Time", "Status", "Actions"]
             col_weights = [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
@@ -314,16 +313,6 @@ class AllItemsScreen(ctk.CTkFrame):
                     font=list_row_font()
                 ).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
-                # Context
-                ctk.CTkLabel(
-                    item_frame,
-                    text=format_column_text(parsed.context, limits["context"]),
-                    width=max(90, limits["context"] * 8),
-                    anchor="w",
-                    text_color=row_text,
-                    font=list_row_font()
-                ).grid(row=0, column=4, padx=5, pady=5, sticky="w")
-
                 # Who
                 ctk.CTkLabel(
                     item_frame,
@@ -332,7 +321,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     text_color=row_text,
                     font=list_row_font(),
                 ).grid(
-                    row=0, column=5, padx=5, pady=5)
+                    row=0, column=4, padx=5, pady=5)
 
                 # Start date
                 start_text = item.start_date or "-"
@@ -350,7 +339,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     text_color=row_text,
                     font=list_row_font()
                 )
-                start_label.grid(row=0, column=6, padx=5, pady=5)
+                start_label.grid(row=0, column=5, padx=5, pady=5)
                 start_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_start_date_inline(item_id))
 
                 # Due date
@@ -369,7 +358,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     text_color=row_text,
                     font=list_row_font()
                 )
-                due_label.grid(row=0, column=7, padx=5, pady=5)
+                due_label.grid(row=0, column=6, padx=5, pady=5)
                 due_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_due_date_inline(item_id))
 
                 # Priority
@@ -383,7 +372,7 @@ class AllItemsScreen(ctk.CTkFrame):
                     corner_radius=6 if is_priority_critical else 0,
                     font=list_row_font(),
                 )
-                priority_label.grid(row=0, column=8, padx=5, pady=5)
+                priority_label.grid(row=0, column=7, padx=5, pady=5)
                 priority_label.bind("<Button-1>", lambda _event, item_id=item.id: self.edit_priority_inline(item_id))
 
                 # Estimated time (planned_minutes) - ALWAYS shown (not collapsed)
@@ -394,14 +383,14 @@ class AllItemsScreen(ctk.CTkFrame):
                     width=60,
                     text_color=row_text,
                     font=list_row_font()
-                ).grid(row=0, column=9, padx=5, pady=5)
+                ).grid(row=0, column=8, padx=5, pady=5)
 
                 # Factor chips (I, U, E, V) - only shown when expanded
                 col_offset = 0
                 if self.columns_expanded:
                     factors_frame = ctk.CTkFrame(
                         item_frame, fg_color="transparent")
-                    factors_frame.grid(row=0, column=10, padx=5, pady=5)
+                    factors_frame.grid(row=0, column=9, padx=5, pady=5)
                     columns = [
                         ("G", item.group, 120),
                         ("C", item.category, 120),
@@ -429,7 +418,7 @@ class AllItemsScreen(ctk.CTkFrame):
 
                 # Status
                 ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font(), text_color=row_text).grid(
-                    row=0, column=10 + col_offset, padx=5, pady=5)
+                    row=0, column=9 + col_offset, padx=5, pady=5)
 
                 # Action buttons
                 col = 11 + col_offset

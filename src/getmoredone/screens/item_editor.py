@@ -33,7 +33,9 @@ from .item_editor_dialogs import (
 )
 from .item_editor_project_dialog import SetProjectDialog
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
-from .title_format import split_action_item_title, build_action_item_title
+# Still used by _canonical_weekly_tactic_title, which is about Weekly Tactic
+# titles, not the removed Context field.
+from .title_format import split_action_item_title
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -209,20 +211,20 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.who_entry.bind('<FocusOut>', lambda e: self.on_who_changed())
         row_l += 1
 
-        # Title & Context
+        # Title. The Context box that used to sit in front of it is gone: it was
+        # never a field of its own, only the front half of this same title
+        # string, and it only ever read back out of a title whose prefix ended
+        # in a week marker (W8) — so most items showed it empty while their
+        # title still carried the prefix. Title now holds, and saves, the whole
+        # stored title verbatim.
+        # Tests: tests/test_item_editor_no_context.py
         title_frame = ctk.CTkFrame(left_col, fg_color="transparent")
         title_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", pady=5)
-        title_frame.grid_columnconfigure(1, weight=0)
-        title_frame.grid_columnconfigure(3, weight=1)
+        title_frame.grid_columnconfigure(1, weight=1)
 
-        self.context_label = ctk.CTkLabel(title_frame, text="Context:")
-        self.context_label.grid(row=0, column=0, sticky="w", padx=10)
-        self.title_context_entry = ctk.CTkEntry(title_frame, width=120)
-        self.title_context_entry.grid(row=0, column=1, sticky="w", padx=(5, 10))
-
-        ctk.CTkLabel(title_frame, text="Title:").grid(row=0, column=2, sticky="w")
+        ctk.CTkLabel(title_frame, text="Title:").grid(row=0, column=0, sticky="w", padx=10)
         self.title_entry = ctk.CTkEntry(title_frame)
-        self.title_entry.grid(row=0, column=3, sticky="ew", padx=(5, 10))
+        self.title_entry.grid(row=0, column=1, sticky="ew", padx=(5, 10))
         row_l += 1
 
         # Action Plan — where this item sits in the plan. Both values are set
@@ -731,10 +733,6 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 fg_color=palette["success_strong"],
                 text_color=palette["on_strong"],
             )
-            self.context_label.configure(text="Context (unused for Weekly Tactic):")
-            self.title_context_entry.configure(state="normal")
-            self.title_context_entry.delete(0, "end")
-            self.title_context_entry.configure(state="disabled")
             # PL6 — a Weekly Tactic cannot be filed under a Project: the link
             # would re-stamp its Annual Plan Element, which its canonical title
             # is derived from.
@@ -746,8 +744,6 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             fg_color=palette["surface_subtle"],
             text_color=palette["body_text"],
         )
-        self.context_label.configure(text="Context:")
-        self.title_context_entry.configure(state="normal")
         self._set_project_button_state("normal")
 
     def _set_project_button_state(self, state: str):
@@ -764,7 +760,6 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.who_var.set(self.item.who)
         self.selected_contact_id = self.item.contact_id
         self._apply_record_type_ui()
-        parsed = split_action_item_title(self.item.title)
         if self._is_weekly_tactic_record():
             canonical_title = self._canonical_weekly_tactic_title(
                 self.item.title,
@@ -778,9 +773,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 self.db_manager.update_action_item(self.item, normalize_week_dates=False)
             self.title_entry.insert(0, canonical_title)
         else:
-            if parsed.context:
-                self.title_context_entry.insert(0, parsed.context)
-            self.title_entry.insert(0, parsed.title or self.item.title)
+            # The whole stored title, prefix and all — splitting it here and
+            # rejoining it on save is what the Context box did, and it silently
+            # dropped any prefix the splitter did not recognise.
+            self.title_entry.insert(0, self.item.title or "")
 
         if self.item.description:
             self.description_text.insert("1.0", self.item.description)
@@ -1144,10 +1140,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             # Set fields
             item.who = self.who_var.get().strip()
             item.contact_id = self.selected_contact_id
-            item.title = build_action_item_title(
-                self.title_context_entry.get(),
-                self.title_entry.get(),
-            ).strip()
+            item.title = self.title_entry.get().strip()
             if item.item_type == "week":
                 item.title = self._canonical_weekly_tactic_title(
                     item.title,

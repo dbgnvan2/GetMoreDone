@@ -66,7 +66,7 @@ GetMoreDone is a desktop task manager focused on prioritization and execution.
 ### Today
 - What: Shows items scheduled for today, split into open and completed today.
 - Why: A focused daily view of what matters right now.
-- **Column headers & resizable Title** — What: A pinned heading row (Title, SubSegment, Category, Context, Who, Start, Due, Pri, Time) stays put while the list scrolls. Drag the vertical divider at the right edge of the **Title** header to widen or narrow the Title column, spreadsheet-style; titles re-clamp with `…` as you drag. Why: Make room for long titles without losing the other columns. The width is remembered between sessions.
+- **Column headers & resizable Title** — What: A pinned heading row (Title, SubSegment, Category, Who, Start, Due, Pri, Time) stays put while the list scrolls. Drag the vertical divider at the right edge of the **Title** header to widen or narrow the Title column, spreadsheet-style; titles re-clamp with `…` as you drag. Why: Make room for long titles without losing the other columns. The width is remembered between sessions.
 
 Header controls:
 - **Search** — What: Searches title, description, and next action within Today scope. Why: Quickly find an item.
@@ -424,8 +424,16 @@ Common controls:
 The Item Editor is where you create and edit Action Items. It appears from **+ New Item** and **Edit** buttons.
 
 Main fields:
-- **Who** — What: Person/client/context. Why: Filter and group items by owner.
-- **Title** — What: Task name. Why: The primary label everywhere in the app.
+- **Who** — What: Person, client or context the item belongs to. Start typing and
+  matching Contacts drop down; picking one links the item to that contact. On a *new*
+  item, changing Who also re-applies that person's Defaults to any field you have left
+  empty (priority factors, group, category, planned minutes, date offsets) — it never
+  overwrites something you have already set, and it does nothing on an existing item.
+  Why: Filter and group items by owner, and get sensible defaults per client.
+- **Title** — What: The task name, in full. Why: The primary label everywhere in the app.
+  (The separate **Context** box in front of Title has been removed — it was never a field
+  of its own, only the front half of this same title. Titles are unchanged; the whole
+  title now lives in, and saves from, this one box.)
 - **Description** — What: Longer notes. Why: Store context or details.
 - **Next Action** — What: Short, action-focused notes, often one per line. Why: Break a task into next steps.
 - **Planned Minutes** — What: Time estimate. Why: Better scheduling and stats.
