@@ -388,5 +388,17 @@ next assign -> annual_initiatives: 2, quarter_initiatives: 2
 Pre-existing, and spec §9 of the weekly-tactic spec deliberately left the
 quarter/month/annual levels without the uniqueness protection WT-D8 gave weekly
 tactics — so nothing dedupes it and nothing warns. This feature does not cause
-it, but it puts a "create the scaffolding" button in front of many more users, so
-it is worth fixing near this work rather than after it. Not folded in.
+it, but it puts a "create the scaffolding" button in front of many more users.
+
+**Now specced separately:** `docs/spec_2026-08-19_rename_safe_links.md` (RN)
+covers this and the rest of the class — a rename at any level from Vision to
+Weekly Tactic must not break a link. A wider audit found the segment case is
+worse than this one: renaming a segment makes an ordinary date change on a filed
+Action Item raise `ValueError: Segment '...' not found`, because
+`vision_segments` and `segment_descriptions` are joined by name and
+`rename_vision_segment` updates only one of them. Project → Action Item and
+Weekly Tactic → Action Item are id-based and already safe.
+
+Phase C does not depend on RN, but the two touch the same create path
+(`_ensure_quarter_and_month` → `_find_annual_initiative_for_ape`), so RN should
+land first if both are approved.
