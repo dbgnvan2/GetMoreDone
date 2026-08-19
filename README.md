@@ -41,7 +41,11 @@ Grab the archive for your system from the
 | Windows | `GetMoreDone-win64.zip` |
 
 **macOS needs one extra step on first launch.** The build is unsigned, so macOS
-quarantines it:
+blocks it. On **macOS 15 (Sequoia) and later**, let it get blocked, then go to
+**System Settings → Privacy & Security** and click **Open Anyway**. Control-clicking
+the app and choosing Open no longer works — Apple removed that in macOS 15.
+
+Or skip the clicking on any version:
 
 ```bash
 xattr -d com.apple.quarantine /Applications/GetMoreDone.app

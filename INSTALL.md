@@ -35,27 +35,61 @@ There is no Linux build. Linux is supported from source; see
 
 ## macOS: first launch
 
-**The build is not signed with an Apple Developer certificate**, so macOS will
-refuse to open it the first time and say the app "is damaged" or "cannot be
-opened because the developer cannot be verified". The app is not damaged —
-macOS attaches a quarantine flag to anything downloaded from the internet, and
-without a paid signing certificate there is nothing to check it against.
+**The build is not signed with an Apple Developer certificate**, so macOS blocks it
+the first time and may say the app "is damaged" or "cannot be opened because the
+developer cannot be verified". The app is not damaged — macOS attaches a quarantine
+flag to anything downloaded from a browser, and with no paid signing certificate
+there is nothing for it to check the app against.
 
-Unpack the zip, drag `GetMoreDone.app` to your Applications folder, then run:
+Unpack the zip and drag `GetMoreDone.app` to your Applications folder, then use
+whichever of these suits you.
+
+### macOS 15 (Sequoia) and later — System Settings
+
+1. Double-click the app and let it get blocked.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll down. There is a message naming GetMoreDone with an **Open Anyway** button.
+4. Click it, authenticate, and open the app again.
+
+The **Open Anyway** button only appears *after* a blocked launch attempt, and it
+disappears again after about an hour. If you do not see it, try opening the app once
+more and go straight back to Settings.
+
+> **Control-clicking the app and choosing Open no longer works.** That was the standard
+> trick for years, and Apple removed it in macOS 15 — an unsigned app can only be
+> approved through System Settings now. If you remember doing it that way, that is why
+> it stopped working.
+
+### macOS 14 (Sonoma) and earlier — Control-click
+
+Control-click (or right-click) the app, choose **Open**, then **Open** again in the
+dialog that appears.
+
+### Any version — the one-line alternative
+
+If you would rather not click through any of that, remove the quarantine flag directly:
 
 ```bash
 xattr -d com.apple.quarantine /Applications/GetMoreDone.app
 ```
 
-Then open it normally. You only need to do this once per download — but you'll
-need it again after installing a new version.
+Then open the app normally. You need this once per download, so again after installing
+a new version.
 
-If you prefer not to run that command, right-click the app, choose **Open**, and
-confirm at the prompt. On recent macOS versions you may instead need
-**System Settings → Privacy & Security**, then **Open Anyway** next to the
-blocked-app message.
+To check whether a copy is even flagged:
 
-If you'd rather not run an unsigned binary at all, run from source instead.
+```bash
+xattr -p com.apple.quarantine /Applications/GetMoreDone.app
+```
+
+No output means no quarantine — it will open with no ceremony. Note that this is why a
+build fetched with `curl` or `gh release download` often opens without any warning:
+those tools do not set the flag, only browsers do.
+
+### If you would rather not run an unsigned binary at all
+
+Run from source instead — see below. There is no Gatekeeper involved, because there is
+no binary to check.
 
 ---
 

@@ -71,6 +71,33 @@ def test_rm5d_install_doc_documents_gatekeeper_step():
     )
 
 
+def test_rm5d_install_doc_documents_the_sequoia_path():
+    """Apple removed the Control-click override in macOS 15.
+
+    Leading with Control-click sends anyone on a current Mac down a path that
+    no longer exists. The System Settings route must be present and attached to
+    the version that needs it.
+    """
+    text = INSTALL.read_text(encoding="utf-8")
+    for marker in ("Privacy & Security", "Open Anyway", "Sequoia"):
+        assert marker in text, (
+            f"INSTALL.md does not document the macOS 15+ approval path: {marker!r} "
+            "is missing. Control-click alone is wrong for every current Mac."
+        )
+
+
+def test_rm5d_install_doc_does_not_present_control_click_as_the_current_route():
+    """Control-click may be documented for macOS 14 and earlier, but must not be
+    offered as the general answer."""
+    text = INSTALL.read_text(encoding="utf-8")
+    control_click = text.find("Control-click")
+    settings = text.find("Privacy & Security")
+    assert control_click == -1 or settings < control_click, (
+        "INSTALL.md offers Control-click before the System Settings route; on "
+        "macOS 15+ the former does nothing"
+    )
+
+
 def test_rm5d_readme_also_carries_the_gatekeeper_step():
     """Someone who never opens INSTALL.md still hits this on first launch."""
     assert "xattr -d com.apple.quarantine" in README.read_text(encoding="utf-8")
