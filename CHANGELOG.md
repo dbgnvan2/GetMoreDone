@@ -54,6 +54,23 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A Weekly Tactic left mid-week is now repaired instead of surviving forever.**
+  When a tactic could not be moved onto its week start — because a duplicate
+  already held that date — it was left where it was and never merged, because
+  the dedupe grouped tactics by their raw start date. It now groups by the week
+  a tactic belongs to, merges the duplicate, and moves the survivor onto the
+  week start. The migration log says how many were moved.
+- **Startup can no longer be blocked by an unreadable date.** A week item whose
+  start date is not a date used to be able to make the unique-index step raise
+  out of schema initialisation, and since nothing commits before that point,
+  every later launch met the same state. Such rows are now reported and left
+  alone rather than merged, and the index step declines with a reason instead of
+  crashing.
+- **The test suite no longer touches your real data.** One test opened the live
+  database and ran migrations against it; several rewrote your real
+  `settings.json`. Both are isolated now, with a session-level guard that fails
+  the run if the real settings file is written. No data was lost.
+
 - **The Who field works again.** Typing in Who did nothing — no contact dropdown, no
   error — because the autocomplete read three attributes (`suggestions_hide_job`,
   `contact_suggestions_frame`, `selected_contact_id`) that nothing ever initialised, so
