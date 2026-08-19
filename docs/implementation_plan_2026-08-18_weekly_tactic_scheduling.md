@@ -38,18 +38,17 @@ These are not in the spec and each one fails in a way that is not obvious.
 
 ---
 
-## 1. Decisions needed at approval
+## 1. Decisions taken at approval (2026-08-18, user)
 
-Six questions the spec does not settle. Each has a recommended resolution; the
-build proceeds on these unless told otherwise. **Q2 and Q4 change user-visible
-behaviour and are the two worth a real look.**
+Six questions the spec does not settle. **All six are now settled** — Q2 and Q4
+by the user, the rest confirmed as recommended. The build proceeds on these.
 
-**Q1 — Calendar import must opt out of the hook it already calls.**
+**Q1 — Calendar import must opt out of the hook it already calls.** *Confirmed.*
 WT-D12/WT-M6.B.3 require `calendar_importer.py` to move dates without
 re-filing. But `calendar_importer.py:177` calls `dbm.update_action_item(...)` —
 the very method WT-M6 designates as the hook. Without an opt-out, WT-D12 is
 unimplementable.
-*Recommended:* `update_action_item(item, normalize_week_dates=True, refile=True)`;
+*Decision:* `update_action_item(item, normalize_week_dates=True, refile=True)`;
 the importer is the only caller passing `refile=False`. WT-M6.B.3 asserts it.
 
 **Q2 — Rollover creates a ninth record the spec does not count.**
@@ -57,12 +56,15 @@ The natural rollover primitive, `create_annual_records_from_vision_element`
 (`vps_manager.py:221`), ends with `self.db_manager.ensure_project_board_for_ape(ape_id)`
 inside a bare `except Exception: pass`. So a year rollover silently creates a
 **project board** as well as the eight rows WT-M4.C.1 enumerates as "no extras".
-*Recommended:* suppress board creation on the rollover path (explicit flag), and
-name the omission in the WT-M4.C.4 report so the user can create the project
-deliberately. *Alternative:* keep it and add `project_boards` to WT-M4.C.1's
-counted set. **Please pick one.**
 
-**Q3 — WT-M2.B.1's source scan needs a stated boundary.**
+*Decision (user):* **no project board on rollover.** A project can span any
+timeframe, so a new year needs no new board. Board creation is suppressed on the
+rollover path via an explicit flag, and the WT-M4.C.4 report says nothing about
+boards — there is no omission to report, because none was expected.
+WT-M4.C.1's eight-table count stands as written, and the test additionally
+asserts `project_boards` gained **zero** rows.
+
+**Q3 — WT-M2.B.1's source scan needs a stated boundary.** *Confirmed.*
 The spec names five sites. A scan today finds **twelve** week-math sites:
 `isocalendar()` at `vps_manager.py:604`, `:667`, `item_editor.py:559`; week-start
 arithmetic at `db_manager.py:1238`, `vps_manager.py:597`,
@@ -70,36 +72,45 @@ arithmetic at `db_manager.py:1238`, `vps_manager.py:597`,
 `item_editor.py:504`, `:509`, `item_editor_weekly_tactic_dialog.py:426`, `:431`,
 `:490`. Plus `date_utils.py:41`, `:72`, which use `weekday()` for
 business-day skipping — not week identity.
-*Recommended:* convert all twelve; the scan test carries an explicit allowlist
+*Decision:* convert all twelve; the scan test carries an explicit allowlist
 naming `date_utils.py` with the reason. A "we only converted the five the spec
 listed" outcome would leave WT-F2c's inconsistency alive in the picker.
 
 **Q4 — How WT-M7.B actually runs.** It rewrites dates on 24 + 29 existing rows.
 §10 asks the list be reviewed first; WT-M7.B.1 says "after the migration, zero
 violations". Those pull in opposite directions.
-*Recommended:* WT-M7.A (dedupe — a safe merge) runs automatically inside the
-migration, because WT-M1.C's unique index cannot be created until it has.
-WT-M7.B ships as `tools/repair_weekly_tactic_invariants.py`, **dry-run by
-default**, printing the full before/after list; `--apply` executes. The repair
-*function* is unit-tested directly, so all three WT-M7.B criteria stay
-code-testable. **Please confirm this split.**
 
-**Q5 — WT-M4.C.3 vs WT-M4.C.3c are only consistent if parameterised.**
+*Decision (user):* **automatic** — the repair runs inside the migration
+alongside WT-M7.A, judged low risk. No operator tool, no `--apply` gate; spec
+§10's review becomes an after-the-fact look at what the run reported (§6).
+Three consequences the build must carry, so "automatic" does not become
+"silent":
+
+- The repair **logs the full per-item before/after list** to `app.log`, not just
+  a count. WT-M7.B.2's report is the visible artifact and the only thing
+  standing between 53 rewritten dates and an invisible change (P2).
+- Every move writes a `reschedule_history` row with `reason='inv_repair'`
+  (WT-M7.B.3), so any individual rewrite is recoverable afterwards.
+- It runs on **every** app start, so it must be idempotent: a second launch
+  moves zero items. The spec has no criterion for this — WT-M7.A.6 covers the
+  dedupe only — so an extra test is added (§5).
+
+**Q5 — WT-M4.C.3 vs WT-M4.C.3c are only consistent if parameterised.** *Confirmed.*
 WT-M4.C.3 says stop writing `title=f"{segment} {year}"` / `theme=f"{segment} {year} Plan"`.
 WT-M4.C.3c says the four existing callers (`ape_assignment.py:233,387`;
 `ape_period_view.py:242,396`) still behave correctly. Blank titles would visibly
 change those four screens.
-*Recommended:* `_get_or_create_annual_plan_for_ape(ape, created_by_rollover=False)`.
+*Decision:* `_get_or_create_annual_plan_for_ape(ape, created_by_rollover=False)`.
 False keeps today's text exactly (four callers unchanged); True writes blank
 editorial fields and `created_by_rollover=1`. This is the only reading that
 satisfies both criteria.
 
-**Q6 — Rollover reads the taxonomy, not last year's row.**
+**Q6 — Rollover reads the taxonomy, not last year's row.** *Confirmed.*
 `create_annual_records_from_vision_element` builds the target year's AVE+APE from
 `vision_elements` and re-points `annual_vision_element_id` at the new year's AVE.
 That satisfies WT-M4.C.2 and WT-M4.C.3a by construction, and its
 `UNIQUE(year, vision_element_id)` constraints give WT-M4.C.5 idempotence for
-free. *Recommended:* reuse it. If the source vision element is missing, the
+free. *Decision:* reuse it. If the source vision element is missing, the
 cascade fails the transaction with an honest error rather than fabricating a
 lineage (WT-M4.D).
 
@@ -135,8 +146,7 @@ rather than growing either.
 |---|---|---|
 | `src/getmoredone/week_calendar.py` | WT-M2. The **single** owner of week identity (which week contains a date) and week numbering (year + number). Pure functions plus a settings-bound `WeekCalendar`. | ~180 |
 | `src/getmoredone/weekly_tactic.py` | WT-M3 / WT-M4 / WT-M5. `_tactic_of()` predicate, the date-range rule, the re-file planner, the scaffolding cascade, the rollover, `CascadeReport`. | ~420 |
-| `src/getmoredone/weekly_tactic_maintenance.py` | WT-M7.A dedupe + WT-M7.B repair, both returning reports. | ~220 |
-| `tools/repair_weekly_tactic_invariants.py` | WT-M7.B operator entry point, dry-run by default (Q4). | ~80 |
+| `src/getmoredone/weekly_tactic_maintenance.py` | WT-M7.A dedupe + WT-M7.B repair, both run automatically by the migration and both returning reports that are logged in full (Q4). | ~240 |
 
 ### Changed source files
 
@@ -309,7 +319,10 @@ different runs.
 
 Reuses `create_annual_records_from_vision_element` (Q6), whose
 `UNIQUE(year, vision_element_id)` constraints give WT-M4.C.5 idempotence and
-whose FK handling gives WT-M4.C.3a. Editorial fields blank and flagged per
+whose FK handling gives WT-M4.C.3a. Its trailing
+`ensure_project_board_for_ape` call is suppressed on this path (Q2) — a project
+spans any timeframe, so a new year needs no new board — and WT-M4.C.1 asserts
+`project_boards` gained zero rows. Editorial fields blank and flagged per
 WT-D7a/WT-D13, parameterised per Q5. Stubs are discovered by
 `created_by_rollover`, **never** by empty fields — WT-M4.C.3b's adversarial case
 is a hand-authored vision with a blank statement, which must **not** be reported.
@@ -338,14 +351,22 @@ inherits them explicitly.
 *Tests:* `tests/test_weekly_tactic_completion.py` — WT-M5.A.1..6, B.1, C.1.
 
 ### Step 10 — WT-M7.B: invariant repair
-*Depends on:* Step 6.
+*Depends on:* Step 6 (it reuses WT-M3.B's ordered date rule, so the repair and
+the live re-file can never disagree about where a date should land).
 
 Repairs the 24 start-date and 29 due-date violations, writing
-`reschedule_history` rows with `reason='inv_repair'` and reporting how many items
-moved and by how much — a silent rewrite of 29 items is exactly the invisible
-drop P2 warns about. Shipped dry-run-by-default per Q4.
+`reschedule_history` rows with `reason='inv_repair'` and logging the full
+per-item before/after list — a silent rewrite of 53 dates is exactly the
+invisible drop P2 warns about, and the log is the only thing that makes it
+visible now that Q4 makes the run automatic.
 
-*Tests:* `tests/test_weekly_tactic_dedupe.py` — WT-M7.B.1..3.
+**Runtime ordering inside `_run_weekly_tactic_migrations`:** dedupe (WT-M7.A) →
+schema + index (WT-M1) → repair (WT-M7.B). The repair runs last because it needs
+the `weekly_tactic_id` column, and it must be a **no-op on an already-clean DB**
+— it executes on every app start, not once.
+
+*Tests:* `tests/test_weekly_tactic_dedupe.py` — WT-M7.B.1..3, plus the
+idempotence test the spec does not carry (§5).
 
 ### Step 11 — WT-M6: entry points
 *Depends on:* everything above.
@@ -505,6 +526,12 @@ Test paths are the spec's verbatim; `::` rows continue the file above them.
 | WT-M7.B.2 | `::test_wt_m7b2_repair_reports_what_it_moved` | 10 |
 | WT-M7.B.3 | `::test_wt_m7b3_repair_records_history` | 10 |
 
+*Added beyond the spec, required by Q4's automatic run:*
+`::test_wt_m7b_repair_idempotent_second_run_moves_nothing` — the repair executes
+on every app start, so a second run on a repaired DB must move zero items and
+write zero history rows. WT-M7.A.6 covers this for the dedupe; nothing covered it
+for the repair.
+
 **Coverage: 83 of 83 leaf criteria have a named test. None is unmapped.**
 
 ---
@@ -512,12 +539,13 @@ Test paths are the spec's verbatim; `::` rows continue the file above them.
 ## 6. Criteria that cannot be fully proved by code
 
 Three items where the automated test is necessary but not sufficient. Each has a
-proposed human-review step, per the global planning rules and §10 of the spec.
+human-review step, per the global planning rules and §10 of the spec. None of
+the three blocks the build — Q4 removed the one gate that would have.
 
-| Criteria | What the test cannot see | Proposed human review |
+| Criteria | What the test cannot see | Human review |
 |---|---|---|
 | WT-M4.C.3 / WT-M4.C.3b / WT-M6.B.5 | The assertions prove the fields are blank and the flag is 1. They cannot tell whether an empty `annual_visions` row **renders** badly, or whether a stub **reads** to the user as a real plan. | After Step 8: run the app under the venv, trigger a rollover, and look at the VSP Planning and Vision Planning Hub screens. Check `app.log` for exceptions. Record the result in the step's handoff note with a screenshot reference. |
-| WT-M7.B | Whether a given violation is **drift or deliberate user data**. The repair cannot know, and 29 items is a large silent rewrite. | Before any `--apply`: run `tools/repair_weekly_tactic_invariants.py` in dry-run, review the before/after list, and get explicit sign-off. This is why Q4 recommends the tool split. |
+| WT-M7.B | Whether a given violation is **drift or deliberate user data**. The repair cannot know. | Q4 made the run automatic, so this moves from a gate to an audit: after the first launch on the live DB, read the repair's per-item before/after list in `app.log` and confirm none of the 53 moved dates was deliberate. Every move carries a `reschedule_history` row with `reason='inv_repair'`, so a wrong one is reversible. |
 | WT-M6.A.2 / WT-M6.A.4 | The Org tab renders and the picker reaches any week — assertable at the boundary, but not that the rebuilt tab is *usable*. | After Step 11: open Edit Action → Org on a linked item, an unlinked item, and an item whose tactic was deleted (WT-M3.A.4's stale stamp), in the running app. |
 
 ---
@@ -546,6 +574,7 @@ The six from spec §9 stand as written. Three more surfaced today:
 |---|---|
 | The `commit=False` seam misses one nested creator, so WT-M4.D.2 passes on the injected failure but a real one leaks rows. | WT-M4.D.1 is tested by making `conn.commit` **raise** inside the transaction, which catches any missed site regardless of call depth — not by a source scan. |
 | The hook at `update_action_item` fires on saves that were never meant to re-file (e.g. a title edit on a linked item whose dates are stale). | WT-M7.B repairs pre-existing violations first (Step 10 precedes Step 11); after that a no-op re-file is genuinely a no-op. WT-M3.D.2 asserts unlinked items are untouched on all three paths. |
+| **Q4's automatic repair moves a date the user meant to keep.** 53 rewrites land without a confirmation step. | Bounded, not eliminated: the full per-item list is logged, every move writes a reversible `reschedule_history` row, and §6's audit reads that list after the first live launch. The residual risk — a deliberate out-of-week date silently corrected — is accepted as the user's call. |
 | WT-M2.B.1's scan is written narrowly and leaves WT-F2c's inconsistency alive. | Q3 fixes the boundary explicitly, with the allowlist named in the test. |
 | A GUI test needs a display and skips silently in a headless run, so WT-M6 looks covered when it is not. | `test_rm3b_ui_tests_are_not_skipped_headless` already guards this; the new surface tests are written to run under the workflow's virtual display, not to `importorskip` their way out. |
 | Step 11's 17 surface tests are the largest single block and the most likely to be cut short. | They are the P25 protection and the reason the feature reaches users at all. No step is marked done with any surface test missing; a surface with no completion path is **recorded as such**, not quietly dropped from the count. |
