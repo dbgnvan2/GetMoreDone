@@ -73,6 +73,7 @@ Project), every link snapshotted by id, then each level renamed in turn.
 | **RN-D3** | **The APE ↔ Annual Initiative link goes on the initiative** (`annual_initiatives.annual_plan_element_id`), because an initiative is created lazily *for* an APE. Nullable, so pre-existing rows migrate rather than block. |
 | **RN-D4** | **`vision_segments` and `segment_descriptions` stay two tables**, linked by a new `vision_segments.segment_description_id`. Merging them is a bigger change than this spec and is not required to hold RN-INV1. |
 | **RN-D5** | **Name columns are kept and refreshed on rename** (RN-INV4). They are what the UI reads and what the Weekly Tactic title derives from; removing them would be a much wider change for no gain once nothing *links* through them. |
+| **RN-D7** | **An Annual Initiative's title stays derived** (2026-08-19, user). A rename refreshes it, the same way a Weekly Tactic's title is re-derived from its APE and week. Nothing in the app treats an initiative title as hand-authored prose, and leaving it stale would put two different names on one thing. |
 | **RN-D6** | **Existing broken data is repaired, and reported.** A user who has already renamed has orphaned rows now. The repair matches what it can by id-through-lineage and reports what it cannot — same shape as WT-M7.B. |
 
 ## 6. Non-goals
@@ -193,8 +194,9 @@ whole spec, and it goes green only when the rest is done.
 
 ## 10. Criteria needing human review
 
-- **RN-M3.A** — whether a rename *should* rewrite an Annual Initiative's title,
-  or only the link. If a user has edited that title by hand, refreshing it
-  destroys their words. My reading is that the title is derived and should
-  follow; if you have hand-edited initiative titles, say so and RN-M3.A becomes
-  "link only, leave the title alone".
+- **RN-M3.A — settled (2026-08-19, user): the title stays derived.** A rename
+  refreshes the Annual Initiative's title. See RN-D7. The one thing worth a look
+  after the first run is the migration report from RN-M5.A: on a database where
+  a rename has already happened, it names every APE with no resolvable segment
+  and every duplicate initiative. Whether any of those duplicates holds work you
+  want to keep is a judgement no assertion can make.
