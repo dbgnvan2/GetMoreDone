@@ -98,8 +98,15 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             raise
         else:
             # force_commit, because `finally` has not reopened the gate yet and
-            # this is the one commit the gate exists to let through.
-            conn.force_commit()
+            # this is the one commit the gate exists to let through. Guarded:
+            # raised from the `else` arm it is invisible to `except` above, and
+            # a locked database would otherwise leave the cascade's writes
+            # uncommitted on the connection for the next save to publish.
+            try:
+                conn.force_commit()
+            except BaseException:
+                conn.rollback()
+                raise
         finally:
             # Always, on every exit path. The gate is process-wide state; it
             # must never outlive the block that closed it.
@@ -225,8 +232,20 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         return None
 
     def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True,
-                           refile: bool = True) -> bool:
+                           refile: bool = True, follow_tactic: bool = False) -> bool:
         """Update an existing action item.
+
+            follow_tactic: WT-D1 — True files the item into the week of the
+                Weekly Tactic it now names, rather than the week its own start
+                date names, and moves its dates to match. Passed only by the
+                "Set Wk Tactic" picker, which is the one place the user says
+                which week they want.
+
+                Inferring this from "the in-memory tactic differs from the
+                stored one" looked equivalent and was not: the item editor holds
+                the ActionItem it opened with, so anything that re-filed the row
+                behind an open dialog made the next Save read as a deliberate
+                choice and threw away the date the user had just typed.
 
             refile: WT-D12 — False skips the Weekly Tactic re-file entirely.
                 Only the Google Calendar importer passes it: an imported item
@@ -289,8 +308,13 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         # records behind (WT-M4.D). The re-file may move the item's dates, so it
         # has to run before they are written.
         if refile:
+            target = item.start_date
+            if follow_tactic:
+                chosen = self.get_action_item(tactic_of(item))
+                if chosen is not None:
+                    target = chosen.start_date
             with self.transaction():
-                self._refile_into_weekly_tactic(item, item.start_date)
+                self._refile_into_weekly_tactic(item, target)
                 return self._save_action_item(item, existing)
 
         self.last_cascade_report = None
@@ -409,27 +433,12 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             self._weekly_tactic_engine = WeeklyTacticEngine(
                 self, self._vps_manager, calendar=self.week_calendar
             )
+            return self._weekly_tactic_engine
+        # Reading the property is what pushes a changed setting onto the cached
+        # engine. Refreshing only when a *week item* was saved meant the first
+        # ordinary save after the setting changed still used the old boundary.
+        self.week_calendar
         return self._weekly_tactic_engine
-
-    def _refile_target_date(self, item: ActionItem, default_target):
-        """Which week the item should be filed into.
-
-        Purpose: an explicitly chosen Weekly Tactic wins over the item's own
-                 start date.
-        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-d1
-        Tests:   tests/test_weekly_tactic_surfaces.py::test_wt_m6b1_item_editor_refiles
-
-        WT-D1 is explicit that the start date moves *with* the Weekly Tactic.
-        Re-deriving the week from the item's own start date on every save meant
-        picking a tactic by hand did nothing: the save put the item straight
-        back on the week its start date already named.
-        """
-        stored = self.get_action_item(item.id)
-        chosen = tactic_of(item)
-        if stored is None or chosen == tactic_of(stored):
-            return default_target
-        tactic = self.get_action_item(chosen)
-        return tactic.start_date if tactic else default_target
 
     def _refile_into_weekly_tactic(self, item: ActionItem, target_date) -> None:
         """WT-M4 — re-file ``item`` for ``target_date`` if it has a tactic.
@@ -449,9 +458,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             self.last_cascade_report = None
             return
 
-        report = self.weekly_tactic_engine.plan_refile(
-            item, self._refile_target_date(item, target_date)
-        )
+        report = self.weekly_tactic_engine.plan_refile(item, target_date)
         self.last_cascade_report = report
 
     def _commit_unless_in_transaction(self):

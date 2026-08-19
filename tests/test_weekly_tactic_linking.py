@@ -118,6 +118,12 @@ def test_wt_m3c_choosing_a_tactic_moves_the_item_to_that_week(tmp_path):
     hand-picked tactic did nothing: the save put the item straight back on the
     week its start date already named. Found by driving the editor's own
     selection handler rather than calling update_action_item directly.
+
+    The intent is carried explicitly by ``follow_tactic``. Inferring it from
+    "the in-memory link differs from the stored one" looked equivalent and was
+    not — the editor holds the item it opened with, so anything that re-filed
+    the row behind an open dialog made the next Save read as a deliberate
+    choice and discard the date the user had just typed.
     """
     vps = make_vps(tmp_path)
     try:
@@ -131,7 +137,7 @@ def test_wt_m3c_choosing_a_tactic_moves_the_item_to_that_week(tmp_path):
 
         chosen = manager.get_action_item(item.id)
         chosen.weekly_tactic_id = there.id
-        manager.update_action_item(chosen)
+        manager.update_action_item(chosen, follow_tactic=True)
 
         after = manager.get_action_item(item.id)
         assert after.weekly_tactic_id == there.id, "the choice was overridden"
@@ -140,6 +146,46 @@ def test_wt_m3c_choosing_a_tactic_moves_the_item_to_that_week(tmp_path):
         assert week.start_date <= after.start_date <= week.due_date
         # ...and the original-week stamp still records where it began.
         assert after.weekly_tactic_start_date == "2026-02-23"
+    finally:
+        vps.close()
+
+
+def test_wt_m3c_a_stale_in_memory_link_does_not_discard_a_typed_date(tmp_path):
+    """Without follow_tactic, the item's own dates decide the week.
+
+    The item editor holds the ActionItem it opened with. If another surface
+    re-files that row while the dialog is open, the held link is stale — and
+    treating a stale link as a deliberate choice threw away the date the user
+    had just typed, silently.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        first = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = make_daily_item(vps, "Task", start="2026-02-25", due="2026-02-25")
+        _attach(vps, item, first)
+
+        held = manager.get_action_item(item.id)          # the open dialog's copy
+
+        # Another surface moves the item while that dialog is open.
+        elsewhere = manager.get_action_item(item.id)
+        elsewhere.start_date = "2026-03-11"
+        elsewhere.due_date = "2026-03-11"
+        manager.update_action_item(elsewhere)
+        assert manager.get_action_item(item.id).weekly_tactic_id != first.id
+
+        # The user types a date in the still-open dialog and saves.
+        held.start_date = "2026-04-08"
+        held.due_date = "2026-04-08"
+        manager.update_action_item(held)
+
+        after = manager.get_action_item(item.id)
+        assert after.start_date == "2026-04-08", (
+            "the typed date was discarded in favour of a stale tactic link"
+        )
+        week = manager.get_action_item(after.weekly_tactic_id)
+        assert week.start_date == "2026-04-06"
     finally:
         vps.close()
 

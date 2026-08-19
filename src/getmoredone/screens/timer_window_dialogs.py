@@ -9,6 +9,7 @@ from typing import Optional, TYPE_CHECKING
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
 from ..models import ActionItem
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, status_text_color
 
 if TYPE_CHECKING:
@@ -191,6 +192,7 @@ class NextActionWindow(ctk.CTkToplevel):
 
             # Save to database
             self.db_manager.update_action_item(self.item)
+            notify_weekly_tactic_changes(self.db_manager, self)
 
             print(f"[DEBUG] Notes saved for item: {self.item.id}")
 

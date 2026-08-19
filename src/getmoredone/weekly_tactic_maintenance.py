@@ -539,8 +539,21 @@ def repair_weekly_tactic_invariants(
         change = bring_into_week(item, week_start, week_end)
 
         if (change["from_start"], change["from_due"]) == (change["to_start"], change["to_due"]):
-            # Nothing actually moved. Writing an identical UPDATE and a history
-            # row anyway would report a change that did not happen.
+            # Nothing moved, yet the row was judged out of range — so no move
+            # can fix it (a tactic whose own due_date precedes its start, say).
+            # Reporting it as "moved" would be a phantom change; dropping it
+            # would put it in neither list, which is the hole the skipped list
+            # exists to close.
+            skipped.append({
+                "item_id": row["item_id"],
+                "tactic_id": row["tactic_id"],
+                "reason": "no move brings this item inside its tactic's range",
+            })
+            logger.warning(
+                "[weekly_tactic] item %s is outside tactic %s (%s..%s) and no "
+                "move fixes it; left unchanged",
+                row["item_id"], row["tactic_id"], row["week_start"], row["week_end"],
+            )
             continue
 
         conn.execute(

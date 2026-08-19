@@ -1063,6 +1063,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             # Save
             if self.item_id:
                 self.db_manager.update_action_item(item)
+                # WT-M6.B.5 — the main Save button is the ordinary way a start date
+                # changes, and completion re-filing is what triggers a year rollover.
+                notify_weekly_tactic_changes(self.db_manager, self)
             else:
                 self.db_manager.create_action_item(item, apply_defaults=True)
                 self.item_id = item.id  # Update item_id after creating new item
@@ -1526,7 +1529,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                         current_item.annual_plan_element_id,
                         current_item.start_date,
                     )
-                self.db_manager.update_action_item(current_item)
+                # follow_tactic: the user picked this week explicitly, so the
+                # item's dates move to it (WT-D1) rather than the week being
+                # re-derived from the dates.
+                self.db_manager.update_action_item(current_item, follow_tactic=True)
                 # WT-M6.B.5 — say what the cascade built before this dialog is
                 # torn down and reopened, or the report is discarded unseen.
                 notify_weekly_tactic_changes(self.db_manager, self)

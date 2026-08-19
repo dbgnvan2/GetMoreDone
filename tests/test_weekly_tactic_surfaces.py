@@ -208,8 +208,6 @@ def test_wt_m6b1_item_editor_refiles(tmp_path):
 
 def test_wt_m6b1_timer_window_refiles(tmp_path):
     """The timer window's own save handler re-files the item it holds."""
-    from src.getmoredone.screens.timer_window import TimerWindow
-
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
@@ -219,9 +217,7 @@ def test_wt_m6b1_timer_window_refiles(tmp_path):
         held.start_date = "2026-03-04"
         held.due_date = "2026-03-04"
 
-        # The timer holds a live ActionItem and saves it through the hook. Find
-        # the method that does so, then drive it.
-        assert "update_action_item" in TimerWindow.__module__ or True
+        # The timer holds a live ActionItem and saves it through the hook.
         manager.update_action_item(held)
 
         _assert_refiled(manager, item.id, "2026-03-02")
@@ -393,11 +389,16 @@ def test_wt_m6b4_completion_refiles(tmp_path, surface):
 
         _assert_refiled(manager, item.id, "2026-03-09")
 
-        # ...and the screen really does make that call.
-        from pathlib import Path as _P
-        path = (_P(__file__).resolve().parents[1] / "src" / "getmoredone"
-                / "screens" / f"{surface}.py")
-        if path.exists():
+        # ...and the screen really does make that call. complete_and_create is
+        # a DatabaseManager method, not a screen, and is named as such rather
+        # than skipped on a missing file — a quiet skip is how a renamed screen
+        # drops out of coverage.
+        if surface == "complete_and_create":
+            assert hasattr(manager, "complete_and_create")
+        else:
+            path = (Path(__file__).resolve().parents[1] / "src" / "getmoredone"
+                    / "screens" / f"{surface}.py")
+            assert path.exists(), f"{surface}.py is in COMPLETION_SURFACES but missing"
             text = path.read_text(encoding="utf-8")
             assert any(name in text for name in
                        ("complete_action_item", "complete_and_create",
@@ -478,3 +479,110 @@ def test_wt_m6b5_created_records_summarised_to_user(tmp_path):
         assert manager.last_cascade_report.describe() == ""
     finally:
         vps.close()
+
+
+# --------------------------------------------------------------------------
+# The reader for WT-M6.B.5 — a report nobody reads is no report at all
+# --------------------------------------------------------------------------
+
+def test_wt_m6b5_the_notifier_only_interrupts_when_it_should():
+    """Routine week creation is logged; stubs and failures interrupt."""
+    from src.getmoredone.screens.week_collision_notice import (
+        cascade_needs_attention,
+        describe_cascade,
+    )
+    from src.getmoredone.weekly_tactic import CascadeReport
+
+    assert cascade_needs_attention(None) is False
+    assert describe_cascade(None) is None
+
+    routine = CascadeReport()
+    routine.record("weekly_tactic", "w-1", "W9")
+    assert cascade_needs_attention(routine) is False, (
+        "a modal on every cross-week move is noise the user learns to dismiss"
+    )
+    assert "weekly tactic" in describe_cascade(routine)
+
+    rollover = CascadeReport()
+    rollover.record("annual_visions", "av-1", "2027", stub=True)
+    assert cascade_needs_attention(rollover) is True
+    assert "need your words" in describe_cascade(rollover)
+
+    for status, phrase in (("tactic_missing", "no longer exists"),
+                           ("ape_missing", "no Annual Plan Element")):
+        failed = CascadeReport(status=status)
+        assert failed.failed is True
+        assert cascade_needs_attention(failed) is True
+        assert phrase in describe_cascade(failed), status
+
+
+def test_wt_m6b5_a_failure_is_not_dressed_as_good_news(monkeypatch):
+    """A failed re-file must not arrive as an info box titled "created"."""
+    from src.getmoredone.screens import week_collision_notice as notice
+    from src.getmoredone.weekly_tactic import CascadeReport
+
+    shown = []
+    monkeypatch.setattr(notice.messagebox, "showinfo",
+                        lambda title, msg, **k: shown.append(("info", title)))
+    monkeypatch.setattr(notice.messagebox, "showwarning",
+                        lambda title, msg, **k: shown.append(("warning", title)))
+
+    rollover = CascadeReport()
+    rollover.record("annual_plans", "ap-1", "2027", stub=True)
+    notice.notify_cascade(SimpleNamespace(last_cascade_report=rollover))
+    assert shown[-1] == ("info", "Plan records created")
+
+    notice.notify_cascade(SimpleNamespace(
+        last_cascade_report=CascadeReport(status="ape_missing")))
+    assert shown[-1][0] == "warning", "a failure must not use the success icon"
+
+
+def test_wt_m6b5_every_report_producing_surface_reads_it():
+    """P25 — the report is produced on many paths; it must be read on them.
+
+    It was wired to six inline handlers and nothing else, so the main Save
+    button and every completion path — the one that triggers a year rollover
+    when you finish something planned for last December — said nothing.
+    """
+    # Two screens call a producing method but can never move a date, so a
+    # cascade notice there would be noise. Named with the reason rather than
+    # skipped by a pattern, so a screen cannot fall out of coverage quietly.
+    NO_DATE_CHANGE = {
+        # Writes is_meeting / meeting_start_time after a Google Calendar link.
+        "calendar_dialog.py",
+        # Set Parent / Clear Parent — writes parent_id only. WT-D11 gave the
+        # tactic link its own column precisely so this cannot move a week.
+        "item_editor_dialogs.py",
+    }
+
+    screens = Path(__file__).resolve().parents[1] / "src" / "getmoredone" / "screens"
+    producers = ("update_action_item", "reschedule_item",
+                 "bulk_update_action_items", "complete_action_item",
+                 "complete_and_create", "uncomplete_action_item")
+    missing = []
+    for path in sorted(screens.glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        if not any(f".{name}(" in text for name in producers):
+            continue
+        if path.name in NO_DATE_CHANGE:
+            # Reading a date is fine (calendar_dialog seeds its picker from
+            # start_date); assigning one is not.
+            assert not re.search(r"\.(start_date|due_date)\s*=\s*(?!=)", text), (
+                f"{path.name} is allowlisted as not moving dates, but now assigns one"
+            )
+            continue
+        if "notify_weekly_tactic_changes" not in text:
+            missing.append(path.name)
+    assert not missing, (
+        f"screens that change an item but never report what the cascade did: {missing}"
+    )
+
+
+def test_wt_m6b5_the_allowlist_assertion_can_actually_fire():
+    """Guards the guard (P24): reading a date must pass, writing one must not."""
+    assert not re.search(r"\.(start_date|due_date)\s*=\s*(?!=)",
+                         "default = self.item.start_date or today()")
+    assert not re.search(r"\.(start_date|due_date)\s*=\s*(?!=)",
+                         "if item.start_date == other:")
+    assert re.search(r"\.(start_date|due_date)\s*=\s*(?!=)",
+                     "self.item.start_date = new_value")

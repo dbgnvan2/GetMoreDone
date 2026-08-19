@@ -11,7 +11,7 @@ criterion whose test was never written shows as MISSING rather than as prose.
 
 **83 of 83 criteria have a collected test. None is unmapped.**
 
-Suite: `./venv/bin/python -m pytest -q` → exit 0, 815 passed, 2 skipped.
+Suite: `./venv/bin/python -m pytest -q` → exit 0, 830 passed, 2 skipped.
 
 > Named for its feature rather than `docs/spec_coverage.md`, which already
 > belongs to the Project Notes feature (commit cf4189d) and is asserted by

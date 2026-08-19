@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from ..color_contrast import pick_text_color
 from .segment_color_utils import resolve_segment_color_for_item
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import apply_segment_accent, semantic_colors, button_style, combo_box_style, list_row_font
 from .title_format import (
     split_action_item_title,
@@ -327,4 +328,5 @@ class CompletedScreen(ctk.CTkFrame):
     def uncomplete_item(self, item_id: str):
         """Reopen a completed item."""
         self.db_manager.uncomplete_action_item(item_id)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()

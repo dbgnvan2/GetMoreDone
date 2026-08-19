@@ -12,6 +12,7 @@ from PIL import Image
 from ..color_contrast import pick_text_color
 from ..models import ActionItem, PriorityFactors, ProjectBoard, ProjectBoardStatus
 from ..paths import project_root
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, combo_box_style, semantic_colors
 
 if TYPE_CHECKING:
@@ -1489,6 +1490,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
 
     def complete_item(self, item_id: str):
         self.db_manager.complete_action_item(item_id)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def unlink_item(self, item_id: str):
@@ -1538,6 +1540,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
 
         try:
             self.db_manager.bulk_update_action_items(item_ids, start_date, priority)
+            notify_weekly_tactic_changes(self.db_manager, self)
             self.selected_item_ids.clear()
             self.item_checkbox_vars.clear()
             self.refresh()

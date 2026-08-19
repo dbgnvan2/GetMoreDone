@@ -704,6 +704,7 @@ class TodayScreen(ctk.CTkFrame):
     def complete_item(self, item_id: str):
         """Mark item as complete."""
         if self.db_manager.complete_action_item(item_id):
+            notify_weekly_tactic_changes(self.db_manager, self)
             self._session_completed_count += 1
             self.refresh()
             self._maybe_show_completion_confetti()

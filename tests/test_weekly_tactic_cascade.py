@@ -3,11 +3,13 @@
 Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m4
 """
 
+import sqlite3
 from unittest.mock import patch
 
 import pytest
 
 from src.getmoredone.models import ActionItem
+from src.getmoredone.db_manager import DatabaseManager
 from tests.weekly_tactic_fixtures import (
     make_daily_item,
     make_vps,
@@ -739,5 +741,89 @@ def test_wt_m4a_missing_lineage_is_reported_not_silently_skipped(tmp_path):
         manager.update_action_item(cleared)
         assert manager.last_cascade_report.status == "no_target_date"
         assert manager.last_cascade_report.failed is False
+    finally:
+        vps.close()
+
+
+def test_wt_m4d_the_commit_gate_reopens_on_any_exception(tmp_path):
+    """A BaseException through a transaction must not close the gate for good.
+
+    ``except Exception`` does not catch KeyboardInterrupt. With the gate
+    reopened only in the except/else arms, one Ctrl-C left commits suppressed
+    for the life of the process while ``_in_transaction`` read False — so every
+    later save looked fine on the connection and was silently discarded at
+    close(). ``./start.sh`` runs the app from a terminal, so Ctrl-C is a
+    reachable trigger.
+    """
+    vps = make_vps(tmp_path, "gate.db")
+    db_path = vps.db_manager.db.db_path
+    try:
+        manager = vps.db_manager
+        seed_ape(vps)
+
+        with pytest.raises(KeyboardInterrupt):
+            with manager.transaction():
+                make_daily_item(vps, "Discarded", start="2026-02-25", due="2026-02-25")
+                raise KeyboardInterrupt
+
+        assert manager.db.conn.commits_deferred is False, (
+            "the commit gate stayed closed after a BaseException"
+        )
+        assert manager._in_transaction is False
+
+        # A later save must actually reach disk.
+        kept = make_daily_item(vps, "Kept", start="2026-02-25", due="2026-02-25")
+    finally:
+        vps.close()
+
+    reopened = DatabaseManager(db_path)
+    try:
+        titles = {row["title"] for row in reopened.db.conn.execute(
+            "SELECT title FROM action_items")}
+        assert "Kept" in titles, "the save after the interrupt never reached disk"
+        assert "Discarded" not in titles, "the interrupted transaction must roll back"
+    finally:
+        reopened.close()
+
+
+def test_wt_m4d_a_failing_commit_still_rolls_back(tmp_path):
+    """An exception from the owning commit is invisible to `except` above it."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        seed_ape(vps)
+        conn = manager.db.conn
+
+        class _FailingCommit:
+            def __init__(self, inner):
+                self._inner = inner
+                self.rolled_back = False
+
+            def force_commit(self):
+                raise sqlite3.OperationalError("database is locked")
+
+            def rollback(self):
+                self.rolled_back = True
+                return self._inner.rollback()
+
+            def __getattr__(self, name):
+                return getattr(self._inner, name)
+
+        proxy = _FailingCommit(conn)
+        manager.db.conn = proxy
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                with manager.transaction():
+                    proxy.execute(
+                        "INSERT INTO action_items (id, who, title, status, "
+                        "item_type, priority_score, created_at, updated_at) "
+                        "VALUES ('x', 'a', 'b', 'open', 'daily', 0, 'n', 'n')")
+            assert proxy.rolled_back, (
+                "a failed commit left the writes on the connection for the next "
+                "unrelated save to publish"
+            )
+            assert proxy.commits_deferred is False
+        finally:
+            manager.db.conn = conn
     finally:
         vps.close()

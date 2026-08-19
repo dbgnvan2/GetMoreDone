@@ -6,7 +6,7 @@ import customtkinter as ctk
 from datetime import datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 
-from .week_collision_notice import describe_week_collision
+from .week_collision_notice import describe_week_collision, notify_weekly_tactic_changes
 from ..theme import button_style, status_text_color
 
 if TYPE_CHECKING:
@@ -127,6 +127,7 @@ class RescheduleDialog(ctk.CTkToplevel):
                 notice = describe_week_collision(self.db_manager.last_week_collision)
                 self.error_label.configure(text=notice or "The item could not be rescheduled.")
                 return
+            notify_weekly_tactic_changes(self.db_manager, self)
             self.destroy()
 
         except Exception as e:

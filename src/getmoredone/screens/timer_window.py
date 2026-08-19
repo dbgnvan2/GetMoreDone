@@ -12,6 +12,7 @@ from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
 from ..date_utils import increment_date
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, semantic_colors, status_text_color
 from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.music_library import select_track
@@ -617,6 +618,7 @@ class TimerWindow(ctk.CTkToplevel):
                 completion_note = dialog.result
                 self.save_work_log(completion_note)
                 self.db_manager.complete_action_item(self.item.id)
+                notify_weekly_tactic_changes(self.db_manager, self)
                 if self.on_close_callback:
                     self.on_close_callback()
                 return
@@ -630,6 +632,7 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Complete the action item
             self.db_manager.complete_action_item(self.item.id)
+            notify_weekly_tactic_changes(self.db_manager, self)
             print(f"[DEBUG] Action item completed")
 
             # Close window

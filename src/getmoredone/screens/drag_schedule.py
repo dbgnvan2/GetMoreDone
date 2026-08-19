@@ -11,6 +11,7 @@ from typing import Optional, TYPE_CHECKING
 from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, combo_box_style, semantic_colors
 from .drag_schedule_support import (
     color_for_day_stats,
@@ -1253,6 +1254,7 @@ class DragScheduleScreen(ctk.CTkFrame):
                     target_date,
                     "Drag-and-drop schedule"
                 )
+            notify_weekly_tactic_changes(self.db_manager, self)
             self.refresh()
         elif target_project_id:
             for item in self.drag_items:

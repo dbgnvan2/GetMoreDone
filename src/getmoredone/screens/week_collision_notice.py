@@ -31,14 +31,20 @@ def describe_cascade(report: Any) -> Optional[str]:
     """What a re-file created, phrased for a status line. None if nothing was.
 
     Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6b5
-    Tests: tests/test_weekly_tactic_surfaces.py::test_wt_m6b5_summary_reaches_a_user_surface
+    Tests: tests/test_weekly_tactic_surfaces.py::test_wt_m6b5_created_records_summarised_to_user
     """
     if report is None:
         return None
-    if getattr(report, "failed", False):
+    status = getattr(report, "status", "refiled")
+    if status == "tactic_missing":
         return (
-            "This item's Weekly Tactic could not be found, so it was saved "
+            "This item's Weekly Tactic no longer exists, so the item was saved "
             "without being re-filed and may now sit outside its week."
+        )
+    if status == "ape_missing":
+        return (
+            "This item's Weekly Tactic has no Annual Plan Element, so the item "
+            "was saved without being re-filed and may now sit outside its week."
         )
     text = report.describe() if hasattr(report, "describe") else ""
     return text or None
@@ -75,7 +81,11 @@ def notify_cascade(db_manager: Any, parent: Any = None) -> bool:
     message = describe_cascade(report)
     if not message:
         return False
-    messagebox.showinfo("Plan records created", message, parent=parent)
+    if getattr(report, "failed", False):
+        # A failure under a success title with an info icon reads as good news.
+        messagebox.showwarning("Item not re-filed", message, parent=parent)
+    else:
+        messagebox.showinfo("Plan records created", message, parent=parent)
     return True
 
 

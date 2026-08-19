@@ -9,6 +9,7 @@ from ..models import ActionItem, Status
 from ..color_contrast import pick_text_color
 from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
 from .segment_color_utils import resolve_segment_color_for_item
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import apply_segment_accent, semantic_colors, button_style, list_row_font
 from .title_format import (
     split_action_item_title,
@@ -348,6 +349,7 @@ class HierarchicalScreen(ctk.CTkFrame):
     def complete_item(self, item_id: str):
         """Mark item as complete."""
         self.db_manager.complete_action_item(item_id)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def edit_item(self, item_id: str):
