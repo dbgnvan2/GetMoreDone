@@ -51,6 +51,17 @@ Referenced by ID from the global catalogue; listed here because they recur.
 
 ## Open risks (found by review, not yet bitten)
 
+- **`with self.db.conn:` rolls back the whole connection, not just its block.**
+  `_DeferredCommitConnection.__exit__` calls `self._conn.rollback()` on the raw
+  connection, which discards everything uncommitted — including an enclosing
+  `transaction()`'s work. Harmless today: the two functions that use it
+  (`link_item_to_project_exclusive`, `inherit_project_links`) have no caller
+  inside `transaction()`, and `transaction()` re-raises anyway. It becomes a
+  real bug the day either is called inside a transaction whose exception is
+  *caught* — the outer writes would already be gone, silently.
+  *Ask:* is this `with conn:` nested inside a `transaction()` whose exception
+  the caller swallows?
+
 - **2026-08-18 — `build-windows` and `build-macos` call `action-gh-release` concurrently
   with the same `tag_name`.** Check-then-create race on the first tagged run. A red job
   does **not** un-publish a Release: if one job wins the create and the other errors,

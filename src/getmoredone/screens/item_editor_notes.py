@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import customtkinter as ctk
-from datetime import datetime
+from datetime import date, datetime
 
 from ..models import ActionItem, ItemLink
 from ..theme import button_style, status_text_color
@@ -134,6 +134,19 @@ class ItemEditorNotesMixin:
                 self.error_label.configure(text=errors[0].message)
                 return False
 
+            # The other fields save_item sets on a brand-new item, applied
+            # before the insert rather than as extra updates afterwards.
+            # week_action_id is deliberately left out: it is the dead legacy FK
+            # (WT-F6), NULL on every row and pointing at an empty table.
+            item.segment_description_id = getattr(self, "segment_description_id", None)
+            stamp = self.weekly_tactic_start_var.get().strip()
+            if stamp:
+                try:
+                    date.fromisoformat(stamp)
+                    item.weekly_tactic_start_date = stamp
+                except ValueError:
+                    pass
+
             # Save and get the ID
             self.db_manager.create_action_item(item, apply_defaults=True)
             self.item_id = item.id
@@ -144,16 +157,22 @@ class ItemEditorNotesMixin:
             # Note" instead of "Save" silently drops it while the Action Plan
             # block goes on displaying the choice (P5: the sibling call was not
             # hardened; P6: a label with no row behind it).
-            if self._apply_project_link(item.id):
-                self.item = self.db_manager.get_action_item(item.id) or item
-            self.refresh_project_display()
+            #
+            # Order matters and must match save_item: the tactic re-file writes
+            # its own Annual Plan Element onto the item, so the project link
+            # goes LAST or the APE you get depends on which button you pressed.
             if getattr(self, "pending_weekly_tactic_id", None):
                 self.item.weekly_tactic_id = self.pending_weekly_tactic_id
                 self.db_manager.update_action_item(self.item, follow_tactic=True)
                 self.pending_weekly_tactic_id = None
+                self.item = self.db_manager.get_action_item(item.id) or self.item
                 # WT-M6.B.5 — follow_tactic moves the item's dates, so whatever
                 # the cascade built has to be said out loud here too (P25).
                 notify_weekly_tactic_changes(self.db_manager, self)
+
+            if self._apply_project_link(item.id):
+                self.item = self.db_manager.get_action_item(item.id) or item
+            self.refresh_project_display()
 
             # Clear the notes frame and reload to show it's ready for notes
             for widget in self.notes_frame.winfo_children():

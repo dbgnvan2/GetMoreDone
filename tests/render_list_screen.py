@@ -8,9 +8,14 @@ Purpose: the column-contiguity check in test_item_editor_no_context.py runs
 
 Not named ``test_*`` on purpose: it is a helper, not a test.
 
-Usage: python tests/render_list_screen.py <module> <ScreenClass>
-Prints one "OK <cols>" or "GAP <cols>" line per rendered row; exit 0 always
-unless it genuinely fails to render.
+Usage: python tests/render_list_screen.py <module> <ScreenClass> [expanded]
+Prints one "OK"/"GAP"/"DUP" line per rendered row; exit 0 always unless it
+genuinely fails to render.
+
+Columns are reported **without** deduplication on purpose. Deduping hides an
+overlap — two widgets gridded into the same cell — and an overlap is precisely
+what over-correcting a stale index produces, which is the direction every
+constant in this area was just moved.
 """
 
 import importlib
@@ -28,7 +33,7 @@ from src.getmoredone.models import ActionItem
 from src.getmoredone.vps_manager import VPSManager
 
 
-def main(module: str, attr: str) -> int:
+def main(module: str, attr: str, expanded: bool = False) -> int:
     vps = VPSManager(str(pathlib.Path(tempfile.mkdtemp()) / "render.db"))
     manager = vps.db_manager
     today = date.today().isoformat()
@@ -46,6 +51,12 @@ def main(module: str, attr: str) -> int:
         importlib.import_module(f"src.getmoredone.screens.{module}"), attr)
     screen = screen_cls(window, manager, app)
     screen.pack(fill="both", expand=True)
+    if expanded:
+        # Both changed constants have an expanded arm that the default render
+        # never reaches (btn_col_start = N if columns_expanded, col_offset = 1).
+        screen.columns_expanded = True
+        if hasattr(screen, "refresh"):
+            screen.refresh()
     window.update()
 
     printed = 0
@@ -56,8 +67,13 @@ def main(module: str, attr: str) -> int:
         if len(gridded) < 5 or not all(
                 str(c.grid_info().get("row")) == "0" for c in gridded):
             continue
-        columns = sorted({int(c.grid_info()["column"]) for c in gridded})
-        status = "OK" if columns == list(range(len(columns))) else "GAP"
+        columns = sorted(int(c.grid_info()["column"]) for c in gridded)
+        if len(set(columns)) != len(columns):
+            status = "DUP"          # two widgets stacked in one cell
+        elif columns != list(range(len(columns))):
+            status = "GAP"          # an index was skipped
+        else:
+            status = "OK"
         print(f"{status} {columns}")
         printed += 1
 
@@ -68,4 +84,5 @@ def main(module: str, attr: str) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1], sys.argv[2]))
+    sys.exit(main(sys.argv[1], sys.argv[2],
+                  expanded=len(sys.argv) > 3 and sys.argv[3] == "expanded"))

@@ -761,3 +761,89 @@ def test_sweep8_a_failed_project_create_reports_instead_of_dying_silently(tmp_pa
         assert chosen == [], "a project that was never saved was selected anyway"
     finally:
         vps.close()
+
+
+def test_sweep1_1_project_wins_the_ape_on_both_insert_paths(tmp_path):
+    """A project and a tactic chosen together must resolve the same either way.
+
+    The tactic re-file writes its own Annual Plan Element onto the item, so
+    whichever of the two is applied last wins. save_item applies the project
+    last; the note path must not disagree, or the stored APE depends on which
+    button the user happened to press (P5).
+    """
+    import customtkinter as ctk
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+    from tests.weekly_tactic_fixtures import make_week_item, seed_second_ape
+
+    vps = make_vps(tmp_path)
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        manager = vps.db_manager
+        board_ape = seed_ape(vps)
+        tactic_ape = seed_second_ape(vps)
+        board = _seed_board(manager, "Website Rebuild", board_ape)
+        tactic = make_week_item(vps, tactic_ape)
+
+        def build():
+            dialog = ItemEditorDialog(root, manager, vps_manager=vps)
+            dialog.who_var.set("Self")
+            dialog.title_entry.insert(0, "Task with both")
+            dialog.start_date_entry.insert(0, "2026-02-25")
+            dialog.due_date_entry.insert(0, "2026-02-25")
+            dialog.pending_weekly_tactic_id = tactic.id
+            dialog._follow_chosen_tactic = True
+            dialog.apply_project_selection(board.id)
+            return dialog
+
+        via_save = build()
+        assert via_save.save_item() is True, via_save.error_label.cget("text")
+
+        via_note = build()
+        assert via_note.save_item_if_needed() is True
+
+        ape_via_save = manager.get_action_item(via_save.item_id).annual_plan_element_id
+        ape_via_note = manager.get_action_item(via_note.item_id).annual_plan_element_id
+        assert ape_via_save == ape_via_note, (
+            f"the two insert paths disagree: Save -> {ape_via_save}, "
+            f"Create Note -> {ape_via_note}")
+        assert ape_via_note == board_ape, "the project should win the APE"
+        assert manager.get_project_board_ids_for_item(via_note.item_id) == [board.id]
+    finally:
+        root.destroy()
+        vps.close()
+
+
+def test_sweep3_the_confirmation_message_names_the_target_project(tmp_path, monkeypatch):
+    """Drive the real confirm body, not a lambda standing in for it.
+
+    It runs inside a Tk callback, so a raise in here would leave the picker
+    open and inert — the failure shape this repo already logged for Who.
+    """
+    import tkinter.messagebox as messagebox
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _seed_board(manager, "Website Rebuild", ape_id)
+
+        asked = {}
+        monkeypatch.setattr(
+            messagebox, "askyesno",
+            lambda title, message, **kw: asked.update(
+                title=title, message=message) or True)
+
+        stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=2)
+        result = ItemEditorDialog._confirm_dropping_extra_project_links(stub, board.id)
+
+        assert result is True
+        assert "Website Rebuild" in asked["message"]
+        assert "3 projects" in asked["message"], asked["message"]
+        assert "2" in asked["message"]
+
+        asked.clear()
+        ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
+        assert "Clearing the project" in asked["message"]
+    finally:
+        vps.close()

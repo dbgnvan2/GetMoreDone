@@ -131,12 +131,13 @@ def test_the_title_splitter_survives_for_lineage_colours():
 # --------------------------------------------- sweep fix: column renumbering
 
 
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
 @pytest.mark.parametrize("module,attr", [
     ("today", "TodayScreen"),
     ("all_items", "AllItemsScreen"),
     ("upcoming", "UpcomingScreen"),
 ])
-def test_removing_the_context_column_left_no_gap_in_the_grid(module, attr):
+def test_removing_the_context_column_left_no_gap_in_the_grid(module, attr, expanded):
     """Every rendered row uses a contiguous run of columns from 0.
 
     Deleting a cell and renumbering the ones after it is easy to get wrong in a
@@ -152,15 +153,24 @@ def test_removing_the_context_column_left_no_gap_in_the_grid(module, attr):
     import subprocess
 
     helper = Path(__file__).resolve().parent / "render_list_screen.py"
+    argv = [sys.executable, str(helper), module, attr]
+    if expanded:
+        argv.append("expanded")
     result = subprocess.run(
-        [sys.executable, str(helper), module, attr],
-        capture_output=True, text=True, timeout=120,
+        argv, capture_output=True, text=True, timeout=120,
         cwd=str(Path(__file__).resolve().parents[1]),
     )
 
+    if result.returncode != 0 and "TclError" in result.stderr:
+        pytest.skip("Tk display unavailable")
     assert result.returncode == 0, (
         f"{attr} failed to render:\n{result.stdout}\n{result.stderr}")
     assert "NOROWS" not in result.stdout, f"{attr} rendered no item rows to check"
     assert "GAP" not in result.stdout, (
         f"{attr} has a gap in its row grid — a stale column index survived the "
         f"Context removal:\n{result.stdout}")
+    # Over-correcting a stale index stacks two widgets in one cell rather than
+    # leaving a hole, and that is the direction these constants were moved.
+    assert "DUP" not in result.stdout, (
+        f"{attr} grids two widgets into the same column — an index was moved "
+        f"one too far:\n{result.stdout}")
