@@ -31,6 +31,7 @@ from .item_editor_dialogs import (
     SetWeeklyTacticDialog,
     ShowRelatedDialog,
 )
+from .item_editor_project_dialog import SetProjectDialog
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 from .title_format import split_action_item_title, build_action_item_title
 
@@ -76,6 +77,15 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.week_action_display_values = ["(None)"]
         self.pending_weekly_tactic_id = None  # chosen before a new item is saved
         self._follow_chosen_tactic = False    # that choice was deliberate (WT-D1)
+        # PL2/PL4.2 — the Project the item is filed under. ``_loaded_project_id``
+        # is the baseline the dialog opened with; the link is only written when
+        # the user actually changes it, so an ordinary Save can never clear a
+        # project (or, through clear_item_project_links, the item's APE).
+        self._selected_project_id: Optional[str] = None
+        self._loaded_project_id: Optional[str] = None
+        self._loaded_extra_project_links = 0
+        self._extra_project_links = 0
+        self._project_choice_made = False
         self.app_settings = AppSettings.load()
         self.first_day_of_week = int(getattr(self.app_settings, "first_day_of_week", 0))
         # Callback to refresh parent when dialog closes
@@ -94,6 +104,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         # Load item if editing
         if item_id:
             self.item = db_manager.get_action_item(item_id)
+            self._load_project_baseline()
             if self.item and self.item.item_type == "week":
                 self.title("Edit Weekly Tactic")
             else:
@@ -214,6 +225,52 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.title_entry.grid(row=0, column=3, sticky="ew", padx=(5, 10))
         row_l += 1
 
+        # Action Plan — where this item sits in the plan. Both values are set
+        # through the "Set Project" / "Set Wk Tactic" buttons, so the fields
+        # here are read-only labels; only the original-week stamp is typed.
+        # These used to live on the Organization tab.
+        # Spec:  docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl9
+        # Tests: tests/test_item_editor_layout.py
+        plan_frame = ctk.CTkFrame(left_col)
+        plan_frame.grid(row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
+        plan_frame.grid_columnconfigure(1, weight=1)
+        self.action_plan_frame = plan_frame
+
+        ctk.CTkLabel(
+            plan_frame, text="Action Plan", font=ctk.CTkFont(size=12, weight="bold"),
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 2))
+
+        ctk.CTkLabel(plan_frame, text="Project:").grid(
+            row=1, column=0, sticky="w", padx=(10, 5), pady=2)
+        self.project_label = ctk.CTkLabel(
+            plan_frame, text=self.NO_PROJECT_TEXT, anchor="w",
+            text_color=status_text_color("muted"),
+        )
+        self.project_label.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=2)
+
+        ctk.CTkLabel(plan_frame, text="Wk Tactic:").grid(
+            row=2, column=0, sticky="w", padx=(10, 5), pady=2)
+        self.weekly_tactic_label = ctk.CTkLabel(
+            plan_frame, text=self.NO_TACTIC_TEXT, anchor="w",
+            text_color=status_text_color("muted"),
+        )
+        self.weekly_tactic_label.grid(row=2, column=1, sticky="ew", padx=(0, 10), pady=2)
+
+        # WT-M3.A.3 — the original-week stamp, editable by hand (WT-D3).
+        ctk.CTkLabel(plan_frame, text="Orig. Week:").grid(
+            row=3, column=0, sticky="w", padx=(10, 5), pady=(2, 8))
+        self.weekly_tactic_start_var = ctk.StringVar()
+        self.weekly_tactic_start_entry = ctk.CTkEntry(
+            plan_frame, width=120, textvariable=self.weekly_tactic_start_var,
+            placeholder_text="YYYY-MM-DD",
+        )
+        self.weekly_tactic_start_entry.grid(
+            row=3, column=1, sticky="w", padx=(0, 10), pady=(2, 8))
+        row_l += 1
+
+        self.refresh_weekly_tactic_display()
+        self.refresh_project_display()
+
         # Parent Info (if applicable)
         if self.item and self.item.parent_id:
             parent_item = self.db_manager.get_action_item(self.item.parent_id)
@@ -274,20 +331,27 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.btn_save_close.pack(side="left", fill="x", expand=True, padx=2)
         self.btn_save = ctk.CTkButton(p_row, text="Save", command=self.save_item, **button_style("secondary"))
         self.btn_save.pack(side="left", fill="x", expand=True, padx=2)
-        self.btn_cancel = ctk.CTkButton(p_row, text="Cancel", command=self.destroy, **button_style("secondary"))
-        self.btn_cancel.pack(side="left", fill="x", expand=True, padx=2)
 
         # Secondary Actions (Grid for better fit)
+        # PL10 — the pairings: Cancel sits beside Timer, Add Follow-up beside
+        # Add Subtasks, Set Parent beside Show Related, Set Wk Tactic beside
+        # Set Project. Cancel must exist on every path the dialog can take, so
+        # on a new item (no Timer) it pairs with Save + New, and on a completed
+        # item (no Timer either) it stands alone.
+        # Spec:  docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl10
+        # Tests: tests/test_item_editor_layout.py::test_pl10_button_pairs_share_a_row
         s_frame = ctk.CTkFrame(btn_container, fg_color="transparent")
         s_frame.pack(fill="x", pady=5)
         s_frame.grid_columnconfigure((0, 1), weight=1)
 
         row_s = 0
-        
+        self.btn_cancel = ctk.CTkButton(s_frame, text="Cancel", command=self.destroy, **button_style("secondary"))
+
         # Always available secondary
         if not self.item_id:
             self.btn_save_new = ctk.CTkButton(s_frame, text="Save + New", command=self.save_and_new, **button_style("secondary"))
             self.btn_save_new.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            self.btn_cancel.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
             row_s += 1
 
         # Existing item secondary
@@ -297,28 +361,40 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 self.btn_timer = ctk.CTkButton(
                     s_frame, text="⏱ Timer", command=self.start_timer,
                     **button_style("secondary"))
-                self.btn_timer.grid(row=row_s, column=0, columnspan=2,
+                self.btn_timer.grid(row=row_s, column=0,
                                     sticky="ew", padx=2, pady=(2, 6))
-                row_s += 1
-
-            self.btn_duplicate = ctk.CTkButton(s_frame, text="Duplicate", command=self.duplicate_item, **button_style("secondary"))
-            self.btn_duplicate.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
-            self.btn_followup = ctk.CTkButton(s_frame, text="Add Follow-up", command=self.create_followup, **button_style("secondary"))
-            self.btn_followup.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+                self.btn_cancel.grid(row=row_s, column=1,
+                                     sticky="ew", padx=2, pady=(2, 6))
+            else:
+                self.btn_cancel.grid(row=row_s, column=0,
+                                     sticky="ew", padx=2, pady=(2, 6))
             row_s += 1
-            
-            self.btn_create_tasks = ctk.CTkButton(s_frame, text="Add Sub-tasks", command=self.create_sub_item, **button_style("secondary"))
-            self.btn_create_tasks.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+
+            self.btn_followup = ctk.CTkButton(s_frame, text="Add Follow-up", command=self.create_followup, **button_style("secondary"))
+            self.btn_followup.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+            self.btn_create_tasks = ctk.CTkButton(s_frame, text="Add Subtasks", command=self.create_sub_item, **button_style("secondary"))
+            self.btn_create_tasks.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+            row_s += 1
+
+            self.btn_set_parent = ctk.CTkButton(s_frame, text="Set Parent", command=self.set_parent, **button_style("secondary"))
+            self.btn_set_parent.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
             self.btn_show_related = ctk.CTkButton(s_frame, text="Show Related", command=self.show_related, **button_style("secondary"))
             self.btn_show_related.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
             row_s += 1
-            
-            self.btn_set_parent = ctk.CTkButton(s_frame, text="Set Parent", command=self.set_parent, **button_style("secondary"))
-            self.btn_set_parent.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
-            self.btn_set_weekly = ctk.CTkButton(s_frame, text="Set Wk Tactic", command=self.set_weekly_tactic, **button_style("secondary"))
-            self.btn_set_weekly.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
-            row_s += 1
-            
+
+        # PL10.4 — filing controls exist on a *new* item too. The whole point of
+        # the feature is to create an Action Item and file it under a Project —
+        # creating that Project if need be — without leaving this screen, so
+        # putting the button behind "save it first" would make the headline case
+        # unreachable from the UI (P25). Both pickers already hold the choice for
+        # an unsaved item and apply it on insert.
+        self.btn_set_weekly = ctk.CTkButton(s_frame, text="Set Wk Tactic", command=self.set_weekly_tactic, **button_style("secondary"))
+        self.btn_set_weekly.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
+        self.btn_set_project = ctk.CTkButton(s_frame, text="Set Project", command=self.set_project, **button_style("secondary"))
+        self.btn_set_project.grid(row=row_s, column=1, sticky="ew", padx=2, pady=2)
+        row_s += 1
+
+        if self.item_id:
             # Destructive/Status
             self.btn_complete = ctk.CTkButton(s_frame, text="Complete", command=self.complete_item, **button_style("success"))
             self.btn_complete.grid(row=row_s, column=0, sticky="ew", padx=2, pady=2)
@@ -421,35 +497,16 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         categories = self.db_manager.get_distinct_categories()
         self.category_combo = ctk.CTkComboBox(tab, values=categories or [""], variable=self.category_var, **combo_box_style())
         self.category_combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
-        r += 1
-        
-        # WT-M6.A — the Weekly Tactic the item is filed under. Read-only here:
-        # the tactic is chosen through "Set Wk Tactic", and changing the start
-        # date re-files it. The combo this replaces was backed by the legacy
-        # week_actions table, which is empty on every database (WT-F6/WT-F7), so
-        # it could never show anything.
-        # Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6a
-        # Tests: tests/test_item_editor_weekly_tactic_ui.py
-        ctk.CTkLabel(tab, text="Wk Tactic:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
-        self.weekly_tactic_label = ctk.CTkLabel(
-            tab, text=self.NO_TACTIC_TEXT, anchor="w",
-            text_color=status_text_color("muted"),
-        )
-        self.weekly_tactic_label.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
-        r += 1
 
-        # WT-M3.A.3 — the original-week stamp, editable by hand (WT-D3).
-        ctk.CTkLabel(tab, text="Orig. Week:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
-        self.weekly_tactic_start_var = ctk.StringVar()
-        self.weekly_tactic_start_entry = ctk.CTkEntry(
-            tab, textvariable=self.weekly_tactic_start_var,
-            placeholder_text="YYYY-MM-DD",
-        )
-        self.weekly_tactic_start_entry.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
-
-        self.refresh_weekly_tactic_display()
+        # PL8 — the Weekly Tactic display and the original-week stamp used to
+        # sit here. They now live in the Action Plan block in the left column,
+        # beside the Project, so the whole "where does this item sit in the
+        # plan" picture is visible without opening a tab.
+        # Spec:  docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl8
+        # Tests: tests/test_item_editor_layout.py::test_pl8_org_tab_has_no_weekly_widgets
 
     NO_TACTIC_TEXT = "(none)"
+    NO_PROJECT_TEXT = "(none)"
 
     def refresh_weekly_tactic_display(self):
         """Show the linked Weekly Tactic's title, or an explicit "(none)".
@@ -469,6 +526,99 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         else:
             text = f"{tactic.title} ({tactic.start_date} to {tactic.due_date})"
         self.weekly_tactic_label.configure(text=text)
+
+    def _load_project_baseline(self):
+        """Read the item's current Project link(s) as the change baseline.
+
+        Purpose: PL2/PL4.2 — remember what the dialog opened with, so save only
+                 touches the link when the user actually changed it.
+        Spec:    docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl2
+        Tests:   tests/test_item_editor_project_link.py::test_pl2_action_plan_shows_current_project
+        """
+        if not self.item_id:
+            return
+        board_ids = self.db_manager.get_project_board_ids_for_item(self.item_id)
+        self._loaded_project_id = board_ids[0] if board_ids else None
+        self._selected_project_id = self._loaded_project_id
+        # PL2.2 — an item may already carry several links (the Projects screen's
+        # "link existing items" dialog is not exclusive). Count them so they are
+        # surfaced rather than silently hidden behind the first one.
+        self._loaded_extra_project_links = max(0, len(board_ids) - 1)
+        self._extra_project_links = self._loaded_extra_project_links
+
+    def refresh_project_display(self):
+        """Show the Project the item is filed under, or an explicit "(none)".
+
+        Spec:  docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl2
+        Tests: tests/test_item_editor_project_link.py::test_pl2_1_unlinked_shows_none
+        """
+        board_id = self._selected_project_id
+        board = self.db_manager.get_project_board(board_id) if board_id else None
+        if board is None:
+            # A link pointing at a deleted board is surfaced, not read as "none".
+            text = self.NO_PROJECT_TEXT if not board_id else "(project no longer exists)"
+        else:
+            text = board.title
+            if self._extra_project_links:
+                text = f"{text}  (+{self._extra_project_links} more)"
+        self.project_label.configure(text=text)
+
+    def set_project(self):
+        """Open the Project picker (PL5). Also creates a Project inline."""
+        if self._is_weekly_tactic_record():
+            # PL6 — a Weekly Tactic's title is derived from its Annual Plan
+            # Element, and filing it under a project would re-stamp that APE.
+            return
+        current_title = self.item.title if self.item else (
+            self.title_entry.get().strip() or "Action Item")
+        dialog = SetProjectDialog(
+            self, self.db_manager,
+            item_title=current_title,
+            current_board_id=self._selected_project_id,
+            on_select=self.apply_project_selection,
+        )
+        dialog.wait_window()
+
+    def apply_project_selection(self, board_id: Optional[str]):
+        """Record the chosen Project; the link itself is written by save_item.
+
+        Deferring the write keeps one save path for both a brand-new item (no
+        row to link yet) and an existing one, and means Cancel really cancels.
+        """
+        self._selected_project_id = board_id
+        self._project_choice_made = True
+        # An exclusive re-link replaces every existing link, so any extra ones
+        # are about to go; only an unchanged selection keeps them.
+        self._extra_project_links = (
+            self._loaded_extra_project_links
+            if board_id == self._loaded_project_id else 0
+        )
+        self.refresh_project_display()
+
+    def _apply_project_link(self, item_id: str) -> bool:
+        """Write the Project link, but only when the user changed it (PL4.2).
+
+        ``clear_item_project_links`` also nulls the item's Annual Plan Element,
+        so firing it on an untouched dialog would quietly strip the APE from
+        every item saved without a project (P13 — the guard must scope to the
+        change, not to the save).
+
+        Returns True when a link was actually written or cleared.
+        """
+        if not self._project_choice_made:
+            return False
+        if self._selected_project_id == self._loaded_project_id:
+            return False
+        if self._selected_project_id:
+            self.db_manager.link_item_to_project_exclusive(
+                self._selected_project_id, item_id)
+        else:
+            self.db_manager.clear_item_project_links(item_id)
+        self._loaded_project_id = self._selected_project_id
+        self._loaded_extra_project_links = 0
+        self._extra_project_links = 0
+        self._project_choice_made = False
+        return True
 
     def _setup_notes_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -585,6 +735,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             self.title_context_entry.configure(state="normal")
             self.title_context_entry.delete(0, "end")
             self.title_context_entry.configure(state="disabled")
+            # PL6 — a Weekly Tactic cannot be filed under a Project: the link
+            # would re-stamp its Annual Plan Element, which its canonical title
+            # is derived from.
+            self._set_project_button_state("disabled")
             return
 
         self.record_type_badge.configure(
@@ -594,6 +748,13 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         )
         self.context_label.configure(text="Context:")
         self.title_context_entry.configure(state="normal")
+        self._set_project_button_state("normal")
+
+    def _set_project_button_state(self, state: str):
+        """Enable/disable Set Project; the button only exists on saved items."""
+        button = getattr(self, "btn_set_project", None)
+        if button is not None:
+            button.configure(state=state)
 
     def load_item_data(self):
         """Load item data into form fields."""
@@ -699,6 +860,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         if self.item.weekly_tactic_start_date:
             self.weekly_tactic_start_var.set(self.item.weekly_tactic_start_date)
         self.refresh_weekly_tactic_display()
+        self.refresh_project_display()
 
         self.update_priority_display()
 
@@ -1083,6 +1245,14 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 self.item = item  # Store the item reference
                 notify_weekly_tactic_changes(self.db_manager, self)
 
+            # PL3/PL4 — the Project link, applied on both branches in the one
+            # place: a new item has no row to link until the insert above ran.
+            if self._apply_project_link(item.id):
+                # Linking writes the board's Annual Plan Element onto the row,
+                # so re-read rather than keep a stale in-memory copy.
+                self.item = self.db_manager.get_action_item(item.id) or item
+            self.refresh_project_display()
+
             # Clear error message on successful save
             self.error_label.configure(text="✓ Saved")
             # Reset the message after 2 seconds
@@ -1109,35 +1279,33 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         if self.save_item():
             self.on_dialog_close()
 
-    def duplicate_item(self):
-        """Save current changes, duplicate the saved item, and open it in a new editor."""
-        # Duplicate only after the current edits save cleanly.
-        if self.item_id and self.save_item():
-            new_id = self.db_manager.duplicate_action_item(self.item_id)
-            if new_id:
-                # Calculate offset position (shifted right)
-                new_x = self.winfo_x() + 100
-                new_y = self.winfo_y() + 40
-
-                # Open the duplicate in a NEW editor window (don't close current one)
-                ItemEditorDialog(self.master, self.db_manager, new_id,
-                                 vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
-                                 x=new_x, y=new_y)
-
     def create_followup(self):
-        """Create a follow-up item linked to the current item and open in a new offset window."""
-        if self.item_id:
-            new_id = self.db_manager.create_followup_item(self.item_id)
-            if new_id:
-                # Calculate offset position (shifted right)
-                new_x = self.winfo_x() + 100
-                new_y = self.winfo_y() + 40
-                
-                # Open the follow-up in a NEW editor window
-                # We do NOT call on_dialog_close() here because we want both open.
-                ItemEditorDialog(self.master, self.db_manager, new_id,
-                                 vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
-                                 x=new_x, y=new_y)
+        """Save pending edits, create a follow-up item, and open it alongside.
+
+        Purpose: PL11 — the one "make another item from this one" path. The
+                 separate Duplicate button is gone; ``create_followup_item``
+                 already builds its copy through ``duplicate_action_item`` and
+                 then carries the weekly lineage (WT-M5.C.1) and the project
+                 link, which a bare duplicate dropped.
+        Spec:    docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl11
+        Tests:   tests/test_item_editor_layout.py::test_pl11_followup_saves_first
+
+        Saves first — that guard existed only on the old Duplicate path, so a
+        follow-up used to be built from the stored row while the edits on
+        screen were silently left behind (P5: the sibling call was unhardened).
+        """
+        if not self.item_id or not self.save_item():
+            return
+
+        new_id = self.db_manager.create_followup_item(self.item_id)
+        if not new_id:
+            return
+
+        # Open the follow-up in a NEW editor window, offset from this one.
+        # We do NOT call on_dialog_close() here because we want both open.
+        ItemEditorDialog(self.master, self.db_manager, new_id,
+                         vps_manager=self.vps_manager, on_close_callback=self.on_close_callback,
+                         x=self.winfo_x() + 100, y=self.winfo_y() + 40)
 
     def start_timer(self):
         """Save pending edits, then open the focus timer (working mode) for this item."""

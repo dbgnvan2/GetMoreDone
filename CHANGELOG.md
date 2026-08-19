@@ -9,6 +9,19 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **File an Action Item under a Project from the item editor.** A new **Set Project**
+  button beside Set Wk Tactic opens a project picker that also creates a Project inline
+  (**+ New Project**), so a new task and the project it belongs to can be created from one
+  screen. **Clear Project** unfiles the item. Filing stamps the project's Annual Plan Element
+  onto the item — the same rule as dragging onto a project in the Scheduler — and the link is
+  only written when the selection actually changes, so an ordinary Save can never clear it.
+- **An Action Plan block in the top left of the item editor**, showing the item's Project and
+  Weekly Tactic together. The Weekly Tactic and Orig. Week fields moved here from the
+  Organization tab, which now holds Group and Category only.
+- **A follow-up inherits the original's Project**, the way it already inherited the weekly
+  lineage. The same applies to complete-and-create. Previously a follow-up of a project task
+  landed unfiled.
+
 - **A Weekly Tactic link of its own.** `action_items.weekly_tactic_id` replaces the
   overloaded use of `parent_id`, which previously served both ordinary subtask nesting
   and the week bucket at the same time — so attaching a tactic silently destroyed a
@@ -75,6 +88,14 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The item editor's Duplicate button is gone; Add Follow-up is the one copy path.** A
+  follow-up is a copy that also keeps the link back to the original, and it now saves the
+  edits on screen before copying — a guard the Duplicate path had and the follow-up path
+  did not, so a follow-up used to be built from the stored row while on-screen edits were
+  left behind.
+- **Item editor buttons re-paired**: Cancel sits beside Timer, Add Follow-up beside Add
+  Subtasks (renamed from "Add Sub-tasks"), Set Parent beside Show Related, and Set Wk Tactic
+  beside Set Project.
 - Gatekeeper instructions now lead with the macOS 15 (Sequoia) System Settings route.
   Apple removed the Control-click override in macOS 15, so the old advice was wrong for
   every current Mac.

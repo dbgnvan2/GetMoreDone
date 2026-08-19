@@ -649,34 +649,49 @@ def test_save_and_new_reopens_on_success(monkeypatch):
     assert closed == [1] and len(created) == 1
 
 
-def test_duplicate_item_skips_on_save_failure(monkeypatch):
+def test_pl11_1_followup_aborts_on_save_failure(monkeypatch):
+    """PL11 — a failed save must not leave a follow-up behind.
+
+    This guard used to live on the removed Duplicate button only; the merged
+    path is the one that has to carry it now.
+    Spec: docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl11
+    """
     import src.getmoredone.screens.item_editor as ie
-    real = ie.ItemEditorDialog.duplicate_item
-    created, dup = [], []
+    real = ie.ItemEditorDialog.create_followup
+    created, made = [], []
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: created.append((a, k)))
     dialog = SimpleNamespace(
         item_id="id1", save_item=lambda: False,
         db_manager=SimpleNamespace(
-            duplicate_action_item=lambda i: dup.append(i) or "new"),
+            create_followup_item=lambda i: made.append(i) or "new"),
     )
     real(dialog)
-    assert dup == [] and created == []  # no save -> no duplicate
+    assert made == [] and created == []  # no save -> no follow-up
 
 
-def test_duplicate_item_duplicates_on_success(monkeypatch):
+def test_pl11_followup_saves_first(monkeypatch):
+    """PL11 — the merged path saves the on-screen edits, then copies."""
     import src.getmoredone.screens.item_editor as ie
-    real = ie.ItemEditorDialog.duplicate_item
-    created, dup = [], []
+    real = ie.ItemEditorDialog.create_followup
+    created, made, order = [], [], []
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: created.append((a, k)))
     dialog = SimpleNamespace(
-        item_id="id1", save_item=lambda: True,
+        item_id="id1",
+        save_item=lambda: order.append("save") or True,
         db_manager=SimpleNamespace(
-            duplicate_action_item=lambda i: dup.append(i) or "newid"),
+            create_followup_item=lambda i: (order.append("copy"), made.append(i), "newid")[2]),
         winfo_x=lambda: 10, winfo_y=lambda: 20,
         master="m", vps_manager="vps", on_close_callback="cb",
     )
     real(dialog)
-    assert dup == ["id1"] and len(created) == 1
+    assert made == ["id1"] and len(created) == 1
+    assert order == ["save", "copy"], f"copied before saving: {order}"
+
+
+def test_pl10_1_duplicate_editor_method_is_gone():
+    """PL10.1 — one copy path, not two. The wrapper must not reappear."""
+    import src.getmoredone.screens.item_editor as ie
+    assert not hasattr(ie.ItemEditorDialog, "duplicate_item")
 
 
 def test_reload_swallows_widget_teardown_error():

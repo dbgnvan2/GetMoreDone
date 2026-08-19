@@ -430,6 +430,14 @@ Main fields:
 - **Next Action** — What: Short, action-focused notes, often one per line. Why: Break a task into next steps.
 - **Planned Minutes** — What: Time estimate. Why: Better scheduling and stats.
 
+Action Plan (top left):
+- **Project** — What: The Project Board this item is filed under. Why: See at a glance where
+  the item sits in your plan, without opening a tab. Set it with **Set Project**.
+- **Wk Tactic** — What: The Weekly Tactic the item is filed under. Why: Same, for the week.
+  Set it with **Set Wk Tactic**.
+- **Orig. Week** — What: The week the item was originally meant to start. Why: A task pushed
+  out repeatedly still shows where it began.
+
 Tabs:
 
 Dates:
@@ -446,6 +454,9 @@ Organization:
 - **Group, Category** — What: Organizational labels. Why: Filter and report by area.
 - **Status / Completed Date** — What: Item state. Why: Control workflow and visibility.
 
+  (The Weekly Tactic and Orig. Week fields moved from this tab to the Action Plan block in
+  the top left, alongside the Project.)
+
 Notes:
 - **+ Create Note** — What: Creates an Obsidian note for the item. Why: Keep longer notes linked.
 - **+ Link Note** — What: Links an existing Obsidian note. Why: Connect existing context.
@@ -453,20 +464,30 @@ Notes:
 - **Remove (X)** — What: Unlinks the note. Why: Clean up attachments.
 
 Buttons (top row):
-- **Save** — What: Saves changes, keeps editor open. Why: Iterate without reopening.
 - **Save & Close** — What: Saves and closes. Why: Finish editing quickly.
-- **Save + New** — What: Saves and opens a new item. Why: Rapid entry of multiple tasks.
-- **Duplicate** — What: Creates a copy of the item. Why: Repeat similar tasks.
-- **Create Follow-up** — What: Creates a follow-up item. Why: Continue work without losing history.
-- **Complete** — What: Marks the item completed. Why: Track progress.
-- **Calendar** — What: Opens Calendar dialog. Why: Schedule a meeting and link it.
-- **Cancel** — What: Closes without saving. Why: Discard changes.
-- **Delete** — What: Deletes the item (children are preserved). Why: Remove obsolete tasks.
+- **Save** — What: Saves changes, keeps editor open. Why: Iterate without reopening.
 
-Buttons (second row):
-- **+ Create Tasks** — What: Creates one child item per line in Next Action. Why: Quickly split work.
-- **Show Related** — What: Shows parent and children. Why: Navigate the hierarchy.
+Buttons (paired below):
+- **Timer** — What: Opens the focus timer for this item. Why: Work in tracked sessions.
+- **Cancel** — What: Closes without saving. Why: Discard changes.
+- **Add Follow-up** — What: Saves your edits, then creates a follow-up item seeded from this
+  one — inheriting its Project and Weekly Tactic. Why: Continue work without losing history.
+  (This replaces the old separate **Duplicate** button; a follow-up is a copy that also keeps
+  the link back to the original.)
+- **Add Subtasks** — What: Creates one child item per line in Next Action. Why: Quickly split work.
 - **Set Parent** — What: Assigns a parent item. Why: Organize tasks into a tree.
+- **Show Related** — What: Shows parent and children. Why: Navigate the hierarchy.
+- **Set Wk Tactic** — What: Files the item under a Weekly Tactic. Why: Tie daily work to the week's plan.
+- **Set Project** — What: Files the item under a Project Board — and can create a new Project on
+  the spot with **+ New Project**. Why: Create a task and the project it belongs to without
+  leaving the editor. **Clear Project** unfiles it. Not available on a Weekly Tactic record.
+- **Complete** — What: Marks the item completed. Why: Track progress.
+- **Delete** — What: Deletes the item (children are preserved). Why: Remove obsolete tasks.
+- **Save + New** (new items only) — What: Saves and opens a new item. Why: Rapid entry of multiple tasks.
+
+Note: filing an item under a Project also stamps that project's Annual Plan Element onto the
+item, and clearing the project clears it — the same rule as dragging an item onto a project in
+the Scheduler.
 
 ---
 

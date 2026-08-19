@@ -28,6 +28,7 @@ def mock_db():
     db.get_item_links.return_value = []
     db.get_action_item.return_value = ActionItem(id="test-item", who="Self", title="Test Item")
     db.get_project_boards.return_value = [{"id": "test-board", "title": "Test Board", "status": "active"}]
+    db.get_project_board_ids_for_item.return_value = []
     db.get_project_board.return_value = ProjectBoard(id="test-board", title="Test Board", status="active")
     db.get_project_board_items.return_value = []
     db.get_project_board_links.return_value = []
@@ -45,6 +46,12 @@ def test_item_editor_ui_elements_presence(mock_app, mock_db):
     assert hasattr(dialog, "description_text"), "Missing Description text"
     assert hasattr(dialog, "next_action_text"), "Missing Next Action text"
     assert hasattr(dialog, "planned_minutes_entry"), "Missing Planned Minutes entry"
+
+    # PL9 — the Action Plan block: where this item sits in the plan.
+    assert hasattr(dialog, "action_plan_frame"), "Missing 'Action Plan' block"
+    assert hasattr(dialog, "project_label"), "Missing Action Plan Project label"
+    assert hasattr(dialog, "weekly_tactic_label"), "Missing Action Plan Wk Tactic label"
+    assert hasattr(dialog, "weekly_tactic_start_entry"), "Missing Action Plan Orig. Week entry"
     
     # Tabs
     assert hasattr(dialog, "tabview"), "Missing Tabview"
@@ -66,14 +73,19 @@ def test_item_editor_existing_item_buttons(mock_app, mock_db):
     dialog = ItemEditorDialog(root, mock_db, item_id="test-item", vps_manager=mock_app.vps_manager)
     
     # Secondary action buttons (only for existing items)
-    assert hasattr(dialog, "btn_duplicate"), "Missing 'Duplicate' button"
     assert hasattr(dialog, "btn_followup"), "Missing 'Add Follow-up' button"
-    assert hasattr(dialog, "btn_create_tasks"), "Missing 'Add Sub-tasks' button"
+    assert hasattr(dialog, "btn_create_tasks"), "Missing 'Add Subtasks' button"
     assert hasattr(dialog, "btn_show_related"), "Missing 'Show Related' button"
     assert hasattr(dialog, "btn_set_parent"), "Missing 'Set Parent' button"
     assert hasattr(dialog, "btn_set_weekly"), "Missing 'Set Wk Tactic' button"
+    assert hasattr(dialog, "btn_set_project"), "Missing 'Set Project' button"
     assert hasattr(dialog, "btn_complete"), "Missing 'Complete' button"
     assert hasattr(dialog, "btn_delete"), "Missing 'Delete' button"
+    # PL10.1 — Duplicate was merged into Add Follow-up; it must not come back
+    # as a second, unhardened copy path.
+    assert not hasattr(dialog, "btn_duplicate"), "'Duplicate' button is meant to be gone"
+    # Cancel exists on the existing-item path too, not only on a new item.
+    assert hasattr(dialog, "btn_cancel"), "Missing 'Cancel' button"
     
     root.destroy()
 

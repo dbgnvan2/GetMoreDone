@@ -227,6 +227,53 @@ class DBManagerProjectBoardsMixin:
         )
         self.db.conn.commit()
 
+    def inherit_project_links(self, source_id: str, new_id: str) -> int:
+        """Copy an item's project links onto an item derived from it.
+
+        Purpose: PL12 — a follow-up (or a complete-and-create) of a project task
+                 used to land with no project at all, because both copy paths
+                 build the new row through a constructor that never mentions
+                 project_board_items.
+        Spec:    docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl12
+        Tests:   tests/test_item_editor_project_link.py::test_pl12_followup_inherits_project_link
+
+        Every link is copied, not just the first, so an item that the Projects
+        screen filed under several boards does not silently lose the rest.
+        Returns the number of links copied.
+        """
+        board_ids = self.get_project_board_ids_for_item(source_id)
+        if not board_ids:
+            return 0
+
+        now = datetime.now().isoformat()
+        for board_id in board_ids:
+            self.db.conn.execute("""
+                INSERT OR IGNORE INTO project_board_items (project_board_id, item_id, created_at)
+                VALUES (?, ?, ?)
+            """, (board_id, new_id, now))
+            self.db.conn.execute(
+                "UPDATE project_boards SET updated_at = ? WHERE id = ?",
+                (now, board_id),
+            )
+
+        # Keep the copy's Annual Plan Element consistent with the board it now
+        # sits on — but only when nothing else has already set one, so this
+        # never overwrites the weekly lineage a follow-up just inherited.
+        copy_row = self.db.conn.execute(
+            "SELECT annual_plan_element_id FROM action_items WHERE id = ?",
+            (new_id,),
+        ).fetchone()
+        if copy_row is not None and not copy_row["annual_plan_element_id"]:
+            board = self.get_project_board(board_ids[0])
+            if board and board.annual_plan_element_id:
+                self.db.conn.execute(
+                    "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
+                    (board.annual_plan_element_id, now, new_id),
+                )
+
+        self.db.conn.commit()
+        return len(board_ids)
+
     def get_project_board_ids_for_item(self, item_id: str) -> List[str]:
         """Return all project boards linked to an action item."""
         rows = self.db.conn.execute(

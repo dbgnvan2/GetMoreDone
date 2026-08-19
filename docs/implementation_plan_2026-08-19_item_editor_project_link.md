@@ -1,7 +1,7 @@
 # Implementation plan — Project link + Action Item editor layout rework
 
 Date: 2026-08-19 (revised after review feedback)
-Status: awaiting approval (no implementation code written)
+Status: **implemented** — see [`docs/spec_coverage_2026-08-19_item_editor_project_link.md`](spec_coverage_2026-08-19_item_editor_project_link.md)
 
 ## Goal
 
@@ -20,9 +20,8 @@ and the action buttons are re-paired.
 "Project" here is a `ProjectBoard` row; the item↔project relation is the
 `project_board_items` table.
 
-> Note: the review referenced an image that did not reach me — this plan is
-> built from the six written points. If the image showed placement detail beyond
-> them, say so and I'll fold it in.
+> The screenshot supplied with the review confirmed this reading; it changed
+> nothing in the plan beyond making Timer half-width so Cancel can sit beside it.
 
 ---
 
@@ -82,8 +81,13 @@ Current (right column, `create_form`) → proposed:
 | existing items | **⏱ Timer** | **Cancel** |
 | existing items | **Add Follow-up** | **Add Subtasks** |
 | existing items | **Set Parent** | **Show Related** |
-| existing items | **Set Wk Tactic** | **Set Project** |
+| **both** | **Set Wk Tactic** | **Set Project** |
 | existing items | **Complete** | **Delete** |
+
+The Set row renders on a **new** item too (PL10.4). Filing a not-yet-saved item
+under a Project is the headline case — a button available only after "save it
+first" would leave it unreachable from the screen it was asked for (P25). Both
+pickers already hold the choice for an unsaved item and apply it on insert.
 
 - **2.** Cancel leaves the primary row and pairs with Timer. On a *new* item
   there is no Timer button, so Cancel pairs with **Save + New** — Cancel must
@@ -118,8 +122,10 @@ matching Set Wk Tactic. New `SetProjectDialog` in a new module
   persists via `create_project_board`, selects the new project and returns.
 - On choose, calls back into the editor exactly like
   `apply_weekly_tactic_selection` does: for a saved item the link is written
-  immediately; for an unsaved new item the choice is held in
-  `self.pending_project_board_id` and applied by `save_item` after the insert.
+  immediately; for an unsaved new item the choice is held and applied on insert.
+  Implemented as a single deferred path — the choice is recorded in
+  `_selected_project_id` and written by `save_item` for saved and new items
+  alike, so Cancel really cancels and there is one place the link is written.
 
 ---
 

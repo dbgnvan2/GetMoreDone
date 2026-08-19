@@ -686,6 +686,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         new_id = self.duplicate_action_item(item_id)
         if new_id:
             self._inherit_weekly_lineage(item_id, new_id)
+            # PL12 — the sibling copy path. A completed project task recreated
+            # here stays on its board rather than landing unfiled (P5).
+            self.inherit_project_links(item_id, new_id)
         return new_id
 
     def _inherit_weekly_lineage(self, source_id: str, new_id: str) -> None:
@@ -773,6 +776,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         new_id = self.create_action_item(new_item, apply_defaults=False)
         if new_id:
             self._inherit_weekly_lineage(item_id, new_id)
+            # PL12 — a follow-up of a project task stays filed under that
+            # project, the way it already keeps its weekly lineage.
+            self.inherit_project_links(item_id, new_id)
 
         # Copy linked notes and other links
         if new_id:
