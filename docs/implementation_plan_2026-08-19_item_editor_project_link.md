@@ -1,19 +1,28 @@
-# Implementation plan — Link an Action Item to a Project from the Item Editor
+# Implementation plan — Project link + Action Item editor layout rework
 
-Date: 2026-08-19
+Date: 2026-08-19 (revised after review feedback)
 Status: awaiting approval (no implementation code written)
 
 ## Goal
 
-From the Action Item **Create** and **Edit** screen (`ItemEditorDialog`), the user can:
+Two things in one change to the Action Item **Create/Edit** screen
+(`ItemEditorDialog`):
 
-1. See which Project the item is filed under.
-2. Pick a different Project, or clear it.
-3. Create a brand-new Project without leaving the editor, and have the item filed
-   under it — all in one screen.
+**A. Project linking.** The user can see which Project the item is filed under,
+pick a different one, clear it, or **create a brand-new Project without leaving
+the editor** — so a new Action Item can be created and filed to a new Project
+from one screen.
+
+**B. Layout rework.** The weekly-tactic fields leave the Organization tab, a new
+**Action Plan** block in the top-left shows the item's Project and Weekly Tactic,
+and the action buttons are re-paired.
 
 "Project" here is a `ProjectBoard` row; the item↔project relation is the
 `project_board_items` table.
+
+> Note: the review referenced an image that did not reach me — this plan is
+> built from the six written points. If the image showed placement detail beyond
+> them, say so and I'll fold it in.
 
 ---
 
@@ -28,6 +37,7 @@ From the Action Item **Create** and **Edit** screen (`ItemEditorDialog`), the us
 | `get_project_boards(show_pending, show_completed)` | `db_manager_project_boards.py:81` |
 | `create_project_board(board)` | `db_manager_project_boards.py:13` |
 | `ProjectBoardEditorDialog` — full New/Edit Project dialog, sets `.result`, caller persists | `screens/project_boards.py:25` |
+| `SetWeeklyTacticDialog` — the picker the "Set Wk Tactic" button already opens | `screens/item_editor_weekly_tactic_dialog.py` |
 
 The only precedent for setting the link outside the Projects screen is the
 Scheduler drag-drop (`screens/drag_schedule.py:1266`), which uses exactly the
@@ -36,102 +46,186 @@ surfaces cannot drift.
 
 ---
 
+## B. Layout rework — the six points
+
+### 1. Weekly fields off the Organization tab
+`_setup_org_tab` keeps **Group** and **Category** only. The `Wk Tactic:` label
+and the `Orig. Week:` entry move to the new Action Plan block (point 6).
+`refresh_weekly_tactic_display()` keeps its name and contract — only the widget
+it writes to moves — so the existing tests and the
+`apply_weekly_tactic_selection` caller keep working.
+
+### 6. New "Action Plan" block, top-left
+A titled block in the left column, directly under the Title row and above
+Description:
+
+```
+Action Plan
+  Project:     Website Rebuild                 (read-only label)
+  Wk Tactic:   Ship v2 | W34 (2026-08-17 to 2026-08-23)   (read-only label)
+  Orig. Week:  [2026-08-10]                    (editable entry, unchanged behaviour)
+```
+
+Both values are set through the **Set Project** / **Set Wk Tactic** buttons, so
+the labels are read-only — same treatment the Wk Tactic already had. `Orig. Week`
+stays an editable entry because `save_item` reads it (WT-M6.A.3); it has nowhere
+else to live once it leaves the Org tab.
+
+### 2–5. Button block
+
+Current (right column, `create_form`) → proposed:
+
+| | Left | Right |
+|---|---|---|
+| primary | **Save & Close** | **Save** |
+| new items only | **Save + New** | **Cancel** |
+| existing items | **⏱ Timer** | **Cancel** |
+| existing items | **Add Follow-up** | **Add Subtasks** |
+| existing items | **Set Parent** | **Show Related** |
+| existing items | **Set Wk Tactic** | **Set Project** |
+| existing items | **Complete** | **Delete** |
+
+- **2.** Cancel leaves the primary row and pairs with Timer. On a *new* item
+  there is no Timer button, so Cancel pairs with **Save + New** — Cancel must
+  exist on every state of the dialog (P25: don't lose a control on one path).
+- **2.** **Duplicate is removed.** `duplicate_item()` and `create_followup()`
+  merge into one method: save first, create the derived item, open it in an
+  offset window. The surviving button is **Add Follow-up**, backed by
+  `create_followup_item`.
+  - Two real consequences, both improvements: `create_followup` currently does
+    **not** save pending edits first (only `duplicate_item` did) — the merged
+    method always saves first, so the P5 sibling gap closes. And
+    `create_followup_item` carries the weekly lineage (`_inherit_weekly_lineage`,
+    WT-M5.C.1) that plain `duplicate_action_item` drops.
+  - `db_manager.duplicate_action_item` **stays** — `complete_and_create` and
+    `create_followup_item` both call it. Only the editor's button and its
+    wrapper method go.
+- **3.** "Add Sub-tasks" is relabelled **Add Subtasks** (no hyphen) and pairs
+  with Add Follow-up.
+- **4.** Set Parent and Show Related pair on one row.
+- **5.** New **Set Project** button beside Set Wk Tactic.
+
+### Set Project dialog
+
+Rather than a combo on a tab, point 5 makes Project a *button-driven* picker,
+matching Set Wk Tactic. New `SetProjectDialog` in a new module
+`screens/item_editor_project_dialog.py`:
+
+- A searchable list of projects (active + pending; a completed project already
+  linked to this item is still listed so it can't vanish).
+- **Clear Project** button → `(none)`.
+- **+ New Project** button → opens the existing `ProjectBoardEditorDialog`,
+  persists via `create_project_board`, selects the new project and returns.
+- On choose, calls back into the editor exactly like
+  `apply_weekly_tactic_selection` does: for a saved item the link is written
+  immediately; for an unsaved new item the choice is held in
+  `self.pending_project_board_id` and applied by `save_item` after the insert.
+
+---
+
 ## Design decisions (call these out before approving)
 
-- **D1 — Placement: Organization tab.** The Project row goes in the Org tab
-  beside Group / Category / Wk Tactic, which is where every other filing field
-  already lives. Still one window, still one save.
-- **D2 — One project per item (exclusive).** Matches the Scheduler's model and
-  `link_item_to_project_exclusive`. A combo box, not a multi-select.
-- **D3 — Linking overwrites the item's Annual Plan Element.** This is existing
-  behaviour of `link_item_to_project_exclusive`, not new. Picking a project
-  stamps that project's APE onto the item. **Consequence to accept:** clearing
-  the project to "(none)" nulls the item's APE — so the clear path only fires
-  when the user actively moves a linked item to "(none)", never as a side effect
-  of an ordinary save (see D4).
-- **D4 — Apply only on change.** `save_item` compares the combo against the
-  value loaded when the dialog opened. Unchanged ⇒ no link/clear call at all.
-  This is what keeps an ordinary "Save" on an item with an APE but no project
-  from wiping the APE (P13 — the guard must scope exactly to the change).
-- **D5 — Weekly Tactic records are excluded.** For `item_type == 'week'` the
-  control is disabled in `_apply_record_type_ui()`, the same place the Context
-  field is disabled. A week item's title is derived from its APE
-  (`_canonical_weekly_tactic_title`), so letting a project re-stamp its APE
-  would silently rewrite its title.
-- **D6 — Which projects are listed:** active + pending (`show_pending=True`),
-  completed excluded. A completed project already linked to this item is still
-  shown as the current value so it never silently disappears.
-- **D7 — Pre-existing multi-links are preserved.** `link_action_item_to_project_board`
-  (used by the Projects screen's "Link existing items" dialog) is *not*
-  exclusive, so an item can already carry more than one link. The combo shows
-  the first and labels it `+N more`; because of D4, saving without touching the
-  control leaves all of them intact (P2 — never silently drop).
+- **D1 — One project per item (exclusive).** Matches the Scheduler and
+  `link_item_to_project_exclusive`.
+- **D2 — Linking overwrites the item's Annual Plan Element.** Existing behaviour
+  of `link_item_to_project_exclusive`, not new. Clearing the project to `(none)`
+  nulls the item's APE. Guarded per D3.
+- **D3 — Apply only on change.** `save_item` compares against the value loaded
+  when the dialog opened. Unchanged ⇒ no link/clear call at all, so an ordinary
+  Save on an item that has an APE but no project cannot wipe the APE (P13).
+- **D4 — Weekly Tactic records:** Set Project is disabled for `item_type ==
+  'week'` in `_apply_record_type_ui()`, where Context is already disabled. A week
+  item's title derives from its APE, so letting a project re-stamp the APE would
+  silently rewrite the title.
+- **D5 — Pre-existing multi-links preserved.** The Projects screen's "link
+  existing items" dialog is *not* exclusive, so an item may already hold several
+  links. The Action Plan label shows the first plus `+N more`; because of D3,
+  saving without touching Set Project leaves all of them intact (P2).
 
 ---
 
 ## Acceptance criteria → tests
 
-New test file: `tests/test_item_editor_project_link.py`
-(dialog methods driven with `SimpleNamespace` stubs, the pattern already used by
-`tests/test_project_board_dates_ui.py` and `tests/test_item_editor_weekly_tactic_ui.py`).
+New file `tests/test_item_editor_project_link.py` (PL1–PL7) and
+`tests/test_item_editor_layout.py` (PL8–PL12), driven with `SimpleNamespace`
+stubs — the pattern already used by `tests/test_project_board_dates_ui.py` and
+`tests/test_item_editor_weekly_tactic_ui.py`.
+
+### A. Project linking
 
 | ID | Criterion | Verified by |
 |---|---|---|
-| **PL1** | The Org tab renders a Project combo and a "+ New Project" button; the combo's values come from `get_project_boards`, with a `(none)` entry first. | `test_pl1_org_tab_builds_project_control` — calls `_setup_org_tab` on a stub, asserts `project_var` / `project_combo` / `btn_new_project` exist and the values list contains the seeded board titles + `(none)`. |
-| **PL1.1** | Two projects with the same title get distinct labels (no silent collapse in the label→id map). | `test_pl1_1_duplicate_titles_get_distinct_labels` — two boards titled "Website", assert `len(label_to_id) == 2`. |
-| **PL2** | Opening an item already linked to a project preselects that project. | `test_pl2_existing_link_preselected` — link via db, run the loader, assert `project_var` holds that board's label. |
-| **PL2.1** | An item with no link shows `(none)`. | `test_pl2_1_unlinked_shows_none` |
+| **PL1** | `SetProjectDialog` lists active + pending projects, plus any completed project already linked to this item. | `test_pl1_dialog_lists_projects` |
+| **PL2** | Opening the editor on a linked item shows that project in the Action Plan block; an unlinked item shows `(none)`. | `test_pl2_action_plan_shows_current_project`, `test_pl2_1_unlinked_shows_none` |
 | **PL2.2** | An item with two pre-existing links shows the first labelled `+1 more`. | `test_pl2_2_multi_link_is_surfaced_not_hidden` |
-| **PL3** | **New item:** choosing a project and saving creates the item *and* the link, and the item's APE is the board's APE. | `test_pl3_new_item_saves_and_links` — drives `ItemEditorDialog.save_item` on a stub with no `item_id`; asserts `get_project_board_ids_for_item(new_id) == [board_id]`. |
-| **PL4** | **Edit item:** changing the project re-links exclusively (old link gone, one new link). | `test_pl4_edit_item_relinks_exclusively` |
-| **PL4.1** | Setting the combo to `(none)` on a linked item removes the link. | `test_pl4_1_selecting_none_clears_link` |
-| **PL4.2** | Saving **without touching** the combo makes **no** link/clear call — an item with an APE and no project keeps its APE. | `test_pl4_2_untouched_combo_never_clears` — intercepts `clear_item_project_links` / `link_item_to_project_exclusive` on the manager, asserts zero calls, and asserts `annual_plan_element_id` survives. (This is the highest-risk fix in the change — written first, per P10.) |
-| **PL4.3** | Saving without touching the combo leaves a pre-existing **multi**-link intact. | `test_pl4_3_untouched_combo_preserves_multi_link` |
-| **PL5** | "+ New Project" opens `ProjectBoardEditorDialog`, persists the returned board via `create_project_board`, and selects it in the combo. Cancel creates nothing. | `test_pl5_new_project_button_creates_and_selects` + `test_pl5_1_cancel_creates_nothing` — the dialog class is monkeypatched to a fake returning a `ProjectBoard` / `"__cancel__"`; patched name restored in `finally`. |
-| **PL6** | For an `item_type == 'week'` record the Project control is disabled. | `test_pl6_weekly_tactic_record_disables_project_control` — drives `_apply_record_type_ui` on a week-item stub, asserts `configure(state="disabled")` was recorded. |
-| **PL7** | The link actually lands in the DB through the real `DatabaseManager` (not a mock), and survives a re-read. | `test_pl7_link_round_trips_through_db` |
+| **PL3** | **New item:** choosing a project then saving creates the item *and* the link, and stamps the board's APE. | `test_pl3_new_item_saves_and_links` — drives `save_item` on a stub with no `item_id`. |
+| **PL4** | **Edit item:** choosing a different project re-links exclusively (old link gone, exactly one new link). | `test_pl4_edit_item_relinks_exclusively` |
+| **PL4.1** | Clear Project removes the link. | `test_pl4_1_clear_removes_link` |
+| **PL4.2** | Saving **without** touching Set Project makes **no** link/clear call — an item with an APE and no project keeps its APE. | `test_pl4_2_untouched_selection_never_clears` — intercepts both manager methods, asserts zero calls. **Written first** (highest-risk, P10). |
+| **PL4.3** | Saving without touching Set Project leaves a pre-existing multi-link intact. | `test_pl4_3_untouched_selection_preserves_multi_link` |
+| **PL5** | **+ New Project** opens `ProjectBoardEditorDialog`, persists the result via `create_project_board`, and selects it. Cancel creates nothing. | `test_pl5_new_project_creates_and_selects`, `test_pl5_1_cancel_creates_nothing` — dialog class monkeypatched, patch restored in `finally`. |
+| **PL6** | Set Project is disabled for an `item_type == 'week'` record. | `test_pl6_week_record_disables_set_project` |
+| **PL7** | The link round-trips through the real `DatabaseManager` and survives a re-read. | `test_pl7_link_round_trips_through_db` |
 
-**Not code-testable — flagged for human review:** the visual layout of the new
-row in the Org tab (spacing/width against the existing Group/Category/Wk Tactic
-rows). Proposed human check: launch the app under the venv, open New Action Item
-and an existing one, screenshot the Organization tab, and confirm the app log is
-clean — per `~/.claude/standards/ui-regression.md` and the project rule that DB
-unit tests alone are not sufficient for this UI.
+### B. Layout
+
+| ID | Criterion | Verified by |
+|---|---|---|
+| **PL8** | `_setup_org_tab` creates Group and Category only — no `weekly_tactic_label`, no `weekly_tactic_start_entry`. | `test_pl8_org_tab_has_no_weekly_widgets` |
+| **PL9** | The Action Plan block exists and `refresh_weekly_tactic_display` writes into it; `Orig. Week` still round-trips through `save_item`. | `test_pl9_action_plan_block_shows_project_and_tactic`, `test_pl9_1_orig_week_still_saves` |
+| **PL10** | Button pairings: Cancel with Timer (existing item) / with Save + New (new item); Add Follow-up with Add Subtasks; Set Parent with Show Related; Set Wk Tactic with Set Project. Verified by grid row/column, not by "the widget exists". | `test_pl10_button_pairs_share_a_row` |
+| **PL10.1** | No Duplicate button on any path; label reads exactly `Add Subtasks`. | `test_pl10_1_duplicate_button_is_gone` |
+| **PL11** | The merged follow-up method saves before creating, and aborts entirely when the save fails. | `test_pl11_followup_saves_first`, `test_pl11_1_followup_aborts_on_save_failure` (rewrites of the existing `test_duplicate_item_*` pair in `tests/test_item_editor.py`, which target the removed method). |
+| **PL12** | *(optional — needs your call, see below)* A follow-up inherits the original's project link. | `test_pl12_followup_inherits_project_link` |
+
+**Not code-testable — flagged for human review:** the visual result of the
+rework (Action Plan block spacing, button grid fit inside the scrollable
+container at the default 920×550 and when the sash is dragged). Proposed human
+check: launch under the venv, open a new item and an existing one, screenshot the
+left column and the button block, confirm `app.log` is clean — per
+`~/.claude/standards/ui-regression.md`.
 
 ---
 
 ## Implementation order
 
-1. `tests/test_item_editor_project_link.py` — PL4.2 first (highest-risk: the
-   no-op-on-unchanged guard), then PL3/PL4.
-2. `screens/item_editor.py` — `_setup_org_tab`: Project label + combo + "+ New
-   Project" button; `_load_project_options()` and `_project_label_for_board()`
-   helpers; store `self._loaded_project_id` as the change baseline.
-3. `screens/item_editor.py` — `load_item_data`: preselect the current link;
-   new-item path leaves `(none)` unless a project was passed in.
-4. `screens/item_editor.py` — `create_new_project()`: open
-   `ProjectBoardEditorDialog`, `create_project_board`, refresh + select.
-5. `screens/item_editor.py` — `save_item`: after the create/update branch (so a
-   new item has an id), apply the link **only if changed** (D4). Both branches —
-   the new-item path and the edit path — get the same call, in the same change
-   (P5: no hardened-one-sibling-only).
-6. `screens/item_editor.py` — `_apply_record_type_ui`: disable for week records.
-7. Run the full suite; launch the app and do the PL-manual check above.
-8. Docs: `docs/changes/2026-08-19-item-editor-project-link.md` handoff note,
-   `CHANGELOG.md`, `docs/USER_GUIDE.md` (Action Item editor section),
-   `docs/spec_coverage.md` row per PL id.
+1. `tests/` — PL4.2 first, then PL3/PL4, then the layout tests.
+2. `screens/item_editor_project_dialog.py` — new `SetProjectDialog`.
+3. `screens/item_editor.py` — `_setup_org_tab` stripped to Group/Category (PL8).
+4. `screens/item_editor.py` — Action Plan block in `create_form`; move
+   `weekly_tactic_label` / `weekly_tactic_start_entry` there; add
+   `project_label`; `refresh_project_display()` (PL9, PL2).
+5. `screens/item_editor.py` — button block re-pairing, Cancel move, Duplicate
+   removal, `Add Subtasks` relabel, `Set Project` button (PL10).
+6. `screens/item_editor.py` — merge `duplicate_item` + `create_followup` into
+   one method; update the two existing tests (PL11).
+7. `screens/item_editor.py` — `set_project()` + `apply_project_selection()`;
+   `save_item` applies the pending/changed link after create/update, both
+   branches in the same change (P5) (PL3–PL4.3).
+8. `_apply_record_type_ui` — disable Set Project for week records (PL6).
+9. Full suite; then launch the app for the manual check.
+10. Docs: `docs/changes/2026-08-19-item-editor-project-link.md` handoff note,
+    `CHANGELOG.md`, `docs/USER_GUIDE.md`, `docs/spec_coverage.md`.
 
-Dependencies: steps 2→3→5 are sequential (5 needs the baseline from 2). Step 4
-is independent of 3. No schema migration, no `requirements.txt` change.
+Steps 4→7 are sequential (7 needs the baseline stored in 4). No schema
+migration, no `requirements.txt` change.
 
 ---
+
+## Needs your call
+
+- **PL12 — should a follow-up inherit the project link?** Today a follow-up
+  inherits the weekly lineage and APE (`_inherit_weekly_lineage`) but nothing
+  copies `project_board_items`, so a follow-up of a project task lands with no
+  project. Coherent to fix while we're here; it is a behaviour change outside
+  the six points, so I'm not folding it in silently. Include, or leave for later?
 
 ## Adjacent issues found, not fixed (rule 10)
 
 - `LinkProjectActionItemsDialog._link` (`project_boards.py:374`) uses the
-  **non**-exclusive `link_action_item_to_project_board`, while the Scheduler uses
+  **non**-exclusive `link_action_item_to_project_board` while the Scheduler uses
   the exclusive one. The two surfaces disagree about whether an item may belong
-  to several projects. This change works with both (D7) but does not reconcile
-  them. Worth a decision separately.
+  to several projects. This change tolerates both (D5) but does not reconcile
+  them.
 - `get_unlinked_action_items` has no `LIMIT`, so the Projects screen's link
-  dialog loads every open unlinked item. Out of scope here.
+  dialog loads every open unlinked item.
