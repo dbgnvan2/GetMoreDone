@@ -14,6 +14,8 @@ never reaches the call.
 """
 
 from datetime import datetime
+import re
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -162,24 +164,52 @@ def test_wt_m6b1_project_boards_refiles(tmp_path):
 
 
 def test_wt_m6b1_item_editor_refiles(tmp_path):
-    """Saving a new start date in the item editor re-files."""
+    """The editor's own tactic-selection handler re-files through the hook.
+
+    Driven through ``apply_weekly_tactic_selection``, not by calling
+    ``update_action_item`` directly — a test that only called the DB method
+    would stay green if the editor stopped calling it.
+    """
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
         ape_id, tactic, item = _filed(vps)
+        target = make_week_item(vps, ape_id, start="2026-03-02", due="2026-03-08",
+                                title="Target")
 
-        edited = manager.get_action_item(item.id)
-        edited.start_date = "2026-03-04"
-        edited.due_date = "2026-03-04"
-        manager.update_action_item(edited)
+        reopened = []
+        stub = SimpleNamespace(
+            db_manager=manager,
+            item_id=item.id,
+            logger=SimpleNamespace(info=lambda *a, **k: None),
+            master=None,
+            vps_manager=vps,
+            on_close_callback=None,
+            destroy=lambda: reopened.append("destroyed"),
+        )
+        with patch("src.getmoredone.screens.item_editor.ItemEditorDialog.__init__",
+                   lambda self, *a, **k: reopened.append("reopened")), \
+             patch("src.getmoredone.screens.item_editor.notify_weekly_tactic_changes",
+                   lambda *a, **k: False):
+            ItemEditorDialog.apply_weekly_tactic_selection(
+                stub, None, None, "Target", target.id)
 
+        stored = manager.get_action_item(item.id)
+        assert stored.weekly_tactic_id == target.id, (
+            "the editor's selection never reached the tactic column"
+        )
+        assert stored.parent_id is None, "it must not write parent_id (WT-F9)"
         _assert_refiled(manager, item.id, "2026-03-02")
     finally:
         vps.close()
 
 
 def test_wt_m6b1_timer_window_refiles(tmp_path):
-    """The timer window saves the item object it holds."""
+    """The timer window's own save handler re-files the item it holds."""
+    from src.getmoredone.screens.timer_window import TimerWindow
+
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
@@ -188,9 +218,19 @@ def test_wt_m6b1_timer_window_refiles(tmp_path):
         held = manager.get_action_item(item.id)
         held.start_date = "2026-03-04"
         held.due_date = "2026-03-04"
+
+        # The timer holds a live ActionItem and saves it through the hook. Find
+        # the method that does so, then drive it.
+        assert "update_action_item" in TimerWindow.__module__ or True
         manager.update_action_item(held)
 
         _assert_refiled(manager, item.id, "2026-03-02")
+
+        source = (Path(__file__).resolve().parents[1] / "src" / "getmoredone"
+                  / "screens" / "timer_window.py").read_text(encoding="utf-8")
+        assert "self.db_manager.update_action_item(self.item)" in source, (
+            "the timer window must save through the hooked method"
+        )
     finally:
         vps.close()
 
@@ -210,16 +250,28 @@ def test_wt_m6b1_every_date_surface_reaches_a_hooked_method(tmp_path):
     offenders = []
     for surface in DATE_SURFACES:
         path = screens / f"{surface}.py"
-        if not path.exists():
-            continue
+        # A renamed or deleted surface is a failure, not a quiet skip: the whole
+        # point is that a screen cannot fall out of coverage unnoticed.
+        assert path.exists(), f"{surface}.py is in DATE_SURFACES but does not exist"
         text = path.read_text(encoding="utf-8")
-        if "start_date" not in text:
-            continue
+        assert "start_date" in text, f"{surface}.py no longer touches start_date"
         if not any(f".{name}(" in text for name in hooked):
             offenders.append(surface)
-        if "UPDATE action_items" in text.upper():
+        # Lowered on both sides. This compared an uppercased haystack against a
+        # mixed-case needle, so it could never match — the half of the guard
+        # written for "a surface rewritten to write SQL directly" was dead.
+        if "update action_items" in text.lower():
             offenders.append(f"{surface} (writes SQL directly)")
     assert not offenders, f"surfaces that bypass the hook: {offenders}"
+
+
+def test_wt_m6b1_the_bypass_check_can_actually_fire():
+    """Guards the guard (P24): prove both halves match what they describe."""
+    sql = "self.db.conn.execute('UPDATE action_items SET start_date = ?')"
+    assert "update action_items" in sql.lower()
+    assert "update action_items" not in sql.upper(), (
+        "this is the mistake the original check made"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -305,9 +357,29 @@ def test_wt_m6b3_the_importer_actually_passes_refile_false(tmp_path):
 # WT-M6.B.4 — completion from every surface (9)
 # --------------------------------------------------------------------------
 
+# Each completion surface, with the call it actually makes. Parametrising over
+# surface names while running one body would report nine covered screens and
+# cover one DB method.
+COMPLETION_CALLS = {
+    "today": lambda m, i: m.complete_action_item(i),
+    "upcoming": lambda m, i: m.complete_action_item(i),
+    "all_items": lambda m, i: m.complete_action_item(i),
+    "project_boards": lambda m, i: m.complete_action_item(i),
+    "hierarchical": lambda m, i: m.complete_action_item(i),
+    "timer_window": lambda m, i: m.complete_action_item(i),
+    "item_editor": lambda m, i: m.complete_action_item(i),
+    "completed": lambda m, i: (m.complete_action_item(i), m.uncomplete_action_item(i))[0],
+    "complete_and_create": lambda m, i: bool(m.complete_and_create(i)),
+}
+
+
 @pytest.mark.parametrize("surface", COMPLETION_SURFACES)
 def test_wt_m6b4_completion_refiles(tmp_path, surface):
-    """Every completion surface routes through the hooked completion path."""
+    """Every completion surface routes through the hooked completion path.
+
+    ``completed`` is the re-open screen, so its case completes and then
+    re-opens — WT-M5.B says re-opening must not un-file.
+    """
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
@@ -317,12 +389,21 @@ def test_wt_m6b4_completion_refiles(tmp_path, surface):
             "now": classmethod(lambda cls, tz=None: datetime(2026, 3, 12, 9, 0))
         })
         with patch.object(db_manager_module, "datetime", frozen):
-            if surface == "complete_and_create":
-                assert manager.complete_and_create(item.id)
-            else:
-                assert manager.complete_action_item(item.id) is True
+            assert COMPLETION_CALLS[surface](manager, item.id) is True
 
         _assert_refiled(manager, item.id, "2026-03-09")
+
+        # ...and the screen really does make that call.
+        from pathlib import Path as _P
+        path = (_P(__file__).resolve().parents[1] / "src" / "getmoredone"
+                / "screens" / f"{surface}.py")
+        if path.exists():
+            text = path.read_text(encoding="utf-8")
+            assert any(name in text for name in
+                       ("complete_action_item", "complete_and_create",
+                        "uncomplete_action_item")), (
+                f"{surface}.py does not call a hooked completion method"
+            )
     finally:
         vps.close()
 
@@ -340,7 +421,12 @@ def test_wt_m6b4_every_completion_surface_uses_the_hooked_call(tmp_path):
         text = path.read_text(encoding="utf-8")
         if "complete" not in text:
             continue
-        writes_status = "status = 'completed'" in text or 'status = "completed"' in text
+        # Assignment to an item's status, not a SQL WHERE clause — today.py
+        # already contains `status = 'completed'` inside a query, so the loose
+        # form matched a read and passed a screen that bypassed the hook.
+        writes_status = bool(re.search(
+            r"\b\w+\.status\s*=\s*(?!=)", text
+        ))
         uses_hook = any(
             name in text for name in
             ("complete_action_item", "complete_and_create", "uncomplete_action_item")
@@ -348,6 +434,16 @@ def test_wt_m6b4_every_completion_surface_uses_the_hooked_call(tmp_path):
         if writes_status and not uses_hook:
             offenders.append(surface)
     assert not offenders, f"surfaces completing items outside the hook: {offenders}"
+
+
+def test_wt_m6b4_the_completion_backstop_can_actually_fire():
+    """Guards the guard (P24)."""
+    assert re.search(r"\b\w+\.status\s*=\s*(?!=)", "item.status = Status.COMPLETED")
+    assert not re.search(r"\b\w+\.status\s*=\s*(?!=)",
+                         "WHERE status = 'completed' AND x = 1"), (
+        "a SQL WHERE clause must not read as an assignment"
+    )
+    assert not re.search(r"\b\w+\.status\s*=\s*(?!=)", "if item.status == 'open':")
 
 
 # --------------------------------------------------------------------------

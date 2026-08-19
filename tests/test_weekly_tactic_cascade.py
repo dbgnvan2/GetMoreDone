@@ -550,6 +550,13 @@ def test_wt_m4d1_cascade_runs_in_one_transaction(tmp_path):
                     commits.append(1)
                 return self._inner.commit()
 
+            def force_commit(self):
+                # The transaction owner's own commit, which the gate lets
+                # through by design — this is the one that must happen exactly
+                # once.
+                commits.append(1)
+                return self._inner.force_commit()
+
             def __getattr__(self, name):
                 return getattr(self._inner, name)
 
@@ -643,5 +650,94 @@ def test_wt_m4d4_no_cascade_for_unlinked_item(tmp_path):
         assert after.start_date == "2027-03-03"
         assert after.weekly_tactic_id is None
         assert manager.last_cascade_report is None
+    finally:
+        vps.close()
+
+
+def test_wt_m4b_week_boundary_has_one_source(tmp_path, monkeypatch):
+    """Changing "First day of week" mid-session must not split the boundary.
+
+    The engine held a calendar built once at startup while
+    ``_normalize_week_item_dates`` read the setting live. The cascade then made
+    a week row on one boundary and the save snapped it to the other, so the
+    tactic could never be found again — and the next move into that week hit the
+    WT-INV5 unique index and lost the save.
+    """
+    from types import SimpleNamespace
+
+    from src.getmoredone.app_settings import AppSettings
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id, tactic, item = _filed_item(vps)
+        second = make_daily_item(vps, "Second", start="2026-02-25", due="2026-02-25")
+        stored = manager.get_action_item(second.id)
+        stored.weekly_tactic_id = tactic.id
+        manager.update_action_item(stored)
+
+        # The user flips to Sunday-start weeks between saves.
+        monkeypatch.setattr(
+            AppSettings, "load",
+            staticmethod(lambda: SimpleNamespace(first_day_of_week=6,
+                                                 first_week_of_year_rule="iso")),
+        )
+
+        _move(manager, item.id, "2026-03-04")
+        _move(manager, second.id, "2026-03-05")   # must not raise
+
+        a = manager.get_action_item(item.id)
+        b = manager.get_action_item(second.id)
+        assert a.weekly_tactic_id == b.weekly_tactic_id, (
+            "two items in the same week landed on different tactics"
+        )
+        week = manager.get_action_item(a.weekly_tactic_id)
+        assert week.start_date == "2026-03-01", "Sunday-start weeks now"
+        assert manager._get_first_day_of_week() == 6
+        assert manager.weekly_tactic_engine.calendar.first_day == 6, (
+            "the engine's calendar must follow the setting"
+        )
+    finally:
+        vps.close()
+
+
+def test_wt_m4a_missing_lineage_is_reported_not_silently_skipped(tmp_path):
+    """A re-file that cannot happen must say so, not look like "nothing to do"."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id, tactic, item = _filed_item(vps)
+
+        # A tactic whose APE has gone (annual_plan_element_id has no FK).
+        manager.db.conn.execute(
+            "UPDATE action_items SET annual_plan_element_id = NULL WHERE id = ?",
+            (tactic.id,))
+        manager.db.conn.commit()
+
+        _move(manager, item.id, "2026-03-04")
+
+        report = manager.last_cascade_report
+        assert report is not None, "a failure must not look like an unlinked item"
+        assert report.status == "ape_missing"
+        assert report.failed is True
+
+        # ...and an item that loses its dates while already filed is benign,
+        # but still distinguishable from a failure. (Choosing a tactic for a
+        # dateless item is a different case: it files by that tactic's week.)
+        healthy_ape = seed_ape(vps, subsegment="Healthy", key_field="Other")
+        healthy = make_week_item(vps, healthy_ape, start="2026-02-23",
+                                 due="2026-03-01", title="Healthy")
+        dateless = make_daily_item(vps, "Dateless", start="2026-02-25",
+                                   due="2026-02-25")
+        stored = manager.get_action_item(dateless.id)
+        stored.weekly_tactic_id = healthy.id
+        manager.update_action_item(stored)
+
+        cleared = manager.get_action_item(dateless.id)
+        cleared.start_date = None
+        cleared.due_date = None
+        manager.update_action_item(cleared)
+        assert manager.last_cascade_report.status == "no_target_date"
+        assert manager.last_cascade_report.failed is False
     finally:
         vps.close()

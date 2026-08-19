@@ -111,6 +111,39 @@ def test_wt_m3a2_retarget_preserves_original_week(tmp_path):
         vps.close()
 
 
+def test_wt_m3c_choosing_a_tactic_moves_the_item_to_that_week(tmp_path):
+    """WT-D1 — the start date moves *with* the Weekly Tactic.
+
+    Re-deriving the week from the item's own start date on every save meant a
+    hand-picked tactic did nothing: the save put the item straight back on the
+    week its start date already named. Found by driving the editor's own
+    selection handler rather than calling update_action_item directly.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        here = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        there = make_week_item(vps, ape_id, start="2026-03-30", due="2026-04-05",
+                               title="Chosen")
+        item = make_daily_item(vps, "Task", start="2026-02-25", due="2026-02-25")
+        _attach(vps, item, here)
+
+        chosen = manager.get_action_item(item.id)
+        chosen.weekly_tactic_id = there.id
+        manager.update_action_item(chosen)
+
+        after = manager.get_action_item(item.id)
+        assert after.weekly_tactic_id == there.id, "the choice was overridden"
+        assert after.start_date == "2026-04-01", "a Wednesday stays a Wednesday"
+        week = manager.get_action_item(after.weekly_tactic_id)
+        assert week.start_date <= after.start_date <= week.due_date
+        # ...and the original-week stamp still records where it began.
+        assert after.weekly_tactic_start_date == "2026-02-23"
+    finally:
+        vps.close()
+
+
 def test_wt_m3a3_manual_override_persists(tmp_path):
     """WT-D3 — a hand-set stamp survives later saves."""
     vps = make_vps(tmp_path)

@@ -496,18 +496,26 @@ def repair_weekly_tactic_invariants(
     for row in rows:
         week_start = week_calendar.coerce_date(row["week_start"])
         if week_start is None:
+            # Reported, not skipped in silence: an item left out of range that
+            # appears in neither list makes the report unable to show it (P2).
+            skipped.append({
+                "item_id": row["item_id"],
+                "tactic_id": row["tactic_id"],
+                "reason": f"tactic start date {row['week_start']!r} is not a date",
+            })
             continue
-        week_end = week_start + timedelta(days=6)
+        week_end = week_calendar.coerce_date(row["week_end"]) or (
+            week_start + timedelta(days=6))
 
         start = week_calendar.coerce_date(row["start_date"])
         due = week_calendar.coerce_date(row["due_date"])
-        in_range = (
-            start is not None
-            and due is not None
-            and week_start <= start <= week_end
-            and week_start <= due <= week_end
-        )
-        if in_range:
+        # A NULL due date is not a violation: bring_into_week leaves it NULL, so
+        # requiring one here made such a row "repaired" on every single app
+        # start — an identical UPDATE plus a fresh history row, for ever, while
+        # the report claimed a move that never happened.
+        start_ok = start is not None and week_start <= start <= week_end
+        due_ok = due is None or (week_start <= due <= week_end)
+        if start_ok and due_ok:
             continue
 
         if row["tactic_id"] in blocked_tactics:
@@ -529,6 +537,11 @@ def repair_weekly_tactic_invariants(
         item = ActionItem(who="", title="", start_date=row["start_date"],
                           due_date=row["due_date"])
         change = bring_into_week(item, week_start, week_end)
+
+        if (change["from_start"], change["from_due"]) == (change["to_start"], change["to_due"]):
+            # Nothing actually moved. Writing an identical UPDATE and a history
+            # row anyway would report a change that did not happen.
+            continue
 
         conn.execute(
             "UPDATE action_items SET start_date = ?, due_date = ?, updated_at = ? WHERE id = ?",

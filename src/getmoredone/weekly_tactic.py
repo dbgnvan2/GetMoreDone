@@ -52,6 +52,11 @@ class CascadeReport:
     ``tests/test_vps_hub_crud.py`` asserts with ``is True`` (WT-F13, P22).
     """
 
+    #: Why the re-file did or did not happen. ``refiled`` is the only success.
+    #: ``no_tactic`` and ``no_target_date`` are benign; ``tactic_missing`` and
+    #: ``ape_missing`` are failures that leave the item out of range, and used
+    #: to be indistinguishable from "nothing to do" (P2/P14).
+    status: str = "refiled"
     item_id: Optional[str] = None
     tactic_id: Optional[str] = None
     previous_tactic_id: Optional[str] = None
@@ -67,9 +72,16 @@ class CascadeReport:
         if stub:
             self.stubs.append(entry)
 
+    #: Statuses that mean the item was left knowingly out of range.
+    FAILURE_STATUSES = ("tactic_missing", "ape_missing")
+
     @property
     def created_anything(self) -> bool:
         return bool(self.created)
+
+    @property
+    def failed(self) -> bool:
+        return self.status in self.FAILURE_STATUSES
 
     def describe(self) -> str:
         """One human sentence naming what was created, or an empty string."""
@@ -345,18 +357,24 @@ class WeeklyTacticEngine:
         Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m4c3
         Tests: tests/test_weekly_tactic_cascade.py::test_wt_m4c3_editorial_fields_blank_and_flagged
 
-        Rows created here are marked ``created_by_rollover = 1`` and their
-        editorial fields left blank (WT-D7a, WT-D13). Discovery is by that flag,
-        never by emptiness: a hand-authored vision with a blank statement is not
-        a stub (WT-M4.C.3b).
+        Rows in the two **editorial** tables — ``annual_visions`` and
+        ``annual_plans`` — are marked ``created_by_rollover = 1`` and their
+        named fields left blank (WT-D7a, WT-D13). Those are the only two tables
+        carrying the flag; ``annual_initiatives`` rows are reported but not
+        flagged, because they hold no editorial prose of their own.
+
+        Discovery is by that flag, never by emptiness: a hand-authored vision
+        with a blank statement is not a stub (WT-M4.C.3b).
+
+        A ``tl_visions`` row created underneath (``_get_or_create_annual_plan_for_ape``)
+        is reported too, so its invented ``"<segment> Vision"`` title cannot
+        appear without the user being told it exists.
         """
-        before = {
-            table: self._ids(table)
-            for table in ("annual_visions", "annual_plans", "annual_initiatives")
-        }
+        tables = ("tl_visions", "annual_visions", "annual_plans", "annual_initiatives")
+        before = {table: self._ids(table) for table in tables}
         self.vps._get_or_create_annual_initiative_for_ape(ape, created_by_rollover=True)
 
-        for table in ("annual_visions", "annual_plans", "annual_initiatives"):
+        for table in tables:
             for row_id in self._ids(table) - before[table]:
                 stub = table in ROLLOVER_BLANK_FIELDS
                 report.record(table, row_id, str(ape["year"]), stub=stub)
@@ -437,22 +455,42 @@ class WeeklyTacticEngine:
         """
         current_tactic_id = tactic_of(item)
         if not current_tactic_id:
-            return None
+            return None      # WT-INV6: not week-filed, nothing to do
 
         target = week_calendar.coerce_date(target_date)
         if target is None:
-            return None
+            # An item with no start date has no week to be filed into. Benign,
+            # but it is why such an item never gets stamped — say so.
+            logger.info(
+                "[weekly_tactic] item %s has no usable start date; not re-filed",
+                item.id,
+            )
+            return CascadeReport(status="no_target_date", item_id=item.id,
+                                 previous_tactic_id=current_tactic_id)
 
         current = self._row("action_items", current_tactic_id)
         if not current:
             # The tactic was deleted underneath us (ON DELETE SET NULL has
             # already cleared the column on a committed delete; this is the
             # in-memory case). Nothing to inherit a lineage from.
-            return None
+            logger.warning(
+                "[weekly_tactic] item %s names Weekly Tactic %s, which does not "
+                "exist; the item is being saved without being re-filed and may "
+                "fall outside its week",
+                item.id, current_tactic_id,
+            )
+            return CascadeReport(status="tactic_missing", item_id=item.id,
+                                 previous_tactic_id=current_tactic_id)
 
         source_ape = self._row("annual_plan_elements", current["annual_plan_element_id"])
         if not source_ape:
-            return None
+            logger.warning(
+                "[weekly_tactic] Weekly Tactic %s has no Annual Plan Element "
+                "(%r), so item %s cannot be re-filed and may fall outside its week",
+                current_tactic_id, current["annual_plan_element_id"], item.id,
+            )
+            return CascadeReport(status="ape_missing", item_id=item.id,
+                                 previous_tactic_id=current_tactic_id)
 
         week_start = self.calendar.start(target)
         week_end = week_start + timedelta(days=6)
@@ -469,6 +507,14 @@ class WeeklyTacticEngine:
         self._ensure_quarter_and_month(ape, week_start, report)
         tactic = self.ensure_tactic(ape, week_start, report)
 
+        # The bounds come from the tactic row itself, not from the calendar
+        # that was used to look it up. A week item is snapped to the *live*
+        # first-day-of-week on save, so an existing tactic's real range is the
+        # only thing WT-INV1/INV2 can be checked against.
+        actual_start = week_calendar.coerce_date(tactic["start_date"]) or week_start
+        actual_end = week_calendar.coerce_date(tactic["due_date"]) or (
+            actual_start + timedelta(days=6))
+
         item.weekly_tactic_id = tactic["id"]
         # WT-M4.A.3 — the item's own APE is reconciled to its tactic's, so the
         # two can never disagree about which plan element it belongs to.
@@ -477,6 +523,6 @@ class WeeklyTacticEngine:
             week_calendar.coerce_date(current["start_date"]) or week_start,
             self.calendar.first_day,
         ))
-        report.moved_dates = bring_into_week(item, week_start, week_end)
+        report.moved_dates = bring_into_week(item, actual_start, actual_end)
         report.tactic_id = tactic["id"]
         return report

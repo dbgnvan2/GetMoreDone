@@ -768,6 +768,98 @@ def test_wt_m7b_repair_idempotent_second_run_moves_nothing(tmp_path):
         reopened.close()
 
 
+def test_wt_m7b_null_due_date_is_not_repaired_every_single_run(tmp_path):
+    """A linked item with no due date must not be "repaired" for ever.
+
+    ``bring_into_week`` leaves a NULL due NULL, so requiring one to be in range
+    made such a row move on every app start: an identical UPDATE, a fresh
+    history row, and a report claiming a change that never happened — the
+    inverse of the honesty this routine exists for.
+    """
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = make_daily_item(vps, "No due", start="2026-02-25", due="2026-02-25",
+                               weekly_tactic_id=tactic.id, refile=False)
+        conn.execute("UPDATE action_items SET due_date = NULL WHERE id = ?", (item.id,))
+        conn.commit()
+
+        for run in range(3):
+            report = repair_weekly_tactic_invariants(conn)
+            conn.commit()
+            assert report["moved"] == 0, f"run {run + 1} claimed a move that did not happen"
+
+        assert _count(conn, "reschedule_history") == 0, (
+            "an unchanged row must not accumulate history on every launch"
+        )
+        assert vps.db_manager.get_action_item(item.id).due_date is None
+    finally:
+        vps.close()
+
+
+def test_wt_m7b_an_unparseable_week_start_is_reported(tmp_path):
+    """A child left out of range must appear in the report, not vanish (P2)."""
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = _out_of_range_item(vps, tactic.id, "2026-01-05", "2026-01-06")
+        conn.execute("UPDATE action_items SET start_date = 'not a date' WHERE id = ?",
+                     (tactic.id,))
+        conn.commit()
+
+        report = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+
+        assert report["moved"] == 0
+        assert report["skipped"] == 1
+        assert report["skipped_details"][0]["item_id"] == item.id
+        assert "not a date" in report["skipped_details"][0]["reason"]
+    finally:
+        vps.close()
+
+
+def test_wt_m7b_the_migration_runs_once_per_launch(tmp_path):
+    """VPSManager and DatabaseManager share a Database; the migration is not twice.
+
+    Both call initialize_schema(). Running the whole migration twice doubled the
+    repair's history rows and overwrote the first, real report with a no-op one.
+    """
+    vps = make_vps(tmp_path, "once.db")
+    db_path = vps.db_manager.db.db_path
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        _out_of_range_item(vps, tactic.id, "2026-01-05", "2026-01-06")
+    finally:
+        vps.close()
+
+    from src.getmoredone.vps_manager import VPSManager
+
+    manager = DatabaseManager(db_path)
+    first = dict(manager.db.weekly_tactic_migration_report["invariant_repair"])
+    assert first["moved"] == 1, "the first pass must be the real one"
+
+    second = VPSManager(db_manager=manager)   # calls initialize_schema again
+    try:
+        assert manager.db.weekly_tactic_migration_report["invariant_repair"]["moved"] == 1, (
+            "the report was overwritten by a second, no-op pass"
+        )
+        assert _count(manager.db.conn, "reschedule_history") == 1, (
+            "the repair ran twice and wrote two history rows for one move"
+        )
+    finally:
+        second.close()
+
+
 def test_wt_m7b_unrepairable_item_is_reported_not_counted_as_fixed(tmp_path):
     """A tactic that could not snap leaves its children genuinely unrepairable.
 

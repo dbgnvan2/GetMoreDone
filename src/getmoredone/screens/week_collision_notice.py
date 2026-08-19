@@ -27,6 +27,65 @@ def describe_week_collision(collision: Optional[dict]) -> Optional[str]:
     )
 
 
+def describe_cascade(report: Any) -> Optional[str]:
+    """What a re-file created, phrased for a status line. None if nothing was.
+
+    Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6b5
+    Tests: tests/test_weekly_tactic_surfaces.py::test_wt_m6b5_summary_reaches_a_user_surface
+    """
+    if report is None:
+        return None
+    if getattr(report, "failed", False):
+        return (
+            "This item's Weekly Tactic could not be found, so it was saved "
+            "without being re-filed and may now sit outside its week."
+        )
+    text = report.describe() if hasattr(report, "describe") else ""
+    return text or None
+
+
+def cascade_needs_attention(report: Any) -> bool:
+    """Does this report warrant interrupting the user?
+
+    Creating a Weekly Tactic happens on most moves across a week boundary, so
+    a modal for every one of those would be noise the user learns to dismiss.
+    Two things genuinely need saying:
+
+    * a **year rollover** created blank editorial rows that need the user's own
+      words — nobody else can write them, and nothing else will ask;
+    * the re-file **failed**, so the item is knowingly outside its week.
+
+    Everything else is in the report and in ``weekly_tactic_debug.log``.
+    """
+    if report is None:
+        return False
+    return bool(getattr(report, "failed", False) or getattr(report, "stubs", None))
+
+
+def notify_cascade(db_manager: Any, parent: Any = None) -> bool:
+    """Tell the user when the last save built something needing their attention.
+
+    ``last_cascade_report`` had no reader anywhere in ``src/`` — a save that
+    built eight planning rows, blank rollover stubs included, told the user
+    nothing (P25).
+    """
+    report = getattr(db_manager, "last_cascade_report", None)
+    if not cascade_needs_attention(report):
+        return False
+    message = describe_cascade(report)
+    if not message:
+        return False
+    messagebox.showinfo("Plan records created", message, parent=parent)
+    return True
+
+
+def notify_weekly_tactic_changes(db_manager: Any, parent: Any = None) -> bool:
+    """Report a refused week *and* anything the cascade built. One call site."""
+    collided = notify_week_collision(db_manager, parent)
+    created = notify_cascade(db_manager, parent)
+    return collided or created
+
+
 def notify_week_collision(db_manager: Any, parent: Any = None) -> bool:
     """Show the collision notice if the last save hit one.
 

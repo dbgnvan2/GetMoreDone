@@ -47,6 +47,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
     _weekly_tactic_engine: Optional[Any] = None
     _vps_manager: Optional[Any] = None
+    _week_calendar: Optional[Any] = None
 
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database manager.
@@ -87,14 +88,22 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         conn.defer_commits()
         try:
             yield conn
-        except Exception:
-            conn.resume_commits()
+        except BaseException:
+            # BaseException, not Exception: a Ctrl-C through this block used to
+            # leave the commit gate closed for the life of the process while
+            # _in_transaction read False. Every later save then looked fine on
+            # this connection and was discarded at close() — a green session
+            # that persisted nothing.
             conn.rollback()
             raise
         else:
-            conn.resume_commits()
-            conn.commit()
+            # force_commit, because `finally` has not reopened the gate yet and
+            # this is the one commit the gate exists to let through.
+            conn.force_commit()
         finally:
+            # Always, on every exit path. The gate is process-wide state; it
+            # must never outlive the block that closed it.
+            conn.resume_commits()
             self._in_transaction = False
 
     def close(self):
@@ -150,7 +159,33 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         return self._insert_action_item(item)
 
     def _insert_action_item(self, item: ActionItem) -> str:
-        """The write half of ``create_action_item``, separated for the hook."""
+        """The write half of ``create_action_item``, separated for the hook.
+
+        Raises ``sqlite3.IntegrityError`` when a week item collides on the
+        WT-INV5 index. Unlike the update path there is nothing to fall back to —
+        a row that does not exist yet cannot keep its previous dates — so the
+        error is annotated and re-raised rather than swallowed. Callers on the
+        cascade path run inside a transaction, so the whole cascade rolls back
+        (WT-M1.C.5's sibling case).
+        """
+        try:
+            return self._write_new_action_item(item)
+        except sqlite3.IntegrityError as exc:
+            if item.item_type == "week":
+                self.last_week_collision = {
+                    "item_id": item.id,
+                    "kept_start": None,
+                    "rejected_start": item.start_date,
+                    "error": str(exc),
+                }
+                logger.warning(
+                    "[weekly_tactic] cannot create a Weekly Tactic for %s on %s "
+                    "— one already exists for that Annual Plan Element and week",
+                    item.annual_plan_element_id, item.start_date,
+                )
+            raise
+
+    def _write_new_action_item(self, item: ActionItem) -> str:
         self.db.conn.execute("""
             INSERT INTO action_items (
                 id, who, contact_id, parent_id, weekly_tactic_id, title, description, next_action, start_date, due_date,
@@ -371,8 +406,30 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         """
         if self._weekly_tactic_engine is None:
             from .weekly_tactic import WeeklyTacticEngine
-            self._weekly_tactic_engine = WeeklyTacticEngine(self, self._vps_manager)
+            self._weekly_tactic_engine = WeeklyTacticEngine(
+                self, self._vps_manager, calendar=self.week_calendar
+            )
         return self._weekly_tactic_engine
+
+    def _refile_target_date(self, item: ActionItem, default_target):
+        """Which week the item should be filed into.
+
+        Purpose: an explicitly chosen Weekly Tactic wins over the item's own
+                 start date.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-d1
+        Tests:   tests/test_weekly_tactic_surfaces.py::test_wt_m6b1_item_editor_refiles
+
+        WT-D1 is explicit that the start date moves *with* the Weekly Tactic.
+        Re-deriving the week from the item's own start date on every save meant
+        picking a tactic by hand did nothing: the save put the item straight
+        back on the week its start date already named.
+        """
+        stored = self.get_action_item(item.id)
+        chosen = tactic_of(item)
+        if stored is None or chosen == tactic_of(stored):
+            return default_target
+        tactic = self.get_action_item(chosen)
+        return tactic.start_date if tactic else default_target
 
     def _refile_into_weekly_tactic(self, item: ActionItem, target_date) -> None:
         """WT-M4 — re-file ``item`` for ``target_date`` if it has a tactic.
@@ -392,7 +449,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             self.last_cascade_report = None
             return
 
-        report = self.weekly_tactic_engine.plan_refile(item, target_date)
+        report = self.weekly_tactic_engine.plan_refile(
+            item, self._refile_target_date(item, target_date)
+        )
         self.last_cascade_report = report
 
     def _commit_unless_in_transaction(self):
@@ -428,6 +487,16 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         if tactic_of(item):
             with self.transaction():
                 self._refile_into_weekly_tactic(item, item.completed_at[:10])
+                # The same preamble the ordinary save runs. Calling
+                # _save_action_item directly skipped all of it, so a completed
+                # item's updated_at claimed the row had not been touched while
+                # its status, completed_at and both dates had changed.
+                self._validate_week_item(item)
+                self._validate_weekly_tactic_link(item)
+                self._stamp_segment_from_relationships(item)
+                self._normalize_week_item_group(item)
+                item.update_priority_score()
+                item.updated_at = datetime.now().isoformat()
                 moved = self._save_action_item(item, self.get_action_item(item_id))
                 self._record_completion_refile(item_id, before, item)
                 return moved
@@ -498,7 +567,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
                 start = date_class.fromisoformat(start_date)
                 due = start + timedelta(days=1)
                 if tactic_of(item):
-                    week_end = self.weekly_tactic_engine.calendar.end(start)
+                    week_end = self.week_calendar.end(start)
                     if week_end and due > week_end:
                         due = week_end
                 item.due_date = due.isoformat()
@@ -1479,11 +1548,36 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         return seg_row["id"] if seg_row else None
 
     def _get_first_day_of_week(self) -> int:
-        try:
-            settings = AppSettings.load()
-            return int(getattr(settings, "first_day_of_week", 0))
-        except Exception:
-            return 0
+        """The configured first day of the week, from the one calendar.
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m2b
+        Tests: tests/test_weekly_tactic_cascade.py::test_wt_m4b_week_boundary_has_one_source
+
+        This used to load settings itself while the re-filing engine held a
+        calendar built once at startup. Changing "First day of week" mid-session
+        then split them: the cascade created a week row on one boundary and the
+        save immediately re-snapped it to the other, so the tactic could never
+        be found again and the next move into that week hit the WT-INV5 index.
+        """
+        return self.week_calendar.first_day
+
+    @property
+    def week_calendar(self):
+        """The week calendar, rebuilt when the setting changes.
+
+        Cheap enough to check every call — ``AppSettings.load()`` is a small
+        JSON read, and this replaces a call that already did exactly that.
+        """
+        from . import week_calendar as _wc
+
+        current = _wc.WeekCalendar.from_settings()
+        cached = self._week_calendar
+        if (cached is None or cached.first_day != current.first_day
+                or cached.rule != current.rule):
+            self._week_calendar = current
+            if self._weekly_tactic_engine is not None:
+                self._weekly_tactic_engine.calendar = current
+        return self._week_calendar
 
     def _derive_segment_id(
         self,

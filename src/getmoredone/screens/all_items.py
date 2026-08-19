@@ -10,7 +10,7 @@ from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
 from .segment_color_utils import resolve_segment_color_for_item
 from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
-from .week_collision_notice import notify_week_collision
+from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import apply_segment_accent, semantic_colors, button_style, combo_box_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
 from .title_format import (
@@ -486,7 +486,7 @@ class AllItemsScreen(ctk.CTkFrame):
         if new_start and new_due and new_due < new_start:
             new_due = new_start
         self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_start_edit")
-        notify_week_collision(self.db_manager, self)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def edit_priority_inline(self, item_id: str):
@@ -519,7 +519,7 @@ class AllItemsScreen(ctk.CTkFrame):
         if new_start and new_due and new_due < new_start:
             new_due = new_start
         self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_due_edit")
-        notify_week_collision(self.db_manager, self)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def create_new_item(self):

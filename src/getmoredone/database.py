@@ -26,7 +26,13 @@ class _DeferredCommitConnection:
     lineage committed on an error path nobody exercises.
 
     A gate on the connection cannot be missed. Every commit on this connection
-    goes through here, whoever makes it and however deep.
+    goes through here, whoever makes it and however deep — including ``with
+    conn:``, whose ``__exit__`` is overridden below rather than delegated,
+    because sqlite3's own would commit the raw connection.
+
+    One consequence worth knowing: ``isinstance(db.conn, sqlite3.Connection)``
+    is False. Nothing in this codebase tests for it, and everything else passes
+    through by ``__getattr__``.
     """
 
     __slots__ = ("_conn", "_defer_depth")
@@ -68,10 +74,19 @@ class _DeferredCommitConnection:
             setattr(self._conn, name, value)
 
     def __enter__(self):
-        return self._conn.__enter__()
+        # Deliberately not delegated: sqlite3's own context manager commits on
+        # the raw connection, which would step straight past the gate the class
+        # docstring promises. Yielding self keeps every commit inside the block
+        # going through commit() above.
+        self._conn.__enter__()
+        return self
 
-    def __exit__(self, *exc):
-        return self._conn.__exit__(*exc)
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            self.commit()
+            return False
+        self._conn.rollback()
+        return False
 
 
 class Database:
@@ -399,7 +414,13 @@ class Database:
         # annual_plan_element_id (VSP schema) and touch project_boards, both of
         # which are only guaranteed to exist by this point.
         # Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#8-implementation-order
-        self.weekly_tactic_migration_report = run_weekly_tactic_migrations(conn)
+        # Once per Database, not once per manager. VPSManager and
+        # DatabaseManager now share one Database and both call
+        # initialize_schema(), so this ran twice per launch — doubling the
+        # repair's history rows and overwriting the first (real) report with a
+        # second, no-op one.
+        if self.weekly_tactic_migration_report is None:
+            self.weekly_tactic_migration_report = run_weekly_tactic_migrations(conn)
 
         conn.commit()
 

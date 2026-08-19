@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
 
 from ..models import ActionItem, PriorityFactors, ItemLink, Status
+from .week_collision_notice import notify_weekly_tactic_changes
 from .. import week_calendar
 from .. import weekly_tactic_titles
 from ..validation import Validator
@@ -1526,6 +1527,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                         current_item.start_date,
                     )
                 self.db_manager.update_action_item(current_item)
+                # WT-M6.B.5 — say what the cascade built before this dialog is
+                # torn down and reopened, or the report is discarded unseen.
+                notify_weekly_tactic_changes(self.db_manager, self)
 
             self.destroy()
             ItemEditorDialog(

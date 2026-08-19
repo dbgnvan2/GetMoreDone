@@ -382,7 +382,7 @@ def test_wt_m1c5_collision_notice_reaches_the_user(tmp_path):
     screens = Path(__file__).resolve().parents[1] / "src" / "getmoredone" / "screens"
     for name in ("today.py", "upcoming.py", "all_items.py"):
         text = (screens / name).read_text(encoding="utf-8")
-        assert "notify_week_collision(self.db_manager, self)" in text, (
+        assert "notify_weekly_tactic_changes(self.db_manager, self)" in text, (
             f"{name} moves dates but never reports a refused week"
         )
     dialog = (screens / "reschedule_dialog.py").read_text(encoding="utf-8")
