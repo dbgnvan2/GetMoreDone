@@ -24,6 +24,20 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   any timeframe.
 - **`weekly_tactic_start_date`** on Action Items, recording the week an item was
   originally meant to start. Existing items are left blank; nothing is backfilled.
+- **Changing an Action Item's start date re-files it into the right Weekly Tactic**,
+  creating any missing Quarter, Month and Week records along the way — including across
+  a year boundary. The item's dates move by whole weeks so a Thursday task stays on a
+  Thursday, and an item never spans two weeks.
+- **Completing an item re-files it to the week you completed it in**, while
+  `weekly_tactic_start_date` goes on holding the week it was originally meant to start,
+  so a push-out stays visible. Re-opening does not undo that.
+- **A new year is built from your existing plan structure, not invented.** The vision
+  element, segment and key field carry across; the editorial text — vision statement, key
+  priorities, theme, objective — is left blank for you to write, and those rows are
+  flagged so the app can tell a stub from something you wrote. When a save creates them,
+  it says so.
+- **A first-week-of-year setting** under Settings, and project start/end dates on Project
+  Boards.
 
 ### Fixed
 
