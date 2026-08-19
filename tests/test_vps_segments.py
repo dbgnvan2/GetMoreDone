@@ -1,261 +1,186 @@
-#!/usr/bin/env python3
+"""VPS Segment management — Settings controls, colour validation, deletion guard.
+
+BC3. This file used to be a standalone script renamed into the suite. Every
+test was wrapped in ``except Exception: return False`` and returned a bool
+instead of asserting, so pytest ignored the verdict and reported green whatever
+happened — including an exception. Several checks only printed a ``⚠`` and
+carried on, so they could not fail at all.
+
+That was not theoretical. ``test_enhanced_deletion_protection`` **was returning
+False**: `delete_segment` had moved from a `vision_count` int to a `counts`
+dict, and the test that existed to guard it went on passing. It was checking
+the source text for a name that no longer existed.
+
+Rewritten to assert, and to exercise behaviour rather than grep source wherever
+that is cheap.
+
+Spec: docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-1
 """
-Test script for VPS Segment Management in Settings.
-Tests the enhanced deletion protection with detailed vision count reporting.
-"""
+
+import inspect
+
+import pytest
+
+from src.getmoredone.screens.settings import SettingsScreen
+from src.getmoredone.screens.vps_segment_editor import VPSSegmentEditorDialog
+from src.getmoredone.vps_manager import VPSManager
 
 
-def test_imports():
-    """Test that the VPS segment management modules import correctly."""
-    print("Testing imports...")
-    try:
-        from src.getmoredone.screens.settings import SettingsScreen
-        from src.getmoredone.screens.vps_segment_editor import VPSSegmentEditorDialog
-        print("✓ All imports successful")
-        return True
-    except Exception as e:
-        print(f"✗ Import failed: {e}")
-        return False
+@pytest.fixture
+def vps(tmp_path):
+    manager = VPSManager(str(tmp_path / "segments.db"))
+    yield manager
+    manager.close()
 
 
-def test_settings_has_vps_tab():
-    """Test that SettingsScreen has VPS segments section."""
-    print("\nTesting Settings screen structure...")
-    try:
-        from src.getmoredone.screens.settings import SettingsScreen
-
-        # Check for required methods
-        required_methods = [
-            'create_vps_segments_section',
-            'refresh_segments_list',
-            'create_segment_row',
-            'create_new_segment',
-            'edit_segment',
-            'delete_segment'
-        ]
-
-        for method in required_methods:
-            if hasattr(SettingsScreen, method):
-                print(f"✓ {method} method exists")
-            else:
-                print(f"✗ {method} method not found")
-                return False
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+# ------------------------------------------------------------------ surface
 
 
-def test_segment_editor_structure():
-    """Test that VPSSegmentEditorDialog has required functionality."""
-    print("\nTesting Segment Editor structure...")
-    try:
-        from src.getmoredone.screens.vps_segment_editor import VPSSegmentEditorDialog
-
-        # Check for required methods
-        required_methods = [
-            'create_form',
-            'load_segment_data',
-            'pick_color',
-            'validate_color',
-            'save_segment'
-        ]
-
-        for method in required_methods:
-            if hasattr(VPSSegmentEditorDialog, method):
-                print(f"✓ {method} method exists")
-            else:
-                print(f"✗ {method} method not found")
-                return False
-
-        # Check __init__ for color handling
-        import inspect
-        source = inspect.getsource(VPSSegmentEditorDialog.__init__)
-        if 'selected_color' in source and 'color_hex' in source:
-            print("✓ Color handling initialized")
-        else:
-            print("✗ Color handling not properly initialized")
-            return False
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+@pytest.mark.parametrize("method", [
+    "create_vps_segments_section",
+    "refresh_segments_list",
+    "create_segment_row",
+    "create_new_segment",
+    "edit_segment",
+    "delete_segment",
+])
+def test_bc3_settings_screen_exposes_the_segment_controls(method):
+    assert callable(getattr(SettingsScreen, method, None)), (
+        f"SettingsScreen.{method} is gone — the Settings segment UI lost a control")
 
 
-def test_color_validation():
-    """Test color validation function."""
-    print("\nTesting color validation...")
-    try:
-        from src.getmoredone.screens.vps_segment_editor import VPSSegmentEditorDialog
-
-        # Create a mock instance just for validation testing
-        class MockVPSManager:
-            pass
-
-        # We can't instantiate the dialog without a parent, but we can check the method exists
-        import inspect
-        source = inspect.getsource(VPSSegmentEditorDialog.validate_color)
-
-        if 'startswith' in source and '#' in source:
-            print("✓ Color validation checks for # prefix")
-        else:
-            print("⚠ Color validation might not check # prefix")
-
-        if 'len' in source and '7' in source:
-            print("✓ Color validation checks length")
-        else:
-            print("⚠ Color validation might not check length")
-
-        if 'int' in source and '16' in source:
-            print("✓ Color validation checks hex format")
-        else:
-            print("⚠ Color validation might not check hex format")
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+@pytest.mark.parametrize("method", [
+    "create_form",
+    "load_segment_data",
+    "pick_color",
+    "validate_color",
+    "save_segment",
+])
+def test_bc3_segment_editor_exposes_its_form_methods(method):
+    assert callable(getattr(VPSSegmentEditorDialog, method, None)), (
+        f"VPSSegmentEditorDialog.{method} is gone")
 
 
-def test_vps_manager_segment_methods():
-    """Test that VPSManager has all required segment methods."""
-    print("\nTesting VPSManager segment methods...")
-    try:
-        from src.getmoredone.vps_manager import VPSManager
-
-        required_methods = [
-            'get_all_segments',
-            'get_segment',
-            'create_segment',
-            'update_segment',
-            'delete_segment'
-        ]
-
-        for method in required_methods:
-            if hasattr(VPSManager, method):
-                print(f"✓ {method} method exists")
-            else:
-                print(f"✗ {method} method not found")
-                return False
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+@pytest.mark.parametrize("method", [
+    "get_all_segments",
+    "get_segment",
+    "create_segment",
+    "update_segment",
+    "delete_segment",
+])
+def test_bc3_vps_manager_exposes_its_segment_methods(method):
+    assert callable(getattr(VPSManager, method, None))
 
 
-def test_colorchooser_import():
-    """Test that colorchooser is properly imported."""
-    print("\nTesting colorchooser import...")
-    try:
-        from src.getmoredone.screens import vps_segment_editor
-        import inspect
+def test_bc3_the_colour_picker_is_wired_to_a_real_chooser():
+    """The editor must reach tkinter's colour chooser, not just mention it."""
+    from src.getmoredone.screens import vps_segment_editor
 
-        source = inspect.getsource(vps_segment_editor)
-        if 'colorchooser' in source:
-            print("✓ colorchooser imported in vps_segment_editor")
-        else:
-            print("✗ colorchooser not found in vps_segment_editor")
-            return False
-
-        if 'askcolor' in source:
-            print("✓ askcolor method used for color picking")
-        else:
-            print("✗ askcolor method not found")
-            return False
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+    assert hasattr(vps_segment_editor, "colorchooser"), (
+        "colorchooser is not imported — the colour picker cannot open")
+    assert callable(getattr(vps_segment_editor.colorchooser, "askcolor", None))
+    assert "askcolor" in inspect.getsource(VPSSegmentEditorDialog.pick_color), (
+        "pick_color no longer calls askcolor")
 
 
-def test_enhanced_deletion_protection():
-    """Test that delete_segment returns detailed vision count."""
-    print("\nTesting enhanced deletion protection...")
-    try:
-        from src.getmoredone.vps_manager import VPSManager
-        import inspect
-
-        # Check delete_segment return type annotation
-        source = inspect.getsource(VPSManager.delete_segment)
-
-        if 'tuple[bool, int]' in source or 'Tuple[bool, int]' in source:
-            print("✓ delete_segment returns tuple[bool, int]")
-        else:
-            print("⚠ delete_segment return type not explicitly annotated")
-
-        if 'vision_count' in source:
-            print("✓ delete_segment tracks vision_count")
-        else:
-            print("✗ vision_count not found in delete_segment")
-            return False
-
-        if 'COUNT(*)' in source or 'count' in source.lower():
-            print("✓ delete_segment counts linked records")
-        else:
-            print("✗ No counting logic found")
-            return False
-
-        # Check Settings error message
-        from src.getmoredone.screens import settings
-        settings_source = inspect.getsource(
-            settings.SettingsScreen.delete_segment)
-
-        if 'vision_count' in settings_source:
-            print("✓ Settings screen uses vision_count")
-        else:
-            print("✗ Settings screen doesn't use vision_count")
-            return False
-
-        if 'To delete this segment:' in settings_source or 'Go to VPS Planning' in settings_source:
-            print("✓ Settings provides step-by-step instructions")
-        else:
-            print("⚠ No step-by-step instructions found")
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+# -------------------------------------------------------- colour validation
 
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("VPS Segment Management Test")
-    print("=" * 60)
+@pytest.mark.parametrize("value", ["#000000", "#ffffff", "#AABBCC", "#1a2b3c"])
+def test_bc3_validate_color_accepts_a_full_hex_colour(value):
+    assert VPSSegmentEditorDialog.validate_color(None, value) is True
 
-    results = []
-    results.append(("Import Test", test_imports()))
-    results.append(("Settings VPS Tab", test_settings_has_vps_tab()))
-    results.append(("Segment Editor Structure",
-                   test_segment_editor_structure()))
-    results.append(("Color Validation", test_color_validation()))
-    results.append(("VPSManager Methods", test_vps_manager_segment_methods()))
-    results.append(("Colorchooser Import", test_colorchooser_import()))
-    results.append(("Enhanced Deletion Protection",
-                   test_enhanced_deletion_protection()))
 
-    print("\n" + "=" * 60)
-    print("Summary:")
-    print("=" * 60)
+@pytest.mark.parametrize("value,reason", [
+    ("aabbcc", "no leading #"),
+    ("#abc", "shorthand is not accepted"),
+    ("#aabbccdd", "too long"),
+    ("#gggggg", "not hexadecimal"),
+    ("#12345z", "one bad digit"),
+    ("", "empty"),
+])
+def test_bc3_validate_color_rejects_everything_else(value, reason):
+    assert VPSSegmentEditorDialog.validate_color(None, value) is False, reason
 
-    for test_name, passed in results:
-        status = "✓ PASS" if passed else "✗ FAIL"
-        print(f"{status}: {test_name}")
 
-    all_passed = all(result[1] for result in results)
+# ------------------------------------------------------------- round trip
 
-    print("\n" + "=" * 60)
-    if all_passed:
-        print("✓ All tests PASSED!")
-        print("\nEnhanced Features:")
-        print("  • Detailed vision count in deletion errors")
-        print("  • Step-by-step removal instructions")
-        print("  • Cascade deletion warnings")
-    else:
-        print("✗ Some tests FAILED")
-    print("=" * 60)
 
-    exit(0 if all_passed else 1)
+def test_bc3_a_segment_round_trips_through_the_manager(vps):
+    segment_id = vps.create_segment("Test Segment", "desc", "#123456", 99)
+
+    stored = vps.get_segment(segment_id)
+    assert stored is not None
+    assert stored["name"] == "Test Segment"
+    assert stored["color_hex"] == "#123456"
+
+    assert vps.update_segment(
+        segment_id, name="Renamed", color_hex="#654321", order_index=98) is True
+    stored = vps.get_segment(segment_id)
+    assert stored["name"] == "Renamed"
+    assert stored["color_hex"] == "#654321"
+
+    # A field the allowlist does not accept must not silently succeed.
+    assert vps.update_segment(segment_id, not_a_field="x") is False
+
+    deleted, counts = vps.delete_segment(segment_id)
+    assert deleted is True
+    assert counts == {}
+    assert vps.get_segment(segment_id) is None
+
+
+# --------------------------------------------------------- deletion guard
+
+
+def test_bc3_delete_segment_refuses_while_records_are_linked(vps):
+    """The guard this file exists for, asserted on behaviour.
+
+    The previous version grepped `delete_segment`'s source for the string
+    "vision_count". That name was removed when the return shape changed to a
+    dict, so the test had been returning False — reported as a pass — ever
+    since.
+    """
+    segment_id = vps.create_segment("Linked Segment", "desc", "#123456", 97)
+    vps.db.conn.execute(
+        """
+        INSERT INTO tl_visions (id, segment_description_id, start_year, end_year,
+                                title, is_active, created_at, updated_at)
+        VALUES ('vis-bc3', ?, 2026, 2030, 'A vision', 1, '2026-01-01', '2026-01-01')
+        """,
+        (segment_id,),
+    )
+    vps.db.conn.commit()
+
+    deleted, counts = vps.delete_segment(segment_id)
+
+    assert deleted is False, "a segment with a linked vision was deleted"
+    assert counts, "the refusal reported no counts, so the UI cannot say why"
+    assert any("vision" in label.lower() for label in counts), counts
+    assert vps.get_segment(segment_id) is not None, "the row went anyway"
+
+
+def test_bc3_the_refusal_counts_every_linked_row(vps):
+    segment_id = vps.create_segment("Busy Segment", "desc", "#123456", 96)
+    for index in (1, 2, 3):
+        vps.db.conn.execute(
+            """
+            INSERT INTO tl_visions (id, segment_description_id, start_year, end_year,
+                                    title, is_active, created_at, updated_at)
+            VALUES (?, ?, 2026, 2030, 'A vision', 1, '2026-01-01', '2026-01-01')
+            """,
+            (f"vis-bc3-{index}", segment_id),
+        )
+    vps.db.conn.commit()
+
+    deleted, counts = vps.delete_segment(segment_id)
+
+    assert deleted is False
+    assert sum(counts.values()) == 3, counts
+
+
+def test_bc3_settings_reports_the_counts_it_is_given(vps):
+    """The dict must reach the message, or the user is told nothing useful."""
+    source = inspect.getsource(SettingsScreen.delete_segment)
+
+    assert "counts" in source, (
+        "the Settings screen no longer reads the counts delete_segment returns")

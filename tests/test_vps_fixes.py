@@ -1,129 +1,66 @@
-#!/usr/bin/env python3
+"""VPS editor and planning screen — the structure two old bug fixes depend on.
+
+BC3. Converted from a standalone script: every test returned a bool inside
+``except Exception: return False``, so pytest ignored the verdict and an
+exception read as a pass. None of these four were lying at the time of the
+conversion — unlike ``test_vps_segments``, which was — but none of them could
+have told us if they started.
+
+The two fixes these guard:
+  * the New Vision crash — `CTkMessageBox` replaced with tkinter's `messagebox`
+  * segment selection on the planning screen — `selected_segments`
+
+Spec: docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-1
 """
-Test script to verify VPS bug fixes.
-"""
+
+import inspect
+
+import pytest
+
+from src.getmoredone.screens import vps_editors
+from src.getmoredone.screens.vps_editors import TLVisionEditorDialog
+from src.getmoredone.screens.vps_planning import VPSPlanningScreen
 
 
-def test_imports():
-    """Test that the VPS modules import correctly."""
-    print("Testing imports...")
-    try:
-        from src.getmoredone.screens.vps_editors import TLVisionEditorDialog
-        from src.getmoredone.screens.vps_planning import VPSPlanningScreen
-        print("✓ All imports successful")
-        return True
-    except Exception as e:
-        print(f"✗ Import failed: {e}")
-        return False
+def test_bc3_messagebox_is_imported_in_vps_editors():
+    """The New Vision crash was a missing messagebox, so this is the guard."""
+    assert hasattr(vps_editors, "messagebox"), (
+        "vps_editors has no messagebox — save_vision's error paths will raise")
+    assert callable(getattr(vps_editors.messagebox, "showerror", None))
 
 
-def test_messagebox_import():
-    """Test that messagebox is properly imported."""
-    print("\nTesting messagebox import...")
-    try:
-        from src.getmoredone.screens import vps_editors
-        if hasattr(vps_editors, 'messagebox'):
-            print("✓ messagebox is imported in vps_editors")
-            return True
-        else:
-            print("✗ messagebox not found in vps_editors")
-            return False
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+def test_bc3_save_vision_does_not_use_ctkmessagebox():
+    """`CTkMessageBox` does not exist in this CustomTkinter build — it crashed."""
+    source = inspect.getsource(TLVisionEditorDialog.save_vision)
+
+    assert "CTkMessageBox" not in source, (
+        "CTkMessageBox is back in save_vision — this is the New Vision crash")
 
 
-def test_vision_editor_structure():
-    """Test that TLVisionEditorDialog has the correct structure."""
-    print("\nTesting VisionEditorDialog structure...")
-    try:
-        from src.getmoredone.screens.vps_editors import TLVisionEditorDialog
+def test_bc3_save_vision_still_reports_errors_to_the_user():
+    """Removing the crash must not have removed the error message with it.
 
-        # Check if save_vision method exists
-        if hasattr(TLVisionEditorDialog, 'save_vision'):
-            print("✓ save_vision method exists")
-        else:
-            print("✗ save_vision method not found")
-            return False
+    The original check printed a warning and passed when no messagebox call was
+    found, so a silent save_vision would have gone unnoticed.
+    """
+    source = inspect.getsource(TLVisionEditorDialog.save_vision)
 
-        # Read the source to check for CTkMessageBox (should not exist)
-        import inspect
-        source = inspect.getsource(TLVisionEditorDialog.save_vision)
-        if 'CTkMessageBox' in source:
-            print("✗ CTkMessageBox still referenced in save_vision")
-            return False
-        else:
-            print("✓ No CTkMessageBox references found")
-
-        if 'messagebox.showerror' in source or 'messagebox.showinfo' in source:
-            print("✓ Using tkinter messagebox instead")
-        else:
-            print("⚠ Warning: No messagebox calls found")
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+    assert ("messagebox.showerror" in source or "messagebox.showinfo" in source), (
+        "save_vision no longer tells the user anything when it fails")
 
 
-def test_planning_screen_structure():
-    """Test that VPSPlanningScreen has segment selection feature."""
-    print("\nTesting VPSPlanningScreen segment selection...")
-    try:
-        from src.getmoredone.screens.vps_planning import VPSPlanningScreen
-
-        # Check for required methods
-        required_methods = [
-            'show_segment_filter_dialog', 'update_segment_filter']
-        for method in required_methods:
-            if hasattr(VPSPlanningScreen, method):
-                print(f"✓ {method} method exists")
-            else:
-                print(f"✗ {method} method not found")
-                return False
-
-        # Check __init__ for selected_segments
-        import inspect
-        source = inspect.getsource(VPSPlanningScreen.__init__)
-        if 'selected_segments' in source:
-            print("✓ selected_segments tracking added")
-        else:
-            print("✗ selected_segments not found in __init__")
-            return False
-
-        return True
-    except Exception as e:
-        print(f"✗ Test failed: {e}")
-        return False
+@pytest.mark.parametrize("method", [
+    "show_segment_filter_dialog",
+    "update_segment_filter",
+])
+def test_bc3_planning_screen_exposes_segment_selection(method):
+    assert callable(getattr(VPSPlanningScreen, method, None)), (
+        f"VPSPlanningScreen.{method} is gone — segment filtering is unreachable")
 
 
-if __name__ == "__main__":
-    print("=" * 60)
-    print("VPS Bug Fixes Verification")
-    print("=" * 60)
+def test_bc3_planning_screen_tracks_selected_segments():
+    source = inspect.getsource(VPSPlanningScreen.__init__)
 
-    results = []
-    results.append(("Import Test", test_imports()))
-    results.append(("Messagebox Import", test_messagebox_import()))
-    results.append(("Vision Editor Structure", test_vision_editor_structure()))
-    results.append(("Planning Screen Structure",
-                   test_planning_screen_structure()))
-
-    print("\n" + "=" * 60)
-    print("Summary:")
-    print("=" * 60)
-
-    for test_name, passed in results:
-        status = "✓ PASS" if passed else "✗ FAIL"
-        print(f"{status}: {test_name}")
-
-    all_passed = all(result[1] for result in results)
-
-    print("\n" + "=" * 60)
-    if all_passed:
-        print("✓ All tests PASSED!")
-    else:
-        print("✗ Some tests FAILED")
-    print("=" * 60)
-
-    exit(0 if all_passed else 1)
+    assert "selected_segments" in source, (
+        "VPSPlanningScreen no longer initialises selected_segments, so the "
+        "segment filter has nothing to write to")

@@ -1,183 +1,127 @@
-#!/usr/bin/env python3
+"""Obsidian integration — the pieces the note dialogs depend on.
+
+BC3. Converted from a standalone script whose tests returned bools inside
+``except Exception: return False``, so pytest ignored the verdict entirely.
+
+One of them did more than lie about its result: ``test_database`` constructed
+``DatabaseManager()`` **with no path**, which resolves to the user's real
+application database and runs ``initialize_schema()`` on it — schema
+migrations, the Weekly Tactic dedupe (which deletes rows) and the invariant
+repair (which moves dates). A test suite must never touch production data.
+Every database here is a temporary one.
+
+Spec: docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-1
 """
-Test script for Obsidian integration dialogs.
-Run this to verify dialogs can be instantiated and work properly.
-"""
 
-# Keep src/ importable when this file is run directly (it has a __main__
-# block). Under pytest the repo-root conftest.py does the same thing; this
-# must come before the getmoredone imports either way.
-import sys
-from pathlib import Path as _Path
-sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "src"))
+import inspect
 
-import sys
-from pathlib import Path
+import pytest
 
-# Add src to path
-
-def test_imports():
-    """Test that all required modules can be imported."""
-    print("Testing imports...")
-    try:
-        from getmoredone.app_settings import AppSettings
-        print("  ✓ AppSettings imported")
-
-        from getmoredone.obsidian_utils import create_obsidian_note, open_in_obsidian
-        print("  ✓ obsidian_utils imported")
-
-        from getmoredone.models import ItemLink, ContactLink
-        print("  ✓ Models imported")
-
-        from getmoredone.db_manager import DatabaseManager
-        print("  ✓ DatabaseManager imported")
-
-        return True
-    except Exception as e:
-        print(f"  ✗ Import failed: {e}")
-        return False
+from src.getmoredone.app_settings import AppSettings
+from src.getmoredone.db_manager import DatabaseManager
+from src.getmoredone.models import ContactLink, ItemLink
+from src.getmoredone.obsidian_utils import (
+    create_obsidian_note,
+    open_in_obsidian,
+    validate_obsidian_setup,
+)
+from src.getmoredone.screens.item_editor import (
+    CreateNoteDialog,
+    ItemEditorDialog,
+    LinkNoteDialog,
+)
 
 
-def test_settings():
-    """Test settings loading and validation."""
-    print("\nTesting settings...")
-    try:
-        from getmoredone.app_settings import AppSettings
-
-        settings = AppSettings.load()
-        print(f"  Vault path: {settings.obsidian_vault_path or '(not set)'}")
-        print(f"  Subfolder: {settings.obsidian_notes_subfolder}")
-
-        if settings.obsidian_vault_path:
-            vault = Path(settings.obsidian_vault_path)
-            print(f"  Vault exists: {vault.exists()}")
-
-            if vault.exists():
-                obsidian_folder = vault / ".obsidian"
-                print(f"  .obsidian folder exists: {obsidian_folder.exists()}")
-
-                from getmoredone.obsidian_utils import validate_obsidian_setup
-                is_valid, message = validate_obsidian_setup(
-                    settings.obsidian_vault_path,
-                    settings.obsidian_notes_subfolder
-                )
-                print(f"  Validation: {'✓' if is_valid else '✗'} {message}")
-        else:
-            print("  ⚠ Vault not configured - configure in Settings first")
-
-        return True
-    except Exception as e:
-        print(f"  ✗ Settings test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+@pytest.fixture
+def manager(tmp_path):
+    """A DatabaseManager on a throwaway file, never the real one."""
+    db = DatabaseManager(str(tmp_path / "obsidian.db"))
+    yield db
+    db.close()
 
 
-def test_database():
-    """Test database connection and links table."""
-    print("\nTesting database...")
-    try:
-        from getmoredone.db_manager import DatabaseManager
-
-        db = DatabaseManager()
-
-        # Check if tables exist
-        cursor = db.db.conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='item_links'"
-        )
-        if cursor.fetchone():
-            print("  ✓ item_links table exists")
-        else:
-            print("  ✗ item_links table missing")
-
-        cursor = db.db.conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='contact_links'"
-        )
-        if cursor.fetchone():
-            print("  ✓ contact_links table exists")
-        else:
-            print("  ✗ contact_links table missing")
-
-        db.close()
-        return True
-    except Exception as e:
-        print(f"  ✗ Database test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+def test_bc3_the_obsidian_helpers_are_importable_and_callable():
+    """A broken import fails this test by raising, as it should."""
+    assert callable(create_obsidian_note)
+    assert callable(open_in_obsidian)
+    assert callable(validate_obsidian_setup)
 
 
-def test_dialog_instantiation():
-    """Test if dialogs can be created (without GUI)."""
-    print("\nTesting dialog classes...")
-    try:
-        # We can't actually instantiate CTkToplevel without a GUI,
-        # but we can check if the classes are defined
-        from getmoredone.screens.item_editor import CreateNoteDialog, LinkNoteDialog
-        print("  ✓ CreateNoteDialog class found")
-        print("  ✓ LinkNoteDialog class found")
+@pytest.mark.parametrize("table", ["item_links", "contact_links"])
+def test_bc3_the_link_tables_exist(manager, table):
+    row = manager.db.conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
 
-        # Check if create_note method exists
-        from getmoredone.screens.item_editor import ItemEditorDialog
-        if hasattr(ItemEditorDialog, 'create_note'):
-            print("  ✓ ItemEditorDialog.create_note() method exists")
-        else:
-            print("  ✗ ItemEditorDialog.create_note() method missing")
-
-        if hasattr(ItemEditorDialog, 'link_existing_note'):
-            print("  ✓ ItemEditorDialog.link_existing_note() method exists")
-        else:
-            print("  ✗ ItemEditorDialog.link_existing_note() method missing")
-
-        if hasattr(ItemEditorDialog, 'load_notes'):
-            print("  ✓ ItemEditorDialog.load_notes() method exists")
-        else:
-            print("  ✗ ItemEditorDialog.load_notes() method missing")
-
-        return True
-    except Exception as e:
-        print(f"  ✗ Dialog class test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+    assert row is not None, f"{table} is missing — note links cannot be stored"
 
 
-def main():
-    """Run all tests."""
-    print("=" * 60)
-    print("Obsidian Integration Test Suite")
-    print("=" * 60)
+def test_bc3_an_item_link_round_trips(manager):
+    """The table existing is not the same as the link surviving a write."""
+    from src.getmoredone.models import ActionItem
 
-    results = []
+    item = ActionItem(who="Self", title="With a note")
+    manager.create_action_item(item, apply_defaults=False)
+    manager.add_item_link(ItemLink(
+        item_id=item.id, url="/vault/note.md", label="note",
+        link_type="obsidian_note"))
 
-    results.append(("Imports", test_imports()))
-    results.append(("Settings", test_settings()))
-    results.append(("Database", test_database()))
-    results.append(("Dialog Classes", test_dialog_instantiation()))
+    links = manager.get_item_links(item.id)
 
-    print("\n" + "=" * 60)
-    print("SUMMARY")
-    print("=" * 60)
-
-    for name, passed in results:
-        status = "✓ PASS" if passed else "✗ FAIL"
-        print(f"{status}: {name}")
-
-    all_passed = all(r[1] for r in results)
-
-    if all_passed:
-        print("\n✓ All backend tests passed!")
-        print("\nNext steps:")
-        print("1. Run the app: python run.py")
-        print("2. Open an existing Action Item")
-        print("3. Look for 'Obsidian Notes' section in right column")
-        print("4. Try clicking '+ Create Note' button")
-        print("5. If dialog doesn't appear, check terminal for error messages")
-    else:
-        print("\n✗ Some tests failed - fix these before testing GUI")
-
-    return 0 if all_passed else 1
+    assert [link.url for link in links] == ["/vault/note.md"]
+    assert links[0].link_type == "obsidian_note"
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def test_bc3_a_contact_link_round_trips(manager):
+    from src.getmoredone.models import Contact
+
+    contact = Contact(name="Acme Corp", contact_type="Client")
+    contact_id = manager.create_contact(contact)
+    manager.add_contact_link(ContactLink(
+        contact_id=contact_id, url="/vault/acme.md", label="acme",
+        link_type="obsidian_note"))
+
+    links = manager.get_contact_links(contact_id)
+
+    assert [link.url for link in links] == ["/vault/acme.md"]
+
+
+@pytest.mark.parametrize("method", ["create_note", "link_existing_note", "load_notes"])
+def test_bc3_the_item_editor_exposes_its_note_actions(method):
+    assert callable(getattr(ItemEditorDialog, method, None)), (
+        f"ItemEditorDialog.{method} is gone — the Notes tab lost a control")
+
+
+def test_bc3_the_note_dialog_classes_exist():
+    assert inspect.isclass(CreateNoteDialog)
+    assert inspect.isclass(LinkNoteDialog)
+
+
+def test_bc3_settings_expose_the_obsidian_fields():
+    """Read the dataclass, not the user's saved settings file.
+
+    The original called ``AppSettings.load()`` and printed whatever the machine
+    happened to have configured, so it asserted nothing and behaved differently
+    on every machine.
+    """
+    fields = AppSettings.__dataclass_fields__
+
+    assert "obsidian_vault_path" in fields
+    assert "obsidian_notes_subfolder" in fields
+
+
+def test_bc3_validate_obsidian_setup_rejects_a_missing_vault(tmp_path):
+    is_valid, message = validate_obsidian_setup(
+        str(tmp_path / "no-such-vault"), "GetMoreDone")
+
+    assert is_valid is False
+    assert message, "the failure came back with nothing to show the user"
+
+
+def test_bc3_validate_obsidian_setup_accepts_a_real_vault(tmp_path):
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+
+    is_valid, message = validate_obsidian_setup(str(vault), "GetMoreDone")
+
+    assert is_valid is True, message

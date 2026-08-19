@@ -175,10 +175,12 @@ def test_deletion_protection_completeness():
         print(f"  Plans remaining: {remaining_plans}")
         print(f"  Initiatives remaining: {remaining_initiatives}")
 
-        if remaining_plans == 0 and remaining_initiatives == 0:
-            print("✓ CASCADE worked: All child records deleted")
-        else:
-            print("✗ FAILURE: Orphaned records exist!")
+        # BC3: this branch used to print "✗ FAILURE: Orphaned records exist!"
+        # and carry on, so the one outcome it exists to catch could not fail
+        # the test.
+        assert remaining_plans == 0 and remaining_initiatives == 0, (
+            f"cascade left orphans: {remaining_plans} plan(s), "
+            f"{remaining_initiatives} initiative(s)")
     else:
         print(f"✓ ENHANCED: Deletion BLOCKED with comprehensive counts!")
         print(f"  Counts returned: {counts}")
@@ -187,7 +189,7 @@ def test_deletion_protection_completeness():
         print(f"  Total records protected: {total}")
 
     manager.close()
-    return success, counts
+    # BC3: returning a value from a test makes pytest ignore the verdict.
 
 
 def test_comprehensive_count():
