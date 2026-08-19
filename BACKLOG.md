@@ -1,6 +1,6 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-08-18
+Last Updated: 2026-08-19
 
 ## Deferred — found by review, deliberately not fixed
 
@@ -20,6 +20,32 @@ of a timing window, so it is not evidence either way.)
 Fix when convenient: a `publish` job with
 `needs: [build-windows, build-macos]` that downloads both artifacts and makes a
 single release call. Recorded in `LEARNINGS.md` under Open risks.
+
+### Item editor Project link: deferred decisions (2026-08-19)
+
+Surfaced while adding "Set Project" to the item editor. All deliberately not
+fixed; each is a decision, not an oversight.
+
+- **Two surfaces disagree about how many projects an item may have.** The
+  Scheduler drag-drop and the item editor use the exclusive
+  `link_item_to_project_exclusive`; the Projects screen's "link existing items"
+  dialog uses the additive `link_action_item_to_project_board`. The editor
+  tolerates both — it shows "(+N more)" and now confirms before an exclusive
+  re-link drops the extras — but nothing reconciles the two models. Decide
+  which one is the rule.
+- **`weekly_items.py` still composes prefixed titles.** Creating an Action Item
+  from a Weekly Tactic builds `<tactic context> - <title>` while no screen
+  offers a Context field any more. Measured: with a canonical tactic title
+  (`PW|LS|Blog - W34`) the splitter finds no context and nothing is prefixed;
+  it only fires for the legacy shape that carries a body after the week number.
+  Narrow, cosmetic, left alone.
+- **`get_unlinked_action_items` has no `LIMIT`**, so the Projects screen's link
+  dialog loads every open unlinked item.
+- **`complete_and_create` has no caller in `src/`.** Its PL12 project-link
+  inheritance is precautionary. Either wire it or retire it.
+- **`save_item` and `save_item_if_needed` assemble a new item's fields twice.**
+  They have now drifted twice (the project link, then the APE ordering). Factor
+  the new-item assembly out so they cannot drift a third time.
 
 ### Other known items
 

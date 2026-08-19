@@ -95,6 +95,10 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Changing the project on an item that sits on several boards now asks first.**
+  Filing is exclusive, so it removes the others; that used to be visible only as
+  the "(+N more)" marker quietly disappearing. The project picker also says that
+  filing an item files it under the project's Annual Plan Element.
 - **The Context box is gone from the Item Editor, and the Context column from Today,
   Upcoming, All Items, Completed and Hierarchical.** Context was never a field of its
   own — only the front half of the Title string, rejoined on save — and it only read
