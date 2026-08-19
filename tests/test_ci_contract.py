@@ -647,30 +647,102 @@ def test_actions_are_pinned_to_a_version_not_a_branch():
     assert not floating, f"actions pinned to a moving ref: {sorted(floating)}"
 
 
+# Every action used anywhere in .github/workflows must appear here, with the
+# last major that ran on the deprecated Node 20 runtime — or None when the
+# action has no Node 20 lineage to worry about. An action missing from this
+# table fails the test rather than being skipped: the previous version of this
+# guard silently passed anything it did not recognise, which is the exact
+# failure mode it existed to prevent.
+KNOWN_ACTION_MAJORS = {
+    "actions/checkout": 4,
+    "actions/setup-python": 5,
+    "actions/upload-artifact": 4,
+    "actions/download-artifact": 4,
+    "actions/cache": 3,
+    "softprops/action-gh-release": 2,
+}
+
+# A commit-SHA pin is good practice, but it hides the major from this check.
+# Record what each pinned SHA corresponds to so the check still applies.
+SHA_PINNED_MAJORS: dict[str, int] = {}
+
+
+def _parsed_major(version: str) -> int | None:
+    match = re.fullmatch(r"v?(\d+)(?:\.\d+)*", version)
+    return int(match.group(1)) if match else None
+
+
+def test_every_action_used_is_declared_in_the_version_table():
+    """An unlisted action must be a red test, not a silent skip."""
+    unknown = sorted(set(_action_uses()) - set(KNOWN_ACTION_MAJORS))
+    assert not unknown, (
+        f"workflows use actions absent from KNOWN_ACTION_MAJORS: {unknown}. "
+        "Add each one with the last major that ran on Node 20 (or None), so "
+        "the deprecation check below actually covers it."
+    )
+
+
+def test_every_action_version_is_checkable():
+    r"""A version this test cannot parse must fail, not fall through.
+
+    `re.match(r"v(\d+)", ...)` returned None for a SHA pin, and a None match
+    hit no assertion at all — so SHA-pinning every action, the standard next
+    hardening step, would have disabled this guard entirely.
+    """
+    unparseable = sorted(
+        f"{action}@{version}"
+        for action, versions in _action_uses().items()
+        for version in versions
+        if _parsed_major(version) is None
+        and f"{action}@{version}" not in SHA_PINNED_MAJORS
+    )
+    assert not unparseable, (
+        f"action versions this check cannot interpret: {unparseable}. If these "
+        "are commit-SHA pins, add 'action@sha': <major> to SHA_PINNED_MAJORS so "
+        "the Node 20 check still applies to them."
+    )
+
+
 def test_no_workflow_uses_a_node20_action_version():
-    """GitHub force-runs these on Node 24 with a deprecation warning today, and
-    will stop running them. Versions below are the last Node 20 majors.
+    """GitHub force-runs Node 20 actions on Node 24 with a deprecation warning
+    today, and will stop running them.
 
     Verified against the actions' own latest releases on 2026-08-18:
     checkout v7.0.1, setup-python v7.0.0, upload-artifact v7.0.1,
     action-gh-release v3.0.2.
     """
-    LAST_NODE20_MAJOR = {
-        "actions/checkout": 4,
-        "actions/setup-python": 5,
-        "actions/upload-artifact": 4,
-        "softprops/action-gh-release": 2,
-    }
     stale = []
     for action, versions in _action_uses().items():
-        limit = LAST_NODE20_MAJOR.get(action)
-        if limit is None:
-            continue
+        limit = KNOWN_ACTION_MAJORS.get(action)
         for version in versions:
-            match = re.match(r"v(\d+)", version)
-            if match and int(match.group(1)) <= limit:
+            major = _parsed_major(version)
+            if major is None:
+                major = SHA_PINNED_MAJORS.get(f"{action}@{version}")
+            # Both "unknown action" and "unparseable version" are covered by
+            # their own tests above; here they simply cannot be judged.
+            if limit is None or major is None:
+                continue
+            if major <= limit:
                 stale.append(f"{action}@{version}")
     assert not stale, (
         f"actions on a deprecated Node 20 runtime: {sorted(stale)}. "
         "Bump them across every workflow, not just the one being edited."
     )
+
+
+def test_node20_guard_actually_rejects_the_cases_it_used_to_skip():
+    """Adversarial: the previous guard passed all four of these.
+
+    Reproduces the reviewer's counter-examples directly against the helpers, so
+    a future simplification that reintroduces the silent skip fails here.
+    """
+    # A SHA pin is unparseable and must not be silently treated as fine.
+    assert _parsed_major("11bd71901bbe5b1630ceea73d27597364c9af683") is None
+    assert _parsed_major("4") == 4          # bare major, no leading v
+    assert _parsed_major("v4") == 4
+    assert _parsed_major("v4.2.2") == 4
+    assert _parsed_major("v7") == 7
+
+    # An action absent from the table is caught by its own test, not skipped.
+    assert "actions/cache" in KNOWN_ACTION_MAJORS
+    assert "actions/download-artifact" in KNOWN_ACTION_MAJORS

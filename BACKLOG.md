@@ -1,6 +1,34 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-01-24
+Last Updated: 2026-08-18
+
+## Deferred — found by review, deliberately not fixed
+
+### Release workflow: concurrent release creation (2026-08-18)
+
+`build-windows` and `build-macos` both call `softprops/action-gh-release` with the
+same `tag_name`, so the first tagged run is a check-then-create race between two
+jobs. **Not fixed** because it fails *loudly* (one job goes red) rather than
+silently, so it cannot ship a broken release unnoticed — and v0.2.0 published
+cleanly. Fix when convenient: a `publish` job with
+`needs: [build-windows, build-macos]` that downloads both artifacts and makes a
+single release call. Recorded in `LEARNINGS.md` under Open risks.
+
+### Other known items
+
+- `tests/test_vps_segments.py` has two tests that `return` a bool instead of
+  asserting; pytest warns `PytestReturnNotNoneWarning`. They can pass while
+  asserting nothing.
+- `requirements.txt` mixes test-only and runtime dependencies, forcing
+  `tests/test_release_licensing.py` to carry a hardcoded `TEST_ONLY_PACKAGES` set.
+  A `requirements-dev.txt` split would remove the guesswork.
+- `GoogleCalendarManager.__init__` creates `~/.getmoredone` before reading its own
+  arguments, so merely constructing it touches the real home directory; tests
+  redirect `Path.home()` to work around it.
+- The `LICENSE` is an unreviewed draft. It carries a warning header protected by
+  `test_rm2a_license_carries_the_unreviewed_draft_warning`; have a lawyer review it
+  before the first paid sale, then delete the header and that test together.
+
 
 ## ✅ Recently Completed (2026-01-24)
 

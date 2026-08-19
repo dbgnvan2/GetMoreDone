@@ -7,6 +7,20 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two release-workflow steps could have succeeded while publishing nothing.**
+  `actions/upload-artifact` defaults `if-no-files-found` to `warn`, and
+  `softprops/action-gh-release` defaults `fail_on_unmatched_files` to `false` — so a
+  glob matching nothing would have produced a green run with a missing artifact, or a
+  public Release with correct notes and zero downloadable assets. Both now fail loudly.
+
+### Changed
+
+- All GitHub Actions moved off the deprecated Node 20 runtime: `actions/checkout` v7,
+  `actions/setup-python` v7, `actions/upload-artifact` v7,
+  `softprops/action-gh-release` v3.
+
 ## [0.2.0] - 2026-08-18
 
 The first release whose binaries actually run.

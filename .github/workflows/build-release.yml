@@ -97,6 +97,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: GetMoreDone-win64
+          # Default is 'warn': a glob that matches nothing would log a warning
+          # and leave the job green with no artifact attached.
+          if-no-files-found: error
           path: |
             GetMoreDone-win64.zip
             GetMoreDone-win64.zip.sha256
@@ -118,6 +121,12 @@ jobs:
           # R-M4.C — the notes come from CHANGELOG.md rather than being typed
           # by hand, so the release and the repo cannot disagree.
           body_path: RELEASE_NOTES.md
+          # Default is false: a glob matching nothing would publish a public,
+          # permanent Release with correct notes and zero downloadable assets,
+          # and report success. extract_release_notes.py — the producer feeding
+          # this same step — already exits non-zero on missing input; these
+          # consumers must be just as loud (P5).
+          fail_on_unmatched_files: true
           files: |
             GetMoreDone-win64.zip
             GetMoreDone-win64.zip.sha256
@@ -167,6 +176,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: GetMoreDone-mac
+          # Default is 'warn': a glob that matches nothing would log a warning
+          # and leave the job green with no artifact attached.
+          if-no-files-found: error
           path: |
             GetMoreDone-mac.zip
             GetMoreDone-mac.zip.sha256
@@ -186,6 +198,12 @@ jobs:
           # R-M4.C — the notes come from CHANGELOG.md rather than being typed
           # by hand, so the release and the repo cannot disagree.
           body_path: RELEASE_NOTES.md
+          # Default is false: a glob matching nothing would publish a public,
+          # permanent Release with correct notes and zero downloadable assets,
+          # and report success. extract_release_notes.py — the producer feeding
+          # this same step — already exits non-zero on missing input; these
+          # consumers must be just as loud (P5).
+          fail_on_unmatched_files: true
           files: |
             GetMoreDone-mac.zip
             GetMoreDone-mac.zip.sha256
