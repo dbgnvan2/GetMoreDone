@@ -8,9 +8,16 @@ Last Updated: 2026-08-18
 
 `build-windows` and `build-macos` both call `softprops/action-gh-release` with the
 same `tag_name`, so the first tagged run is a check-then-create race between two
-jobs. **Not fixed** because it fails *loudly* (one job goes red) rather than
-silently, so it cannot ship a broken release unnoticed — and v0.2.0 published
-cleanly. Fix when convenient: a `publish` job with
+jobs. **Not fixed**, but the original reason given here was wrong: a red job does
+not un-publish a Release. If one job wins the create and the other errors, the
+result is a public, permanent Release carrying one platform's assets only — the
+same outcome `fail_on_unmatched_files` was added to prevent. The real reason to
+defer is that the window is narrow and we accept it for now, not that it is
+harmless. `fail_on_unmatched_files: true` makes a red publish job *more* likely,
+so do not dismiss one as "the known race" without checking which it is.
+(v0.2.0 published cleanly, but that run predates the action bump and is one draw
+of a timing window, so it is not evidence either way.)
+Fix when convenient: a `publish` job with
 `needs: [build-windows, build-macos]` that downloads both artifacts and makes a
 single release call. Recorded in `LEARNINGS.md` under Open risks.
 

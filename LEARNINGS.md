@@ -52,14 +52,24 @@ Referenced by ID from the global catalogue; listed here because they recur.
 ## Open risks (found by review, not yet bitten)
 
 - **2026-08-18 — `build-windows` and `build-macos` call `action-gh-release` concurrently
-  with the same `tag_name`.** Check-then-create race on the first tagged run. It fails
-  *loudly* if it bites, so it is a correctness annoyance rather than a silent one — not
-  fixed, tracked in `BACKLOG.md`. A serialised `publish` job with
+  with the same `tag_name`.** Check-then-create race on the first tagged run. A red job
+  does **not** un-publish a Release: if one job wins the create and the other errors,
+  the outcome is a public Release carrying one platform's assets — the very thing
+  `fail_on_unmatched_files` was added to prevent. Deferred because the window is narrow,
+  not because it is harmless. Tracked in `BACKLOG.md`. A serialised `publish` job with
   `needs: [build-windows, build-macos]` removes it.
 - **2026-08-18 — the four action major bumps (checkout/setup-python/upload-artifact v7,
-  action-gh-release v3) had not been executed on a real runner when first written.**
-  Versions and floating major tags were verified to exist; runtime behaviour was
-  verified afterwards by running both workflows. (P6)
+  action-gh-release v3) have NOT been executed on a real runner.** Input names and
+  defaults were verified against each action's own `action.yml` at v7/v3; runtime
+  behaviour was not. The v0.2.0 release build predates the bump
+  (`git merge-base --is-ancestor 93d9fab v0.2.0` → false), so it is not evidence about
+  this configuration. Unverified until the next `Build binaries` run on a commit that
+  contains the bump. (P6)
+
+  An earlier draft of this very bullet claimed the bumps *had* been verified by running
+  both workflows. They had not. Recorded rather than quietly corrected: the file that
+  opens by warning about trusting a claim without checking the artifact shipped exactly
+  that claim within an hour of being created.
 
 ---
 
@@ -92,7 +102,10 @@ while both *consumers* defaulted to silent. Hardened at one end of the pipeline 
 **What would have caught it** → reading the actions' own `action.yml` defaults instead
 of assuming a sensible one, at the moment of the version bump.
 **Fix** → `if-no-files-found: error` and `fail_on_unmatched_files: true` on both OS
-jobs, each with a comment naming the default it overrides.
+jobs, each with a comment naming the default it overrides, plus three tests asserting
+both keys per job. The two are not equally strict and the docs must not imply they are:
+`if-no-files-found` fires only on a total miss of a step's whole path set, whereas
+`fail_on_unmatched_files` is per-pattern.
 **Rule** → When bumping a third-party action, read its `action.yml` for inputs whose
 *default* is permissive. A publish step that can produce nothing must be configured to
 fail, not warn — and hardening one step in a pipeline means checking its siblings.

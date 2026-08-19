@@ -13,7 +13,9 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `actions/upload-artifact` defaults `if-no-files-found` to `warn`, and
   `softprops/action-gh-release` defaults `fail_on_unmatched_files` to `false` — so a
   glob matching nothing would have produced a green run with a missing artifact, or a
-  public Release with correct notes and zero downloadable assets. Both now fail loudly.
+  public Release with correct notes and zero downloadable assets. Both now fail. The
+  two are not equally strict — `if-no-files-found` fires only when a step's whole path
+  set matches nothing, while `fail_on_unmatched_files` is per-pattern.
 
 ### Changed
 

@@ -612,15 +612,61 @@ def test_rm4d_required_archive_files_exist_in_the_repo():
 # Action versions — pinned, and consistent across every workflow
 # --------------------------------------------------------------------------
 
+# `uses:` forms that are legitimately not a versioned marketplace action.
+LOCAL_USES_PREFIXES = ("./", "../", "docker://")
+
+_USES_LINE = re.compile(r"\buses:\s*(\S+)")
+_VERSIONED_ACTION = re.compile(r"^['\"]?([\w.-]+/[\w.-]+)@([^'\"\s]+)['\"]?$")
+
+
+def _uses_lines() -> list[tuple[str, str]]:
+    """Every `uses:` value in every workflow, as (workflow name, raw value)."""
+    found = []
+    for wf in _workflows():
+        for line in _code_only(wf.read_text(encoding="utf-8")).splitlines():
+            match = _USES_LINE.search(line)
+            if match:
+                found.append((wf.name, match.group(1)))
+    return found
+
+
 def _action_uses() -> dict[str, set[str]]:
     """{action name: {versions used}} across every workflow."""
     found: dict[str, set[str]] = {}
-    for wf in _workflows():
-        for line in _code_only(wf.read_text(encoding="utf-8")).splitlines():
-            match = re.search(r"uses:\s*([\w.-]+/[\w.-]+)@(\S+)", line)
-            if match:
-                found.setdefault(match.group(1), set()).add(match.group(2))
+    for _wf, raw in _uses_lines():
+        match = _VERSIONED_ACTION.match(raw)
+        if match:
+            found.setdefault(match.group(1), set()).add(match.group(2))
     return found
+
+
+def test_every_uses_line_is_recognised_by_the_action_parser():
+    """An unparsed `uses:` line is invisible to every check below it.
+
+    The parser used to require an unquoted `owner/repo@ver`, so
+    `uses: 'actions/checkout@v4'` — ordinary YAML, and what a reformatter may
+    well emit — matched nothing and was silently exempt from the version,
+    pinning and drift checks. Unrecognised input must be loud one level up too,
+    not only inside the checks it feeds.
+    """
+    unrecognised = [
+        f"{wf}: {raw}" for wf, raw in _uses_lines()
+        if not _VERSIONED_ACTION.match(raw)
+        and not raw.strip("'\"").startswith(LOCAL_USES_PREFIXES)
+    ]
+    assert not unrecognised, (
+        f"`uses:` lines the action checks cannot see: {unrecognised}. Either "
+        "pin them as owner/repo@version, or extend LOCAL_USES_PREFIXES."
+    )
+
+
+def test_action_parser_handles_quoted_and_local_uses_forms():
+    """Adversarial: prove the parser change actually covers the missed forms."""
+    assert _VERSIONED_ACTION.match("actions/checkout@v7").group(1) == "actions/checkout"
+    assert _VERSIONED_ACTION.match("'actions/checkout@v7'").group(1) == "actions/checkout"
+    assert _VERSIONED_ACTION.match('"actions/checkout@v7"').group(2) == "v7"
+    assert _VERSIONED_ACTION.match("./.github/actions/local") is None
+    assert _VERSIONED_ACTION.match("docker://alpine:3.19") is None
 
 
 def test_actions_are_used_at_one_version_across_all_workflows():
@@ -648,12 +694,15 @@ def test_actions_are_pinned_to_a_version_not_a_branch():
 
 
 # Every action used anywhere in .github/workflows must appear here, with the
-# last major that ran on the deprecated Node 20 runtime — or None when the
-# action has no Node 20 lineage to worry about. An action missing from this
-# table fails the test rather than being skipped: the previous version of this
-# guard silently passed anything it did not recognise, which is the exact
-# failure mode it existed to prevent.
-KNOWN_ACTION_MAJORS = {
+# last major that ran on the deprecated Node 20 runtime. An action missing from
+# this table fails its own test rather than being skipped.
+#
+# Values are ints, deliberately. An earlier draft allowed None for "no Node 20
+# lineage", which put the silent skip back one step out as a documented
+# one-word opt-out — and typing None is the path of least resistance when CI
+# goes red on a newly added action. Use 0 instead: the comparison still runs
+# and simply never fires.
+KNOWN_ACTION_MAJORS: dict[str, int] = {
     "actions/checkout": 4,
     "actions/setup-python": 5,
     "actions/upload-artifact": 4,
@@ -677,8 +726,17 @@ def test_every_action_used_is_declared_in_the_version_table():
     unknown = sorted(set(_action_uses()) - set(KNOWN_ACTION_MAJORS))
     assert not unknown, (
         f"workflows use actions absent from KNOWN_ACTION_MAJORS: {unknown}. "
-        "Add each one with the last major that ran on Node 20 (or None), so "
-        "the deprecation check below actually covers it."
+        "Add each one with the last major that ran on Node 20, or 0 if it has "
+        "no Node 20 lineage — never None, which would skip the check."
+    )
+
+
+def test_action_version_table_holds_only_integers():
+    """A None here would silently exempt that action from the check below."""
+    bad = {a: v for a, v in KNOWN_ACTION_MAJORS.items() if not isinstance(v, int)}
+    assert not bad, (
+        f"KNOWN_ACTION_MAJORS entries that are not ints: {bad}. Use 0 for "
+        "'no Node 20 lineage' so the comparison still runs."
     )
 
 
@@ -703,6 +761,29 @@ def test_every_action_version_is_checkable():
     )
 
 
+def _stale_actions(uses: dict[str, set[str]]) -> list[str]:
+    """Actions in `uses` sitting on a deprecated Node 20 major.
+
+    Extracted from the test so the adversarial test below can drive it with
+    synthetic input. Asserting on a helper's return value proves nothing about
+    the guard; this is the guard.
+    """
+    stale = []
+    for action, versions in uses.items():
+        limit = KNOWN_ACTION_MAJORS.get(action)
+        for version in versions:
+            major = _parsed_major(version)
+            if major is None:
+                major = SHA_PINNED_MAJORS.get(f"{action}@{version}")
+            # "unknown action" and "unparseable version" each have their own
+            # test above; here they are simply not judgeable.
+            if limit is None or major is None:
+                continue
+            if major <= limit:
+                stale.append(f"{action}@{version}")
+    return sorted(stale)
+
+
 def test_no_workflow_uses_a_node20_action_version():
     """GitHub force-runs Node 20 actions on Node 24 with a deprecation warning
     today, and will stop running them.
@@ -711,38 +792,81 @@ def test_no_workflow_uses_a_node20_action_version():
     checkout v7.0.1, setup-python v7.0.0, upload-artifact v7.0.1,
     action-gh-release v3.0.2.
     """
-    stale = []
-    for action, versions in _action_uses().items():
-        limit = KNOWN_ACTION_MAJORS.get(action)
-        for version in versions:
-            major = _parsed_major(version)
-            if major is None:
-                major = SHA_PINNED_MAJORS.get(f"{action}@{version}")
-            # Both "unknown action" and "unparseable version" are covered by
-            # their own tests above; here they simply cannot be judged.
-            if limit is None or major is None:
-                continue
-            if major <= limit:
-                stale.append(f"{action}@{version}")
+    stale = _stale_actions(_action_uses())
     assert not stale, (
-        f"actions on a deprecated Node 20 runtime: {sorted(stale)}. "
+        f"actions on a deprecated Node 20 runtime: {stale}. "
         "Bump them across every workflow, not just the one being edited."
     )
 
 
 def test_node20_guard_actually_rejects_the_cases_it_used_to_skip():
-    """Adversarial: the previous guard passed all four of these.
+    """Drive the guard itself with the four cases that previously passed green.
 
-    Reproduces the reviewer's counter-examples directly against the helpers, so
-    a future simplification that reintroduces the silent skip fails here.
+    An earlier version of this test only asserted `_parsed_major` return values
+    and dict membership. It never called the guard, so it stayed green with the
+    silent-skip branch still in the loop, and green when `<=` was mutated to
+    `<`. It now exercises `_stale_actions` directly.
     """
-    # A SHA pin is unparseable and must not be silently treated as fine.
-    assert _parsed_major("11bd71901bbe5b1630ceea73d27597364c9af683") is None
-    assert _parsed_major("4") == 4          # bare major, no leading v
-    assert _parsed_major("v4") == 4
-    assert _parsed_major("v4.2.2") == 4
-    assert _parsed_major("v7") == 7
+    # A recognised action on a Node 20 major is flagged.
+    assert _stale_actions({"actions/cache": {"v3"}}) == ["actions/cache@v3"]
+    assert _stale_actions({"actions/download-artifact": {"v4"}}) == [
+        "actions/download-artifact@v4"]
+    # Bare major, no leading v.
+    assert _stale_actions({"actions/checkout": {"4"}}) == ["actions/checkout@4"]
+    # A current major is not flagged.
+    assert _stale_actions({"actions/checkout": {"v7"}}) == []
+    # Boundary: the guard must flag the last Node 20 major itself, not just below it.
+    assert _stale_actions({"actions/checkout": {"v4"}}) == ["actions/checkout@v4"]
+    # A SHA pin is not judgeable here; test_every_action_version_is_checkable
+    # is what makes it red.
+    sha = "11bd71901bbe5b1630ceea73d27597364c9af683"
+    assert _stale_actions({"actions/checkout": {sha}}) == []
+    assert _parsed_major(sha) is None
 
-    # An action absent from the table is caught by its own test, not skipped.
-    assert "actions/cache" in KNOWN_ACTION_MAJORS
-    assert "actions/download-artifact" in KNOWN_ACTION_MAJORS
+
+def test_node20_guard_is_sensitive_to_the_comparison_operator():
+    """Mutation check: `<=` must not be silently weakenable to `<`.
+
+    With the real workflows both operators yield [], so the previous test could
+    not tell them apart. This case distinguishes them.
+    """
+    at_the_limit = {"actions/setup-python": {"v5"}}   # 5 == last Node 20 major
+    assert _stale_actions(at_the_limit) == ["actions/setup-python@v5"], (
+        "the guard stopped flagging the last Node 20 major itself"
+    )
+
+
+# --------------------------------------------------------------------------
+# R-M4.A/B — the publish steps must fail rather than publish nothing
+# --------------------------------------------------------------------------
+
+def test_upload_artifact_fails_when_no_files_match():
+    """`if-no-files-found` defaults to 'warn': a glob matching nothing would
+    log a warning and leave the job green with no artifact attached."""
+    text = _code_only(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    uploads = text.count("actions/upload-artifact@")
+    assert uploads == 2, f"expected 2 upload steps, found {uploads}"
+    assert text.count("if-no-files-found: error") == uploads, (
+        "every upload-artifact step must set if-no-files-found: error, or a "
+        "build can report success having uploaded nothing"
+    )
+
+
+def test_release_upload_fails_when_no_files_match():
+    """`fail_on_unmatched_files` defaults to false, which would publish a
+    public, permanent Release with correct notes and zero assets."""
+    text = _code_only(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    releases = text.count("softprops/action-gh-release@")
+    assert releases == 2, f"expected 2 release steps, found {releases}"
+    assert text.count("fail_on_unmatched_files: true") == releases, (
+        "every action-gh-release step must set fail_on_unmatched_files: true"
+    )
+
+
+def test_publish_hardening_is_present_in_both_os_jobs():
+    """Per-job, not just per-file: a count can be satisfied by two in one job."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = _code_only(jobs[job])
+        assert "if-no-files-found: error" in body, f"{job} upload is not hardened"
+        assert "fail_on_unmatched_files: true" in body, f"{job} release is not hardened"

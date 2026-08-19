@@ -88,6 +88,7 @@ ROOT_DOC_ALLOWLIST = {
     "NOTES.md",
     "codex.md",
     "GetMoreDone_MasterSpec_SQLite_v1.md",
+    "LEARNINGS.md",    # repo-specific failure-pattern playbook + fix log
 }
 
 

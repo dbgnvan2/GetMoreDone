@@ -97,8 +97,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: GetMoreDone-win64
-          # Default is 'warn': a glob that matches nothing would log a warning
-          # and leave the job green with no artifact attached.
+          # Default is 'warn': a path set matching nothing would log a warning
+          # and leave the job green with no artifact attached. Note this fires
+          # only on a TOTAL miss — one of the two files missing still uploads a
+          # partial artifact. The checksum step would fail the job first.
           if-no-files-found: error
           path: |
             GetMoreDone-win64.zip
@@ -176,8 +178,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: GetMoreDone-mac
-          # Default is 'warn': a glob that matches nothing would log a warning
-          # and leave the job green with no artifact attached.
+          # Default is 'warn': a path set matching nothing would log a warning
+          # and leave the job green with no artifact attached. Note this fires
+          # only on a TOTAL miss — one of the two files missing still uploads a
+          # partial artifact. The checksum step would fail the job first.
           if-no-files-found: error
           path: |
             GetMoreDone-mac.zip
