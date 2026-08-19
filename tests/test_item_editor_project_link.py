@@ -7,6 +7,7 @@ tests/test_project_board_dates_ui.py), against a **real** DatabaseManager, so a
 control that renders but never reaches the database fails here (P25).
 """
 
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
@@ -581,5 +582,182 @@ def test_pl9_1_orig_week_still_saves_from_the_action_plan_block(tmp_path, monkey
         assert ItemEditorDialog.save_item(stub) is True
 
         assert manager.get_action_item(item.id).weekly_tactic_start_date == "2026-02-16"
+    finally:
+        vps.close()
+
+
+# ------------------------------------------ sweep fixes (pre-push review)
+
+
+def test_sweep1_second_insert_path_also_applies_the_project_link(tmp_path):
+    """save_item_if_needed is the *other* way a new item gets created.
+
+    "Create Note" / "Link Note" / calendar all go through it. It must apply a
+    project chosen before the first save, or the choice is dropped while the
+    Action Plan block goes on displaying it (P5 sibling, P6 label with no row).
+    """
+    import customtkinter as ctk
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+
+    vps = make_vps(tmp_path)
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _seed_board(manager, "Website Rebuild", ape_id)
+
+        dialog = ItemEditorDialog(root, manager, vps_manager=vps)
+        dialog.who_var.set("Self")
+        dialog.title_entry.insert(0, "Note-first task")
+        dialog.apply_project_selection(board.id)
+
+        assert dialog.save_item_if_needed() is True
+
+        assert manager.get_project_board_ids_for_item(dialog.item_id) == [board.id]
+        assert manager.get_action_item(dialog.item_id).annual_plan_element_id == ape_id
+    finally:
+        root.destroy()
+        vps.close()
+
+
+def test_sweep2_setting_a_tactic_does_not_discard_a_pending_project(tmp_path, monkeypatch):
+    """The tactic path destroys and reopens the dialog — the choice must land first."""
+    import src.getmoredone.screens.item_editor as ie
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _seed_board(manager, "Website Rebuild", ape_id)
+        item = make_daily_item(vps, "Task")
+
+        monkeypatch.setattr(ie, "notify_weekly_tactic_changes", lambda *a, **k: None)
+        monkeypatch.setattr(ie, "ItemEditorDialog", _ReopenSpy := type(
+            "ReopenSpy", (), {"__init__": lambda self, *a, **k: None}))
+
+        stub, _ = _project_stub(manager, item_id=item.id)
+        stub._load_project_baseline()
+        stub.apply_project_selection(board.id)
+        stub.logger = SimpleNamespace(info=lambda *a, **k: None)
+        stub.destroy = lambda: None
+        stub.master = None
+        stub.vps_manager = vps
+        stub.on_close_callback = None
+        stub._canonical_weekly_tactic_title = lambda *a: a[0]
+
+        ItemEditorDialog.apply_weekly_tactic_selection(
+            stub, None, None, "some tactic", None)
+
+        assert manager.get_project_board_ids_for_item(item.id) == [board.id]
+    finally:
+        vps.close()
+
+
+def test_sweep6_a_failed_relink_does_not_leave_the_item_unfiled(tmp_path, monkeypatch):
+    """The exclusive link deletes before it inserts — that pair must be atomic.
+
+    Without a transaction, a failure between the two leaves the item filed
+    under nothing at all: data loss, not merely skipped work.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        old = _seed_board(manager, "Old", ape_id)
+        new = _seed_board(manager, "New", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(old.id, item.id)
+
+        real_conn = manager.db.conn
+
+        class ExplodeOnInsert:
+            """Delegates everything, but fails the INSERT after the DELETE."""
+
+            def __getattr__(self, name):
+                return getattr(real_conn, name)
+
+            def __enter__(self):
+                real_conn.__enter__()
+                return self
+
+            def __exit__(self, *exc):
+                return real_conn.__exit__(*exc)
+
+            def execute(self, sql, *args, **kwargs):
+                if "INSERT INTO project_board_items" in sql:
+                    raise sqlite3.OperationalError("simulated failure mid-relink")
+                return real_conn.execute(sql, *args, **kwargs)
+
+        manager.db.conn = ExplodeOnInsert()
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                manager.link_item_to_project_exclusive(new.id, item.id)
+        finally:
+            manager.db.conn = real_conn
+
+        assert manager.get_project_board_ids_for_item(item.id) == [old.id], (
+            "the delete was committed without its insert — the item lost its project")
+    finally:
+        vps.close()
+
+
+def test_sweep4_changing_project_confirms_before_dropping_other_links(tmp_path):
+    """An exclusive re-link on a multi-linked item says what it will remove."""
+    asked = []
+    stub, _ = _project_stub(None, item_id="i1", loaded_project_id="b1", extra=2)
+    stub._confirm_dropping_extra_project_links = lambda board_id: (
+        asked.append(board_id), False)[1]
+
+    stub.apply_project_selection("b2")
+
+    assert asked == ["b2"]
+    assert stub._selected_project_id == "b1", "declining still changed the selection"
+    assert stub._project_choice_made is False
+
+
+def test_sweep4_1_confirming_lets_the_change_through(tmp_path):
+    stub, _ = _project_stub(None, item_id="i1", loaded_project_id="b1", extra=2)
+    stub._confirm_dropping_extra_project_links = lambda board_id: True
+    stub.db_manager = SimpleNamespace(get_project_board=lambda _id: None)
+
+    stub.apply_project_selection("b2")
+
+    assert stub._selected_project_id == "b2"
+    assert stub._project_choice_made is True
+    assert stub._extra_project_links == 0
+
+
+def test_sweep8_a_failed_project_create_reports_instead_of_dying_silently(tmp_path, monkeypatch):
+    """A raise in a Tk callback is invisible — the picker must say so."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        made = ProjectBoard(title="Doomed", annual_plan_element_id=ape_id)
+
+        import src.getmoredone.screens.project_boards as pb
+        monkeypatch.setattr(
+            pb, "ProjectBoardEditorDialog",
+            lambda *a, **k: SimpleNamespace(result=made))
+        monkeypatch.setattr(
+            manager, "create_project_board",
+            lambda _board: (_ for _ in ()).throw(RuntimeError("disk on fire")))
+
+        shown = []
+        import tkinter.messagebox as messagebox
+        monkeypatch.setattr(messagebox, "showerror",
+                            lambda *a, **k: shown.append(a))
+
+        chosen = []
+        stub = SimpleNamespace(
+            db_manager=manager,
+            wait_window=lambda _dialog: None,
+            _finish=lambda board_id: chosen.append(board_id),
+        )
+        SetProjectDialog.create_new_project(stub)
+
+        assert shown, "the failure was swallowed"
+        assert chosen == [], "a project that was never saved was selected anyway"
     finally:
         vps.close()

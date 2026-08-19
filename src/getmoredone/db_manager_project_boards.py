@@ -177,33 +177,36 @@ class DBManagerProjectBoardsMixin:
     def link_item_to_project_exclusive(self, board_id: str, item_id: str):
         """Link an action item to exactly one project board, clearing previous project links and syncing APE."""
         now = datetime.now().isoformat()
-        
-        # 1. Clear existing project links for this item
-        self.db.conn.execute(
-            "DELETE FROM project_board_items WHERE item_id = ?",
-            (item_id,)
-        )
-        
-        # 2. Add the new link
-        self.db.conn.execute("""
-            INSERT INTO project_board_items (project_board_id, item_id, created_at)
-            VALUES (?, ?, ?)
-        """, (board_id, item_id, now))
-        
-        # 3. Fetch board's APE ID to sync
-        board = self.get_project_board(board_id)
-        if board and board.annual_plan_element_id:
+
+        # One transaction: step 1 destroys rows and step 2 recreates them, so a
+        # failure between the two would leave the item filed under nothing at
+        # all. `with conn` commits on success and rolls back on any exception.
+        with self.db.conn:
+            # 1. Clear existing project links for this item
             self.db.conn.execute(
-                "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
-                (board.annual_plan_element_id, now, item_id)
+                "DELETE FROM project_board_items WHERE item_id = ?",
+                (item_id,)
             )
-            
-        # 4. Touch the project board
-        self.db.conn.execute(
-            "UPDATE project_boards SET updated_at = ? WHERE id = ?",
-            (now, board_id),
-        )
-        self.db.conn.commit()
+
+            # 2. Add the new link
+            self.db.conn.execute("""
+                INSERT INTO project_board_items (project_board_id, item_id, created_at)
+                VALUES (?, ?, ?)
+            """, (board_id, item_id, now))
+
+            # 3. Fetch board's APE ID to sync
+            board = self.get_project_board(board_id)
+            if board and board.annual_plan_element_id:
+                self.db.conn.execute(
+                    "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
+                    (board.annual_plan_element_id, now, item_id)
+                )
+
+            # 4. Touch the project board
+            self.db.conn.execute(
+                "UPDATE project_boards SET updated_at = ? WHERE id = ?",
+                (now, board_id),
+            )
 
     def unlink_action_item_from_project_board(self, board_id: str, item_id: str):
         """Unlink an action item from a project board."""
@@ -246,32 +249,32 @@ class DBManagerProjectBoardsMixin:
             return 0
 
         now = datetime.now().isoformat()
-        for board_id in board_ids:
-            self.db.conn.execute("""
-                INSERT OR IGNORE INTO project_board_items (project_board_id, item_id, created_at)
-                VALUES (?, ?, ?)
-            """, (board_id, new_id, now))
-            self.db.conn.execute(
-                "UPDATE project_boards SET updated_at = ? WHERE id = ?",
-                (now, board_id),
-            )
+        with self.db.conn:
+            for board_id in board_ids:
+                self.db.conn.execute("""
+                    INSERT OR IGNORE INTO project_board_items (project_board_id, item_id, created_at)
+                    VALUES (?, ?, ?)
+                """, (board_id, new_id, now))
+                self.db.conn.execute(
+                    "UPDATE project_boards SET updated_at = ? WHERE id = ?",
+                    (now, board_id),
+                )
 
         # Keep the copy's Annual Plan Element consistent with the board it now
         # sits on — but only when nothing else has already set one, so this
         # never overwrites the weekly lineage a follow-up just inherited.
-        copy_row = self.db.conn.execute(
-            "SELECT annual_plan_element_id FROM action_items WHERE id = ?",
-            (new_id,),
-        ).fetchone()
-        if copy_row is not None and not copy_row["annual_plan_element_id"]:
-            board = self.get_project_board(board_ids[0])
-            if board and board.annual_plan_element_id:
-                self.db.conn.execute(
-                    "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
-                    (board.annual_plan_element_id, now, new_id),
-                )
+            copy_row = self.db.conn.execute(
+                "SELECT annual_plan_element_id FROM action_items WHERE id = ?",
+                (new_id,),
+            ).fetchone()
+            if copy_row is not None and not copy_row["annual_plan_element_id"]:
+                board = self.get_project_board(board_ids[0])
+                if board and board.annual_plan_element_id:
+                    self.db.conn.execute(
+                        "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
+                        (board.annual_plan_element_id, now, new_id),
+                    )
 
-        self.db.conn.commit()
         return len(board_ids)
 
     def get_project_board_ids_for_item(self, item_id: str) -> List[str]:

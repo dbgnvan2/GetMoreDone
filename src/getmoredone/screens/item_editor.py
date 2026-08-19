@@ -587,6 +587,16 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         Deferring the write keeps one save path for both a brand-new item (no
         row to link yet) and an existing one, and means Cancel really cancels.
         """
+        # Filing is exclusive: choosing a different project removes this item
+        # from every other board it sits on. Rare (only the Projects screen's
+        # additive "link existing items" dialog can produce that state) but
+        # destructive, so it is said out loud rather than previewed only by the
+        # "(+N more)" suffix quietly disappearing (P2).
+        if (self._loaded_extra_project_links
+                and board_id != self._loaded_project_id
+                and not self._confirm_dropping_extra_project_links(board_id)):
+            return
+
         self._selected_project_id = board_id
         self._project_choice_made = True
         # An exclusive re-link replaces every existing link, so any extra ones
@@ -596,6 +606,26 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             if board_id == self._loaded_project_id else 0
         )
         self.refresh_project_display()
+
+    def _confirm_dropping_extra_project_links(self, board_id: Optional[str]) -> bool:
+        """Ask before an exclusive re-link unfiles the item from other boards."""
+        import tkinter.messagebox as messagebox
+
+        count = self._loaded_extra_project_links + 1
+        if board_id:
+            board = self.db_manager.get_project_board(board_id)
+            target = board.title if board else "the selected project"
+            question = (
+                f"This item is filed under {count} projects.\n\n"
+                f"Filing it under \u201c{target}\u201d removes it from the other "
+                f"{self._loaded_extra_project_links}. Continue?"
+            )
+        else:
+            question = (
+                f"This item is filed under {count} projects.\n\n"
+                "Clearing the project removes all of them. Continue?"
+            )
+        return messagebox.askyesno("Change Project", question, parent=self)
 
     def _apply_project_link(self, item_id: str) -> bool:
         """Write the Project link, but only when the user changed it (PL4.2).
@@ -1712,6 +1742,12 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 # WT-M6.B.5 — say what the cascade built before this dialog is
                 # torn down and reopened, or the report is discarded unseen.
                 notify_weekly_tactic_changes(self.db_manager, self)
+
+            # This path tears the dialog down and reopens it, so a Project
+            # picked but not yet saved would be discarded without a word — and
+            # Set Wk Tactic now sits directly beside Set Project, which is
+            # exactly the sequence that loses it (P2).
+            self._apply_project_link(self.item_id)
 
             self.destroy()
             ItemEditorDialog(

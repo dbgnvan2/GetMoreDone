@@ -675,8 +675,10 @@ class TodayScreen(ctk.CTkFrame):
                     row=0, column=col, padx=2)
 
         # Action buttons (only for open items)
-        # Column positions shift based on whether factors are shown
-        btn_col_start = 11 if self.columns_expanded else 10
+        # Column positions shift based on whether factors are shown.
+        # One lower than before: the Context column was removed, so factors now
+        # sit at 9 rather than 10.
+        btn_col_start = 10 if self.columns_expanded else 9
         if not is_completed:
             btn_timer = ctk.CTkButton(
                 frame,

@@ -72,6 +72,17 @@ class SetProjectDialog(ctk.CTkToplevel):
         search_entry.grid(row=0, column=1, sticky="ew", padx=10, pady=10)
         search_entry.bind("<KeyRelease>", self._on_search)
 
+        # PL: filing an item under a project also stamps that project's Annual
+        # Plan Element onto the item. Saying so here is the cheapest place —
+        # the alternative is a user discovering it after the fact.
+        ctk.CTkLabel(
+            header,
+            text="Filing an item under a project also files it under that "
+                 "project's Annual Plan Element.",
+            anchor="w", font=ctk.CTkFont(size=11),
+            text_color=status_text_color("muted"), wraplength=700, justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 8))
+
         self.scroll_frame = ctk.CTkScrollableFrame(self)
         self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
         self.scroll_frame.grid_columnconfigure(0, weight=1)
@@ -216,7 +227,19 @@ class SetProjectDialog(ctk.CTkToplevel):
         if result in (None, "__cancel__"):
             return
 
-        self.db_manager.create_project_board(result)
+        # A raise here would be swallowed by Tk's callback handler and the
+        # picker would simply sit there — the same silent-death shape that made
+        # the Who field look dead (LEARNINGS 2026-08-19).
+        try:
+            self.db_manager.create_project_board(result)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user below
+            from tkinter import messagebox
+            messagebox.showerror(
+                "Could Not Create Project",
+                f"The project was not saved:\n\n{exc}",
+                parent=self,
+            )
+            return
         self._finish(result.id)
 
     # ------------------------------------------------------------ window

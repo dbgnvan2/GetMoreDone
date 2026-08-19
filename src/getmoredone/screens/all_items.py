@@ -420,8 +420,9 @@ class AllItemsScreen(ctk.CTkFrame):
                 ctk.CTkLabel(item_frame, text=item.status, width=80, font=list_row_font(), text_color=row_text).grid(
                     row=0, column=9 + col_offset, padx=5, pady=5)
 
-                # Action buttons
-                col = 11 + col_offset
+                # Action buttons. One lower than before: the Context column
+                # was removed, so Status now sits at 9 + col_offset.
+                col = 10 + col_offset
                 # Timer button (only for open items)
                 if item.status == Status.OPEN:
                     btn_timer = ctk.CTkButton(

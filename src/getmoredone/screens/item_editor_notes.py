@@ -9,6 +9,7 @@ from ..models import ActionItem, ItemLink
 from ..theme import button_style, status_text_color
 from ..validation import Validator
 from .item_editor_dialogs import CreateNoteDialog, LinkNoteDialog
+from .week_collision_notice import notify_weekly_tactic_changes
 
 
 class ItemEditorNotesMixin:
@@ -137,6 +138,22 @@ class ItemEditorNotesMixin:
             self.db_manager.create_action_item(item, apply_defaults=True)
             self.item_id = item.id
             self.item = item
+
+            # The second insert path for a new item. Everything chosen before
+            # the first save has to be applied here too, or clicking "Create
+            # Note" instead of "Save" silently drops it while the Action Plan
+            # block goes on displaying the choice (P5: the sibling call was not
+            # hardened; P6: a label with no row behind it).
+            if self._apply_project_link(item.id):
+                self.item = self.db_manager.get_action_item(item.id) or item
+            self.refresh_project_display()
+            if getattr(self, "pending_weekly_tactic_id", None):
+                self.item.weekly_tactic_id = self.pending_weekly_tactic_id
+                self.db_manager.update_action_item(self.item, follow_tactic=True)
+                self.pending_weekly_tactic_id = None
+                # WT-M6.B.5 — follow_tactic moves the item's dates, so whatever
+                # the cascade built has to be said out loud here too (P25).
+                notify_weekly_tactic_changes(self.db_manager, self)
 
             # Clear the notes frame and reload to show it's ready for notes
             for widget in self.notes_frame.winfo_children():

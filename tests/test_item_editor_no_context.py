@@ -10,6 +10,7 @@ save writes Title verbatim, every prefixed title is silently truncated on the
 next save. The round-trip tests below are the ones that matter.
 """
 
+import sys
 from pathlib import Path
 
 import customtkinter as ctk
@@ -125,3 +126,41 @@ def test_the_title_splitter_survives_for_lineage_colours():
     assert parsed.context == "PW|LS|Blog - W8"
     assert parsed.title == "write blog 3"
     assert "parsed.context" in (SCREENS / "item_lineage.py").read_text(encoding="utf-8")
+
+
+# --------------------------------------------- sweep fix: column renumbering
+
+
+@pytest.mark.parametrize("module,attr", [
+    ("today", "TodayScreen"),
+    ("all_items", "AllItemsScreen"),
+    ("upcoming", "UpcomingScreen"),
+])
+def test_removing_the_context_column_left_no_gap_in_the_grid(module, attr):
+    """Every rendered row uses a contiguous run of columns from 0.
+
+    Deleting a cell and renumbering the ones after it is easy to get wrong in a
+    place the deleted-cell diff never touches: the action-button column start is
+    computed separately (`btn_col_start`, `col = N + col_offset`) and was left
+    one too high in Today and All Items. A source-text check for `parsed.context`
+    cannot see that; this can.
+
+    Runs in a subprocess with a timeout: CustomTkinter hangs when a full screen
+    is built after other tests in the same interpreter have created and
+    destroyed CTk roots, and a hanging test is worse than no test.
+    """
+    import subprocess
+
+    helper = Path(__file__).resolve().parent / "render_list_screen.py"
+    result = subprocess.run(
+        [sys.executable, str(helper), module, attr],
+        capture_output=True, text=True, timeout=120,
+        cwd=str(Path(__file__).resolve().parents[1]),
+    )
+
+    assert result.returncode == 0, (
+        f"{attr} failed to render:\n{result.stdout}\n{result.stderr}")
+    assert "NOROWS" not in result.stdout, f"{attr} rendered no item rows to check"
+    assert "GAP" not in result.stdout, (
+        f"{attr} has a gap in its row grid — a stale column index survived the "
+        f"Context removal:\n{result.stdout}")

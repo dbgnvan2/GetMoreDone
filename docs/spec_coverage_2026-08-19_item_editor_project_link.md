@@ -47,7 +47,7 @@ Suite: `venv/bin/python -m pytest -q` → **866 passed, 2 skipped**, exit code 0
 | Spec ID | Criterion | Implementation | Test | Status |
 |---|---|---|---|---|
 | PL12 | A follow-up inherits the original's Project link and APE | `db_manager_project_boards.py::inherit_project_links`, called from `db_manager.py::create_followup_item` | `tests/test_item_editor_project_link.py::test_pl12_followup_inherits_project_link` | done |
-| PL12.1 | The sibling copy path (`complete_and_create`) inherits it too | `db_manager.py::complete_and_create` | `::test_pl12_1_complete_and_create_inherits_project_link` | done |
+| PL12.1 | The sibling copy path (`complete_and_create`) inherits it too — **precautionary**: that function has no caller in `src/` today, only tests, so `create_followup_item` is the only live path | `db_manager.py::complete_and_create` | `::test_pl12_1_complete_and_create_inherits_project_link` | done |
 | PL12.2 | A follow-up of an unfiled item stays unfiled | `inherit_project_links` early return | `::test_pl12_2_followup_of_an_unfiled_item_stays_unfiled` | done |
 | PL12.3 | Every link is copied, not just the first | `inherit_project_links` loop | `::test_pl12_3_multi_link_source_copies_every_link` | done |
 

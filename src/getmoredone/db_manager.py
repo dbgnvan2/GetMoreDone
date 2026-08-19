@@ -686,8 +686,10 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         new_id = self.duplicate_action_item(item_id)
         if new_id:
             self._inherit_weekly_lineage(item_id, new_id)
-            # PL12 — the sibling copy path. A completed project task recreated
-            # here stays on its board rather than landing unfiled (P5).
+            # PL12 — the sibling copy path, hardened to match
+            # create_followup_item. Note this function has no caller in src/
+            # today (tests only), so this is precautionary rather than live:
+            # do not read it as two shipping paths.
             self.inherit_project_links(item_id, new_id)
         return new_id
 

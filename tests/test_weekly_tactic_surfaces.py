@@ -194,6 +194,9 @@ def test_wt_m6b1_item_editor_refiles(tmp_path):
             vps_manager=vps,
             on_close_callback=None,
             destroy=lambda: reopened.append("destroyed"),
+            # The tactic path now persists a Project chosen but not yet saved
+            # before it tears the dialog down; this stub has no such choice.
+            _apply_project_link=lambda _item_id: False,
         )
         with patch("src.getmoredone.screens.item_editor.ItemEditorDialog.__init__",
                    lambda self, *a, **k: reopened.append("reopened")), \
