@@ -235,3 +235,158 @@ migration, no `requirements.txt` change.
   them.
 - `get_unlinked_action_items` has no `LIMIT`, so the Projects screen's link
   dialog loads every open unlinked item.
+
+---
+---
+
+# Phase C — Create a Weekly Tactic from the editor
+
+Added 2026-08-19, after A and B shipped in `cfd7a66`.
+Status: **awaiting approval — no implementation code written.**
+
+## Goal
+
+A user starting a new piece of work needs several Action Items under a Weekly
+Tactic that does not exist yet. Today that means leaving the editor, going to the
+Weekly Items screen, picking the APE and the week, creating the tactic, coming
+back, and linking it.
+
+**`+ New Weekly Tactic` on `SetWeeklyTacticDialog`**, mirroring the
+`+ New Project` button phase A just put on `SetProjectDialog`. Same button pair,
+same shape, same place.
+
+## What already exists (no DB work, no new manager methods)
+
+| Piece | Location |
+|---|---|
+| `WeeklyTacticEngine.ensure_tactic(ape_row, week_start, report)` — get-or-create the week item for an APE and week | `weekly_tactic.py` |
+| `_ensure_quarter_and_month(ape_row, target, report)` — creates the Quarter Initiative and Month Tactic when missing, and sets the APE's `qN`/`mN` flags | `weekly_tactic.py` |
+| `db_manager.weekly_tactic_engine` — the engine, its calendar already bound to `first_day_of_week` + `first_week_of_year_rule` | `db_manager.py` |
+| `db_manager.transaction()` — one all-or-nothing unit (WT-M4.D) | `db_manager.py` |
+| `list_annual_plan_element_catalog()` — the APE list `SetProjectDialog` already uses | `db_manager.py` |
+| `CascadeReport` + `notify_weekly_tactic_changes` — the "here is what got created" summary, already wired into the editor | `weekly_tactic.py`, `screens/week_collision_notice.py` |
+| `SetWeeklyTacticDialog` — the select-only picker to extend | `screens/item_editor_weekly_tactic_dialog.py` |
+| `SetProjectDialog.create_new_project()` — the pattern to mirror | `screens/item_editor_project_dialog.py` |
+
+**Verified, not assumed.** Starting from an APE with nothing built under it:
+
+```
+before: {quarter_initiatives: 0, month_tactics: 0}
+  engine._ensure_quarter_and_month(ape, week_start, report)
+  engine.ensure_tactic(ape, week_start, report)
+after:  {quarter_initiatives: 1, month_tactics: 1}
+created: quarter_initiative=Q2 2026, month_tactic=M5 2026, weekly_tactic=H|LS|Blog - W21
+tactic:  H|LS|Blog - W21   2026-05-18 -> 2026-05-24
+   filed: New work 0/1/2   start=2026-05-21  stamp=2026-05-18
+APE flags set: q2=1 m5=1
+```
+
+So this is a dialog change. The engine underneath it is the WT-M4 cascade,
+already built and tested.
+
+**It also settles the mid-quarter question.** Every FK from `tl_visions` down to
+`week_actions` is `NOT NULL`, and none of the seven `update_*` functions accepts
+an FK — so a parent is fixed at creation and an orphan can never be adopted.
+Backfill by re-parenting is not possible and is not needed: the chain is built
+*downward* from the APE at the moment the tactic is created, with the editorial
+text left blank. Creating a tactic for a May week on a bare APE creates Q2 and
+May with it.
+
+## Design decisions (call these out before approving)
+
+- **WTC-D1 — "Create" is get-or-create.** WT-INV5 allows one Weekly Tactic per
+  (APE, week), and `ensure_tactic` returns the existing row rather than raising.
+  That is the right behaviour, but the button must not promise a new record when
+  it may hand back an existing one — label and confirmation wording follow from
+  this.
+- **WTC-D2 — Which APE.** Default to the item's own `annual_plan_element_id`,
+  which phase A's project link now stamps (D2). When the item has none, the
+  dialog offers the `list_annual_plan_element_catalog()` picker. A Weekly Tactic
+  cannot exist without an APE — enforced since WT-M1.C.4 — so with neither, the
+  create control is disabled **with the reason shown**, not silently absent.
+- **WTC-D3 — Which week.** Default to the week containing the item's start date,
+  via `weekly_tactic_engine.calendar`, so it honours `first_day_of_week` and the
+  first-week-of-year rule. Changeable in the dialog.
+- **WTC-D4 — The title is derived, not typed.** `load_item_data` rewrites a week
+  record's title to canonical **every time the editor opens it**
+  (`item_editor.py:769`), so a hand-typed name would not survive. Either accept
+  derived naming (`H|LS|Blog - W21`) and offer no title field, or carve out that
+  rewrite. **Needs your call — see below.**
+- **WTC-D5 — One transaction.** The create runs inside
+  `db_manager.transaction()`. A failure part-way leaves no Quarter or Month
+  behind, which is what WT-M4.D exists for.
+- **WTC-D6 — Say what was built.** Creating a tactic can also create a Quarter
+  Initiative and a Month Tactic and flip two flags on the APE. That is a
+  side effect the user should see. The dialog returns the `CascadeReport` and the
+  editor reports it through `notify_weekly_tactic_changes`, which already
+  interrupts for rollover stubs and stays quiet otherwise (WT-M6.B.5).
+
+## Acceptance criteria → tests
+
+New file `tests/test_item_editor_weekly_tactic_create.py`, `SimpleNamespace`
+stubs, same pattern as `tests/test_item_editor_weekly_tactic_ui.py`.
+
+| ID | Criterion | Verified by |
+|---|---|---|
+| **WTC1** | `+ New Weekly Tactic` creates the tactic for the chosen APE and week, and selecting it files the item under it. | `test_wtc1_create_and_select` |
+| **WTC2** | Creating for a week whose Quarter and Month do not exist creates both, and sets the APE's `qN`/`mN` flags — the mid-quarter start. | `test_wtc2_creates_quarter_and_month_when_missing` |
+| **WTC3** | Creating for a week that already has a tactic returns **that** tactic and creates nothing (WTC-D1). | `test_wtc3_create_is_get_or_create` |
+| **WTC4** | The week defaults to the week containing the item's start date, under the configured first-day-of-week. | `test_wtc4_week_defaults_to_the_items_week` |
+| **WTC5** | With no APE on the item and none chosen, the create control is disabled **and states why**. | `test_wtc5_no_ape_disables_create_with_a_reason` |
+| **WTC6** | A failure part-way leaves no Quarter, Month or week item behind, and the item unchanged (WTC-D5). | `test_wtc6_failed_create_rolls_back` — injects at `ensure_tactic`, mirroring `test_wt_m4d2_failure_at_last_row_rolls_back_everything`. **Written first** (highest-risk, P10). |
+| **WTC7** | What was created reaches the user: the report names the Quarter and Month, not only the tactic (WTC-D6). | `test_wtc7_created_records_are_reported` |
+| **WTC8** | Cancelling the create dialog creates nothing. | `test_wtc8_cancel_creates_nothing` |
+
+**Not code-testable — flagged for human review:** whether the create panel reads
+as *"make a new week bucket for work I already have"* rather than as VSP
+planning. That is the whole point of the feature and no assertion covers it.
+Proposed check: launch under the venv, create an item, use `+ New Weekly
+Tactic`, confirm `app.log` is clean — per `~/.claude/standards/ui-regression.md`.
+
+## Implementation order
+
+1. `tests/` — WTC6 first, then WTC1–WTC3.
+2. `screens/item_editor_weekly_tactic_dialog.py` — APE + week selection panel and
+   the `+ New Weekly Tactic` button.
+3. The create call itself: `transaction()` → `_ensure_quarter_and_month` →
+   `ensure_tactic`, returning the `CascadeReport` with the chosen tactic.
+4. `screens/item_editor.py` — pass the report to `notify_weekly_tactic_changes`
+   on the existing `apply_weekly_tactic_selection` path (WTC-D6, WTC7).
+5. Disabled-state and reason text (WTC5).
+6. Full suite; then launch for the manual check.
+7. Docs: handoff note, `CHANGELOG.md`, `docs/USER_GUIDE.md`, and the WTC rows in
+   `docs/spec_coverage_2026-08-19_item_editor_project_link.md`.
+
+No schema migration, no `requirements.txt` change, no new manager method.
+
+## Needs your call
+
+- **WTC-D4 — derived title, or an editable one?** Deriving it is free and
+  consistent with every tactic the app already makes. Making it editable means
+  changing the load-time canonical rewrite, which exists so a tactic's name
+  always matches its APE and week. My recommendation: derived, no title field.
+- **WTC-D2 — is defaulting the APE from the item's project the behaviour you
+  want?** It means "new Weekly Tactic" quietly inherits the project's plan
+  element. That is almost always right and occasionally surprising.
+
+## Adjacent issue this feature makes more reachable (rule 10)
+
+`_find_annual_initiative_for_ape` matches an APE to its Annual Initiative by
+**string equality on the key field** (`LOWER(ai.title) = LOWER(ape.key_field)`),
+not by a foreign key. Renaming a vision element updates the APE's `key_field` and
+its mirror rows but **not** the initiative's title, so the link silently breaks
+and the next assignment builds a second Annual Initiative and a second Quarter
+Initiative for the same APE and quarter. Reproduced:
+
+```
+rename "Blog" -> "Newsletter"
+  APE key_field: Health|Living Systems|Newsletter
+  AI  title:     Health|Living Systems|Blog        <- not updated
+next assign -> annual_initiatives: 2, quarter_initiatives: 2
+```
+
+Pre-existing, and spec §9 of the weekly-tactic spec deliberately left the
+quarter/month/annual levels without the uniqueness protection WT-D8 gave weekly
+tactics — so nothing dedupes it and nothing warns. This feature does not cause
+it, but it puts a "create the scaffolding" button in front of many more users, so
+it is worth fixing near this work rather than after it. Not folded in.
