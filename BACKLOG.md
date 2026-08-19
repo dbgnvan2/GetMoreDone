@@ -47,6 +47,24 @@ fixed; each is a decision, not an oversight.
   They have now drifted twice (the project link, then the APE ordering). Factor
   the new-item assembly out so they cannot drift a third time.
 
+### delete_segment's multi-table check is verified for one table only (2026-08-19)
+
+`VPSManager.delete_segment` counts seven VSP tables and its docstring says it
+"Checks ALL VSP tables to prevent silent data loss via cascade deletion". Only
+the `tl_visions` count is covered by a test. The other six cannot be exercised:
+every VSP table has a NOT NULL foreign key to its parent
+(`annual_plans.annual_vision_id`, `quarter_initiatives.annual_plan_id`,
+`month_tactics.quarter_initiative_id`, `week_actions.month_tactic_id`), so an
+orphan cannot be inserted, and deleting a parent cascades the children away
+before `delete_segment` ever counts them. `PRAGMA foreign_keys = OFF` is ignored
+while the connection holds a transaction open, so the usual trick does not work
+either.
+
+So the per-table counting is defence-in-depth against legacy rows the current
+schema can no longer produce. Not a defect; an unverified claim. Either close it
+with a fixture that writes rows through a second raw connection to a file-backed
+database, or soften the docstring to say what is actually guaranteed.
+
 ### Other known items
 
 - [x] **Done 2026-08-19 (BC3).** It was 16 tests across four files, not two, and

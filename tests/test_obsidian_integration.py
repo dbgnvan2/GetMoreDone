@@ -343,16 +343,20 @@ class TestAppSettings:
         assert settings.obsidian_vault_path is None
         assert settings.obsidian_notes_subfolder == "GetMoreDone"
 
-    def test_settings_save_and_load(self, tmp_path):
+    def test_settings_save_and_load(self, tmp_path, monkeypatch):
         """Test saving and loading settings."""
         # Create settings
         settings = AppSettings()
         settings.obsidian_vault_path = "/test/vault"
         settings.obsidian_notes_subfolder = "TestFolder"
 
-        # Override settings path to use temp directory
+        # Override settings path to use temp directory.
+        # monkeypatch, not a bare assignment: this used to be assigned with no
+        # restore, so it replaced the session-wide isolation fixture for every
+        # test that ran after this file (P8 / the restore-patched-state rule).
         settings_file = tmp_path / "test_settings.json"
-        AppSettings.get_settings_path = classmethod(lambda cls: settings_file)
+        monkeypatch.setattr(
+            AppSettings, "get_settings_path", classmethod(lambda cls: settings_file))
 
         # Save
         settings.save()

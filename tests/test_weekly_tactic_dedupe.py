@@ -1093,9 +1093,23 @@ def test_bc2_4_an_unparseable_pair_does_not_break_schema_init(tmp_path):
 
         report = run_weekly_tactic_migrations(conn)
 
-        # Either it merged them or it declined to create the index and said so —
-        # both are recoverable. What it must not do is raise.
-        assert report["unique_index_enforced"] or report["unique_index_error"]
+        # `unique_index_enforced or unique_index_error` can never be false — the
+        # first is initialised True and only cleared in the branch that sets the
+        # second — so it proved nothing beyond "did not raise". Assert the
+        # outcome instead: the pair is reported as unmergeable rather than
+        # merged, and the index is declined with a reason rather than crashing.
+        assert report["dedupe"]["unmergeable"] == 1, report["dedupe"]
+        assert report["dedupe"]["merged"] == 0, (
+            "two rows sharing an unreadable date were merged — '' and "
+            "'not-a-date' mean 'no week', not 'the same week'")
+        assert report["unique_index_enforced"] is False
+        assert report["unique_index_error"], (
+            "the index was declined without saying why")
+
+        rows = conn.execute(
+            "SELECT COUNT(*) AS n FROM action_items WHERE item_type = 'week'"
+        ).fetchone()["n"]
+        assert rows == 2, "a row was deleted on the strength of an unreadable date"
     finally:
         vps.close()
 
@@ -1116,9 +1130,13 @@ def test_bc2_5_the_repair_does_not_treat_a_snapped_survivor_as_blocked(tmp_path)
         ape_id = seed_ape(vps)
         on_boundary, mid_week, _ = _seed_unsnappable_pair(vps, ape_id)
         # The stray holds the children, so it wins the survivor tie-break and is
-        # the row that gets snapped.
+        # the row that gets snapped. The children sit OUTSIDE the week on
+        # purpose: the repair returns early on an in-range child before it ever
+        # consults the blocked list, so in-range children cannot tell whether
+        # the fix works.
         for index in range(3):
-            make_daily_item(vps, f"Stray child {index}", weekly_tactic_id=mid_week,
+            make_daily_item(vps, f"Stray child {index}", start="2026-03-05",
+                            due="2026-03-05", weekly_tactic_id=mid_week,
                             refile=False)
 
         report = run_weekly_tactic_migrations(conn)
@@ -1126,6 +1144,9 @@ def test_bc2_5_the_repair_does_not_treat_a_snapped_survivor_as_blocked(tmp_path)
         assert report["dedupe"]["snapped"] >= 1
         assert report["collisions_resolved_by_dedupe"] >= 1, (
             "the repair was handed a collision the dedupe had already resolved")
+        assert report["invariant_repair"]["moved"] == 3, (
+            f"the children of a tactic the dedupe just fixed were left out of "
+            f"range: {report['invariant_repair']}")
         skipped_reasons = [
             entry.get("reason", "")
             for entry in report["invariant_repair"].get("skipped_details", [])

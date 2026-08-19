@@ -15,8 +15,8 @@ import os
 
 # Add src to path
 
-from getmoredone.database import Database
-from getmoredone.vps_manager import VPSManager
+from src.getmoredone.database import Database
+from src.getmoredone.vps_manager import VPSManager
 
 def test_vps_init():
     """Test VPS database initialization."""

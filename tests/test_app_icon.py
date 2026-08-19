@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from getmoredone.utils import app_icon  # noqa: E402
+from src.getmoredone.utils import app_icon  # noqa: E402
 
 
 def test_app_icon_asset_present():

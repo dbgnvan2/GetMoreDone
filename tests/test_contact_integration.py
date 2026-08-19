@@ -10,8 +10,8 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from getmoredone.db_manager import DatabaseManager
-from getmoredone.models import Contact, ActionItem
+from src.getmoredone.db_manager import DatabaseManager
+from src.getmoredone.models import Contact, ActionItem
 
 
 class TestContactIntegration:

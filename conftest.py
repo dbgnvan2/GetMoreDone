@@ -35,6 +35,41 @@ import logging
 import pytest
 
 
+def pytest_sessionstart(session):
+    """Stamp the real settings file so an escape can be detected, not assumed.
+
+    The redirect fixture below patches one class object. That is exactly the
+    kind of guard that can be defeated without anyone noticing — the suite
+    imports `getmoredone.*` and `src.getmoredone.*` in different files, which
+    Python loads as two distinct modules with two distinct classes, so patching
+    one left the other writing the user's real file while a test asserting "the
+    redirect is in force" passed against the patched twin.
+
+    This checks the artifact instead of the mechanism (P6): if the real file's
+    mtime moves during a run, something escaped, whatever the reason.
+    """
+    from src.getmoredone.paths import default_settings_path
+
+    real = default_settings_path()
+    session.config._real_settings_mtime = (
+        real.stat().st_mtime_ns if real.exists() else None)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    from src.getmoredone.paths import default_settings_path
+
+    before = getattr(session.config, "_real_settings_mtime", None)
+    real = default_settings_path()
+    after = real.stat().st_mtime_ns if real.exists() else None
+    if before != after:
+        raise pytest.UsageError(
+            f"the test suite wrote the user's real settings file: {real}\n"
+            "Something bypassed the _isolate_user_settings fixture — most "
+            "likely a test importing `getmoredone.app_settings` instead of "
+            "`src.getmoredone.app_settings`, which is a different class object."
+        )
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_user_settings(tmp_path_factory):
     """Keep the suite out of the user's real settings.json.
@@ -54,15 +89,25 @@ def _isolate_user_settings(tmp_path_factory):
     has to be in place before the first test that touches settings, whichever
     file that turns out to be.
     """
-    from src.getmoredone.app_settings import AppSettings
+    import importlib
 
     settings_path = tmp_path_factory.mktemp("settings") / "settings.json"
-    original = AppSettings.get_settings_path
-    AppSettings.get_settings_path = classmethod(lambda cls: settings_path)
+    redirect = classmethod(lambda cls: settings_path)
+
+    # Both import spellings, because they are two different class objects and
+    # patching one leaves the other pointed at the user's real file.
+    originals = []
+    for module_name in ("src.getmoredone.app_settings", "getmoredone.app_settings"):
+        module = importlib.import_module(module_name)
+        cls = module.AppSettings
+        originals.append((cls, cls.__dict__.get("get_settings_path")))
+        cls.get_settings_path = redirect
     try:
         yield settings_path
     finally:
-        AppSettings.get_settings_path = original
+        for cls, original in originals:
+            if original is not None:
+                cls.get_settings_path = original
 
 
 @pytest.fixture(autouse=True, scope="session")

@@ -281,10 +281,11 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
     resolved = set(report["dedupe"].get("snapped_ids", []))
     resolved |= set(report["dedupe"].get("deleted_ids", []))
     still_blocked = {
+        **report["week_start_normalization"],
         "collisions": [
             entry for entry in report["week_start_normalization"].get("collisions", [])
             if entry["id"] not in resolved
-        ]
+        ],
     }
     report["collisions_resolved_by_dedupe"] = (
         len(report["week_start_normalization"].get("collisions", []))
@@ -348,6 +349,18 @@ def _log_report(report: Dict[str, Any]) -> None:
             "foreign key with no ON DELETE clause (%s). Those tactics were left "
             "in place.",
             dedupe["blocked"], dedupe.get("blocked_rows", {}),
+        )
+    if dedupe.get("unmergeable"):
+        logger.warning(
+            "[weekly_tactic_migration] %d group(s) share an unreadable start_date "
+            "and were left alone rather than merged: %s",
+            dedupe["unmergeable"], dedupe.get("unmergeable_groups", []),
+        )
+    if report.get("collisions_resolved_by_dedupe"):
+        logger.info(
+            "[weekly_tactic_migration] %d week-start collision(s) were resolved by "
+            "the dedupe and are no longer treated as blocking their children",
+            report["collisions_resolved_by_dedupe"],
         )
     if dedupe.get("dropped"):
         logger.warning(

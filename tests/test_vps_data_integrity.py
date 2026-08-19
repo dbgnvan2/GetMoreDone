@@ -11,7 +11,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "src"))
 
-from getmoredone.vps_manager import VPSManager
+from src.getmoredone.vps_manager import VPSManager
 import sqlite3
 import sys
 from pathlib import Path
@@ -200,6 +200,22 @@ def test_deletion_protection_completeness():
         print(f"  User now sees ALL record types, not just TL Visions")
         total = sum(counts.values())
         print(f"  Total records protected: {total}")
+
+    # BC3/F6: this section is headed "Annual Plans without TL Vision", and the
+    # assertions above ratify a scenario that no longer builds that state — the
+    # cascade removes the plans before delete_segment ever counts them.
+    #
+    # It cannot be rebuilt cheaply, and that is worth writing down rather than
+    # working around: every VSP table has a NOT NULL foreign key to its parent
+    # (annual_plans.annual_vision_id, quarter_initiatives.annual_plan_id,
+    # month_tactics.quarter_initiative_id, week_actions.month_tactic_id), so an
+    # orphan cannot be inserted, and `PRAGMA foreign_keys = OFF` is ignored
+    # while this connection holds a transaction open.
+    #
+    # So delete_segment's per-table counting is defence-in-depth against legacy
+    # rows the current schema can no longer produce, and it is verified here and
+    # in tests/test_vps_segments.py for tl_visions only. Recorded in BACKLOG.md
+    # rather than left as an unstated gap behind a passing test.
 
     manager.close()
     # BC3: returning a value from a test makes pytest ignore the verdict.

@@ -134,15 +134,21 @@ source grepped wherever cheap (`validate_color` now gets real inputs,
 `delete_segment` a real linked row). Every database in a test is a temporary
 one. `PytestReturnNotNoneWarning` count is now 0, which is the regression guard:
 it goes back above zero the moment someone adds another.
-**And the first fix did not close the class.** The pre-push sweep found the
-other half: several tests call `AppSettings.load()` / `.save()` with no path, so
-every full-suite run rewrote the real `settings.json` — and `save()` writes every
-dataclass field while `load()` filters to them, so a key the file carried that
-the dataclass had dropped would be destroyed. One of those tests flips a value
-with no `try/finally`. Closed with an autouse session fixture in `conftest.py`
-that redirects `get_settings_path`, plus `tests/test_settings_isolation.py`
-asserting the redirect is in force. No data was lost — the live file still holds
-exactly its 46 dataclass fields — but the mtime shows it was written.
+**It took three attempts to close this class, and the middle one is the
+lesson.** The pre-push sweep found the other half: several tests call
+`AppSettings.load()` / `.save()` with no path, so every full-suite run rewrote
+the real `settings.json`. The obvious fix — an autouse fixture patching
+`AppSettings.get_settings_path`, plus a test asserting the redirect was in
+force — **did not work, and the test said it did**. Five test files do
+`sys.path.insert(.../src)` and `from getmoredone.app_settings import ...`, which
+Python loads as a *different module object* from `src.getmoredone.app_settings`.
+The fixture patched one class; those files wrote through the other; and the
+guard test imported the patched twin, so it passed while the real file went on
+being written. Closed by unifying the import spelling, patching both class
+objects, and — the part that actually holds — a `pytest_sessionstart` /
+`pytest_sessionfinish` pair that stamps the real file's mtime and fails the run
+if it moves. No data was lost: the live file still holds exactly its 46
+dataclass fields.
 **Rule** → **A test that returns is a test that does not assert.** Treat
 `PytestReturnNotNoneWarning` as a failure, not a warning. And **never construct a
 production object with default arguments in a test** — the default is production:
@@ -152,6 +158,13 @@ be suspicious of any constructor that does I/O before reading its own arguments.
 closed** — "every database is temporary now" was true and still left the settings
 file exposed. The check is a grep for every default-argument construction and
 every `.load()`/`.save()` classmethod, not a memory of the one you fixed.
+**And guard the artifact, not the mechanism.** A test that asserts "the patch is
+in place" can only see the copy it imported; a check that stamps the real file's
+mtime at session start and compares it at session end catches every escape
+route, including the ones you did not think of. Two module objects for one
+class is a real hazard in a repo that supports both `import getmoredone` and
+`import src.getmoredone` — patching, `isinstance`, and module-level caches all
+silently see only one of them.
 
 ### 2026-08-19 — the Who field was dead, and Tk hid the reason
 

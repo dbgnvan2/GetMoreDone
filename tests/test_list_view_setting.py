@@ -8,7 +8,7 @@ import sys
 from pathlib import Path as _Path
 sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "src"))
 
-from getmoredone.app_settings import AppSettings
+from src.getmoredone.app_settings import AppSettings
 import sys
 from pathlib import Path
 

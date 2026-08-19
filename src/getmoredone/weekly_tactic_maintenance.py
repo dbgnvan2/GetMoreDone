@@ -399,6 +399,10 @@ def dedupe_weekly_tactics(
         # writes a false warning into the one audit log the user has.
         "snapped_ids": [],
         "deleted_ids": [],
+        # Groups that are duplicates to the index but cannot be assigned to a
+        # week, so they are reported rather than merged.
+        "unmergeable": 0,
+        "unmergeable_groups": [],
         "blocked": 0,
         "blocked_rows": {},
         "dropped": {},
@@ -406,6 +410,31 @@ def dedupe_weekly_tactics(
     }
 
     for group in find_duplicate_weekly_tactics(conn, cal):
+        # A group whose key is not a date is reported, never merged. Grouping
+        # them is what keeps this function and the unique index (which is on the
+        # raw column) agreeing about what a duplicate is, so the index guard
+        # still refuses loudly. Merging them would be a different thing
+        # entirely: '' means "no start date", not "the same week", so two
+        # unscheduled tactics would be silently collapsed and one deleted —
+        # irreversibly, unattended, at every app start. The crash this grouping
+        # was added to prevent is already handled by catching IntegrityError
+        # around the index creation, so the deletion buys nothing.
+        if cal.bounds_iso(group["start_date"]) is None:
+            report["unmergeable"] += 1
+            report["unmergeable_groups"].append({
+                "ape_id": group["ape_id"],
+                "start_date": group["start_date"],
+                "member_ids": group["member_ids"],
+            })
+            logger.warning(
+                "[weekly_tactic] %d week item(s) on APE %s share the unreadable "
+                "start_date %r. They are duplicates by the unique index but "
+                "belong to no week, so they are left alone rather than merged: %s",
+                len(group["member_ids"]), group["ape_id"], group["start_date"],
+                group["member_ids"],
+            )
+            continue
+
         placeholders = ",".join("?" for _ in group["member_ids"])
         rows = conn.execute(
             f"""

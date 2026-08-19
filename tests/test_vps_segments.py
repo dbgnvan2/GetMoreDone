@@ -83,21 +83,31 @@ def test_bc3_the_colour_picker_is_wired_to_a_real_chooser():
         "pick_color no longer calls askcolor")
 
 
-def test_bc3_the_editor_initialises_its_colour_state():
-    """Restored: the conversion dropped this, and it was one of the few old
-    checks that could actually fail.
+def test_bc3_the_editor_seeds_its_colour_from_the_segment(vps):
+    """Restored, and asserted on the built dialog rather than its source.
 
-    A source check because the dialog cannot be constructed without a parent
-    window and a vps_manager; what it guards is that the editor sets up the
-    colour it will later save.
+    The conversion dropped this check; the first attempt to restore it grepped
+    __init__ for two words that sit on one line, which is the same shape as the
+    grep that had been silently failing.
     """
-    source = inspect.getsource(VPSSegmentEditorDialog.__init__)
+    import customtkinter as ctk
 
-    assert "selected_color" in source, (
-        "the editor no longer initialises selected_color — the colour picker "
-        "has nothing to write to")
-    assert "color_hex" in source, (
-        "the editor no longer seeds its colour from the segment's color_hex")
+    segment_id = vps.create_segment("Coloured", "desc", "#0a1b2c", 94)
+    segment = dict(vps.get_segment(segment_id))
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        dialog = VPSSegmentEditorDialog(root, vps, segment)
+        assert dialog.selected_color == "#0a1b2c", (
+            "the editor did not seed its colour from the segment")
+
+        blank = VPSSegmentEditorDialog(root, vps)
+        assert blank.selected_color.startswith("#"), (
+            "a new segment must start from a usable default colour")
+        assert VPSSegmentEditorDialog.validate_color(None, blank.selected_color)
+    finally:
+        root.destroy()
 
 
 # -------------------------------------------------------- colour validation
