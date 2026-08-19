@@ -7,7 +7,41 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A Weekly Tactic link of its own.** `action_items.weekly_tactic_id` replaces the
+  overloaded use of `parent_id`, which previously served both ordinary subtask nesting
+  and the week bucket at the same time — so attaching a tactic silently destroyed a
+  hierarchy, and setting a parent silently destroyed the tactic link. An item can now be
+  both a subtask and week-filed. The migration moves existing week links across and
+  leaves daily nesting untouched, reporting both counts.
+- **One owner of week identity and week numbering** (`week_calendar.py`). Week numbers
+  now carry their year: 2026-12-28 and 2027-01-01 are both ISO week 53, and a bare `53`
+  cannot say which. A new **First week of year** rule (`iso`, `jan1`, `first_full`)
+  defaults to `iso`, which is how every existing database was numbered.
+- **Project start and end dates** on Project Boards. Informational only — never
+  validated and never derived from the items on the board, because a project may span
+  any timeframe.
+- **`weekly_tactic_start_date`** on Action Items, recording the week an item was
+  originally meant to start. Existing items are left blank; nothing is backfilled.
+
 ### Fixed
+
+- **Duplicate Weekly Tactics are merged**, one per Annual Plan Element per week, and a
+  unique index keeps it that way. The surviving tactic keeps whichever row held more
+  children, every reference is moved onto it before the other is deleted, and its title
+  is re-derived — the real duplicate in the wild was titled `W8` for a week that is
+  ISO week 9, so keeping the older row alone would have kept a wrong number.
+- **A Weekly Tactic that cannot move now says so.** Only one tactic can occupy a week
+  for a plan element, and a move onto an occupied week used to be reported as a clean
+  save while nothing happened. The Today, Upcoming, All Items and Reschedule surfaces
+  now tell you, and the reschedule history records where the item actually landed
+  rather than where it was asked to go.
+- **The weekly-items drag path reports what happened.** Dragging a plan element onto a
+  week that already had a tactic produced no refresh, no message and no sign of
+  rejection; the same drag with no week selected did nothing at all.
+
+
 
 - **Two release-workflow steps could have succeeded while publishing nothing.**
   `actions/upload-artifact` defaults `if-no-files-found` to `warn`, and
