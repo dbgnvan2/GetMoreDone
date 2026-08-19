@@ -271,7 +271,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         Mark action item as completed.
 
         Returns:
-            True if item was found and completed
+            True if the item was found and saved as given. False if it was not
+            found, or if it was a week item whose week could not move — see
+            ``last_week_collision``.
         """
         item = self.get_action_item(item_id)
         if not item:
@@ -279,8 +281,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
         item.status = Status.COMPLETED
         item.completed_at = datetime.now().isoformat()
-        self.update_action_item(item, normalize_week_dates=False)
-        return True
+        return self.update_action_item(item, normalize_week_dates=False)
 
     def uncomplete_action_item(self, item_id: str) -> bool:
         """
@@ -784,30 +785,25 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         new_start: Optional[str],
         new_due: Optional[str],
         reason: Optional[str] = None
-    ):
-        """Reschedule an item and record history."""
+    ) -> bool:
+        """Reschedule an item and record history.
+
+        Returns:
+            True when the item now holds the requested dates. False when it does
+            not — the item was a week item whose target week is already taken,
+            and ``last_week_collision`` says which.
+
+        The history row is written from the dates the item actually ends up
+        with, after the save. Writing it first recorded a date the item never
+        held: a week item snaps to its week boundary, so rescheduling one to a
+        Wednesday used to leave ``to_start`` claiming that Wednesday while the
+        item sat on the Monday.
+        """
         item = self.get_action_item(item_id)
         if not item:
-            return
+            return False
 
-        # Record history
-        history = RescheduleHistory(
-            item_id=item_id,
-            from_start=item.start_date,
-            from_due=item.due_date,
-            to_start=new_start,
-            to_due=new_due,
-            reason=reason
-        )
-
-        self.db.conn.execute("""
-            INSERT INTO reschedule_history (
-                id, item_id, from_start, from_due, to_start, to_due, reason, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            history.id, history.item_id, history.from_start, history.from_due,
-            history.to_start, history.to_due, history.reason, history.created_at
-        ))
+        from_start, from_due = item.start_date, item.due_date
 
         # Weekly linked items should update the shared week_action date range.
         if item.item_type == "week" and item.week_action_id:
@@ -842,13 +838,49 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
                 """,
                 (target_start, target_due, now, item.week_action_id),
             )
+            self._record_reschedule(item_id, from_start, from_due,
+                                    target_start, target_due, reason)
             self.db.conn.commit()
-            return
+            return True
 
         # Update item
         item.start_date = new_start
         item.due_date = new_due
-        self.update_action_item(item, normalize_week_dates=False)
+        moved = self.update_action_item(item, normalize_week_dates=False)
+
+        saved = self.get_action_item(item_id)
+        self._record_reschedule(
+            item_id, from_start, from_due,
+            saved.start_date if saved else new_start,
+            saved.due_date if saved else new_due,
+            reason,
+        )
+        self.db.conn.commit()
+        return moved
+
+    def _record_reschedule(self, item_id, from_start, from_due, to_start, to_due, reason):
+        """Write one reschedule_history row.
+
+        Called with the dates the item actually holds, never the ones that were
+        merely requested — an audit row that disagrees with the item is worse
+        than none (P6).
+        """
+        history = RescheduleHistory(
+            item_id=item_id,
+            from_start=from_start,
+            from_due=from_due,
+            to_start=to_start,
+            to_due=to_due,
+            reason=reason,
+        )
+        self.db.conn.execute("""
+            INSERT INTO reschedule_history (
+                id, item_id, from_start, from_due, to_start, to_due, reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            history.id, history.item_id, history.from_start, history.from_due,
+            history.to_start, history.to_due, history.reason, history.created_at
+        ))
 
     def pin_item_to_today_top(self, item_id: str) -> bool:
         """Pin an item to the top of the Today list.

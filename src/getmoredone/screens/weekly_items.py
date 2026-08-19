@@ -11,6 +11,7 @@ import tkinter as tk
 
 from ..app_settings import AppSettings
 from .. import week_calendar
+from ..weekly_tactic_logging import get_weekly_tactic_logger
 from ..color_contrast import pick_text_color
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
@@ -18,6 +19,8 @@ from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
     from ..vps_manager import VPSManager
+
+logger = get_weekly_tactic_logger()
 
 
 class WeeklyItemsScreen(ctk.CTkFrame):
@@ -471,20 +474,34 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         self.dragged_row = None
         if self._is_descendant(target, self.right_list):
             parsed = self._selected_week_context()
-            if parsed:
-                week_start, year, _quarter, month = parsed
-                result = self.vps_manager.create_week_action_items_for_ape(row["id"], year, month, [week_start])
-                # Always refresh and always say what happened: a drag that
-                # collided used to produce no refresh, no status and no visible
-                # sign it had been rejected.
-                self.refresh()
+            if not parsed:
+                # The button path warns when no week is chosen; the drag path
+                # used to do nothing at all for the same input.
                 self.status_label.configure(
-                    text=self._describe_week_creation(
-                        int(result.get("created_count", 0)),
-                        int(result.get("skipped_count", 0)),
-                        int(result.get("collided_count", 0)),
-                    )
+                    text="Select a Week Start before dragging an Annual Plan Element."
                 )
+                return
+            week_start, year, _quarter, month = parsed
+            try:
+                result = self.vps_manager.create_week_action_items_for_ape(
+                    row["id"], year, month, [week_start])
+            except ValueError as exc:
+                # create_week_action_items_for_ape raises on a stale APE or a
+                # bad month. Unhandled inside a Tk binding that is a traceback
+                # on stderr and nothing on screen.
+                logger.exception("[weekly_items] drag create failed: %s", exc)
+                self.status_label.configure(text=f"Could not create the weekly tactic: {exc}")
+                return
+            # Always refresh and always say what happened: a drag that collided
+            # used to produce no refresh, no status and no sign of rejection.
+            self.refresh()
+            self.status_label.configure(
+                text=self._describe_week_creation(
+                    int(result.get("created_count", 0)),
+                    int(result.get("skipped_count", 0)),
+                    int(result.get("collided_count", 0)),
+                )
+            )
 
     def _bind_drag_widgets(self, widgets: tuple, row: Dict[str, object]):
         for widget in widgets:

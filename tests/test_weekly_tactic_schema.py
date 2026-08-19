@@ -4,6 +4,8 @@ Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1
 """
 
 import sqlite3
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -298,6 +300,95 @@ def test_wt_m1c5_a_genuine_failure_is_not_swallowed_as_a_collision(tmp_path):
         vps.close()
 
 
+def test_wt_m1c5_reschedule_history_records_where_the_item_landed(tmp_path):
+    """The audit row must agree with the item, on the ordinary path too.
+
+    ``reschedule_item`` wrote its history row before the save. A week item snaps
+    to its week boundary, so rescheduling one to a Wednesday recorded a start
+    date the item never held — a permanently wrong audit row on every week-item
+    reschedule to a mid-week date.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        tactic = make_week_item(vps, seed_ape(vps), start="2026-02-23", due="2026-03-01")
+
+        moved = manager.reschedule_item(tactic.id, "2026-03-04", "2026-03-06",
+                                        reason="test")
+        assert moved is True
+
+        stored = manager.get_action_item(tactic.id)
+        assert stored.start_date == "2026-03-02", "a week item snaps to its week"
+
+        row = manager.db.conn.execute(
+            "SELECT from_start, to_start, to_due FROM reschedule_history "
+            "WHERE item_id = ? ORDER BY created_at DESC LIMIT 1",
+            (tactic.id,),
+        ).fetchone()
+        assert row["from_start"] == "2026-02-23"
+        assert row["to_start"] == stored.start_date, (
+            "history recorded a date the item never held"
+        )
+        assert row["to_due"] == stored.due_date
+    finally:
+        vps.close()
+
+
+def test_wt_m1c5_reschedule_reports_a_refused_move(tmp_path):
+    """A collision must reach the caller, not only the log."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        make_week_item(vps, ape_id, start="2026-02-16", due="2026-02-22", title="Earlier")
+        mover = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01",
+                               title="Later")
+
+        moved = manager.reschedule_item(mover.id, "2026-02-18", "2026-02-20",
+                                        reason="test")
+        assert moved is False, "the caller must be told the week did not move"
+        assert manager.last_week_collision is not None
+
+        stored = manager.get_action_item(mover.id)
+        assert stored.start_date == "2026-02-23"
+
+        row = manager.db.conn.execute(
+            "SELECT to_start FROM reschedule_history WHERE item_id = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (mover.id,),
+        ).fetchone()
+        assert row["to_start"] == "2026-02-23", (
+            "history must record where the item actually is, not where it was asked to go"
+        )
+    finally:
+        vps.close()
+
+
+def test_wt_m1c5_collision_notice_reaches_the_user(tmp_path):
+    """A return value nobody reads is the same silence as no return value (P25)."""
+    from src.getmoredone.screens.week_collision_notice import describe_week_collision
+
+    assert describe_week_collision(None) is None
+    assert describe_week_collision({}) is None
+
+    notice = describe_week_collision({
+        "item_id": "x", "kept_start": "2026-02-23",
+        "rejected_start": "2026-02-16", "error": "UNIQUE constraint failed",
+    })
+    assert "2026-02-23" in notice and "2026-02-16" in notice
+    assert "already has a Weekly Tactic" in notice
+
+    # And the surfaces that can move a week item actually call it.
+    screens = Path(__file__).resolve().parents[1] / "src" / "getmoredone" / "screens"
+    for name in ("today.py", "upcoming.py", "all_items.py"):
+        text = (screens / name).read_text(encoding="utf-8")
+        assert "notify_week_collision(self.db_manager, self)" in text, (
+            f"{name} moves dates but never reports a refused week"
+        )
+    dialog = (screens / "reschedule_dialog.py").read_text(encoding="utf-8")
+    assert "describe_week_collision" in dialog
+
+
 def test_wt_m1c3_both_creation_paths_report_collisions(tmp_path):
     """WT-M1.C.3 — the drag path reports a refusal, not just the button (P5).
 
@@ -316,6 +407,78 @@ def test_wt_m1c3_both_creation_paths_report_collisions(tmp_path):
     assert "already existed" in loud, (
         "a refused week must be named, not left as a silently smaller count"
     )
+
+    # And the drag path must actually reach it — asserting the wording without
+    # asserting the wiring would not have caught the original defect (P25).
+    calls = []
+    stub = SimpleNamespace(
+        dragged_row={"id": "ape-1"},
+        winfo_toplevel=lambda: SimpleNamespace(unbind=lambda _e: None),
+        winfo_pointerxy=lambda: (0, 0),
+        right_list=object(),
+        winfo_containing=lambda *_: "target",
+        _is_descendant=lambda *_: True,
+        _selected_week_context=lambda: ("2026-02-23", 2026, 1, 2),
+        vps_manager=SimpleNamespace(
+            create_week_action_items_for_ape=lambda *_a, **_k: {
+                "created_count": 0, "skipped_count": 0, "collided_count": 1,
+            }
+        ),
+        refresh=lambda: calls.append("refresh"),
+        status_label=SimpleNamespace(configure=lambda **kw: calls.append(kw["text"])),
+        _describe_week_creation=describe,
+    )
+    WeeklyItemsScreen._finish_row_drag(stub, SimpleNamespace(x_root=0, y_root=0))
+
+    assert "refresh" in calls, "a collided drag must still refresh"
+    assert any("already existed" in c for c in calls if isinstance(c, str)), (
+        f"the drag path never reported the collision: {calls}"
+    )
+
+
+def test_wt_m1c3_drag_without_a_week_selected_says_so(tmp_path):
+    """The button path warns; the drag path used to do nothing at all."""
+    from src.getmoredone.screens.weekly_items import WeeklyItemsScreen
+
+    said = []
+    stub = SimpleNamespace(
+        dragged_row={"id": "ape-1"},
+        winfo_toplevel=lambda: SimpleNamespace(unbind=lambda _e: None),
+        winfo_pointerxy=lambda: (0, 0),
+        right_list=object(),
+        winfo_containing=lambda *_: "target",
+        _is_descendant=lambda *_: True,
+        _selected_week_context=lambda: None,
+        refresh=lambda: said.append("refresh"),
+        status_label=SimpleNamespace(configure=lambda **kw: said.append(kw["text"])),
+    )
+    WeeklyItemsScreen._finish_row_drag(stub, SimpleNamespace(x_root=0, y_root=0))
+    assert any("Select a Week Start" in s for s in said if isinstance(s, str)), said
+
+
+def test_wt_m1c3_drag_reports_a_stale_ape_instead_of_a_traceback(tmp_path):
+    """create_week_action_items_for_ape raises on a stale APE; a Tk binding must not."""
+    from src.getmoredone.screens.weekly_items import WeeklyItemsScreen
+
+    said = []
+
+    def _raise(*_a, **_k):
+        raise ValueError("Annual Plan Element not found")
+
+    stub = SimpleNamespace(
+        dragged_row={"id": "ape-gone"},
+        winfo_toplevel=lambda: SimpleNamespace(unbind=lambda _e: None),
+        winfo_pointerxy=lambda: (0, 0),
+        right_list=object(),
+        winfo_containing=lambda *_: "target",
+        _is_descendant=lambda *_: True,
+        _selected_week_context=lambda: ("2026-02-23", 2026, 1, 2),
+        vps_manager=SimpleNamespace(create_week_action_items_for_ape=_raise),
+        refresh=lambda: said.append("refresh"),
+        status_label=SimpleNamespace(configure=lambda **kw: said.append(kw["text"])),
+    )
+    WeeklyItemsScreen._finish_row_drag(stub, SimpleNamespace(x_root=0, y_root=0))
+    assert any("Could not create" in s for s in said if isinstance(s, str)), said
 
 
 # --------------------------------------------------------------------------

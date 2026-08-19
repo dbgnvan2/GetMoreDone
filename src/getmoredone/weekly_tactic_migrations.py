@@ -14,7 +14,6 @@ folds those into one report, and ``Database`` logs it. A migration that moves
 49 rows and says nothing is indistinguishable from one that moved none (P2).
 """
 
-import logging
 import sqlite3
 from typing import Any, Dict, List, Set
 
@@ -246,10 +245,30 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
 
     report["week_start_normalization"] = normalize_week_item_starts(conn)
     report["dedupe"] = dedupe_weekly_tactics(conn)
-    report["unique_index_created"] = create_weekly_tactic_unique_index(conn)
+
+    # The index cannot be created over duplicates, and a duplicate that could
+    # not be merged is not a reason to stop the app from opening. Raising here
+    # would have made the previous launch's failure permanent: nothing commits
+    # before this point, so the next launch would meet identical state and fail
+    # identically, with no way out short of hand-editing the database.
+    #
+    # So the failure is recorded and logged at ERROR, and the app starts with
+    # WT-INV5 unenforced and that fact on the record — loud, not skipped.
+    report["unique_index_created"] = False
+    report["unique_index_enforced"] = True
+    report["unique_index_error"] = None
+    try:
+        report["unique_index_created"] = create_weekly_tactic_unique_index(conn)
+    except WeeklyTacticMigrationError as exc:
+        report["unique_index_enforced"] = False
+        report["unique_index_error"] = str(exc)
+
     report["stamp_audit"] = audit_stamp_week_starts(conn)
 
     conn.commit()
+    # Logged after the commit and outside every raising step, because this is
+    # the only record of what happened to the user's rows and it is worth least
+    # on the runs that go wrong.
     _log_report(report)
     return report
 
@@ -295,16 +314,20 @@ def _log_report(report: Dict[str, Any]) -> None:
     dedupe = report.get("dedupe", {})
     if dedupe.get("blocked"):
         logger.error(
-            "[weekly_tactic_migration] %d duplicate group(s) could not be merged "
-            "because rows still reference the loser through a foreign key with "
-            "no ON DELETE clause; nothing was deleted for those groups",
-            dedupe["blocked"],
+            "[weekly_tactic_migration] %d duplicate group(s) had at least one "
+            "tactic that could not be merged: rows still reference it through a "
+            "foreign key with no ON DELETE clause (%s). Those tactics were left "
+            "in place.",
+            dedupe["blocked"], dedupe.get("blocked_rows", {}),
         )
     if dedupe.get("dropped"):
         logger.warning(
             "[weekly_tactic_migration] rows removed with merged tactics: %s",
             dedupe["dropped"],
         )
+    # Gated on groups, which counts every group processed — including one whose
+    # merge was partly blocked. Gating on it while incrementing merged
+    # separately once meant a deleted row's id never reached the log.
     if dedupe.get("groups"):
         logger.info(
             "[weekly_tactic_migration] merged %d duplicate tactic(s) across %d group(s); "
@@ -313,7 +336,17 @@ def _log_report(report: Dict[str, Any]) -> None:
         )
         for detail in dedupe.get("details", []):
             logger.info(
-                "[weekly_tactic_migration]   APE %s week %s: kept %s (%r -> %r), deleted %s",
+                "[weekly_tactic_migration]   APE %s week %s: kept %s (%r -> %r), "
+                "deleted %s, blocked %s",
                 detail["ape_id"], detail["start_date"], detail["survivor_id"],
-                detail["title_before"], detail["title_after"], detail["deleted_ids"],
+                detail["title_before"], detail["title_after"],
+                detail["deleted_ids"], detail.get("blocked") or {},
             )
+
+    if not report.get("unique_index_enforced", True):
+        logger.error(
+            "[weekly_tactic_migration] the WT-INV5 unique index could not be "
+            "created, so one Weekly Tactic per (APE, week) is NOT enforced in "
+            "this database: %s",
+            report.get("unique_index_error"),
+        )

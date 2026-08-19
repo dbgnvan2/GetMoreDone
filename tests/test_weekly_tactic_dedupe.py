@@ -320,6 +320,140 @@ def test_wt_m7a5_dedupe_log_reaches_a_handler(tmp_path):
     assert survivor.id in text, "the surviving row's id must appear in the log"
 
 
+def _make_blocking_table(vps, loser_id, survivor_id):
+    """A table whose FK has no ON DELETE and whose unique key blocks the repoint.
+
+    No table in the shipped schema can reach the blocked branch — time_blocks is
+    the only NO ACTION foreign key and it has no unique constraint on item_id,
+    so UPDATE OR IGNORE never leaves a row behind. Without this the branch has
+    zero coverage, which is how it came to raise from a different line instead
+    of the one it replaced.
+    """
+    conn = vps.db_manager.db.conn
+    conn.execute("""
+        CREATE TABLE probe_refs (
+            item_id TEXT REFERENCES action_items(id),
+            tag     TEXT,
+            UNIQUE(item_id, tag)
+        )
+    """)
+    conn.execute("INSERT INTO probe_refs (item_id, tag) VALUES (?, 'x')", (survivor_id,))
+    conn.execute("INSERT INTO probe_refs (item_id, tag) VALUES (?, 'x')", (loser_id,))
+    conn.commit()
+
+
+def test_wt_m7a_blocked_merge_does_not_stop_the_app_from_starting(tmp_path):
+    """A duplicate that cannot be merged must not become a start-up crash loop.
+
+    Skipping the merge only relocated the crash: the group survived, so the
+    unique index raised three lines later, out of schema init, on every launch
+    forever. The failure is now recorded and logged, and the app opens with
+    WT-INV5 unenforced and that fact on the record.
+    """
+    vps = make_vps(tmp_path, "blocked.db")
+    db_path = vps.db_manager.db.db_path
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        survivor = make_week_item(vps, ape_id, title="Keeper")
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        _drop_index(vps)
+        loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
+        _make_blocking_table(vps, loser, survivor.id)
+    finally:
+        vps.close()
+
+    reopened = DatabaseManager(db_path)   # must not raise
+    try:
+        report = reopened.db.weekly_tactic_migration_report
+        assert report["dedupe"]["blocked"] == 1
+        assert report["dedupe"]["merged"] == 0
+        assert report["dedupe"]["blocked_rows"] == {"probe_refs.item_id": 1}
+        assert report["unique_index_enforced"] is False
+        assert report["unique_index_error"] and "duplicate group" in report["unique_index_error"]
+
+        # Nothing was destroyed, and both tactics are still there.
+        weeks = reopened.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM action_items WHERE item_type = 'week'"
+        ).fetchone()["n"]
+        assert weeks == 2
+        assert reopened.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM probe_refs"
+        ).fetchone()["n"] == 2
+    finally:
+        reopened.close()
+
+
+def test_wt_m7a_blocked_group_is_still_logged(tmp_path):
+    """The log is written after every raising step, or it is worth least when it matters."""
+    from src.getmoredone.weekly_tactic_logging import get_weekly_tactic_logger
+
+    vps = make_vps(tmp_path, "blocked_log.db")
+    db_path = vps.db_manager.db.db_path
+    try:
+        ape_id = seed_ape(vps)
+        survivor = make_week_item(vps, ape_id, title="Keeper")
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        _drop_index(vps)
+        loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
+        _make_blocking_table(vps, loser, survivor.id)
+    finally:
+        vps.close()
+
+    records = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    live = get_weekly_tactic_logger()
+    probe = _Capture(level=logging.INFO)
+    live.addHandler(probe)
+    try:
+        reopened = DatabaseManager(db_path)
+        reopened.close()
+    finally:
+        live.removeHandler(probe)
+
+    text = "\n".join(records)
+    assert "could not be merged" in text, f"the blocked group was never logged: {text!r}"
+    assert "is NOT enforced" in text, "an unenforced invariant must be said out loud"
+
+
+def test_wt_m7a_partial_group_reports_the_deleted_row(tmp_path):
+    """One deletable loser and one blocked loser in the same group.
+
+    ``groups`` was not incremented on the blocked path while ``merged`` was, and
+    the log gated its per-group detail on ``groups`` — so a row really was
+    deleted and its id never appeared anywhere.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        survivor = make_week_item(vps, ape_id, title="Keeper")
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        _drop_index(vps)
+        clean_loser = _raw_week_item(vps, ape_id, "Clean", created_at="2098-01-01T00:00:00")
+        blocked_loser = _raw_week_item(vps, ape_id, "Blocked", created_at="2099-01-01T00:00:00")
+        _make_blocking_table(vps, blocked_loser, survivor.id)
+
+        report = dedupe_weekly_tactics(conn)
+        conn.commit()
+
+        assert report["groups"] == 1, "a partly-blocked group is still a group"
+        assert report["merged"] == 1
+        assert report["blocked"] == 1
+        detail = report["details"][0]
+        assert detail["deleted_ids"] == [clean_loser]
+        assert detail["blocked"] == {"probe_refs.item_id": 1}
+        assert conn.execute(
+            "SELECT COUNT(*) AS n FROM action_items WHERE id = ?", (blocked_loser,)
+        ).fetchone()["n"] == 1, "the blocked loser must survive"
+    finally:
+        vps.close()
+
+
 def test_wt_m7a4_tiebreak_when_both_have_children(tmp_path):
     """Most children wins; an equal count breaks on oldest created_at.
 

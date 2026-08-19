@@ -11,7 +11,6 @@ rewrites 53 dates, must never be indistinguishable from a no-op (P2). Every
 function here returns what it did, and the migration logs it in full.
 """
 
-import logging
 import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -22,6 +21,23 @@ from .weekly_tactic_logging import get_weekly_tactic_logger
 from .weekly_tactic_titles import canonical_weekly_tactic_title
 
 logger = get_weekly_tactic_logger()
+
+# The (table, column) pairs this schema is known to declare against
+# action_items. The derived list below is the source of truth, but every table
+# here is created with CREATE TABLE IF NOT EXISTS — so a database made before a
+# REFERENCES clause was added keeps the old, FK-free definition forever (SQLite
+# cannot add a constraint by ALTER TABLE). On such a database the table is
+# invisible to PRAGMA and its rows would be orphaned silently. This floor turns
+# that into a warning instead of an absence.
+EXPECTED_REFERENCES = {
+    ("reschedule_history", "item_id"),
+    ("item_links", "item_id"),
+    ("work_logs", "item_id"),
+    ("time_blocks", "item_id"),
+    ("project_board_items", "item_id"),
+    ("habit_tracking", "action_item_id"),
+}
+
 
 def referencing_tables(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
     """Every (table, column) holding a foreign key into ``action_items``.
@@ -64,6 +80,20 @@ def referencing_tables(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
                 "column": fk["from"],
                 "on_delete": (fk["on_delete"] or "NO ACTION").upper(),
             })
+
+    live = {(entry["table"], entry["column"]) for entry in found}
+    existing = set(tables)
+    for table, column in sorted(EXPECTED_REFERENCES - live):
+        if table not in existing:
+            continue  # the table itself is absent; nothing to orphan
+        found.append({"table": table, "column": column, "on_delete": "NO ACTION"})
+        logger.warning(
+            "[weekly_tactic] %s.%s does not declare its foreign key to "
+            "action_items in this database (created before the clause was "
+            "added); repointing it anyway so its rows are not orphaned",
+            table, column,
+        )
+
     return sorted(found, key=lambda entry: (entry["table"], entry["column"]))
 
 
@@ -326,6 +356,7 @@ def dedupe_weekly_tactics(
         "repointed": 0,
         "retitled": 0,
         "blocked": 0,
+        "blocked_rows": {},
         "dropped": {},
         "details": [],
     }
@@ -355,31 +386,23 @@ def dedupe_weekly_tactics(
             counts, dropped, blocking = _repoint_children(
                 conn, loser["id"], survivor["id"]
             )
-            repointed += sum(counts.values())
-            for key, value in dropped.items():
-                dropped_total[key] = dropped_total.get(key, 0) + value
             if blocking:
+                # This loser stays. Its leftovers were not destroyed, so they
+                # must not be counted as dropped — nor may the rows that *did*
+                # move for it be reported as repointed onto a merge that never
+                # happened.
                 for key, value in blocking.items():
                     blocked_total[key] = blocked_total.get(key, 0) + value
                 continue
+
+            repointed += sum(counts.values())
+            for key, value in dropped.items():
+                dropped_total[key] = dropped_total.get(key, 0) + value
             conn.execute("DELETE FROM action_items WHERE id = ?", (loser["id"],))
             deleted_ids.append(loser["id"])
 
         if blocked_total:
             report["blocked"] += 1
-            report["details"].append({
-                "ape_id": group["ape_id"],
-                "start_date": group["start_date"],
-                "survivor_id": survivor["id"],
-                "deleted_ids": deleted_ids,
-                "title_before": survivor["title"],
-                "title_after": survivor["title"],
-                "repointed": repointed,
-                "dropped": dropped_total,
-                "blocked": blocked_total,
-            })
-            report["merged"] += len(deleted_ids)
-            continue
 
         canonical = canonical_weekly_tactic_title(
             _ape_key_field(conn, group["ape_id"]), survivor["start_date"], cal
@@ -398,6 +421,8 @@ def dedupe_weekly_tactics(
         report["retitled"] += 1 if retitled else 0
         for key, value in dropped_total.items():
             report["dropped"][key] = report["dropped"].get(key, 0) + value
+        for key, value in blocked_total.items():
+            report["blocked_rows"][key] = report["blocked_rows"].get(key, 0) + value
         report["details"].append({
             "ape_id": group["ape_id"],
             "start_date": group["start_date"],
@@ -407,7 +432,7 @@ def dedupe_weekly_tactics(
             "title_after": canonical if retitled else survivor["title"],
             "repointed": repointed,
             "dropped": dropped_total,
-            "blocked": {},
+            "blocked": blocked_total,
         })
 
     return report

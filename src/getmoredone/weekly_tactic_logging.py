@@ -35,11 +35,28 @@ def get_weekly_tactic_logger() -> logging.Logger:
         return logger
 
     logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    log_path = app_data_dir_path() / LOG_FILENAME
     try:
-        handler = logging.FileHandler(app_data_dir_path() / LOG_FILENAME, encoding="utf-8")
-    except OSError:
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+    except OSError as exc:
+        # Falling through with no handler would leave propagate at its default
+        # True, and in a frozen app with no root handler logging.lastResort
+        # emits WARNING and above only — silently dropping every INFO line,
+        # which is exactly the merge record this logger exists to keep. A
+        # stream is worse than a file and far better than nothing, and the
+        # failure itself gets said out loud.
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.propagate = False
+        logger.warning(
+            "[weekly_tactic] could not open %s (%s); weekly tactic logging is "
+            "going to stderr for this session",
+            log_path, exc,
+        )
         return logger
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.propagate = False
     return logger

@@ -14,6 +14,7 @@ from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
 from ..date_utils import increment_date
 from .segment_color_utils import resolve_segment_color_for_item
+from .week_collision_notice import notify_week_collision
 from ..theme import apply_segment_accent, celebration_colors, semantic_colors, button_style, list_row_font
 from .inline_editors import InlineDateDialog, InlinePriorityDialog
 from .item_lineage import lineage_for_item, LINEAGE_COL_CHARS
@@ -799,6 +800,7 @@ class TodayScreen(ctk.CTkFrame):
         if new_start and new_due and new_due < new_start:
             new_due = new_start
         self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_start_edit")
+        notify_week_collision(self.db_manager, self)
         self.refresh()
 
     def edit_priority_inline(self, item_id: str):
@@ -831,6 +833,7 @@ class TodayScreen(ctk.CTkFrame):
         if new_start and new_due and new_due < new_start:
             new_due = new_start
         self.db_manager.reschedule_item(item_id, new_start, new_due, reason="inline_due_edit")
+        notify_week_collision(self.db_manager, self)
         self.refresh()
 
     def create_new_item(self):

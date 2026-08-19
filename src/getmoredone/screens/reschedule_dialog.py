@@ -6,6 +6,7 @@ import customtkinter as ctk
 from datetime import datetime, timedelta
 from typing import Optional, TYPE_CHECKING
 
+from .week_collision_notice import describe_week_collision
 from ..theme import button_style, status_text_color
 
 if TYPE_CHECKING:
@@ -118,7 +119,14 @@ class RescheduleDialog(ctk.CTkToplevel):
             reason = self.reason_text.get("1.0", "end").strip() or None
 
             # Save with new dates
-            self.db_manager.reschedule_item(self.item_id, self.new_start, self.new_due, reason)
+            moved = self.db_manager.reschedule_item(
+                self.item_id, self.new_start, self.new_due, reason)
+            if not moved:
+                # A week item whose target week is already taken. Stay open and
+                # say so rather than closing on a save that did not happen.
+                notice = describe_week_collision(self.db_manager.last_week_collision)
+                self.error_label.configure(text=notice or "The item could not be rescheduled.")
+                return
             self.destroy()
 
         except Exception as e:

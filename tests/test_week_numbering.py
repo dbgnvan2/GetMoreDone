@@ -124,7 +124,7 @@ def _is_week_start_arithmetic(code: str) -> bool:
     """
     if "weekday()" not in code:
         return False
-    if "% 7" in code:
+    if re.search(r"%\s*7\b", code):
         return True
     return bool(re.search(r"timedelta\s*\(\s*days\s*=[^)]*weekday\(\)", code))
 
@@ -137,18 +137,54 @@ def _source_files():
 
 
 def _logical_lines(text: str):
-    """Yield (line number, code) with continuations joined.
+    """Yield ``(line number, code)`` for each logical statement.
 
-    ``offset = (start.weekday() - self.first_day_of_week)`` and its ``% 7`` sat
-    on separate physical lines in one of the converted call sites, so a
-    line-at-a-time scan could not see it.
+    Comments and string literals are removed by the tokenizer, and a statement
+    split across physical lines is joined by bracket depth. Both matter:
+
+    * a docstring saying "never do ``timedelta(days=d.weekday())``" is prose,
+      not code, and a naive scan flagged it;
+    * a fixed three-line window joined *unrelated* neighbours, so a weekend
+      check on one line and an unrelated ``% 7`` two lines later read as one
+      offence — and the offence was reported against the innocent middle line.
+
+    Bracket depth gives the real statement boundary, so neither happens.
     """
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        window = " ".join(
-            raw.split("#", 1)[0] for raw in lines[index:index + 3]
-        )
-        yield index + 1, line.split("#", 1)[0], window
+    import io
+    import tokenize
+
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        # Unparseable source is a problem for the compiler, not for this scan.
+        for number, line in enumerate(text.splitlines(), start=1):
+            yield number, line.split("#", 1)[0]
+        return
+
+    depth = 0
+    start_line = None
+    parts: list = []
+    for token in tokens:
+        if token.type in (tokenize.COMMENT, tokenize.NL, tokenize.INDENT,
+                          tokenize.DEDENT, tokenize.ENCODING, tokenize.ENDMARKER):
+            continue
+        if token.type == tokenize.STRING:
+            continue  # docstrings and literals are prose, not week arithmetic
+        if token.type == tokenize.NEWLINE:
+            if parts:
+                yield start_line, " ".join(parts)
+            parts, start_line, depth = [], None, 0
+            continue
+        if start_line is None:
+            start_line = token.start[0]
+        if token.string in "([{":
+            depth += 1
+        elif token.string in ")]}":
+            depth = max(0, depth - 1)
+        parts.append(token.string)
+
+    if parts:
+        yield start_line or 1, " ".join(parts)
 
 
 def test_wt_m2b1_no_direct_week_math_callers():
@@ -163,10 +199,10 @@ def test_wt_m2b1_no_direct_week_math_callers():
         if path.name in WEEK_MATH_ALLOWLIST:
             continue
         text = path.read_text(encoding="utf-8")
-        for number, code, window in _logical_lines(text):
-            if "isocalendar()" in code:
+        for number, code in _logical_lines(text):
+            if "isocalendar ( )" in code or "isocalendar()" in code:
                 iso_offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}")
-            if _is_week_start_arithmetic(code) or _is_week_start_arithmetic(window):
+            if _is_week_start_arithmetic(code.replace(" ( )", "()")):
                 start_offenders.append(f"{path.relative_to(REPO_ROOT)}:{number}")
 
     assert not iso_offenders, (
@@ -189,17 +225,26 @@ REMOVED_WEEK_MATH = [
     "offset_end = (last_day_index - end.weekday()) % 7",
 ]
 
-# Continuation form: the offset and its % 7 on separate physical lines.
+# A statement genuinely split across physical lines, as a continuation.
 REMOVED_SPLIT_WEEK_MATH = (
-    "        offset = (start.weekday() - self.first_day_of_week)\n"
-    "        start -= timedelta(days=offset % 7)\n"
+    "offset = (\n"
+    "    start.weekday() - self.first_day_of_week\n"
+    ") % 7\n"
 )
 
-NOT_WEEK_MATH = [
-    "if current_date.weekday() >= 5:",              # date_utils weekend skip
-    "weekday = current_date.weekday()  # 0=Monday",
-    "return day.isoformat()",
-]
+# Things that must NOT trip the scan. The first two are date_utils' weekend
+# skip; the last two are the false positives the old three-line window produced
+# — an unrelated modulo two lines away, and a docstring warning against the
+# very pattern it was scanned for.
+NOT_WEEK_MATH = '''\
+def shift(d):
+    """Never write timedelta(days=d.weekday()) here — ask week_calendar."""
+    if d.weekday() >= 5:
+        d += timedelta(days=1)
+    bucket = index % 7
+    return d, bucket
+'''
+
 
 
 def test_wt_m2b1_the_scan_can_actually_fail():
@@ -214,13 +259,25 @@ def test_wt_m2b1_the_scan_can_actually_fail():
 
     flagged = [
         number
-        for number, code, window in _logical_lines(REMOVED_SPLIT_WEEK_MATH)
-        if _is_week_start_arithmetic(code) or _is_week_start_arithmetic(window)
+        for number, code in _logical_lines(REMOVED_SPLIT_WEEK_MATH)
+        if _is_week_start_arithmetic(code.replace(" ( )", "()"))
     ]
-    assert flagged, "the guard cannot see week math split across two lines"
+    assert flagged == [1], (
+        "a statement split across physical lines must be flagged once, against "
+        f"the line it starts on; got {flagged}"
+    )
 
-    for line in NOT_WEEK_MATH:
-        assert not _is_week_start_arithmetic(line), f"false positive on: {line}"
+    # Run the negatives through the same joiner the real scan uses — checking
+    # them one bare line at a time would never exercise the joining at all.
+    innocent = [
+        number
+        for number, code in _logical_lines(NOT_WEEK_MATH)
+        if _is_week_start_arithmetic(code.replace(" ( )", "()"))
+    ]
+    assert innocent == [], (
+        f"false positives on weekend arithmetic, an unrelated modulo, or a "
+        f"docstring: lines {innocent}"
+    )
 
 
 def test_wt_m2b2_title_week_number_follows_setting(tmp_path, monkeypatch):
