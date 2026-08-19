@@ -61,12 +61,24 @@ title on the next save — and it is covered by three tests.
 ## Risks / Known gaps
 
 - `weekly_items.py` still composes new titles as `<tactic context> - <title>`
-  using `build_action_item_title`. That is not the editor's Context field and it
-  keeps lineage colours working for items created from a Weekly Tactic, so it was
-  left alone — but it does mean prefixed titles are still *created* by that path
-  while no screen offers a Context field any more.
+  using `build_action_item_title`, so prefixed titles can still be *created*
+  while no screen offers a Context field. Measured on the real path rather than
+  assumed: with a **canonical** tactic title (`PW|LS|Blog - W34`) the splitter
+  finds no context — there is nothing after the week number — so the new item is
+  stored with exactly what the user typed, unprefixed. It only prefixes when the
+  tactic's own title carries a body after the week number
+  (`PW|LS|Blog - W34 - ship v2` → `PW|LS|Blog - W34 - draft the intro`), which is
+  the legacy/hand-edited shape. Narrower than it first looked.
 - Existing titles keep their prefixes. Nothing migrates them, and nothing needs
   to: list views still strip the prefix for display.
+- The title prefix is the **third** source of lineage, not the first. Both
+  `item_lineage.lineage_for_item` and the Scheduler's `_lineage_for_item` resolve
+  in the order: the item's Annual Plan Element → the parent item's lineage (depth
+  2) → the structured title prefix → the week action. Items created from a Weekly
+  Tactic carry both an APE and a parent, so they never reach the prefix. Keeping
+  `split_action_item_title` matters for items that have neither — the prefix is
+  their only lineage — but the phrase "the Scheduler colours from the prefix"
+  overstates it.
 - The list views' grid columns were renumbered by script. Today and All Items were
   rendered and checked; Upcoming, Completed and Hierarchical were not opened —
   they share the same edit shape and the suite is green, but their alignment has
