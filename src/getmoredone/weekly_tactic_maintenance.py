@@ -507,6 +507,25 @@ def repair_weekly_tactic_invariants(
         week_end = week_calendar.coerce_date(row["week_end"]) or (
             week_start + timedelta(days=6))
 
+        if week_end < week_start:
+            # The tactic's own range is inverted, so no date satisfies it. Left
+            # alone and reported: moving the child would produce a value that is
+            # still out of range and would move again on the next launch.
+            skipped.append({
+                "item_id": row["item_id"],
+                "tactic_id": row["tactic_id"],
+                "reason": (
+                    f"tactic range is inverted ({row['week_start']}..{row['week_end']}); "
+                    "no move brings this item inside it"
+                ),
+            })
+            logger.warning(
+                "[weekly_tactic] tactic %s has an inverted range %s..%s; item %s "
+                "left unchanged",
+                row["tactic_id"], row["week_start"], row["week_end"], row["item_id"],
+            )
+            continue
+
         start = week_calendar.coerce_date(row["start_date"])
         due = week_calendar.coerce_date(row["due_date"])
         # A NULL due date is not a violation: bring_into_week leaves it NULL, so

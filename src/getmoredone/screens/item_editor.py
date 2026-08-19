@@ -75,6 +75,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.week_action_options = {}  # legacy; kept for callers outside this file
         self.week_action_display_values = ["(None)"]
         self.pending_weekly_tactic_id = None  # chosen before a new item is saved
+        self._follow_chosen_tactic = False    # that choice was deliberate (WT-D1)
         self.app_settings = AppSettings.load()
         self.first_day_of_week = int(getattr(self.app_settings, "first_day_of_week", 0))
         # Callback to refresh parent when dialog closes
@@ -611,6 +612,8 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             )
             if canonical_title and canonical_title != (self.item.title or "").strip():
                 self.item.title = canonical_title
+                # A week item: the re-file skips these entirely (WT-INV6 and the
+                # item_type guard), so there is never a cascade to report here.
                 self.db_manager.update_action_item(self.item, normalize_week_dates=False)
             self.title_entry.insert(0, canonical_title)
         else:
@@ -1035,6 +1038,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 item.week_action_id = self.week_action_id
                 if getattr(self, "pending_weekly_tactic_id", None):
                     item.weekly_tactic_id = self.pending_weekly_tactic_id
+                    self._follow_chosen_tactic = True
 
             # Segment Description (from constructor for new items)
             if not self.item_id:
@@ -1067,9 +1071,17 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 # changes, and completion re-filing is what triggers a year rollover.
                 notify_weekly_tactic_changes(self.db_manager, self)
             else:
-                self.db_manager.create_action_item(item, apply_defaults=True)
+                # follow_tactic: a Weekly Tactic picked before the item was ever
+                # saved is still an explicit choice, and was being discarded —
+                # the fix applied to the update path and not its sibling (P5).
+                self.db_manager.create_action_item(
+                    item, apply_defaults=True,
+                    follow_tactic=bool(getattr(self, "_follow_chosen_tactic", False)),
+                )
+                self._follow_chosen_tactic = False
                 self.item_id = item.id  # Update item_id after creating new item
                 self.item = item  # Store the item reference
+                notify_weekly_tactic_changes(self.db_manager, self)
 
             # Clear error message on successful save
             self.error_label.configure(text="✓ Saved")
@@ -1214,6 +1226,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         """Mark item as complete."""
         if self.item_id:
             self.db_manager.complete_action_item(self.item_id)
+            # Completion is what triggers a year rollover — finishing in
+            # January something planned for last December.
+            notify_weekly_tactic_changes(self.db_manager, self)
             self.on_dialog_close()
 
     def delete_item(self):
@@ -1548,6 +1563,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         else:
             # A new item, not yet saved: remember the choice for the insert.
             self.week_action_id = week_action_id
+            # follow_tactic is applied when this item is finally created —
+            # save_item passes it, so the choice is not discarded the way it
+            # was on the update path.
             self.pending_weekly_tactic_id = week_item_id
             if segment_id:
                 self.segment_description_id = segment_id

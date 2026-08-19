@@ -504,6 +504,7 @@ class AllItemsScreen(ctk.CTkFrame):
         item.size = dialog.result["size"]
         item.value = dialog.result["value"]
         self.db_manager.update_action_item(item, normalize_week_dates=False)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def edit_due_date_inline(self, item_id: str):

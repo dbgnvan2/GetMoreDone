@@ -703,8 +703,11 @@ class TodayScreen(ctk.CTkFrame):
 
     def complete_item(self, item_id: str):
         """Mark item as complete."""
-        if self.db_manager.complete_action_item(item_id):
-            notify_weekly_tactic_changes(self.db_manager, self)
+        completed = self.db_manager.complete_action_item(item_id)
+        # Outside the branch: a False return is the one that carries a
+        # collision, and the five sibling screens report unconditionally.
+        notify_weekly_tactic_changes(self.db_manager, self)
+        if completed:
             self._session_completed_count += 1
             self.refresh()
             self._maybe_show_completion_confetti()
@@ -818,6 +821,7 @@ class TodayScreen(ctk.CTkFrame):
         item.size = dialog.result["size"]
         item.value = dialog.result["value"]
         self.db_manager.update_action_item(item, normalize_week_dates=False)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def edit_due_date_inline(self, item_id: str):
@@ -886,4 +890,5 @@ class TodayScreen(ctk.CTkFrame):
         # Push to next day directly (no dialog, no reason)
         self.db_manager.reschedule_item(
             item_id, new_start, new_due, reason=None)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()

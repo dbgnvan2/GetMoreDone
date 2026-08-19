@@ -1247,13 +1247,17 @@ class DragScheduleScreen(ctk.CTkFrame):
         self.clear_hover_target()
 
         if target_date:
-            for item in self.drag_items:
-                self.db_manager.reschedule_item(
-                    item.id,
-                    target_date,
-                    target_date,
-                    "Drag-and-drop schedule"
-                )
+            # Batched: reporting after the loop kept only the last item's
+            # report, and the cascade is idempotent — so the first item builds
+            # everything and the last has nothing to say.
+            with self.db_manager.batch_cascade():
+                for item in self.drag_items:
+                    self.db_manager.reschedule_item(
+                        item.id,
+                        target_date,
+                        target_date,
+                        "Drag-and-drop schedule"
+                    )
             notify_weekly_tactic_changes(self.db_manager, self)
             self.refresh()
         elif target_project_id:

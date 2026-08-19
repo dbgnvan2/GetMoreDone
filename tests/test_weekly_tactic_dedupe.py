@@ -888,3 +888,45 @@ def test_wt_m7b_unrepairable_item_is_reported_not_counted_as_fixed(tmp_path):
         )
     finally:
         vps.close()
+
+
+def test_wt_m7b_an_unfixable_row_is_reported_not_silently_left(tmp_path):
+    """A row no move can bring into range must appear in the report.
+
+    Reachable when a tactic's due_date precedes its start_date: the child is out
+    of range, but bring_into_week produces the dates it already has. The no-op
+    guard added for the NULL-due case would have dropped it from both lists —
+    reintroducing the hole the skipped list exists to close (P2).
+    """
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = _out_of_range_item(vps, tactic.id, "2026-02-25", "2026-02-25")
+        # A tactic whose range is empty: due before start.
+        conn.execute("UPDATE action_items SET due_date = '2026-02-16' WHERE id = ?",
+                     (tactic.id,))
+        conn.execute("UPDATE action_items SET start_date = '2026-02-10', "
+                     "due_date = '2026-02-10' WHERE id = ?", (item.id,))
+        conn.commit()
+
+        report = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+
+        assert report["moved"] == 0
+        assert report["skipped"] == 1, (
+            "an unfixable row appeared in neither the moved nor the skipped list"
+        )
+        assert "inverted" in report["skipped_details"][0]["reason"]
+        assert _count(conn, "reschedule_history") == 0
+
+        second = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+        assert (second["moved"], second["skipped"]) == (0, 1), (
+            "an unfixable row must report the same on every run, not move once"
+        )
+    finally:
+        vps.close()

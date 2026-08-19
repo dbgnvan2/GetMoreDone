@@ -48,6 +48,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
     _weekly_tactic_engine: Optional[Any] = None
     _vps_manager: Optional[Any] = None
     _week_calendar: Optional[Any] = None
+    _cascade_batch: Optional[list] = None
 
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database manager.
@@ -120,7 +121,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
     # ==================== ACTION ITEMS ====================
 
     def create_action_item(self, item: ActionItem, apply_defaults: bool = True,
-                           refile: bool = True) -> str:
+                           refile: bool = True, follow_tactic: bool = False) -> str:
         """
         Create a new action item.
 
@@ -159,8 +160,17 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         item.updated_at = datetime.now().isoformat()
 
         if refile and tactic_of(item) and item.item_type != "week":
+            # follow_tactic: WT-D1, same as update_action_item. Without it here,
+            # picking a Weekly Tactic for a *new* item was silently discarded
+            # and the item filed by its own start date — the fix applied to one
+            # call of a class and not its sibling (P5).
+            target = item.start_date
+            if follow_tactic:
+                chosen = self.get_action_item(tactic_of(item))
+                if chosen is not None:
+                    target = chosen.start_date
             with self.transaction():
-                self._refile_into_weekly_tactic(item, item.start_date)
+                self._refile_into_weekly_tactic(item, target)
                 return self._insert_action_item(item)
         self.last_cascade_report = None
         return self._insert_action_item(item)
@@ -440,6 +450,26 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         self.week_calendar
         return self._weekly_tactic_engine
 
+    @contextmanager
+    def batch_cascade(self):
+        """Accumulate cascade reports across a loop into one.
+
+        Purpose: a screen that moves N items in a loop would otherwise show only
+                 the last item's report — and because the cascade is idempotent
+                 the last item creates nothing.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6b5
+        Tests:   tests/test_weekly_tactic_surfaces.py::test_wt_m6b5_a_batch_reports_every_item
+        """
+        from .weekly_tactic import CascadeReport
+
+        previous, self._cascade_batch = self._cascade_batch, []
+        try:
+            yield
+        finally:
+            collected = self._cascade_batch
+            self._cascade_batch = previous
+            self.last_cascade_report = CascadeReport.merge(collected)
+
     def _refile_into_weekly_tactic(self, item: ActionItem, target_date) -> None:
         """WT-M4 — re-file ``item`` for ``target_date`` if it has a tactic.
 
@@ -456,10 +486,14 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
         if item.item_type == "week" or not tactic_of(item):
             self.last_cascade_report = None
+            if self._cascade_batch is not None:
+                self._cascade_batch.append(None)
             return
 
         report = self.weekly_tactic_engine.plan_refile(item, target_date)
         self.last_cascade_report = report
+        if self._cascade_batch is not None:
+            self._cascade_batch.append(report)
 
     def _commit_unless_in_transaction(self):
         """Commit, unless a ``transaction()`` block owns the unit of work."""
@@ -480,6 +514,11 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             found, or if it was a week item whose week could not move — see
             ``last_week_collision``.
         """
+        # Cleared first: this manager lives for the session, so a report that
+        # is only ever set is a report the next save re-shows (P6). The same
+        # reasoning already applied to last_week_collision.
+        self.last_cascade_report = None
+
         item = self.get_action_item(item_id)
         if not item:
             return False
@@ -558,6 +597,10 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6b2
         Tests: tests/test_weekly_tactic_surfaces.py::test_wt_m6b2_bulk_edit_respects_week_bounds
         """
+        with self.batch_cascade():
+            self._bulk_update(item_ids, start_date, priority)
+
+    def _bulk_update(self, item_ids, start_date, priority):
         for item_id in item_ids:
             item = self.get_action_item(item_id)
             if not item:
@@ -1087,6 +1130,8 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         Wednesday used to leave ``to_start`` claiming that Wednesday while the
         item sat on the Monday.
         """
+        self.last_cascade_report = None
+
         item = self.get_action_item(item_id)
         if not item:
             return False

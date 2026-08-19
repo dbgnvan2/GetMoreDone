@@ -117,7 +117,11 @@ def test_wt_m6b1_drag_schedule_refiles(tmp_path):
             refresh=lambda: None,
             drag_label=None,
         )
-        DragScheduleScreen.on_drag_release(stub, SimpleNamespace())
+        # The handler now calls the real notifier; a stub is not a Tk parent, and
+        # a fixture that crossed a year boundary would raise TclError here.
+        with patch("src.getmoredone.screens.drag_schedule.notify_weekly_tactic_changes",
+                   lambda *a, **k: False):
+            DragScheduleScreen.on_drag_release(stub, SimpleNamespace())
 
         _assert_refiled(manager, item.id, "2026-03-02")
     finally:
@@ -142,7 +146,9 @@ def test_wt_m6b1_reschedule_dialog_refiles(tmp_path):
             error_label=SimpleNamespace(configure=lambda **kw: None),
             destroy=lambda: None,
         )
-        RescheduleDialog.save(stub)
+        with patch("src.getmoredone.screens.reschedule_dialog.notify_weekly_tactic_changes",
+                   lambda *a, **k: False):
+            RescheduleDialog.save(stub)
 
         _assert_refiled(manager, item.id, "2026-03-02")
     finally:
@@ -562,8 +568,6 @@ def test_wt_m6b5_every_report_producing_surface_reads_it():
     missing = []
     for path in sorted(screens.glob("*.py")):
         text = path.read_text(encoding="utf-8")
-        if not any(f".{name}(" in text for name in producers):
-            continue
         if path.name in NO_DATE_CHANGE:
             # Reading a date is fine (calendar_dialog seeds its picker from
             # start_date); assigning one is not.
@@ -571,11 +575,71 @@ def test_wt_m6b5_every_report_producing_surface_reads_it():
                 f"{path.name} is allowlisted as not moving dates, but now assigns one"
             )
             continue
-        if "notify_weekly_tactic_changes" not in text:
-            missing.append(path.name)
+        missing.extend(_unreported_producer_sites(path, text, producers))
     assert not missing, (
-        f"screens that change an item but never report what the cascade did: {missing}"
+        "call sites that change an item but never report what the cascade did:\n  "
+        + "\n  ".join(missing)
     )
+
+
+def _unreported_producer_sites(path, text, producers):
+    """Producing calls with no notify within the following few lines.
+
+    Per call site, not per file: asserting that the string appears *somewhere*
+    in the module was satisfied by the import line alone, so seven producing
+    calls — including two completion paths — had no reader at all while the
+    guard stayed green.
+    """
+    lines = text.splitlines()
+    unreported = []
+    for index, line in enumerate(lines):
+        code = line.split("#", 1)[0]
+        if not any(f".{name}(" in code for name in producers):
+            continue
+        # The call may span lines; look ahead far enough to clear its arguments
+        # and any intervening bookkeeping.
+        window = "\n".join(lines[index:index + 12])
+        if "notify_weekly_tactic_changes" in window:
+            continue
+        # A call may be exempted, but only in writing and only next to itself.
+        preamble = "\n".join(lines[max(0, index - 3):index])
+        if "the re-file skips these entirely" in preamble:
+            continue
+        if "batch_cascade" in "\n".join(lines[max(0, index - 6):index]):
+            continue      # inside a batch; the notify comes after the loop
+        unreported.append(f"{path.name}:{index + 1}  {code.strip()}")
+    return unreported
+
+
+def test_wt_m6b5_the_call_site_guard_can_actually_fire(tmp_path):
+    """Guards the guard (P24): a producing call with no notify must be flagged."""
+    sample = (
+        "def handler(self):\n"
+        "    self.db_manager.complete_action_item(item_id)\n"
+        "    self.refresh()\n"
+    )
+    found = _unreported_producer_sites(
+        Path("fake.py"), sample, ("complete_action_item",))
+    assert len(found) == 1, found
+
+    reported = (
+        "def handler(self):\n"
+        "    self.db_manager.complete_action_item(item_id)\n"
+        "    notify_weekly_tactic_changes(self.db_manager, self)\n"
+    )
+    assert _unreported_producer_sites(
+        Path("fake.py"), reported, ("complete_action_item",)) == []
+
+    # An import line alone must NOT satisfy it — the old file-level bug.
+    import_only = (
+        "from .week_collision_notice import notify_weekly_tactic_changes\n"
+        "\n\n" + "\n" * 12 +
+        "def handler(self):\n"
+        "    self.db_manager.complete_action_item(item_id)\n"
+        "    self.refresh()\n"
+    )
+    assert len(_unreported_producer_sites(
+        Path("fake.py"), import_only, ("complete_action_item",))) == 1
 
 
 def test_wt_m6b5_the_allowlist_assertion_can_actually_fire():
@@ -586,3 +650,54 @@ def test_wt_m6b5_the_allowlist_assertion_can_actually_fire():
                          "if item.start_date == other:")
     assert re.search(r"\.(start_date|due_date)\s*=\s*(?!=)",
                      "self.item.start_date = new_value")
+
+
+def test_wt_m6b5_a_batch_reports_every_item(tmp_path):
+    """A loop that moves N items must report what the *first* one built.
+
+    The cascade is idempotent, so item 1 creates the whole year and items 2..N
+    create nothing. Reporting after the loop kept only the last report — a bulk
+    edit across a year boundary made blank editorial rows and said nothing.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id, tactic, item = _filed(vps)
+        others = []
+        for i in range(3):
+            extra = make_daily_item(vps, f"Extra {i}", start="2026-02-25",
+                                    due="2026-02-25")
+            stored = manager.get_action_item(extra.id)
+            stored.weekly_tactic_id = tactic.id
+            manager.update_action_item(stored)
+            others.append(extra)
+
+        ids = [item.id] + [o.id for o in others]
+        manager.bulk_update_action_items(ids, "2027-03-03")
+
+        report = manager.last_cascade_report
+        assert report is not None
+        assert report.stubs, (
+            "the batch built rollover stubs and reported none of them"
+        )
+        assert "need your words" in report.describe()
+
+        from src.getmoredone.screens.week_collision_notice import cascade_needs_attention
+        assert cascade_needs_attention(report) is True
+    finally:
+        vps.close()
+
+
+def test_wt_m6b5_a_batch_of_no_ops_reports_nothing(tmp_path):
+    """...and a batch that created nothing must not invent a summary."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id, tactic, item = _filed(vps)
+        manager.bulk_update_action_items([item.id], "2027-03-03")
+        assert manager.last_cascade_report.created
+
+        manager.bulk_update_action_items([item.id], "2027-03-04")
+        assert manager.last_cascade_report.created == []
+    finally:
+        vps.close()

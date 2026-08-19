@@ -83,6 +83,38 @@ class CascadeReport:
     def failed(self) -> bool:
         return self.status in self.FAILURE_STATUSES
 
+    @classmethod
+    def merge(cls, reports) -> Optional["CascadeReport"]:
+        """Fold several reports into one, for a batch that moved N items.
+
+        Purpose: a loop that re-files ten items produced ten reports and kept
+                 the last. The cascade is idempotent, so the *first* item builds
+                 everything and the last reports nothing — a bulk edit across a
+                 year boundary created blank editorial rows and said nothing.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6b5
+        Tests:   tests/test_weekly_tactic_surfaces.py::test_wt_m6b5_a_batch_reports_every_item
+        """
+        real = [r for r in reports if r is not None]
+        if not real:
+            return None
+        if len(real) == 1:
+            return real[0]
+
+        merged = cls(status="refiled", item_id=None)
+        seen = set()
+        for report in real:
+            if report.failed and not merged.failed:
+                merged.status = report.status
+            for entry in report.created:
+                key = (entry["kind"], entry["id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged.created.append(entry)
+                if entry in report.stubs:
+                    merged.stubs.append(entry)
+        return merged
+
     def describe(self) -> str:
         """One human sentence naming what was created, or an empty string."""
         if not self.created:

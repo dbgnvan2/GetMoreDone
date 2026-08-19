@@ -522,6 +522,7 @@ class UpcomingScreen(ctk.CTkFrame):
         """Mark item as complete."""
         self.db_manager.complete_action_item(item_id)
         notify_weekly_tactic_changes(self.db_manager, self)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def start_timer(self, item_id: str):
@@ -573,6 +574,7 @@ class UpcomingScreen(ctk.CTkFrame):
         item.size = dialog.result["size"]
         item.value = dialog.result["value"]
         self.db_manager.update_action_item(item, normalize_week_dates=False)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def edit_due_date_inline(self, item_id: str):
@@ -635,6 +637,7 @@ class UpcomingScreen(ctk.CTkFrame):
         # Push to next day directly (no dialog, no reason)
         self.db_manager.reschedule_item(
             item_id, new_start, new_due, reason=None)
+        notify_weekly_tactic_changes(self.db_manager, self)
         self.refresh()
 
     def create_new_item(self):

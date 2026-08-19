@@ -191,6 +191,22 @@ must consume `week_start_normalization["collisions"]` rather than only scanning
 for out-of-range item dates. Tracked against
 `docs/implementation_plan_2026-08-18_weekly_tactic_scheduling.md` step 10.
 
+### 2026-08-18 - Type: Enhancement
+
+**Title:** `RescheduleDialog` has no caller in `src/`
+**Description:** `src/getmoredone/screens/reschedule_dialog.py` defines
+`RescheduleDialog`, but nothing in `src/` constructs it — the only references are
+the class statement itself and two tests. The live "push to next day" path
+(`today.py`, `upcoming.py`) calls `reschedule_item` directly instead. So a
+dialog that offers a reason field and a date picker is unreachable from the app.
+**Priority:** Low
+**Effort:** Small
+**Notes:** Found by the learning-qa sweep of ca802ff (finding 6, P21 —
+built-but-not-wired). Either wire it to a Reschedule action or delete it; a
+surface reachable only from a test inflates the WT-M6 coverage claim. Left alone
+in this change because it is out of scope for the weekly-tactic spec, and it was
+already like this before.
+
 ---
 
 ## Quick Add Template

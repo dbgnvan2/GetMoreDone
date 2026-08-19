@@ -319,6 +319,7 @@ class TimerWindow(ctk.CTkToplevel):
 
             # Save to database
             self.db_manager.update_action_item(self.item)
+            notify_weekly_tactic_changes(self.db_manager, self)
 
             print(f"[DEBUG] Notes saved for item: {self.item.id}")
 
@@ -382,6 +383,7 @@ class TimerWindow(ctk.CTkToplevel):
             notes = self.next_steps_text.get("1.0", "end-1c").strip()
             self.item.description = notes if notes else None
             self.db_manager.update_action_item(self.item)
+            notify_weekly_tactic_changes(self.db_manager, self)
 
             # Open the floating window and keep reference
             self.next_action_window = NextActionWindow(
@@ -414,6 +416,7 @@ class TimerWindow(ctk.CTkToplevel):
                 # Update action item's planned_minutes
                 self.item.planned_minutes = self.time_block_minutes
                 self.db_manager.update_action_item(self.item)
+                notify_weekly_tactic_changes(self.db_manager, self)
         except ValueError:
             pass
 
@@ -604,6 +607,7 @@ class TimerWindow(ctk.CTkToplevel):
             if timer_notes:
                 self.item.description = timer_notes
                 self.db_manager.update_action_item(self.item)
+                notify_weekly_tactic_changes(self.db_manager, self)
                 print(f"[DEBUG] Updated action item notes from timer window")
 
             # Prompt for completion note
@@ -618,7 +622,11 @@ class TimerWindow(ctk.CTkToplevel):
                 completion_note = dialog.result
                 self.save_work_log(completion_note)
                 self.db_manager.complete_action_item(self.item.id)
-                notify_weekly_tactic_changes(self.db_manager, self)
+                # No parent: this branch exists *because* the window is gone,
+                # and Tk raises "bad window path name" on a destroyed parent —
+                # which the outer handler would then report as "failed to
+                # complete" for an item that was completed.
+                notify_weekly_tactic_changes(self.db_manager)
                 if self.on_close_callback:
                     self.on_close_callback()
                 return
@@ -668,6 +676,7 @@ class TimerWindow(ctk.CTkToplevel):
             if timer_notes:
                 self.item.description = timer_notes
                 self.db_manager.update_action_item(self.item)
+                notify_weekly_tactic_changes(self.db_manager, self)
                 print(f"[DEBUG] Step 2: Current Action Item updated with notes")
 
             # Save references we'll need if window gets destroyed
@@ -743,6 +752,7 @@ class TimerWindow(ctk.CTkToplevel):
                 print(f"[DEBUG] Step 4: Work log saved")
 
             db_manager.complete_action_item(item.id)
+            notify_weekly_tactic_changes(db_manager)
             print(f"[DEBUG] Step 4: Current Action Item saved as completed")
 
             # Step 5: Present Next Action Screen
@@ -765,6 +775,7 @@ class TimerWindow(ctk.CTkToplevel):
                 new_item.start_date = next_action_result['start_date']
                 new_item.due_date = next_action_result['due_date']
                 db_manager.update_action_item(new_item)
+                notify_weekly_tactic_changes(db_manager)
                 print(f"[DEBUG] New Action Item updated with Next Action details")
             else:
                 # User cancelled - use default next day dates
@@ -782,6 +793,7 @@ class TimerWindow(ctk.CTkToplevel):
                 new_item.start_date = new_start.isoformat()
                 new_item.due_date = new_due.isoformat()
                 db_manager.update_action_item(new_item)
+                notify_weekly_tactic_changes(db_manager)
                 print(
                     f"[DEBUG] Next Action cancelled - using default next day dates")
 
