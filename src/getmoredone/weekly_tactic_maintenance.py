@@ -214,25 +214,54 @@ def audit_stamp_week_starts(
     return {"checked": len(rows), "misaligned": len(misaligned), "details": misaligned}
 
 
-def find_duplicate_weekly_tactics(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
-    """Groups of week items sharing one (APE, week start).
+def find_duplicate_weekly_tactics(
+    conn: sqlite3.Connection,
+    calendar: Optional[week_calendar.WeekCalendar] = None,
+) -> List[Dict[str, Any]]:
+    """Groups of week items sharing one (APE, week).
+
+    Grouped by the **week each row belongs to**, not by the raw ``start_date``
+    it happens to hold. That distinction is the whole point: a tactic left
+    mid-week by a snap that collided (``normalize_week_item_starts``) is still a
+    duplicate of the tactic that owns that week — it just does not look like one
+    while its date is wrong. Grouping by the raw column made it a group of one,
+    so it was never merged and the WT-INV5 violation survived every restart,
+    its only trace a warning in the log (BC2).
 
     Week items with no APE are skipped: SQLite treats NULLs as distinct, so
     they could not be deduped by key anyway (WT-M1.C.4 stops new ones).
+
+    Spec:  docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-1
+    Tests: tests/test_weekly_tactic_dedupe.py::test_bc2_a_tactic_that_could_not_snap_is_still_deduped
     """
+    cal = calendar or week_calendar.WeekCalendar.from_settings()
     rows = conn.execute("""
-        SELECT annual_plan_element_id AS ape_id, start_date, COUNT(*) AS n
+        SELECT id, annual_plan_element_id AS ape_id, start_date
         FROM action_items
         WHERE item_type = 'week'
           AND annual_plan_element_id IS NOT NULL
           AND start_date IS NOT NULL
-        GROUP BY annual_plan_element_id, start_date
-        HAVING COUNT(*) > 1
-        ORDER BY annual_plan_element_id, start_date
+        ORDER BY annual_plan_element_id, start_date, id
     """).fetchall()
+
+    groups: Dict[Any, List[str]] = {}
+    for row in rows:
+        bounds = cal.bounds_iso(row["start_date"])
+        if bounds is None:
+            # An unparseable date cannot be assigned to a week. Left alone
+            # rather than lumped in with a group it may not belong to.
+            continue
+        groups.setdefault((row["ape_id"], bounds[0]), []).append(row["id"])
+
     return [
-        {"ape_id": row["ape_id"], "start_date": row["start_date"], "count": row["n"]}
-        for row in rows
+        {
+            "ape_id": ape_id,
+            "start_date": week_start,
+            "count": len(member_ids),
+            "member_ids": member_ids,
+        }
+        for (ape_id, week_start), member_ids in sorted(groups.items())
+        if len(member_ids) > 1
     ]
 
 
@@ -357,22 +386,22 @@ def dedupe_weekly_tactics(
         "merged": 0,
         "repointed": 0,
         "retitled": 0,
+        "snapped": 0,
         "blocked": 0,
         "blocked_rows": {},
         "dropped": {},
         "details": [],
     }
 
-    for group in find_duplicate_weekly_tactics(conn):
+    for group in find_duplicate_weekly_tactics(conn, cal):
+        placeholders = ",".join("?" for _ in group["member_ids"])
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM action_items
-            WHERE item_type = 'week'
-              AND annual_plan_element_id = ?
-              AND start_date = ?
+            WHERE id IN ({placeholders})
             ORDER BY created_at ASC, id ASC
             """,
-            (group["ape_id"], group["start_date"]),
+            tuple(group["member_ids"]),
         ).fetchall()
         if len(rows) < 2:
             continue
@@ -406,8 +435,38 @@ def dedupe_weekly_tactics(
         if blocked_total:
             report["blocked"] += 1
 
+        # The survivor may be the row that could not snap onto its week start
+        # while the duplicate held that date. That duplicate is gone now, so the
+        # UPDATE that failed during normalisation succeeds here — which is what
+        # makes the violation repairable at all rather than permanent (BC2).
+        # Skipped when a loser survived: the date it holds is still taken, and a
+        # blocked merge is already reported.
+        week_start = group["start_date"]
+        bounds = cal.bounds_iso(week_start)
+        week_end = bounds[1] if bounds else survivor["due_date"]
+        survivor_start = survivor["start_date"]
+        if (len(deleted_ids) == len(losers)
+                and (survivor["start_date"] != week_start
+                     or survivor["due_date"] != week_end)):
+            try:
+                conn.execute(
+                    "UPDATE action_items SET start_date = ?, due_date = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (week_start, week_end, now, survivor["id"]),
+                )
+                survivor_start = week_start
+                report["snapped"] += 1
+            except sqlite3.IntegrityError as exc:
+                # Another APE-week pair still holds it. Reported, not raised:
+                # this runs at start-up and must not stop the app opening.
+                logger.warning(
+                    "[weekly_tactic] survivor %s could not snap from %s to %s "
+                    "after the merge: %s",
+                    survivor["id"], survivor["start_date"], week_start, exc,
+                )
+
         canonical = canonical_weekly_tactic_title(
-            _ape_key_field(conn, group["ape_id"]), survivor["start_date"], cal
+            _ape_key_field(conn, group["ape_id"]), survivor_start, cal
         )
         retitled = False
         if canonical and canonical != survivor["title"]:
@@ -429,6 +488,7 @@ def dedupe_weekly_tactics(
             "ape_id": group["ape_id"],
             "start_date": group["start_date"],
             "survivor_id": survivor["id"],
+            "survivor_start_date": survivor_start,
             "deleted_ids": deleted_ids,
             "title_before": survivor["title"],
             "title_after": canonical if retitled else survivor["title"],

@@ -930,3 +930,116 @@ def test_wt_m7b_an_unfixable_row_is_reported_not_silently_left(tmp_path):
         )
     finally:
         vps.close()
+
+
+# ---------------------------------------------------------------- BC2 (WT-M7.A.7)
+
+
+def _week_rows(conn, ape_id):
+    return conn.execute(
+        "SELECT id, start_date, due_date FROM action_items "
+        "WHERE item_type = 'week' AND annual_plan_element_id = ? ORDER BY start_date",
+        (ape_id,),
+    ).fetchall()
+
+
+def _seed_unsnappable_pair(vps, ape_id):
+    """The state the app cannot currently repair.
+
+    One tactic sits on the week start; a second sits mid-week in the SAME week.
+    The unique index is on the raw (APE, start_date), so both rows are legal to
+    it — the dates differ. ``normalize_week_item_starts`` then cannot snap the
+    second onto the first's date, records a collision, and leaves it mid-week.
+    """
+    from src.getmoredone.weekly_tactic_maintenance import normalize_week_item_starts
+
+    on_boundary = make_week_item(vps, ape_id, title="PW|LS|Blog - W9")
+    mid_week = _raw_week_item(vps, ape_id, "PW|LS|Blog - stray",
+                              start="2026-02-25", due="2026-02-25")
+    conn = vps.db_manager.db.conn
+    normalization = normalize_week_item_starts(conn)
+    conn.commit()
+    return on_boundary, mid_week, normalization
+
+
+def test_bc2_a_tactic_that_could_not_snap_is_still_deduped(tmp_path):
+    """The permanent WT-INV5 violation: same APE, same week, two tactics.
+
+    The dedupe grouped by the raw ``start_date``, so a tactic left mid-week by a
+    failed snap formed a group of one and was never merged — the violation
+    survived every restart, its only trace a warning in the log.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        on_boundary, mid_week, normalization = _seed_unsnappable_pair(vps, ape_id)
+
+        assert normalization["collided"] == 1, (
+            "the fixture no longer reproduces the collision it exists to seed")
+        assert len(_week_rows(conn, ape_id)) == 2
+
+        report = dedupe_weekly_tactics(conn)
+        conn.commit()
+
+        rows = _week_rows(conn, ape_id)
+        assert len(rows) == 1, (
+            f"the mid-week duplicate survived the dedupe: "
+            f"{[dict(r) for r in rows]}")
+        assert rows[0]["start_date"] == "2026-02-23", (
+            "the survivor was left off its week start")
+        assert rows[0]["due_date"] == "2026-03-01"
+        assert report["groups"] == 1
+        assert report["merged"] == 1
+    finally:
+        vps.close()
+
+
+def test_bc2_1_children_of_the_unsnappable_tactic_are_repointed(tmp_path):
+    """Merging must carry the stray tactic's children onto the survivor."""
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        on_boundary, mid_week, _ = _seed_unsnappable_pair(vps, ape_id)
+
+        kid = make_daily_item(vps, "Stray child", weekly_tactic_id=mid_week,
+                              refile=False)
+        keeper = make_daily_item(vps, "Boundary child",
+                                 weekly_tactic_id=on_boundary.id, refile=False)
+
+        dedupe_weekly_tactics(conn)
+        conn.commit()
+
+        survivor = _week_rows(conn, ape_id)[0]["id"]
+        assert vps.db_manager.get_action_item(kid.id).weekly_tactic_id == survivor
+        assert vps.db_manager.get_action_item(keeper.id).weekly_tactic_id == survivor
+    finally:
+        vps.close()
+
+
+def test_bc2_2_dedupe_stays_idempotent_and_leaves_clean_weeks_alone(tmp_path):
+    """Dirty-state (P8): a second run finds nothing, and distinct weeks survive."""
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        _seed_unsnappable_pair(vps, ape_id)
+        # A tactic in a genuinely different week must not be swept up.
+        other_week = _raw_week_item(vps, ape_id, "PW|LS|Blog - W10",
+                                    start="2026-03-02", due="2026-03-08")
+
+        first = dedupe_weekly_tactics(conn)
+        conn.commit()
+        second = dedupe_weekly_tactics(conn)
+        conn.commit()
+
+        assert first["groups"] == 1
+        assert second["groups"] == 0, "the second run found something to do"
+        assert second["merged"] == 0
+
+        rows = _week_rows(conn, ape_id)
+        assert [r["start_date"] for r in rows] == ["2026-02-23", "2026-03-02"]
+        assert other_week in {r["id"] for r in rows}
+    finally:
+        vps.close()

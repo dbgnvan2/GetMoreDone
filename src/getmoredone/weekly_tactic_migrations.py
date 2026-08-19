@@ -339,8 +339,10 @@ def _log_report(report: Dict[str, Any]) -> None:
     if dedupe.get("groups"):
         logger.info(
             "[weekly_tactic_migration] merged %d duplicate tactic(s) across %d group(s); "
-            "%d reference(s) repointed; %d title(s) re-canonicalised",
-            dedupe["merged"], dedupe["groups"], dedupe["repointed"], dedupe["retitled"],
+            "%d reference(s) repointed; %d title(s) re-canonicalised; "
+            "%d survivor(s) snapped onto their week start",
+            dedupe["merged"], dedupe["groups"], dedupe["repointed"],
+            dedupe["retitled"], dedupe.get("snapped", 0),
         )
         for detail in dedupe.get("details", []):
             logger.info(
