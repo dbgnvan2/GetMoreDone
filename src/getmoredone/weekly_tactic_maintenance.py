@@ -12,11 +12,13 @@ function here returns what it did, and the migration logs it in full.
 """
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from . import week_calendar
+from .models import ActionItem
+from .weekly_tactic import bring_into_week
 from .weekly_tactic_logging import get_weekly_tactic_logger
 from .weekly_tactic_titles import canonical_weekly_tactic_title
 
@@ -436,3 +438,132 @@ def dedupe_weekly_tactics(
         })
 
     return report
+
+
+def repair_weekly_tactic_invariants(
+    conn: sqlite3.Connection,
+    calendar: Optional[week_calendar.WeekCalendar] = None,
+    normalization: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """WT-M7.B — bring every linked item's dates inside its tactic's week.
+
+    Purpose: repair the WT-INV1 / WT-INV2 violations that pre-date this feature
+             — 24 start dates and 29 due dates on the live database (WT-F10).
+    Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m7b
+    Tests:   tests/test_weekly_tactic_dedupe.py::test_wt_m7b1_existing_violations_repaired
+             tests/test_weekly_tactic_dedupe.py::test_wt_m7b2_repair_reports_what_it_moved
+
+    Runs automatically inside the migration, so three things carry the weight
+    that a dry-run gate would otherwise have carried:
+
+    * the full per-item before/after list is returned and logged, not a count —
+      53 dates rewritten with nothing to show for it is the silent-drop shape
+      of P2;
+    * every move writes a ``reschedule_history`` row with
+      ``reason='inv_repair'``, so a wrong one is reversible;
+    * it is a no-op on an already-clean database, because it runs on every app
+      start rather than once.
+
+    ``normalization`` is the report from :func:`normalize_week_item_starts`.
+    A week item that could not snap to its boundary leaves its children
+    genuinely unrepairable — the week itself is in the wrong place — so those
+    are reported here rather than silently counted as repaired.
+    """
+    cal = calendar or week_calendar.WeekCalendar.from_settings()
+    now = datetime.now().isoformat()
+
+    blocked_tactics = {
+        entry["id"] for entry in (normalization or {}).get("collisions", [])
+    }
+
+    moved: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+
+    rows = conn.execute("""
+        SELECT child.id           AS item_id,
+               child.start_date   AS start_date,
+               child.due_date     AS due_date,
+               week.id            AS tactic_id,
+               week.start_date    AS week_start,
+               week.due_date      AS week_end
+        FROM action_items child
+        JOIN action_items week ON week.id = child.weekly_tactic_id
+        WHERE week.item_type = 'week'
+          AND week.start_date IS NOT NULL
+        ORDER BY child.id
+    """).fetchall()
+
+    for row in rows:
+        week_start = week_calendar.coerce_date(row["week_start"])
+        if week_start is None:
+            continue
+        week_end = week_start + timedelta(days=6)
+
+        start = week_calendar.coerce_date(row["start_date"])
+        due = week_calendar.coerce_date(row["due_date"])
+        in_range = (
+            start is not None
+            and due is not None
+            and week_start <= start <= week_end
+            and week_start <= due <= week_end
+        )
+        if in_range:
+            continue
+
+        if row["tactic_id"] in blocked_tactics:
+            # The tactic itself is sitting on the wrong week start, so moving
+            # its children would file them against a boundary that is about to
+            # change. Report rather than repair.
+            skipped.append({
+                "item_id": row["item_id"],
+                "tactic_id": row["tactic_id"],
+                "reason": "tactic could not be snapped to its week start",
+            })
+            logger.warning(
+                "[weekly_tactic] item %s left out of range: its tactic %s could "
+                "not be snapped to a week start",
+                row["item_id"], row["tactic_id"],
+            )
+            continue
+
+        item = ActionItem(who="", title="", start_date=row["start_date"],
+                          due_date=row["due_date"])
+        change = bring_into_week(item, week_start, week_end)
+
+        conn.execute(
+            "UPDATE action_items SET start_date = ?, due_date = ?, updated_at = ? WHERE id = ?",
+            (item.start_date, item.due_date, now, row["item_id"]),
+        )
+        conn.execute(
+            """
+            INSERT INTO reschedule_history (
+                id, item_id, from_start, from_due, to_start, to_due, reason, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 'inv_repair', ?)
+            """,
+            (f"rh-{uuid4().hex[:12]}", row["item_id"], change["from_start"],
+             change["from_due"], change["to_start"], change["to_due"], now),
+        )
+        moved.append({
+            "item_id": row["item_id"],
+            "tactic_id": row["tactic_id"],
+            "week_start": row["week_start"],
+            **change,
+            "start_shift_days": _day_delta(change["from_start"], change["to_start"]),
+        })
+
+    return {
+        "checked": len(rows),
+        "moved": len(moved),
+        "skipped": len(skipped),
+        "details": moved,
+        "skipped_details": skipped,
+    }
+
+
+def _day_delta(from_date: Optional[str], to_date: Optional[str]) -> Optional[int]:
+    """How far a date moved, in days — the "by how much" WT-M7.B.2 asks for."""
+    start = week_calendar.coerce_date(from_date)
+    end = week_calendar.coerce_date(to_date)
+    if start is None or end is None:
+        return None
+    return (end - start).days

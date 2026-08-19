@@ -54,22 +54,34 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
     """Manages all VSP database operations."""
 
     def __init__(self, db_path: Optional[str] = None, db_manager: Optional[DatabaseManager] = None):
-        """Initialize VSP manager with database connection."""
-        self.db = Database(db_path)
+        """Initialize VSP manager with database connection.
+
+        WT-M4.D — the VPS manager and its DatabaseManager share **one**
+        connection. They used to open two against the same file, so a
+        ``db_manager.transaction()`` could not cover a VPS write at all: the
+        two would contend for the write lock and neither could roll the other
+        back. Sharing is also what makes the scaffolding cascade see its own
+        uncommitted rows while it builds them.
+        """
+        # Store db_manager for action item operations.
+        # If not provided, create one using the same db_path.
+        self.db_manager = db_manager if db_manager else DatabaseManager(db_path)
+        self.db = self.db_manager.db
         self.db.connect()
         self.db.initialize_schema()
         self.logger = _get_weekly_debug_logger()
 
-        # Store db_manager for action item operations
-        # If not provided, create one using the same db_path
-        self.db_manager = db_manager if db_manager else DatabaseManager(
-            db_path)
+        # WT-M4 — hand this manager to the re-filing engine, so the engine does
+        # not build a second VPSManager (which would re-run the taxonomy syncs
+        # and leave two objects with different patched state under test).
+        self.db_manager.attach_vps_manager(self)
+
         self.sync_vision_segments_with_settings()
         self.sync_vision_elements_with_taxonomy()
 
     def close(self):
-        """Close database connection."""
-        self.db.close()
+        """Close the shared database connection."""
+        self.db_manager.close()
 
     @staticmethod
     def shorten_pipe_prefix(text: str) -> str:
@@ -206,8 +218,21 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         self.db.conn.commit()
         return cur.rowcount > 0
 
-    def create_annual_records_from_vision_element(self, year: int, vision_element_id: str) -> Dict[str, str]:
-        """Create Annual Vision Element + Annual Plan Element from a vision element."""
+    def create_annual_records_from_vision_element(
+        self,
+        year: int,
+        vision_element_id: str,
+        commit: bool = True,
+        ensure_project_board: bool = True,
+    ) -> Dict[str, str]:
+        """Create Annual Vision Element + Annual Plan Element from a vision element.
+
+        Args:
+            commit: WT-M4.D — False lets the year-rollover cascade own the
+                transaction, so a failure at row 6 of 8 leaves nothing behind.
+            ensure_project_board: WT-M4.C / Q2 — False on the rollover path. A
+                project spans any timeframe, so a new year needs no new board.
+        """
         row = self.db.conn.execute("""
             SELECT ve.id, ve.key_field, s.name AS segment_name, ss.name AS subsegment_name, c.name AS category_name
             FROM vision_elements ve
@@ -256,11 +281,17 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 data["subsegment_name"], data["category_name"], data["key_field"], now, now
             ))
 
-        self.db.conn.commit()
-        try:
-            self.db_manager.ensure_project_board_for_ape(ape_id)
-        except Exception:
-            pass
+        if commit:
+            self.db.conn.commit()
+        if ensure_project_board:
+            try:
+                self.db_manager.ensure_project_board_for_ape(ape_id)
+            except Exception as exc:
+                # Not fatal — the lineage is what matters — but no longer silent.
+                _get_weekly_debug_logger().warning(
+                    "[create_annual_records] could not ensure a project board for "
+                    "APE %s: %s", ape_id, exc,
+                )
         return {"annual_vision_element_id": ave_id, "annual_plan_element_id": ape_id}
 
     def get_annual_vision_elements(self, year: int) -> List[Dict[str, Any]]:
@@ -292,7 +323,8 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         """, (year,))
         return [dict(row) for row in cursor.fetchall()]
 
-    def set_annual_plan_element_quarter(self, ape_id: str, quarter: int, enabled: bool) -> bool:
+    def set_annual_plan_element_quarter(self, ape_id: str, quarter: int, enabled: bool,
+                                        commit: bool = True) -> bool:
         if quarter not in (1, 2, 3, 4):
             return False
         col = f"q{quarter}"
@@ -300,10 +332,12 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             f"UPDATE annual_plan_elements SET {col} = ?, updated_at = ? WHERE id = ?",
             (1 if enabled else 0, datetime.now().isoformat(), ape_id)
         )
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
         return True
 
-    def set_annual_plan_element_month(self, ape_id: str, month: int, enabled: bool) -> bool:
+    def set_annual_plan_element_month(self, ape_id: str, month: int, enabled: bool,
+                                      commit: bool = True) -> bool:
         if month < 1 or month > 12:
             return False
         col = f"m{month}"
@@ -311,7 +345,8 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             f"UPDATE annual_plan_elements SET {col} = ?, updated_at = ? WHERE id = ?",
             (1 if enabled else 0, datetime.now().isoformat(), ape_id)
         )
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
         return True
 
     def get_annual_plan_elements_for_period(self, year: int, quarter: int, month: int) -> List[Dict[str, Any]]:
@@ -475,12 +510,16 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         ).fetchone()
         return dict(row) if row else None
 
-    def _get_or_create_annual_initiative_for_ape(self, ape: Dict[str, Any]) -> str:
+    def _get_or_create_annual_initiative_for_ape(
+        self, ape: Dict[str, Any], created_by_rollover: bool = False
+    ) -> str:
         existing = self._find_annual_initiative_for_ape(ape)
         if existing:
             return existing["id"]
 
-        annual_plan_id, segment_id = self._get_or_create_annual_plan_for_ape(ape)
+        annual_plan_id, segment_id = self._get_or_create_annual_plan_for_ape(
+            ape, created_by_rollover=created_by_rollover
+        )
         return self.create_annual_initiative(
             annual_plan_id=annual_plan_id,
             segment_description_id=segment_id,
@@ -491,7 +530,27 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             auto_create_chain=False,
         )
 
-    def _get_or_create_annual_plan_for_ape(self, ape: Dict[str, Any]) -> tuple[str, str]:
+    def _get_or_create_annual_plan_for_ape(
+        self, ape: Dict[str, Any], created_by_rollover: bool = False
+    ) -> tuple[str, str]:
+        """Get or create the annual vision + plan behind an Annual Plan Element.
+
+        Args:
+            created_by_rollover: WT-D7a / WT-M4.C.3 — when True the editorial
+                fields (``annual_visions.title`` / ``vision_statement`` /
+                ``key_priorities``, ``annual_plans.theme`` / ``objective`` /
+                ``description``) are left blank and the rows are flagged
+                ``created_by_rollover = 1``. Editorial text is never copied
+                forward and never invented.
+
+                Default False keeps the shipped wording exactly as it was, so
+                the four existing callers (``ape_assignment.py:233,387``;
+                ``ape_period_view.py:242,396``) are unaffected — WT-M4.C.3c.
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m4c3
+        Tests: tests/test_weekly_tactic_cascade.py::test_wt_m4c3_editorial_fields_blank_and_flagged
+               tests/test_weekly_tactic_cascade.py::test_wt_m4c3c_existing_ape_assignment_callers_unaffected
+        """
         year = int(ape["year"])
         segment_name = ape["segment_name"]
         segment_id = self.resolve_segment_id_by_name(segment_name)
@@ -538,23 +597,39 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 tl_vision_id=tl_vision["id"],
                 segment_description_id=segment_id,
                 year=year,
-                title=f"{segment_name} {year}",
+                title="" if created_by_rollover else f"{segment_name} {year}",
                 vision_statement="",
-                key_priorities="[]",
+                key_priorities="[]" if not created_by_rollover else "",
             )
             annual_vision = self.get_annual_vision(annual_vision_id)
+            if created_by_rollover:
+                self._mark_created_by_rollover("annual_visions", annual_vision_id)
 
         plan_id = self.create_annual_plan(
             annual_vision_id=annual_vision["id"],
             segment_description_id=segment_id,
             year=year,
-            theme=f"{segment_name} {year} Plan",
+            theme="" if created_by_rollover else f"{segment_name} {year} Plan",
             objective="",
             description="",
         )
+        if created_by_rollover:
+            self._mark_created_by_rollover("annual_plans", plan_id)
         return plan_id, segment_id
 
-    def _clear_quarter_month_flags(self, ape_id: str, quarter: int) -> None:
+    def _mark_created_by_rollover(self, table: str, row_id: str) -> None:
+        """WT-D13 — flag a row the year rollover created.
+
+        An explicit flag, not an inference from empty fields: a hand-authored
+        vision with a blank statement must not be reported as a stub
+        (WT-M4.C.3b).
+        """
+        self.db.conn.execute(
+            f"UPDATE {table} SET created_by_rollover = 1 WHERE id = ?", (row_id,)
+        )
+
+    def _clear_quarter_month_flags(self, ape_id: str, quarter: int,
+                                   commit: bool = True) -> None:
         quarter_months = {
             1: (1, 2, 3),
             2: (4, 5, 6),
@@ -567,7 +642,8 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             f"UPDATE annual_plan_elements SET {assignments}, updated_at = ? WHERE id = ?",
             (now, ape_id),
         )
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
 
     def get_month_week_starts(self, year: int, month: int, first_day_of_week: int = 0) -> List[Dict[str, Any]]:
         """

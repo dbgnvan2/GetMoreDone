@@ -44,7 +44,8 @@ class VPSPlanningMixin:
 
     def create_tl_vision(self, segment_description_id: str, start_year: int,
                          end_year: int, title: str, vision_statement: str = "",
-                         success_metrics: str = "[]") -> str:
+                         success_metrics: str = "[]",
+                         commit: bool = True) -> str:
         """Create a new TL vision."""
         vision_id = f"tlv-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -57,7 +58,8 @@ class VPSPlanningMixin:
         """, (vision_id, segment_description_id, start_year, end_year, title,
               vision_statement, success_metrics, now, now))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
         return vision_id
 
     def update_tl_vision(self, vision_id: str, **kwargs) -> bool:
@@ -119,7 +121,8 @@ class VPSPlanningMixin:
 
     def create_annual_vision(self, tl_vision_id: str, segment_description_id: str,
                              year: int, title: str, vision_statement: str = "",
-                             key_priorities: str = "[]") -> str:
+                             key_priorities: str = "[]",
+                             commit: bool = True) -> str:
         """Create a new annual vision."""
         vision_id = f"av-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -132,7 +135,8 @@ class VPSPlanningMixin:
         """, (vision_id, tl_vision_id, segment_description_id, year, title,
               vision_statement, key_priorities, now, now))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
         return vision_id
 
     def update_annual_vision(self, vision_id: str, **kwargs) -> bool:
@@ -194,7 +198,8 @@ class VPSPlanningMixin:
 
     def create_annual_plan(self, annual_vision_id: str, segment_description_id: str,
                            year: int, theme: str, objective: str = "",
-                           description: str = "") -> str:
+                           description: str = "",
+                           commit: bool = True) -> str:
         """Create a new annual plan."""
         plan_id = f"ap-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -207,7 +212,8 @@ class VPSPlanningMixin:
         """, (plan_id, annual_vision_id, segment_description_id, year, theme,
               objective, description, now, now))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
         return plan_id
 
     def update_annual_plan(self, plan_id: str, **kwargs) -> bool:
@@ -270,7 +276,8 @@ class VPSPlanningMixin:
     def create_annual_initiative(self, annual_plan_id: str, segment_description_id: str,
                                  year: int, title: str, description: str = "",
                                  outcome_statement: str = "",
-                                 auto_create_chain: bool = True) -> str:
+                                 auto_create_chain: bool = True,
+                                 commit: bool = True) -> str:
         """Create a new annual initiative."""
         initiative_id = f"ai-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -283,7 +290,8 @@ class VPSPlanningMixin:
         """, (initiative_id, annual_plan_id, segment_description_id, year, title,
               description, outcome_statement, now, now))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
 
         if auto_create_chain:
             self._auto_create_initial_chain_for_annual_initiative(initiative_id)
@@ -456,7 +464,8 @@ class VPSPlanningMixin:
                                   annual_plan_id: Optional[str] = None,
                                   auto_create_chain: bool = True,
                                   outcome_statement: str = "",
-                                  tracking_measures: str = "[]") -> str:
+                                  tracking_measures: str = "[]",
+                                  commit: bool = True) -> str:
         """Create a new quarter initiative."""
         initiative_id = f"qi-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -506,7 +515,8 @@ class VPSPlanningMixin:
         """, (initiative_id, annual_plan_id, annual_initiative_id, segment_description_id, quarter, year,
               final_title, outcome_statement, tracking_measures, now, now))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
 
         if auto_create_chain:
             self._auto_create_initial_chain_for_quarter_initiative(initiative_id)
@@ -613,7 +623,8 @@ class VPSPlanningMixin:
     def create_month_tactic(self, quarter_initiative_id: str, segment_description_id: str,
                             month: int, year: int, priority_focus: str,
                             description: str = "",
-                            auto_create_weeks: bool = True) -> str:
+                            auto_create_weeks: bool = True,
+                            commit: bool = True) -> str:
         """Create a new month tactic."""
         tactic_id = f"mt-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -627,7 +638,8 @@ class VPSPlanningMixin:
         """, (tactic_id, quarter_initiative_id, segment_description_id, month, year,
               priority_focus, description, now, now))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
 
         if auto_create_weeks:
             self._auto_create_week_actions_for_month_tactic(tactic_id)
@@ -800,7 +812,8 @@ class VPSPlanningMixin:
                            step_1: str = "", step_2: str = "", step_3: str = "",
                            step_4: str = "", step_5: str = "",
                            key_result_1: str = "", key_result_2: str = "", key_result_3: str = "",
-                           key_result_4: str = "", key_result_5: str = "") -> str:
+                           key_result_4: str = "", key_result_5: str = "",
+                           commit: bool = True) -> str:
         """Create a new week action."""
         action_id = f"wa-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
@@ -817,7 +830,8 @@ class VPSPlanningMixin:
               step_1, step_2, step_3, step_4, step_5,
               key_result_1, key_result_2, key_result_3, key_result_4, key_result_5))
 
-        self.db.conn.commit()
+        if commit:
+            self.db.conn.commit()
         return action_id
 
     def update_week_action(self, action_id: str, **kwargs) -> bool:

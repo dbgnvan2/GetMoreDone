@@ -241,6 +241,7 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
         audit_stamp_week_starts,
         dedupe_weekly_tactics,
         normalize_week_item_starts,
+        repair_weekly_tactic_invariants,
     )
 
     report["week_start_normalization"] = normalize_week_item_starts(conn)
@@ -264,6 +265,13 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
         report["unique_index_error"] = str(exc)
 
     report["stamp_audit"] = audit_stamp_week_starts(conn)
+
+    # WT-M7.B runs last: it needs the columns, a deduped set of tactics, and the
+    # normalisation report, because a tactic that could not snap to its week
+    # start makes its children genuinely unrepairable.
+    report["invariant_repair"] = repair_weekly_tactic_invariants(
+        conn, normalization=report["week_start_normalization"]
+    )
 
     conn.commit()
     # Logged after the commit and outside every raising step, because this is
@@ -342,6 +350,29 @@ def _log_report(report: Dict[str, Any]) -> None:
                 detail["title_before"], detail["title_after"],
                 detail["deleted_ids"], detail.get("blocked") or {},
             )
+
+    repair = report.get("invariant_repair", {})
+    if repair.get("moved"):
+        logger.warning(
+            "[weekly_tactic_migration] moved %d of %d linked item(s) back inside "
+            "their Weekly Tactic's week (WT-INV1/WT-INV2). Every move has a "
+            "reschedule_history row with reason='inv_repair'.",
+            repair["moved"], repair["checked"],
+        )
+        for detail in repair.get("details", []):
+            logger.warning(
+                "[weekly_tactic_migration]   %s: %s..%s -> %s..%s (%+d day(s)) "
+                "into week %s",
+                detail["item_id"], detail["from_start"], detail["from_due"],
+                detail["to_start"], detail["to_due"],
+                detail["start_shift_days"] or 0, detail["week_start"],
+            )
+    if repair.get("skipped"):
+        logger.error(
+            "[weekly_tactic_migration] %d linked item(s) left out of range "
+            "because their tactic could not be snapped to a week start",
+            repair["skipped"],
+        )
 
     if not report.get("unique_index_enforced", True):
         logger.error(

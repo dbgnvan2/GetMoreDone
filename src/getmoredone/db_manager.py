@@ -3,6 +3,7 @@ Database manager for GetMoreDone application.
 Provides CRUD operations and business logic for all entities.
 """
 
+from contextlib import contextmanager
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any, Tuple
 import logging
@@ -11,6 +12,7 @@ import re
 
 from .database import Database
 from .db_manager_project_boards import DBManagerProjectBoardsMixin
+from .weekly_tactic import tactic_of
 from .models import (
     ActionItem, ItemLink, ContactLink, Defaults, RescheduleHistory,
     TimeBlock, WorkLog, Status, Contact, ProjectBoard, ProjectBoardStatus, ProjectBoardLink
@@ -35,6 +37,17 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
     #: Read by callers that want to tell the user why a week did not move.
     last_week_collision: Optional[Dict[str, Any]] = None
 
+    #: WT-M4/WT-M6 — the report from the last re-file, or None. Read by the
+    #: surfaces so the user sees what the cascade created (WT-M6.B.5).
+    last_cascade_report: Optional[Any] = None
+
+    #: True while a ``transaction()`` block is open. Every commit inside one is
+    #: suppressed so the block is genuinely all-or-nothing (WT-M4.D).
+    _in_transaction: bool = False
+
+    _weekly_tactic_engine: Optional[Any] = None
+    _vps_manager: Optional[Any] = None
+
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database manager.
 
@@ -47,22 +60,70 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         self.db.connect()
         self.db.initialize_schema()
 
+    @contextmanager
+    def transaction(self):
+        """WT-M4.D — run a block of writes as one all-or-nothing unit.
+
+        Purpose: the scaffolding cascade creates up to eight rows across eight
+                 tables. A failure part-way must leave none of them.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m4d
+        Tests:   tests/test_weekly_tactic_cascade.py::test_wt_m4d1_cascade_runs_in_one_transaction
+
+        Every creator on the cascade path takes ``commit=False`` so its own
+        ``commit()`` is suppressed inside here. Without both halves the rollback
+        is unbuildable: a failure at row 6 of 8 left 5 rows committed, and
+        WT-M4.C.5's idempotence then adopted that half-built chain as finished
+        (WT-F11).
+
+        Re-entrant: a nested ``with`` joins the outer transaction rather than
+        committing early.
+        """
+        conn = self.db.conn
+        if self._in_transaction:
+            yield conn
+            return
+
+        self._in_transaction = True
+        conn.defer_commits()
+        try:
+            yield conn
+        except Exception:
+            conn.resume_commits()
+            conn.rollback()
+            raise
+        else:
+            conn.resume_commits()
+            conn.commit()
+        finally:
+            self._in_transaction = False
+
     def close(self):
         """Close database connection."""
         self.db.close()
 
     # ==================== ACTION ITEMS ====================
 
-    def create_action_item(self, item: ActionItem, apply_defaults: bool = True) -> str:
+    def create_action_item(self, item: ActionItem, apply_defaults: bool = True,
+                           refile: bool = True) -> str:
         """
         Create a new action item.
 
         Args:
             item: ActionItem to create
             apply_defaults: Whether to apply system/who defaults
+            refile: WT-M3.A — False skips the Weekly Tactic re-file. An item
+                created already attached to a tactic is an *attach*, so it is
+                stamped and brought into range exactly as one made by attaching
+                afterwards. Found by running the real editor: every DB test had
+                attached through update_action_item, so the create path was
+                never exercised and an item created attached carried no
+                original-week stamp at all.
 
         Returns:
             ID of created item
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m3a
+        Tests: tests/test_weekly_tactic_linking.py::test_wt_m3a1_attach_at_create_time_stamps_too
         """
         if apply_defaults:
             self._apply_defaults(item)
@@ -81,6 +142,15 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         item.update_priority_score()
         item.updated_at = datetime.now().isoformat()
 
+        if refile and tactic_of(item) and item.item_type != "week":
+            with self.transaction():
+                self._refile_into_weekly_tactic(item, item.start_date)
+                return self._insert_action_item(item)
+        self.last_cascade_report = None
+        return self._insert_action_item(item)
+
+    def _insert_action_item(self, item: ActionItem) -> str:
+        """The write half of ``create_action_item``, separated for the hook."""
         self.db.conn.execute("""
             INSERT INTO action_items (
                 id, who, contact_id, parent_id, weekly_tactic_id, title, description, next_action, start_date, due_date,
@@ -105,7 +175,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item.created_at, item.updated_at
         ))
 
-        self.db.conn.commit()
+        self._commit_unless_in_transaction()
         return item.id
 
     def get_action_item(self, item_id: str) -> Optional[ActionItem]:
@@ -119,8 +189,15 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             return self._row_to_action_item(row)
         return None
 
-    def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True) -> bool:
+    def update_action_item(self, item: ActionItem, normalize_week_dates: bool = True,
+                           refile: bool = True) -> bool:
         """Update an existing action item.
+
+            refile: WT-D12 — False skips the Weekly Tactic re-file entirely.
+                Only the Google Calendar importer passes it: an imported item
+                updates its dates without re-filing and without creating any
+                plan record, and may sit outside its tactic's week until it is
+                touched by hand.
 
         Returns:
             True when the item was saved as given. False when it was a week item
@@ -172,6 +249,24 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         self._normalize_week_item_dates(item)
         self._normalize_week_item_group(item)
 
+        # WT-M4/WT-M5 — re-file before the write and inside one transaction, so
+        # a cascade that fails part-way leaves neither the item nor its new plan
+        # records behind (WT-M4.D). The re-file may move the item's dates, so it
+        # has to run before they are written.
+        if refile:
+            with self.transaction():
+                self._refile_into_weekly_tactic(item, item.start_date)
+                return self._save_action_item(item, existing)
+
+        self.last_cascade_report = None
+        return self._save_action_item(item, existing)
+
+    def _save_action_item(self, item: ActionItem, existing: Optional[ActionItem]) -> bool:
+        """The write half of ``update_action_item``.
+
+        Separated so the re-file can run inside the same transaction, ahead of
+        the write it changes.
+        """
         # WT-M1.C.5 — cleared on every save, so a stale collision from an
         # earlier save cannot be read as this one's result. The DatabaseManager
         # is long-lived (app.py builds one for the session), so a flag that is
@@ -184,7 +279,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         except sqlite3.IntegrityError as exc:
             self._handle_week_collision(item, original_dates, exc)
 
-        self.db.conn.commit()
+        self._commit_unless_in_transaction()
         return self.last_week_collision is None
 
     def _handle_week_collision(self, item: ActionItem, original_dates, exc):
@@ -261,6 +356,50 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item.updated_at, item.id
         ))
 
+    def attach_vps_manager(self, vps_manager) -> None:
+        """Adopt an existing VPSManager for the re-filing engine (WT-M4)."""
+        self._vps_manager = vps_manager
+        if self._weekly_tactic_engine is not None:
+            self._weekly_tactic_engine._vps = vps_manager
+
+    @property
+    def weekly_tactic_engine(self):
+        """The re-filing engine, built lazily on this connection.
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6
+        Tests: tests/test_weekly_tactic_cascade.py
+        """
+        if self._weekly_tactic_engine is None:
+            from .weekly_tactic import WeeklyTacticEngine
+            self._weekly_tactic_engine = WeeklyTacticEngine(self, self._vps_manager)
+        return self._weekly_tactic_engine
+
+    def _refile_into_weekly_tactic(self, item: ActionItem, target_date) -> None:
+        """WT-M4 — re-file ``item`` for ``target_date`` if it has a tactic.
+
+        Purpose: the single hook. Screens are not individually wired; they all
+                 reach this through update/reschedule/bulk (WT-M6).
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6
+        Tests:   tests/test_weekly_tactic_surfaces.py
+
+        An item with no Weekly Tactic is left completely alone (WT-INV6) — the
+        engine's own predicate decides that, so there is exactly one answer to
+        "is this item week-filed" in the codebase.
+        """
+        from .weekly_tactic import tactic_of
+
+        if item.item_type == "week" or not tactic_of(item):
+            self.last_cascade_report = None
+            return
+
+        report = self.weekly_tactic_engine.plan_refile(item, target_date)
+        self.last_cascade_report = report
+
+    def _commit_unless_in_transaction(self):
+        """Commit, unless a ``transaction()`` block owns the unit of work."""
+        if not self._in_transaction:
+            self.db.conn.commit()
+
     def delete_action_item(self, item_id: str):
         """Delete action item (cascades to links, logs, etc.)."""
         self.db.conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,))
@@ -279,9 +418,39 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         if not item:
             return False
 
+        before = self.get_action_item(item_id)
         item.status = Status.COMPLETED
         item.completed_at = datetime.now().isoformat()
+
+        # WT-M5.A — a completed item is re-filed to the week it was completed
+        # in, not the week it was planned for. completed_at is a full ISO
+        # datetime (see above), so only its date part names a week.
+        if tactic_of(item):
+            with self.transaction():
+                self._refile_into_weekly_tactic(item, item.completed_at[:10])
+                moved = self._save_action_item(item, self.get_action_item(item_id))
+                self._record_completion_refile(item_id, before, item)
+                return moved
+
         return self.update_action_item(item, normalize_week_dates=False)
+
+    def _record_completion_refile(self, item_id: str, before: ActionItem,
+                                  after: ActionItem) -> None:
+        """WT-M5.A.6 — keep the planned start day recoverable after a re-file.
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m5a6
+        Tests: tests/test_weekly_tactic_completion.py::test_wt_m5a6_completion_refile_records_history
+
+        Push-out is tracked at the day grain by reschedule_history (WT-F8), and
+        completion re-filing moves the start date. Without this row the planned
+        day is gone.
+        """
+        if (before.start_date, before.due_date) == (after.start_date, after.due_date):
+            return
+        self._record_reschedule(
+            item_id, before.start_date, before.due_date,
+            after.start_date, after.due_date, "completion_refile",
+        )
 
     def uncomplete_action_item(self, item_id: str) -> bool:
         """
@@ -309,6 +478,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item_ids: List of action item IDs to update
             start_date: New start date (ISO format YYYY-MM-DD), or None to skip
             priority: New importance/priority value, or None to skip
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6b2
+        Tests: tests/test_weekly_tactic_surfaces.py::test_wt_m6b2_bulk_edit_respects_week_bounds
         """
         for item_id in item_ids:
             item = self.get_action_item(item_id)
@@ -318,10 +490,18 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             # Update fields if provided
             if start_date:
                 item.start_date = start_date
-                # Auto-calculate due_date as start_date + 1 day
+                # Auto-calculate due_date as start_date + 1 day, then clamp it
+                # into the week when the item is week-filed. WT-M6.B.2: without
+                # the clamp, a start on a week's last day guarantees a WT-INV2
+                # violation on every bulk edit.
                 from datetime import date as date_class
                 start = date_class.fromisoformat(start_date)
-                item.due_date = (start + timedelta(days=1)).isoformat()
+                due = start + timedelta(days=1)
+                if tactic_of(item):
+                    week_end = self.weekly_tactic_engine.calendar.end(start)
+                    if week_end and due > week_end:
+                        due = week_end
+                item.due_date = due.isoformat()
 
             if priority is not None:
                 item.importance = priority
@@ -384,7 +564,37 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         if not self.complete_action_item(item_id):
             return None
 
-        return self.duplicate_action_item(item_id)
+        new_id = self.duplicate_action_item(item_id)
+        if new_id:
+            self._inherit_weekly_lineage(item_id, new_id)
+        return new_id
+
+    def _inherit_weekly_lineage(self, source_id: str, new_id: str) -> None:
+        """WT-M5.C.1 — carry the week lineage onto an item made from another.
+
+        Purpose: ``duplicate_action_item`` builds its copy through a constructor
+                 that never mentions ``weekly_tactic_id``,
+                 ``annual_plan_element_id`` or ``segment_description_id``, so a
+                 follow-up silently lost its place in the plan.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m5c
+        Tests:   tests/test_weekly_tactic_completion.py::test_wt_m5c1_followup_inherits_lineage_and_stays_in_range
+
+        The copy is then re-filed for its own start date, so it satisfies
+        WT-INV1/2 for whichever week it actually lands in.
+        """
+        source = self.get_action_item(source_id)
+        copy = self.get_action_item(new_id)
+        if not source or not copy:
+            return
+        if not tactic_of(source):
+            return
+
+        copy.weekly_tactic_id = source.weekly_tactic_id
+        copy.annual_plan_element_id = source.annual_plan_element_id
+        copy.segment_description_id = source.segment_description_id
+        # The stamp belongs to the original item's history, not the copy's.
+        copy.weekly_tactic_start_date = None
+        self.update_action_item(copy)
 
     def create_followup_item(self, item_id: str) -> Optional[str]:
         """
@@ -442,6 +652,8 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         )
 
         new_id = self.create_action_item(new_item, apply_defaults=False)
+        if new_id:
+            self._inherit_weekly_lineage(item_id, new_id)
 
         # Copy linked notes and other links
         if new_id:
@@ -840,7 +1052,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             )
             self._record_reschedule(item_id, from_start, from_due,
                                     target_start, target_due, reason)
-            self.db.conn.commit()
+            self._commit_unless_in_transaction()
             return True
 
         # Update item
@@ -855,7 +1067,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             saved.due_date if saved else new_due,
             reason,
         )
-        self.db.conn.commit()
+        self._commit_unless_in_transaction()
         return moved
 
     def _record_reschedule(self, item_id, from_start, from_due, to_start, to_due, reason):

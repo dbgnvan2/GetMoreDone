@@ -174,7 +174,12 @@ def import_upcoming_calendar_events(
                 if dry_run:
                     stats["updated_existing"] += 1
                 else:
-                    dbm.update_action_item(existing_item)
+                    # WT-D12 — an imported item updates its dates without
+                    # re-filing and without creating any plan record. It may sit
+                    # outside its tactic's week until touched by hand.
+                    # Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-d12
+                    # Tests: tests/test_weekly_tactic_surfaces.py::test_wt_m6b3_calendar_import_does_not_cascade
+                    dbm.update_action_item(existing_item, refile=False)
                     stats["updated_existing"] += 1
                 continue
 

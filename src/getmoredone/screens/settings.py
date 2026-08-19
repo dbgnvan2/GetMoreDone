@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from tkinter import filedialog, colorchooser, messagebox
 
 from ..app_settings import AppSettings
+from .. import week_calendar
 from ..obsidian_utils import validate_obsidian_setup
 from ..theme import APPEARANCE_MODES, THEME_NAMES, button_style, combo_box_style, status_text_color
 from .settings_integrations import SettingsIntegrationsMixin
@@ -524,9 +525,36 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
         )
         self.first_day_of_week_combo.grid(row=4, column=1, sticky="w", padx=10, pady=5)
 
+        # WT-M6.D — which week counts as week 1 of a year. Changing it changes
+        # the number in generated Weekly Tactic titles; it never moves an
+        # existing date.
+        # Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6d
+        # Tests: tests/test_settings_week_rule_ui.py::test_wt_m6d1_week_rule_setting_persists
+        ctk.CTkLabel(section, text="First week of year:").grid(
+            row=5, column=0, sticky="w", padx=10, pady=5
+        )
+        self.week_rule_labels = {
+            week_calendar.WEEK_RULE_LABELS[rule]: rule
+            for rule in week_calendar.WEEK_RULES
+        }
+        current_rule = week_calendar.normalize_rule(
+            getattr(self.settings, "first_week_of_year_rule", week_calendar.DEFAULT_RULE)
+        )
+        self.first_week_of_year_var = ctk.StringVar(
+            value=week_calendar.WEEK_RULE_LABELS[current_rule]
+        )
+        self.first_week_of_year_combo = ctk.CTkComboBox(
+            section,
+            values=list(self.week_rule_labels),
+            variable=self.first_week_of_year_var,
+            width=320,
+            **combo_box_style(),
+        )
+        self.first_week_of_year_combo.grid(row=5, column=1, sticky="w", padx=10, pady=5)
+
         # Drag Schedule date text color setting
         ctk.CTkLabel(section, text="Drag Schedule date text color:").grid(
-            row=5, column=0, sticky="w", padx=10, pady=5
+            row=6, column=0, sticky="w", padx=10, pady=5
         )
         self.drag_schedule_text_color_var = ctk.StringVar(
             value=getattr(self.settings, "drag_schedule_date_text_color", "#FFFFFF")
@@ -536,7 +564,7 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             textvariable=self.drag_schedule_text_color_var,
             width=180
         )
-        self.drag_schedule_text_color_entry.grid(row=5, column=1, sticky="w", padx=10, pady=5)
+        self.drag_schedule_text_color_entry.grid(row=6, column=1, sticky="w", padx=10, pady=5)
 
         self.drag_schedule_text_color_pick_btn = ctk.CTkButton(
             section,
@@ -544,11 +572,11 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             width=100,
             command=self.pick_drag_schedule_text_color
         )
-        self.drag_schedule_text_color_pick_btn.grid(row=5, column=2, sticky="w", padx=6, pady=5)
+        self.drag_schedule_text_color_pick_btn.grid(row=6, column=2, sticky="w", padx=6, pady=5)
 
         # Drag Schedule date box height setting
         ctk.CTkLabel(section, text="Drag Schedule box height (px):").grid(
-            row=6, column=0, sticky="w", padx=10, pady=5
+            row=7, column=0, sticky="w", padx=10, pady=5
         )
         self.drag_schedule_box_height_var = ctk.StringVar(
             value=str(getattr(self.settings, "drag_schedule_box_height_px", 86))
@@ -558,7 +586,7 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             textvariable=self.drag_schedule_box_height_var,
             width=180
         )
-        self.drag_schedule_box_height_entry.grid(row=6, column=1, sticky="w", padx=10, pady=5)
+        self.drag_schedule_box_height_entry.grid(row=7, column=1, sticky="w", padx=10, pady=5)
 
         # Save button
         btn_save = ctk.CTkButton(
@@ -568,12 +596,12 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             **button_style("primary"),
             width=150
         )
-        btn_save.grid(row=7, column=0, sticky="w", padx=10, pady=10)
+        btn_save.grid(row=8, column=0, sticky="w", padx=10, pady=10)
 
         # Status label
         self.date_increment_status_label = self._status_label(section, text="", level="success")
         self.date_increment_status_label.grid(
-            row=7, column=1, sticky="w", padx=10, pady=10)
+            row=8, column=1, sticky="w", padx=10, pady=10)
 
         # Info
         info_text = ("These settings control how dates are incremented when using:\n"
@@ -582,7 +610,7 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
                      "• Continue button (duplicate action for next day)\n\n"
                      "Note: Manual date entry is not affected by these settings.")
         self._info_label(section, text=info_text, justify="left", wraplength=600).grid(
-            row=8, column=0, columnspan=2, sticky="w", padx=10, pady=5
+            row=9, column=0, columnspan=2, sticky="w", padx=10, pady=5
         )
 
     def save_date_increment_settings(self):
@@ -596,6 +624,12 @@ class SettingsScreen(SettingsIntegrationsMixin, SettingsVSPSegmentsMixin, ctk.CT
             self.settings.first_day_of_week = first_day_names.index(selected)
         except ValueError:
             self.settings.first_day_of_week = 0
+
+        # WT-M6.D — an unrecognised label falls back to the default rule rather
+        # than raising out of a Save.
+        self.settings.first_week_of_year_rule = self.week_rule_labels.get(
+            self.first_week_of_year_var.get().strip(), week_calendar.DEFAULT_RULE
+        )
 
         color_value = self.drag_schedule_text_color_var.get().strip() or "#FFFFFF"
         if not color_value.startswith("#"):

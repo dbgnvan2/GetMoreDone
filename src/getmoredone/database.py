@@ -12,6 +12,68 @@ from .vps_schema import VPSSchema
 from .weekly_tactic_migrations import run_weekly_tactic_migrations
 
 
+class _DeferredCommitConnection:
+    """A connection whose ``commit()`` is suppressed inside a transaction.
+
+    Purpose: WT-M4.D — make the scaffolding cascade genuinely all-or-nothing.
+    Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m4d
+    Tests:   tests/test_weekly_tactic_cascade.py::test_wt_m4d1_cascade_runs_in_one_transaction
+
+    Roughly thirty places call ``self.db.conn.commit()`` directly, and the
+    cascade nests four creators deep. Threading a ``commit=False`` argument
+    through all of them is possible but not *checkable*: one missed site
+    silently defeats the rollback, and the failure only shows up as half a
+    lineage committed on an error path nobody exercises.
+
+    A gate on the connection cannot be missed. Every commit on this connection
+    goes through here, whoever makes it and however deep.
+    """
+
+    __slots__ = ("_conn", "_defer_depth")
+
+    def __init__(self, conn: sqlite3.Connection):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_defer_depth", 0)
+
+    # -- the gate ---------------------------------------------------------
+
+    def defer_commits(self) -> None:
+        object.__setattr__(self, "_defer_depth", self._defer_depth + 1)
+
+    def resume_commits(self) -> None:
+        object.__setattr__(self, "_defer_depth", max(0, self._defer_depth - 1))
+
+    @property
+    def commits_deferred(self) -> bool:
+        return self._defer_depth > 0
+
+    def commit(self):
+        if self._defer_depth > 0:
+            return None
+        return self._conn.commit()
+
+    def force_commit(self):
+        """Commit regardless of the gate — for the owner of the transaction."""
+        return self._conn.commit()
+
+    # -- everything else passes straight through --------------------------
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        if name in self.__slots__:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._conn, name, value)
+
+    def __enter__(self):
+        return self._conn.__enter__()
+
+    def __exit__(self, *exc):
+        return self._conn.__exit__(*exc)
+
+
 class Database:
     """Manages SQLite database connection and schema."""
 
@@ -42,9 +104,12 @@ class Database:
     def connect(self) -> sqlite3.Connection:
         """Open database connection and enable foreign keys."""
         if self.conn is None:
-            self.conn = sqlite3.connect(self.db_path, uri=self.db_uri)
-            self.conn.row_factory = sqlite3.Row
-            self.conn.execute("PRAGMA foreign_keys = ON")
+            raw = sqlite3.connect(self.db_path, uri=self.db_uri)
+            raw.row_factory = sqlite3.Row
+            raw.execute("PRAGMA foreign_keys = ON")
+            # Wrapped so a transaction can suppress every commit on this
+            # connection at once, however deep the caller (WT-M4.D).
+            self.conn = _DeferredCommitConnection(raw)
         return self.conn
 
     def close(self):

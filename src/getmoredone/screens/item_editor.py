@@ -71,8 +71,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.focus_tab = focus_tab
         self.specified_x = x
         self.specified_y = y
-        self.week_action_options = {}  # Map display string to week_action_id
+        self.week_action_options = {}  # legacy; kept for callers outside this file
         self.week_action_display_values = ["(None)"]
+        self.pending_weekly_tactic_id = None  # chosen before a new item is saved
         self.app_settings = AppSettings.load()
         self.first_day_of_week = int(getattr(self.app_settings, "first_day_of_week", 0))
         # Callback to refresh parent when dialog closes
@@ -420,13 +421,52 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         self.category_combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
         r += 1
         
-        # Weekly Tactic
+        # WT-M6.A — the Weekly Tactic the item is filed under. Read-only here:
+        # the tactic is chosen through "Set Wk Tactic", and changing the start
+        # date re-files it. The combo this replaces was backed by the legacy
+        # week_actions table, which is empty on every database (WT-F6/WT-F7), so
+        # it could never show anything.
+        # Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6a
+        # Tests: tests/test_item_editor_weekly_tactic_ui.py
         ctk.CTkLabel(tab, text="Wk Tactic:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
-        self.week_action_var = ctk.StringVar()
-        self.week_action_combo = ctk.CTkComboBox(tab, values=[""], variable=self.week_action_var, **combo_box_style())
-        self.week_action_combo.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
-        
-        self.load_week_actions()
+        self.weekly_tactic_label = ctk.CTkLabel(
+            tab, text=self.NO_TACTIC_TEXT, anchor="w",
+            text_color=status_text_color("muted"),
+        )
+        self.weekly_tactic_label.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
+        r += 1
+
+        # WT-M3.A.3 — the original-week stamp, editable by hand (WT-D3).
+        ctk.CTkLabel(tab, text="Orig. Week:").grid(row=r, column=0, sticky="w", padx=10, pady=5)
+        self.weekly_tactic_start_var = ctk.StringVar()
+        self.weekly_tactic_start_entry = ctk.CTkEntry(
+            tab, textvariable=self.weekly_tactic_start_var,
+            placeholder_text="YYYY-MM-DD",
+        )
+        self.weekly_tactic_start_entry.grid(row=r, column=1, sticky="ew", padx=5, pady=5)
+
+        self.refresh_weekly_tactic_display()
+
+    NO_TACTIC_TEXT = "(none)"
+
+    def refresh_weekly_tactic_display(self):
+        """Show the linked Weekly Tactic's title, or an explicit "(none)".
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6a2
+        Tests: tests/test_item_editor_weekly_tactic_ui.py::test_wt_m6a2_org_tab_shows_current_tactic_or_none
+        """
+        tactic_id = getattr(self.item, "weekly_tactic_id", None) if self.item else None
+        tactic = self.db_manager.get_action_item(tactic_id) if tactic_id else None
+        if tactic is None:
+            text = self.NO_TACTIC_TEXT
+            stale = getattr(self.item, "weekly_tactic_start_date", None) if self.item else None
+            if stale:
+                # WT-M3.A.4 — a stamp whose tactic was deleted is surfaced, not
+                # silently reused.
+                text = f"{self.NO_TACTIC_TEXT} — originally week of {stale}"
+        else:
+            text = f"{tactic.title} ({tactic.start_date} to {tactic.due_date})"
+        self.weekly_tactic_label.configure(text=text)
 
     def _setup_notes_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -447,58 +487,20 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             ctk.CTkLabel(self.notes_frame, text="Notes available after save", font=ctk.CTkFont(size=11)).pack(pady=20)
 
     def load_week_actions(self):
-        """Load week actions into the dropdown if the VSP manager is available."""
-        if not self.vps_manager:
-            self.week_action_combo.configure(
-                values=["(VSP Manager not available)"], state="disabled")
-            return
+        """Removed — WT-M6.A.1.
 
-        try:
-            range_start, range_end = self._get_week_window_range()
-            db_path = getattr(getattr(self.db_manager, "db", None), "db_path", "(unknown)")
-            self.logger.info(
-                "[load_week_actions] item_id=%s db=%s range=%s..%s",
-                self.item_id,
-                db_path,
-                range_start.isoformat(),
-                range_end.isoformat(),
-            )
+        This queried the legacy ``week_actions`` table to fill an Org-tab combo.
+        That table is empty on every database and the column it fed
+        (``action_items.week_action_id``) is NULL on all 646 rows (WT-F6/WT-F7),
+        so the control could never show anything. The Org tab now shows the real
+        Weekly Tactic from ``weekly_tactic_id``.
 
-            week_actions = self.vps_manager.get_week_actions_in_range(
-                range_start.isoformat(), range_end.isoformat(), active_only=False
-            )
-            self.logger.info("[load_week_actions] in_range_count=%d", len(week_actions))
+        Kept as a no-op rather than deleted, because it is a public method and
+        removing it outright would break any caller not in this file.
 
-            if not week_actions:
-                # Fallback to the entire weekly tactic catalog so the dropdown is never empty.
-                week_actions = self.vps_manager.get_week_actions(active_only=False)
-                self.logger.info("[load_week_actions] fallback_all_week_actions_count=%d", len(week_actions))
-
-            if not week_actions:
-                self.week_action_combo.configure(
-                    values=["(No Week Actions available)"])
-                self.logger.warning("[load_week_actions] no_week_actions_available")
-                return
-
-            # Create display strings: "Weekly Tactic YYYY-MM-DD: Title"
-            self.week_action_options = {}
-            self.week_action_display_values = ["(None)"]
-
-            for wa in week_actions:
-                display = self._format_week_action_display(wa)
-                self.week_action_display_values.append(display)
-                self.week_action_options[display] = wa['id']
-
-            self.week_action_combo.configure(values=self.week_action_display_values)
-            self.logger.info(
-                "[load_week_actions] dropdown_values_count=%d",
-                len(self.week_action_display_values),
-            )
-
-        except Exception as e:
-            self.logger.exception("[load_week_actions] error=%s", e)
-            self.week_action_combo.configure(
-                values=["(Error loading week actions)"], state="disabled")
+        Tests: tests/test_item_editor_weekly_tactic_ui.py::test_wt_m6a1_org_tab_never_queries_legacy_table
+        """
+        return
 
     def _get_week_window_range(self):
         """WT-M2.B — week boundaries from the one helper (WT-F2c)."""
@@ -689,13 +691,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             self.planned_minutes_entry.insert(
                 0, str(self.item.planned_minutes))
 
-        # Week Action
-        if self.item.week_action_id and self.vps_manager:
-            # Find the matching week action and set the display value
-            for display, wa_id in self.week_action_options.items():
-                if wa_id == self.item.week_action_id:
-                    self.week_action_var.set(display)
-                    break
+        # WT-M6.A — the Weekly Tactic display and its original-week stamp.
+        if self.item.weekly_tactic_start_date:
+            self.weekly_tactic_start_var.set(self.item.weekly_tactic_start_date)
+        self.refresh_weekly_tactic_display()
 
         self.update_priority_display()
 
@@ -1013,19 +1012,28 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
             item.planned_minutes = int(planned_text) if planned_text else None
 
             # VSP fields
-            # Week Action (from dropdown if available, otherwise from constructor)
-            week_action_display = self.week_action_var.get().strip()
-            if week_action_display and week_action_display != "(None)" and hasattr(self, 'week_action_options'):
-                # User selected a week action from dropdown
-                item.week_action_id = self.week_action_options.get(
-                    week_action_display)
-            elif week_action_display == "(None)":
-                # User explicitly selected "(None)" to clear the week action
-                item.week_action_id = None
-            elif not self.item_id:
-                # New item: use constructor parameter if no dropdown selection
+            # WT-M6.A.3 — the hand-edited original-week stamp (WT-D3). Blank
+            # clears it; anything unparseable is left as it was rather than
+            # writing a date the user did not mean.
+            stamp = self.weekly_tactic_start_var.get().strip()
+            if stamp:
+                try:
+                    date.fromisoformat(stamp)
+                    item.weekly_tactic_start_date = stamp
+                except ValueError:
+                    self.logger.warning(
+                        "[save] ignoring unparseable weekly_tactic_start_date %r", stamp
+                    )
+            else:
+                item.weekly_tactic_start_date = None
+
+            # week_action_id is the dead legacy FK (WT-F6): NULL on every row,
+            # pointing at an empty table. Left untouched rather than retired
+            # here — that is its own change (spec section 9).
+            if not self.item_id:
                 item.week_action_id = self.week_action_id
-            # For existing items with no dropdown change, week_action_id remains unchanged
+                if getattr(self, "pending_weekly_tactic_id", None):
+                    item.weekly_tactic_id = self.pending_weekly_tactic_id
 
             # Segment Description (from constructor for new items)
             if not self.item_id:
@@ -1503,9 +1511,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                     segment_id,
                 )
                 if week_item_id and week_item_id != current_item.id:
-                    current_item.parent_id = week_item_id
-                if week_action_id:
-                    current_item.week_action_id = week_action_id
+                    # WT-D11 / WT-F9 — the tactic link has its own column. This
+                    # used to write parent_id, which silently destroyed any
+                    # subtask hierarchy the item was part of.
+                    current_item.weekly_tactic_id = week_item_id
                 current_item.segment_description_id = segment_id or current_item.segment_description_id
                 if current_item.item_type == "week":
                     selected_week_item = self.db_manager.get_action_item(week_item_id) if week_item_id else None
@@ -1527,14 +1536,12 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 on_close_callback=self.on_close_callback
             )
         else:
+            # A new item, not yet saved: remember the choice for the insert.
             self.week_action_id = week_action_id
+            self.pending_weekly_tactic_id = week_item_id
             if segment_id:
                 self.segment_description_id = segment_id
-            if display not in self.week_action_options:
-                self.week_action_options[display] = week_action_id
-                self.week_action_display_values.append(display)
-                self.week_action_combo.configure(values=self.week_action_display_values)
-            self.week_action_var.set(display)
+            self.weekly_tactic_label.configure(text=display or self.NO_TACTIC_TEXT)
 
     def create_calendar_event(self):
         """Create a Google Calendar event linked to this item."""

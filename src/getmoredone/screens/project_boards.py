@@ -107,6 +107,27 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
             **combo_box_style(),
         ).grid(row=0, column=1, sticky="w", padx=8, pady=8)
 
+        # WT-M6.C — project start and end dates. Informational only: never
+        # validated, never derived from the items on the board (WT-D9), because
+        # a project may span any timeframe.
+        # Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m6c
+        # Tests: tests/test_project_board_dates_ui.py::test_wt_m6c1_project_dates_reach_db_layer
+        ctk.CTkLabel(top_row, text="Start").grid(row=1, column=0, sticky="w", padx=8, pady=8)
+        self.start_date_var = ctk.StringVar(
+            value=(self.board.start_date if self.board else "") or "")
+        ctk.CTkEntry(
+            top_row, width=160, textvariable=self.start_date_var,
+            placeholder_text="YYYY-MM-DD",
+        ).grid(row=1, column=1, sticky="w", padx=8, pady=8)
+
+        ctk.CTkLabel(top_row, text="End").grid(row=1, column=2, sticky="w", padx=8, pady=8)
+        self.end_date_var = ctk.StringVar(
+            value=(self.board.end_date if self.board else "") or "")
+        ctk.CTkEntry(
+            top_row, width=160, textvariable=self.end_date_var,
+            placeholder_text="YYYY-MM-DD",
+        ).grid(row=1, column=3, sticky="w", padx=8, pady=8)
+
         ctk.CTkLabel(top_row, text="Status").grid(row=0, column=2, sticky="w", padx=8, pady=8)
         self.status_var = ctk.StringVar(value=self.board.status if self.board else ProjectBoardStatus.ACTIVE)
         ctk.CTkComboBox(
@@ -191,6 +212,9 @@ class ProjectBoardEditorDialog(ctk.CTkToplevel):
         board.status = self.status_var.get().strip() or ProjectBoardStatus.ACTIVE
         board.next_step = self.next_step_var.get().strip() or None
         board.notes = self.notes_box.get("1.0", "end").strip() or None
+        # WT-D9: stored exactly as typed. No validation, no reordering.
+        board.start_date = self.start_date_var.get().strip() or None
+        board.end_date = self.end_date_var.get().strip() or None
         if board.status == ProjectBoardStatus.COMPLETED and not board.completed_at:
             from datetime import datetime
             board.completed_at = datetime.now().isoformat()

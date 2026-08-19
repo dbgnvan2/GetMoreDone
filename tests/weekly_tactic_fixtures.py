@@ -75,8 +75,15 @@ def make_daily_item(
     due: str = "2026-02-25",
     weekly_tactic_id: Optional[str] = None,
     parent_id: Optional[str] = None,
+    refile: bool = True,
 ) -> ActionItem:
-    """An ordinary Action Item."""
+    """An ordinary Action Item.
+
+    ``refile=False`` writes the tactic link exactly as given, without the
+    create-time re-file. The dedupe and repair tests need it: they seed the
+    dirty state those routines exist to clean up, and the app can no longer
+    produce that state through its own paths.
+    """
     item = ActionItem(
         who="Self",
         title=title,
@@ -85,5 +92,5 @@ def make_daily_item(
         weekly_tactic_id=weekly_tactic_id,
         parent_id=parent_id,
     )
-    vps.db_manager.create_action_item(item, apply_defaults=False)
+    vps.db_manager.create_action_item(item, apply_defaults=False, refile=refile)
     return item

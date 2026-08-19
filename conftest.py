@@ -24,3 +24,47 @@ for path in (ROOT, ROOT / "src"):
     entry = str(path)
     if entry not in sys.path:
         sys.path.insert(0, entry)
+
+
+# ---------------------------------------------------------------------------
+# Keep the test suite out of the user's real application data directory.
+# ---------------------------------------------------------------------------
+
+import logging
+
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_weekly_tactic_log(tmp_path_factory):
+    """Redirect the weekly-tactic log away from the real app data directory.
+
+    Purpose: `weekly_tactic_debug.log` is where the migration records which rows
+             it merged, deleted and moved — the file a human reads to audit an
+             automatic data change. A test run appending its own tracebacks to
+             it makes that audit harder, and one of those tracebacks is
+             deliberately raised by a test.
+    Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m7b
+
+    Session-scoped and autouse because the logger is built at import time, so
+    the handler is already attached before any test runs.
+    """
+    from src.getmoredone.weekly_tactic_logging import LOGGER_NAME
+
+    logger = logging.getLogger(LOGGER_NAME)
+    original = list(logger.handlers)
+    for handler in original:
+        logger.removeHandler(handler)
+
+    handler = logging.FileHandler(
+        tmp_path_factory.mktemp("logs") / "weekly_tactic_debug.log", encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(handler)
+    try:
+        yield
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+        for restored in original:
+            logger.addHandler(restored)

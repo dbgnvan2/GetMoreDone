@@ -65,7 +65,7 @@ def test_wt_m7a1_duplicates_merged_children_repointed(tmp_path):
         _drop_index(vps)
         newer = _raw_week_item(vps, ape_id, "PW|LS|Blog - W9 (2026-02-23)")
 
-        kids = [make_daily_item(vps, f"Child {i}", weekly_tactic_id=older.id)
+        kids = [make_daily_item(vps, f"Child {i}", weekly_tactic_id=older.id, refile=False)
                 for i in range(5)]
 
         report = dedupe_weekly_tactics(conn)
@@ -102,7 +102,7 @@ def test_wt_m7a2_survivor_title_recanonicalised(tmp_path):
         older = make_week_item(vps, ape_id, title="Wrong - W8")
         _drop_index(vps)
         _raw_week_item(vps, ape_id, "Also wrong")
-        make_daily_item(vps, "Child", weekly_tactic_id=older.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=older.id, refile=False)
 
         report = dedupe_weekly_tactics(conn)
         conn.commit()
@@ -124,7 +124,7 @@ def test_wt_m7a3_no_cascade_data_lost(tmp_path):
         conn = manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
 
         _drop_index(vps)
         loser = _raw_week_item(vps, ape_id, "Loser")
@@ -211,7 +211,7 @@ def test_wt_m7a3_time_block_on_the_loser_does_not_crash_the_merge(tmp_path):
         conn = manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
 
@@ -243,7 +243,7 @@ def test_wt_m7a3_habit_tracking_rows_are_repointed_not_destroyed(tmp_path):
         conn = vps.db_manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
 
@@ -291,7 +291,7 @@ def test_wt_m7a5_dedupe_log_reaches_a_handler(tmp_path):
     try:
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
     finally:
@@ -356,7 +356,7 @@ def test_wt_m7a_blocked_merge_does_not_stop_the_app_from_starting(tmp_path):
         conn = vps.db_manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
         _make_blocking_table(vps, loser, survivor.id)
@@ -393,7 +393,7 @@ def test_wt_m7a_blocked_group_is_still_logged(tmp_path):
     try:
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
         _make_blocking_table(vps, loser, survivor.id)
@@ -432,7 +432,7 @@ def test_wt_m7a_partial_group_reports_the_deleted_row(tmp_path):
         conn = vps.db_manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         clean_loser = _raw_week_item(vps, ape_id, "Clean", created_at="2098-01-01T00:00:00")
         blocked_loser = _raw_week_item(vps, ape_id, "Blocked", created_at="2099-01-01T00:00:00")
@@ -468,7 +468,7 @@ def test_wt_m7a4_tiebreak_when_both_have_children(tmp_path):
         _drop_index(vps)
         more = _raw_week_item(vps, ape_id, "More", created_at="2099-01-01T00:00:00")
 
-        make_daily_item(vps, "A", weekly_tactic_id=fewer.id)
+        make_daily_item(vps, "A", weekly_tactic_id=fewer.id, refile=False)
         for i in range(3):
             conn.execute(
                 "UPDATE action_items SET weekly_tactic_id = ? WHERE id = ?",
@@ -502,7 +502,7 @@ def test_wt_m7a4_tiebreak_equal_children_prefers_oldest(tmp_path):
                      ("2020-01-01T00:00:00", oldest.id))
         _drop_index(vps)
         newer = _raw_week_item(vps, ape_id, "Newer", created_at="2030-01-01T00:00:00")
-        make_daily_item(vps, "A", weekly_tactic_id=oldest.id)
+        make_daily_item(vps, "A", weekly_tactic_id=oldest.id, refile=False)
         conn.execute("UPDATE action_items SET weekly_tactic_id = ? WHERE id = ?",
                      (newer, make_daily_item(vps, "B").id))
         conn.commit()
@@ -524,11 +524,11 @@ def test_wt_m7a5_dedupe_reports_counts(tmp_path):
         conn = vps.db_manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         # Equal child counts, so the tie breaks on age — make the loser newer.
         loser = _raw_week_item(vps, ape_id, "Loser", created_at="2099-01-01T00:00:00")
-        make_daily_item(vps, "Loser child", weekly_tactic_id=loser)
+        make_daily_item(vps, "Loser child", weekly_tactic_id=loser, refile=False)
 
         report = dedupe_weekly_tactics(conn)
         conn.commit()
@@ -554,7 +554,7 @@ def test_wt_m7a6_dedupe_idempotent_and_dirty_state(tmp_path):
         conn = vps.db_manager.db.conn
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         _raw_week_item(vps, ape_id, "Loser")
 
@@ -594,7 +594,7 @@ def test_wt_m7a_migration_dedupes_and_then_indexes(tmp_path):
     try:
         ape_id = seed_ape(vps)
         survivor = make_week_item(vps, ape_id, title="Keeper")
-        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id)
+        make_daily_item(vps, "Child", weekly_tactic_id=survivor.id, refile=False)
         _drop_index(vps)
         _raw_week_item(vps, ape_id, "Loser")
     finally:
@@ -612,3 +612,187 @@ def test_wt_m7a_migration_dedupes_and_then_indexes(tmp_path):
         assert weeks == 1
     finally:
         reopened.close()
+
+
+# --------------------------------------------------------------------------
+# WT-M7.B — repair the pre-existing invariant violations
+# --------------------------------------------------------------------------
+
+def _out_of_range_item(vps, tactic_id, start, due):
+    """An item filed on a tactic but sitting outside its week.
+
+    Written straight to the column: every ordinary save now re-files, so the
+    violation this repairs cannot be produced through the normal path. It is
+    the shape 53 rows on the live database were already in (WT-F10).
+    """
+    item = make_daily_item(vps, "Out of range", start=start, due=due)
+    vps.db_manager.db.conn.execute(
+        "UPDATE action_items SET weekly_tactic_id = ? WHERE id = ?",
+        (tactic_id, item.id),
+    )
+    vps.db_manager.db.conn.commit()
+    return item
+
+
+def test_wt_m7b1_existing_violations_repaired(tmp_path):
+    """After the repair, no linked item violates WT-INV1 or WT-INV2."""
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+
+        before_range = _out_of_range_item(vps, tactic.id, "2026-02-10", "2026-02-11")
+        after_range = _out_of_range_item(vps, tactic.id, "2026-03-18", "2026-03-19")
+        spanning = _out_of_range_item(vps, tactic.id, "2026-02-25", "2026-03-14")
+
+        report = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+        assert report["moved"] == 3
+
+        violations = conn.execute("""
+            SELECT COUNT(*) AS n
+            FROM action_items child
+            JOIN action_items week ON week.id = child.weekly_tactic_id
+            WHERE child.start_date < week.start_date
+               OR child.start_date > week.due_date
+               OR child.due_date   < week.start_date
+               OR child.due_date   > week.due_date
+        """).fetchone()["n"]
+        assert violations == 0
+
+        # Weekday preserved where it can be, clamped where it cannot (WT-M3.B).
+        moved_before = vps.db_manager.get_action_item(before_range.id)
+        assert moved_before.start_date == "2026-02-24", "Tuesday stays a Tuesday"
+        moved_span = vps.db_manager.get_action_item(spanning.id)
+        assert moved_span.due_date == "2026-03-01", "a spanning item is clamped"
+    finally:
+        vps.close()
+
+
+def test_wt_m7b2_repair_reports_what_it_moved(tmp_path):
+    """A large silent date rewrite is exactly what P2 warns about."""
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = _out_of_range_item(vps, tactic.id, "2026-02-10", "2026-02-11")
+
+        report = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+
+        assert report["checked"] == 1
+        assert report["moved"] == 1
+        detail = report["details"][0]
+        assert detail["item_id"] == item.id
+        assert detail["from_start"] == "2026-02-10"
+        assert detail["to_start"] == "2026-02-24"
+        assert detail["start_shift_days"] == 14, "by how much, not just how many"
+        assert detail["week_start"] == "2026-02-23"
+    finally:
+        vps.close()
+
+
+def test_wt_m7b3_repair_records_history(tmp_path):
+    """Every move is reversible: reason='inv_repair'."""
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = _out_of_range_item(vps, tactic.id, "2026-02-10", "2026-02-11")
+
+        repair_weekly_tactic_invariants(conn)
+        conn.commit()
+
+        row = conn.execute(
+            "SELECT * FROM reschedule_history WHERE item_id = ? AND reason = 'inv_repair'",
+            (item.id,),
+        ).fetchone()
+        assert row is not None
+        assert row["from_start"] == "2026-02-10"
+        assert row["to_start"] == "2026-02-24"
+        assert row["from_due"] == "2026-02-11"
+    finally:
+        vps.close()
+
+
+def test_wt_m7b_repair_idempotent_second_run_moves_nothing(tmp_path):
+    """It runs on every app start, so a repaired database must be left alone.
+
+    Not a criterion the spec carries — it became necessary when the repair was
+    made automatic rather than a dry-run tool.
+    """
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path, "repair_twice.db")
+    db_path = vps.db_manager.db.db_path
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        _out_of_range_item(vps, tactic.id, "2026-02-10", "2026-02-11")
+
+        first = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+        assert first["moved"] == 1
+        history_after_first = _count(conn, "reschedule_history")
+
+        second = repair_weekly_tactic_invariants(conn)
+        conn.commit()
+        assert second["moved"] == 0
+        assert second["details"] == []
+        assert _count(conn, "reschedule_history") == history_after_first, (
+            "a clean run must not write history rows"
+        )
+
+        snapshot = {r["id"]: tuple(r) for r in conn.execute(
+            "SELECT id, start_date, due_date FROM action_items")}
+    finally:
+        vps.close()
+
+    reopened = DatabaseManager(db_path)
+    try:
+        assert reopened.db.weekly_tactic_migration_report["invariant_repair"]["moved"] == 0
+        after = {r["id"]: tuple(r) for r in reopened.db.conn.execute(
+            "SELECT id, start_date, due_date FROM action_items")}
+        assert after == snapshot
+    finally:
+        reopened.close()
+
+
+def test_wt_m7b_unrepairable_item_is_reported_not_counted_as_fixed(tmp_path):
+    """A tactic that could not snap leaves its children genuinely unrepairable.
+
+    Found by the learning-qa sweep (finding 8): the collision was reported once
+    and then never acted on by anything.
+    """
+    from src.getmoredone.weekly_tactic_maintenance import repair_weekly_tactic_invariants
+
+    vps = make_vps(tmp_path)
+    try:
+        conn = vps.db_manager.db.conn
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id, start="2026-02-23", due="2026-03-01")
+        item = _out_of_range_item(vps, tactic.id, "2026-02-10", "2026-02-11")
+
+        normalization = {"collisions": [{"id": tactic.id, "from_start": "2026-02-25",
+                                         "blocked_start": "2026-02-23", "error": "x"}]}
+        report = repair_weekly_tactic_invariants(conn, normalization=normalization)
+        conn.commit()
+
+        assert report["moved"] == 0
+        assert report["skipped"] == 1
+        assert report["skipped_details"][0]["item_id"] == item.id
+        assert vps.db_manager.get_action_item(item.id).start_date == "2026-02-10", (
+            "an unrepairable item must be left alone, not moved against a bad week"
+        )
+    finally:
+        vps.close()
