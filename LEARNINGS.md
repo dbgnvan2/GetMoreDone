@@ -101,6 +101,45 @@ Newest first. Format:
 > **Issue** → **Root cause** (tag the pattern `Pn`) → **What would have caught it** →
 > **Fix** → **Rule**
 
+### 2026-08-19 — a test suite that could not fail, and one that opened the live database
+
+**Issue** → `BACKLOG.md` carried "two tests `return` a bool instead of asserting"
+as a minor nit. It was 16 tests across four files, and two of them were doing
+real damage:
+* `test_vps_segments.py::test_enhanced_deletion_protection` **was returning
+  False** — a failing test reporting green. It grepped `delete_segment`'s source
+  for `vision_count`, a name removed when the return shape changed from
+  `tuple[bool, int]` to `tuple[bool, dict]`. The guard for the deletion
+  protection had been dead since that refactor, and nobody could tell.
+* `test_obsidian_dialogs.py::test_database` constructed `DatabaseManager()`
+  **with no path**, which resolves to the user's real application database, and
+  `__init__` calls `initialize_schema()` — schema migrations, the Weekly Tactic
+  dedupe (which DELETEs rows) and the invariant repair (which moves dates and
+  writes `reschedule_history`). Every full-suite run opened production data and
+  ran migrations against it. No damage had occurred (the live file's mtime
+  predated the runs, and every merge in the log names test fixtures), but the
+  same day's BC2 change made the dedupe capable of a merge it could not perform
+  before — so the window was about to matter.
+**Root cause** → P24 at the suite level. pytest ignores a test's return value, so
+`return False` inside `except Exception: return False` makes *any* outcome —
+including an exception — a pass. Several checks printed `⚠` and continued, so
+they could not fail at all. The files were standalone scripts renamed into the
+suite; nothing converted their `if/print/return` verdicts into assertions.
+**What would have caught it** → `PytestReturnNotNoneWarning` was in the output of
+every single run, 17 times. It was read as noise. A warning that names a test by
+path and says it returned a bool is not noise; it is the suite telling you a
+verdict was discarded.
+**Fix** → all four files rewritten to assert, behaviour exercised instead of
+source grepped wherever cheap (`validate_color` now gets real inputs,
+`delete_segment` a real linked row). Every database in a test is a temporary
+one. `PytestReturnNotNoneWarning` count is now 0, which is the regression guard:
+it goes back above zero the moment someone adds another.
+**Rule** → **A test that returns is a test that does not assert.** Treat
+`PytestReturnNotNoneWarning` as a failure, not a warning. And **never construct a
+production object with default arguments in a test** — the default is production:
+its path, its database, its config directory. Pass a `tmp_path` explicitly, and
+be suspicious of any constructor that does I/O before reading its own arguments.
+
 ### 2026-08-19 — the Who field was dead, and Tk hid the reason
 
 **Issue** → Typing in the Item Editor's **Who** box did nothing: no contact dropdown,

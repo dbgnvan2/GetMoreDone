@@ -1,6 +1,6 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-08-19
+Last Updated: 2026-08-19 (Batch 1 complete)
 
 ## Deferred — found by review, deliberately not fixed
 
@@ -49,9 +49,11 @@ fixed; each is a decision, not an oversight.
 
 ### Other known items
 
-- `tests/test_vps_segments.py` has two tests that `return` a bool instead of
-  asserting; pytest warns `PytestReturnNotNoneWarning`. They can pass while
-  asserting nothing.
+- [x] **Done 2026-08-19 (BC3).** It was 16 tests across four files, not two, and
+  one of them (`test_enhanced_deletion_protection`) was *returning False* — a
+  failing test reporting green since `delete_segment`'s return shape changed.
+  Another opened the user's real database. All four files now assert;
+  `PytestReturnNotNoneWarning` count is 0. See `LEARNINGS.md`.
 - `requirements.txt` mixes test-only and runtime dependencies, forcing
   `tests/test_release_licensing.py` to carry a hardcoded `TEST_ONLY_PACKAGES` set.
   A `requirements-dev.txt` split would remove the guesswork.
@@ -102,7 +104,11 @@ fixed; each is a decision, not an oversight.
 
 ## 🐛 Known Bugs
 
-- [ ] Today listing shows all completed items (should only show today's)
+- [x] Today listing shows all completed items (should only show today's).
+  **Not reproducible 2026-08-19 (BC1)** — already fixed in both the SQL and the
+  Python search path, which restrict completed items to
+  `DATE(completed_at) = today`. Verified against a real database, then pinned by
+  `tests/test_today_completed_filter.py` so the entry cannot come back untested.
 - [x] Item editor: `save_and_close` / `save_and_new` / `duplicate_item` inferred save success from the error-label text, so they closed/proceeded even on a validation error. Fixed 2026-07-26 — all three now gate on the `save_item()` bool, with tests.
 - [x] Item editor: the ⏱ Timer button stayed enabled if the timer completed the item, allowing a re-open on a done item. Fixed 2026-07-26 — `_on_timer_closed` disables the button once the reloaded item is completed (guard also added in `start_timer`).
 - [x] Item editor + timer non-modal reload could clobber edits: editing the editor's Description/Next Action *while* the timer is open was overwritten by the on-close reload. Fixed 2026-07-26 — `start_timer` snapshots the editable fields and the on-close reload only refreshes fields the user left untouched (their in-flight edit wins); untouched fields still pick up the timer's DB changes.
@@ -211,11 +217,17 @@ list. `dedupe_weekly_tactics` will never see it, because it groups by the raw
 only trace is a warning in `weekly_tactic_debug.log`.
 **Priority:** Medium
 **Effort:** Small
+**Status:** [x] **Done 2026-08-19 (BC2).** The stated cause had moved on: the
+repair *does* consume `week_start_normalization["collisions"]`, but only to mark
+that tactic's children unrepairable. The real gap was that
+`find_duplicate_weekly_tactics` grouped by the raw `start_date`, so a tactic left
+mid-week formed a group of one and was never merged. It now groups by the *week*
+each row belongs to, and the survivor is snapped onto its week start once the
+duplicate holding that date is gone. Tests:
+`tests/test_weekly_tactic_dedupe.py::test_bc2_*` (three, including a dirty-state
+and an idempotency case).
 **Notes:** Found by the learning-qa sweep of commit 55f1b36 (finding 8, P1/P3 — a
-repairable condition recorded as a terminal one). WT-M7.B (the invariant repair)
-must consume `week_start_normalization["collisions"]` rather than only scanning
-for out-of-range item dates. Tracked against
-`docs/implementation_plan_2026-08-18_weekly_tactic_scheduling.md` step 10.
+repairable condition recorded as a terminal one).
 
 ### 2026-08-18 - Type: Enhancement
 
