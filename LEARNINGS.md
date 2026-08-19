@@ -58,18 +58,19 @@ Referenced by ID from the global catalogue; listed here because they recur.
   `fail_on_unmatched_files` was added to prevent. Deferred because the window is narrow,
   not because it is harmless. Tracked in `BACKLOG.md`. A serialised `publish` job with
   `needs: [build-windows, build-macos]` removes it.
-- **2026-08-18 — the four action major bumps (checkout/setup-python/upload-artifact v7,
-  action-gh-release v3) have NOT been executed on a real runner.** Input names and
-  defaults were verified against each action's own `action.yml` at v7/v3; runtime
-  behaviour was not. The v0.2.0 release build predates the bump
-  (`git merge-base --is-ancestor 93d9fab v0.2.0` → false), so it is not evidence about
-  this configuration. Unverified until the next `Build binaries` run on a commit that
-  contains the bump. (P6)
+- **RESOLVED 2026-08-19 — the four action major bumps are now verified on real
+  runners.** `tests.yml` run `32200605573` (666 passed on 3.11/3.12/3.13) and
+  `build-release.yml` run `32200724360` (both OS jobs green) executed on commits
+  containing the bump; zero Node 20 deprecation annotations on either; both artifacts
+  and both `.sha256` files uploaded by `upload-artifact@v7`, checksum re-verified
+  locally.
 
-  An earlier draft of this very bullet claimed the bumps *had* been verified by running
-  both workflows. They had not. Recorded rather than quietly corrected: the file that
-  opens by warning about trusting a claim without checking the artifact shipped exactly
-  that claim within an hour of being created.
+  Kept here rather than deleted, because of how it read before. An earlier draft of
+  this bullet claimed the bumps *had* been verified by running both workflows at a
+  point when the v0.2.0 build predated the bump
+  (`git merge-base --is-ancestor 93d9fab v0.2.0` → false) and neither commit was even
+  pushed. The file that opens by warning about trusting a claim without checking the
+  artifact shipped exactly that claim within an hour of being created. (P6)
 
 ---
 
