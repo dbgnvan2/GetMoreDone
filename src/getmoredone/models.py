@@ -33,6 +33,14 @@ class ActionItem:
     next_action: Optional[str] = None
     contact_id: Optional[int] = None  # References contacts.id
     parent_id: Optional[str] = None  # References action_items.id for hierarchical relationships
+    # WT-D11: the Weekly Tactic link has its own column so it no longer shares
+    # parent_id with ordinary subtask nesting. An item may be both a subtask and
+    # week-filed. Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1d
+    weekly_tactic_id: Optional[str] = None  # References action_items.id of an item_type='week' row
+    # WT-M1.A / WT-D3: the week this item was *originally* meant to start.
+    # Stamped once on first attach, never moved automatically, manually
+    # overridable (WT-INV3).
+    weekly_tactic_start_date: Optional[str] = None
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     original_due_date: Optional[str] = None  # First due date value, set once
@@ -135,6 +143,10 @@ class ProjectBoard:
 
     title: str
     annual_plan_element_id: Optional[str] = None
+    # WT-M1.B: informational only. Never validated, never auto-derived from the
+    # items on the board (WT-D9) — a project may span any timeframe.
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
     importance: Optional[int] = None
     next_step: Optional[str] = None
     notes: Optional[str] = None

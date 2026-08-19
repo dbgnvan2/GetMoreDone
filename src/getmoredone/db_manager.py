@@ -5,6 +5,7 @@ Provides CRUD operations and business logic for all entities.
 
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any, Tuple
+import logging
 import sqlite3
 import re
 
@@ -15,6 +16,9 @@ from .models import (
     TimeBlock, WorkLog, Status, Contact, ProjectBoard, ProjectBoardStatus, ProjectBoardLink
 )
 from .app_settings import AppSettings
+from . import week_calendar
+
+logger = logging.getLogger("getmoredone.weekly_tactic")
 
 
 class DatabaseManager(DBManagerProjectBoardsMixin):
@@ -25,6 +29,10 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         "start_date", "due_date", "priority_score", "importance", "urgency",
         "size", "value", "planned_minutes", "created_at", "updated_at"
     }
+
+    #: WT-M1.C.5 — the last week-boundary collision seen on a save, or None.
+    #: Read by callers that want to tell the user why a week did not move.
+    last_week_collision: Optional[Dict[str, Any]] = None
 
     def __init__(self, db_path: Optional[str] = None):
         """Initialize database manager.
@@ -59,6 +67,8 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             self._apply_defaults(item)
 
         # Stamp segment ID from linked structures when missing
+        self._validate_week_item(item)
+        self._validate_weekly_tactic_link(item)
         self._stamp_segment_from_relationships(item)
         self._normalize_week_item_dates(item)
         self._normalize_week_item_group(item)
@@ -72,16 +82,16 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
         self.db.conn.execute("""
             INSERT INTO action_items (
-                id, who, contact_id, parent_id, title, description, next_action, start_date, due_date,
+                id, who, contact_id, parent_id, weekly_tactic_id, title, description, next_action, start_date, due_date,
                 original_due_date, is_meeting, meeting_start_time,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 week_action_id, annual_plan_element_id, item_type, segment_description_id, is_habit, percent_complete,
-                today_pin_rank,
+                today_pin_rank, weekly_tactic_start_date,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            item.id, item.who, item.contact_id, item.parent_id, item.title, item.description,
+            item.id, item.who, item.contact_id, item.parent_id, item.weekly_tactic_id, item.title, item.description,
             item.next_action,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.meeting_start_time,
@@ -90,7 +100,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item.planned_minutes, item.status, item.completed_at,
             item.week_action_id, item.annual_plan_element_id, item.item_type, item.segment_description_id, 1 if item.is_habit else 0,
             item.percent_complete,
-            item.today_pin_rank,
+            item.today_pin_rank, item.weekly_tactic_start_date,
             item.created_at, item.updated_at
         ))
 
@@ -140,24 +150,70 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         item.update_priority_score()
         item.updated_at = datetime.now().isoformat()
 
+        self._validate_week_item(item)
+        self._validate_weekly_tactic_link(item)
         self._stamp_segment_from_relationships(item)
         if normalize_week_dates:
             self._normalize_week_item_dates(item)
         self._normalize_week_item_group(item)
 
+        original_dates = (existing.start_date, existing.due_date) if existing else None
+        try:
+            self._write_action_item(item)
+        except sqlite3.IntegrityError as exc:
+            self._handle_week_collision(item, original_dates, exc)
+
+        self.db.conn.commit()
+
+    def _handle_week_collision(self, item: ActionItem, original_dates, exc):
+        """WT-M1.C.5 — a re-snapped week collided with an existing tactic.
+
+        Purpose: changing ``first_day_of_week`` moves every week item's start
+                 date (``_normalize_week_item_dates``), which can land two weeks
+                 on the same start and violate WT-INV5.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1c5
+        Tests:   tests/test_weekly_tactic_schema.py::test_wt_m1c5_first_day_change_collision_reported
+
+        The collision is *reported*, not raised out of an ordinary save: the
+        save proceeds with the item's original dates, and the clash is recorded
+        on ``last_week_collision`` and logged so it is never silent (P2). If the
+        write still fails with the original dates, the error is genuinely not
+        about the re-snap and is re-raised.
+        """
+        if item.item_type != "week" or original_dates is None:
+            raise exc
+
+        snapped = (item.start_date, item.due_date)
+        item.start_date, item.due_date = original_dates
+        self._write_action_item(item)
+
+        self.last_week_collision = {
+            "item_id": item.id,
+            "kept_start": original_dates[0],
+            "rejected_start": snapped[0],
+            "error": str(exc),
+        }
+        logger.warning(
+            "[weekly_tactic] week item %s could not move to %s — a tactic "
+            "already occupies that week for this Annual Plan Element; kept %s",
+            item.id, snapped[0], original_dates[0],
+        )
+
+    def _write_action_item(self, item: ActionItem):
+        """The UPDATE itself, so the collision path can retry it."""
         self.db.conn.execute("""
             UPDATE action_items SET
-                who = ?, contact_id = ?, parent_id = ?, title = ?, description = ?, next_action = ?,
+                who = ?, contact_id = ?, parent_id = ?, weekly_tactic_id = ?, title = ?, description = ?, next_action = ?,
                 start_date = ?, due_date = ?, original_due_date = ?, is_meeting = ?, meeting_start_time = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
                 planned_minutes = ?, status = ?, completed_at = ?,
                 week_action_id = ?, annual_plan_element_id = ?, item_type = ?, segment_description_id = ?, is_habit = ?, percent_complete = ?,
-                today_pin_rank = ?,
+                today_pin_rank = ?, weekly_tactic_start_date = ?,
                 updated_at = ?
             WHERE id = ?
         """, (
-            item.who, item.contact_id, item.parent_id, item.title, item.description, item.next_action,
+            item.who, item.contact_id, item.parent_id, item.weekly_tactic_id, item.title, item.description, item.next_action,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
@@ -165,11 +221,9 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             item.planned_minutes, item.status, item.completed_at,
             item.week_action_id, item.annual_plan_element_id, item.item_type, item.segment_description_id, 1 if item.is_habit else 0,
             item.percent_complete,
-            item.today_pin_rank,
+            item.today_pin_rank, item.weekly_tactic_start_date,
             item.updated_at, item.id
         ))
-
-        self.db.conn.commit()
 
     def delete_action_item(self, item_id: str):
         """Delete action item (cascades to links, logs, etc.)."""
@@ -1044,6 +1098,50 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
     # ==================== INTERNAL HELPERS ====================
 
+    def _validate_weekly_tactic_link(self, item: ActionItem):
+        """WT-INV4 — a weekly_tactic_id must name an existing item_type='week' row.
+
+        Purpose: keep the tactic link from pointing at an ordinary daily item,
+                 which would make "which week is this filed under" unanswerable.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1d3
+        Tests:   tests/test_weekly_tactic_link_migration.py::test_wt_m1d3_tactic_must_be_week_item
+
+        SQLite cannot express this as a CHECK on an existing table, so it is
+        enforced here — on every write path, not only the editor.
+        """
+        if not item.weekly_tactic_id:
+            return
+        if item.weekly_tactic_id == item.id:
+            raise ValueError("An item cannot be its own Weekly Tactic.")
+        row = self.db.conn.execute(
+            "SELECT item_type FROM action_items WHERE id = ?",
+            (item.weekly_tactic_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError(
+                f"Weekly Tactic {item.weekly_tactic_id!r} does not exist."
+            )
+        if row["item_type"] != "week":
+            raise ValueError(
+                f"Weekly Tactic {item.weekly_tactic_id!r} is not a week item "
+                f"(item_type={row['item_type']!r})."
+            )
+
+    def _validate_week_item(self, item: ActionItem):
+        """WT-M1.C.4 — a week item must name an Annual Plan Element.
+
+        Purpose: SQLite treats NULLs as distinct, so a week item with a NULL APE
+                 slips straight past the WT-INV5 unique index. Requiring the APE
+                 is what makes the index mean what the invariant says.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1c4
+        Tests:   tests/test_weekly_tactic_schema.py::test_wt_m1c4_week_item_requires_ape
+        """
+        if item.item_type == "week" and not item.annual_plan_element_id:
+            raise ValueError(
+                "A Weekly Tactic must belong to an Annual Plan Element "
+                "(annual_plan_element_id is required for item_type='week')."
+            )
+
     def _stamp_segment_from_relationships(self, item: ActionItem):
         """Ensure segment_description_id is set based on week action or parent links."""
         if item.segment_description_id:
@@ -1226,19 +1324,12 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         due_date: Optional[str],
         first_day: int,
     ) -> Optional[Tuple[str, str]]:
-        source_date = start_date or due_date
-        if not source_date:
-            return None
+        """WT-M2.B — delegates to the one owner of week identity.
 
-        try:
-            start_dt = date.fromisoformat(source_date)
-        except ValueError:
-            return None
-
-        offset = (start_dt.weekday() - first_day) % 7
-        week_start = start_dt - timedelta(days=offset)
-        week_end = week_start + timedelta(days=6)
-        return week_start.isoformat(), week_end.isoformat()
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m2b
+        Tests: tests/test_week_numbering.py::test_wt_m2b1_no_direct_week_math_callers
+        """
+        return week_calendar.week_bounds_iso(start_date or due_date, first_day)
 
     def update_contact(self, contact: Contact):
         """Update an existing contact."""
@@ -1382,11 +1473,23 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         except (KeyError, IndexError):
             next_action = None
 
+        try:
+            weekly_tactic_id = row["weekly_tactic_id"]
+        except (KeyError, IndexError):
+            weekly_tactic_id = None
+
+        try:
+            weekly_tactic_start_date = row["weekly_tactic_start_date"]
+        except (KeyError, IndexError):
+            weekly_tactic_start_date = None
+
         return ActionItem(
             id=row["id"],
             who=row["who"],
             contact_id=row["contact_id"],
             parent_id=row["parent_id"],
+            weekly_tactic_id=weekly_tactic_id,
+            weekly_tactic_start_date=weekly_tactic_start_date,
             title=row["title"],
             description=row["description"],
             next_action=next_action,
@@ -1516,10 +1619,13 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         except (KeyError, IndexError):
             completed_at = None
 
+        keys = row.keys()
         return ProjectBoard(
             id=row["id"],
             title=row["title"],
             annual_plan_element_id=row["annual_plan_element_id"],
+            start_date=row["start_date"] if "start_date" in keys else None,
+            end_date=row["end_date"] if "end_date" in keys else None,
             importance=importance,
             next_step=next_step,
             notes=notes,

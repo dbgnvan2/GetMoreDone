@@ -10,6 +10,7 @@ import customtkinter as ctk
 import tkinter as tk
 
 from ..app_settings import AppSettings
+from .. import week_calendar
 from ..color_contrast import pick_text_color
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
@@ -234,9 +235,8 @@ class WeeklyItemsScreen(ctk.CTkFrame):
         return value if 0 <= value <= 6 else 0
 
     def _week_start_for(self, target_date: date) -> date:
-        first_day = self._first_day_of_week()
-        offset = (target_date.weekday() - first_day) % 7
-        return target_date - timedelta(days=offset)
+        """WT-M2.B — week identity comes from the one helper, not local arithmetic."""
+        return week_calendar.week_start(target_date, self._first_day_of_week())
 
     def _build_selectable_week_options(self, existing_starts: List[str]) -> List[str]:
         current_start = self._week_start_for(date.today())
@@ -279,13 +279,22 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
         created = 0
         skipped = 0
+        collided = 0
         for ape_id in selected_ids:
             result = self.vps_manager.create_week_action_items_for_ape(ape_id, year, month, [week_start])
             created += int(result.get("created_count", 0))
             skipped += int(result.get("skipped_count", 0))
+            collided += int(result.get("collided_count", 0))
 
         self.refresh()
-        self.status_label.configure(text=f"Created {created} weekly tactic(s); skipped {skipped} existing item(s).")
+        # WT-M1.C.3 — say when a week was refused, rather than reporting a
+        # smaller "created" number and letting the difference vanish (P2).
+        status = f"Created {created} weekly tactic(s); skipped {skipped} existing item(s)."
+        if collided:
+            status += (
+                f" {collided} already existed for that week and were not duplicated."
+            )
+        self.status_label.configure(text=status)
 
     def _render_lists(self):
         self._clear_scroll(self.left_frame)

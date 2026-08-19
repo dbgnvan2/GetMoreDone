@@ -213,12 +213,19 @@ def test_delete_vision_element_succeeds_when_no_children(tmp_path):
 def test_delete_weekly_action_item_removes_children(tmp_path):
     manager = _manager(tmp_path)
     try:
+        # WT-M1.C.4: a week item must name an APE, so seed a real lineage.
+        segment_name, sub_name = _seed_segment_and_subsegment(manager, "Weekly")
+        ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Cadence")
+        ape_id = manager.create_annual_records_from_vision_element(2026, ve_id)[
+            "annual_plan_element_id"
+        ]
         weekly = ActionItem(
             who="VSP",
             title="Weekly Parent",
             item_type="week",
             start_date="2026-02-23",
             due_date="2026-02-23",
+            annual_plan_element_id=ape_id,
         )
         manager.db_manager.create_action_item(weekly, apply_defaults=False)
 

@@ -7,6 +7,8 @@ from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
+from . import week_calendar
+
 
 class VPSPlanningMixin:
     # ========================================================================
@@ -325,10 +327,12 @@ class VPSPlanningMixin:
             description="",
         )
 
-        month_start = date(year, month_num, 1)
-        week_start = month_start - timedelta(days=month_start.weekday())
-        if week_start < month_start:
-            week_start += timedelta(days=7)
+        # WT-F2c: this was hardcoded to Monday while week identity elsewhere
+        # followed the user's setting. One owner now (WT-M2.B).
+        starts = week_calendar.month_week_starts(
+            year, month_num, week_calendar.WeekCalendar.from_settings().first_day
+        )
+        week_start = starts[0] if starts else date(year, month_num, 1)
 
         week_ids: List[str] = []
         for idx in range(4):
@@ -673,10 +677,11 @@ class VPSPlanningMixin:
         quarter_initiative = self.get_quarter_initiative(month_tactic["quarter_initiative_id"])
         quarter_title = (quarter_initiative.get("title") if quarter_initiative else "") or "Quarter"
 
-        month_start = date(year, month, 1)
-        week_start = month_start - timedelta(days=month_start.weekday())
-        if week_start < month_start:
-            week_start += timedelta(days=7)
+        # WT-F2c: hardcoded Monday, same as above. One owner now (WT-M2.B).
+        starts = week_calendar.month_week_starts(
+            year, month, week_calendar.WeekCalendar.from_settings().first_day
+        )
+        week_start = starts[0] if starts else date(year, month, 1)
 
         created: List[str] = []
         for idx in range(4):

@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
 
 from ..models import ActionItem, PriorityFactors, ItemLink, Status
+from .. import week_calendar
+from .. import weekly_tactic_titles
 from ..validation import Validator
 from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
@@ -499,16 +501,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                 values=["(Error loading week actions)"], state="disabled")
 
     def _get_week_window_range(self):
+        """WT-M2.B — week boundaries from the one helper (WT-F2c)."""
         anchor = self._get_anchor_date()
-        start = anchor - timedelta(days=21)
-        offset_start = (start.weekday() - self.first_day_of_week) % 7
-        start -= timedelta(days=offset_start)
-
-        end = anchor + timedelta(days=7)
-        last_day_index = (self.first_day_of_week + 6) % 7
-        offset_end = (last_day_index - end.weekday()) % 7
-        end += timedelta(days=offset_end)
-
+        start = week_calendar.week_start(anchor - timedelta(days=21), self.first_day_of_week)
+        end = week_calendar.week_end(anchor + timedelta(days=7), self.first_day_of_week)
         return start, end
 
     def _get_anchor_date(self) -> date:
@@ -555,13 +551,15 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
                     (annual_plan_element_id,),
                 ).fetchone()
                 if ape and (ape["key_field"] or "").strip():
-                    ws = date.fromisoformat(start_date)
-                    week_of_year = ws.isocalendar().week
-                    prefix = self.vps_manager.normalize_week_token(
-                        self.vps_manager.shorten_pipe_prefix(ape["key_field"])
+                    # WT-M2.B.2 — the title's week number follows the configured
+                    # rule, and carries its year internally (WT-F2a/WT-F2b).
+                    canonical = weekly_tactic_titles.canonical_weekly_tactic_title(
+                        ape["key_field"],
+                        start_date,
+                        week_calendar.WeekCalendar.from_settings(),
                     )
-                    if prefix:
-                        return f"{prefix} - W{week_of_year}"
+                    if canonical:
+                        return canonical
             except Exception:
                 pass
 

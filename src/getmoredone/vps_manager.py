@@ -14,6 +14,8 @@ from calendar import monthrange
 
 from .database import Database
 from .db_manager import DatabaseManager
+from . import week_calendar
+from . import weekly_tactic_titles
 from .models import ActionItem
 from .paths import app_data_dir_path
 from .vps_manager_planning import VPSPlanningMixin
@@ -74,30 +76,19 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
 
     @staticmethod
     def shorten_pipe_prefix(text: str) -> str:
-        """
-        Shorten first two pipe-delimited segments to initials.
+        """Shorten first two pipe-delimited segments to initials.
+
         Example: Purposeful Work|Living Systems|Blog -> PW|LS|Blog
+
+        Implementation moved to weekly_tactic_titles so the re-filing engine can
+        share it without importing VPSManager (WT-M7.A.2).
         """
-        raw = (text or "").strip()
-        if not raw or "|" not in raw:
-            return raw
-
-        parts = [p.strip() for p in raw.split("|")]
-        if len(parts) < 3:
-            return raw
-
-        def initials(phrase: str) -> str:
-            words = [w for w in phrase.split() if w]
-            return "".join(w[0].upper() for w in words) if words else phrase[:1].upper()
-
-        parts[0] = initials(parts[0])
-        parts[1] = initials(parts[1])
-        return "|".join(parts)
+        return weekly_tactic_titles.shorten_pipe_prefix(text)
 
     @staticmethod
     def normalize_week_token(text: str) -> str:
         """Convert 'Week N' to 'Wn' in titles."""
-        return re.sub(r"\bWeek\s+(\d+)\b", r"W\1", text or "", flags=re.IGNORECASE)
+        return weekly_tactic_titles.normalize_week_token(text)
 
     def normalize_action_item_title_prefixes(self) -> int:
         """
@@ -587,33 +578,25 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
 
         first_day_of_week: 0=Monday .. 6=Sunday
         """
-        if month < 1 or month > 12:
-            return []
-        if first_day_of_week < 0 or first_day_of_week > 6:
-            first_day_of_week = 0
-
-        month_start = date(year, month, 1)
-        month_end = date(year, month, monthrange(year, month)[1])
-        offset = (first_day_of_week - month_start.weekday()) % 7
-        first_week_start = month_start + timedelta(days=offset)
-
+        calendar_ = week_calendar.WeekCalendar(
+            first_day=first_day_of_week,
+            rule=week_calendar.WeekCalendar.from_settings().rule,
+        )
         options: List[Dict[str, Any]] = []
-        week_of_month = 1
-        cursor = first_week_start
-        while cursor <= month_end:
-            week_of_year = cursor.isocalendar().week
+        for week_of_month, cursor in enumerate(
+            week_calendar.month_week_starts(year, month, calendar_.first_day), start=1
+        ):
+            week_of_year = calendar_.number(cursor)
             options.append(
                 {
                     "week_of_month": week_of_month,
                     "week_of_year": week_of_year,
                     "week_start_date": cursor.isoformat(),
-                    "week_end_date": (cursor + timedelta(days=6)).isoformat(),
+                    "week_end_date": calendar_.end(cursor).isoformat(),
                     "day_of_month": cursor.day,
                     "label": f"Wk{week_of_month} {cursor.day} (WOY {week_of_year})",
                 }
             )
-            week_of_month += 1
-            cursor += timedelta(days=7)
         return options
 
     def get_existing_week_item_starts_for_ape(self, ape_id: str, year: int, month: int) -> List[str]:
@@ -633,14 +616,33 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
 
     def create_week_action_items_for_ape(self, ape_id: str, year: int, month: int,
                                          week_start_dates: List[str]) -> Dict[str, Any]:
-        """
-        Create weekly Action Items linked to an Annual Plan Element.
-        Returns created_count, skipped_count, and created_ids.
+        """Create weekly Action Items linked to an Annual Plan Element.
+
+        Purpose: build the week rows for one APE and month.
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1c3
+        Tests:   tests/test_weekly_tactic_schema.py::test_wt_m1c3_ape_weekly_screen_reports_duplicate_instead_of_crashing
+
+        WT-M1.C.3 — the pre-existing duplicate guard is a month-prefixed LIKE
+        (``get_existing_week_item_starts_for_ape``), so it cannot see a tactic
+        whose week start falls in the adjacent month. With the WT-INV5 unique
+        index live that near-miss becomes an IntegrityError in a screen with no
+        handler. It is caught here and reported as ``collided_count`` /
+        ``collisions`` rather than crashing the screen — and never swallowed
+        silently (P2).
+
+        Returns created_count, skipped_count, collided_count, created_ids and
+        collisions. The first three keys predate this change and are unmoved.
         """
         if month < 1 or month > 12:
             raise ValueError("Month must be 1-12")
         if not week_start_dates:
-            return {"created_count": 0, "skipped_count": 0, "created_ids": []}
+            return {
+                "created_count": 0,
+                "skipped_count": 0,
+                "collided_count": 0,
+                "created_ids": [],
+                "collisions": [],
+            }
 
         ape = self.db.conn.execute(
             "SELECT * FROM annual_plan_elements WHERE id = ?",
@@ -651,8 +653,10 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
 
         existing = set(self.get_existing_week_item_starts_for_ape(ape_id, year, month))
         system_defaults = self.db_manager.get_defaults("system")
+        calendar_ = week_calendar.WeekCalendar.from_settings()
 
         created_ids: List[str] = []
+        collisions: List[Dict[str, Any]] = []
         skipped_count = 0
         key_field = ape["key_field"]
         who_value = ape["segment_name"] or "VSP"
@@ -664,12 +668,14 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 continue
 
             ws = date.fromisoformat(week_start)
-            week_of_year = ws.isocalendar().week
-            we = ws + timedelta(days=6)
+            week_of_year = calendar_.number(ws)
+            we = calendar_.end(ws)
 
             item = ActionItem(
                 who=who_value,
-                title=f"{self.normalize_week_token(self.shorten_pipe_prefix(key_field))} - W{week_of_year}",
+                title=weekly_tactic_titles.canonical_weekly_tactic_title(
+                    key_field, ws, calendar_
+                ) or f"{weekly_tactic_titles.title_prefix(key_field)} - W{week_of_year}",
                 description=f"Weekly action item for {key_field} (W{week_of_year}, starts {ws.isoformat()})",
                 start_date=ws.isoformat(),
                 due_date=we.isoformat(),
@@ -683,12 +689,27 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 item_type="week",
                 segment_description_id=segment_id,
             )
-            created_ids.append(self.db_manager.create_action_item(item, apply_defaults=False))
+            try:
+                created_ids.append(
+                    self.db_manager.create_action_item(item, apply_defaults=False)
+                )
+            except sqlite3.IntegrityError as exc:
+                # A Weekly Tactic already exists for this APE and week — the
+                # LIKE guard above could not see it because its start date sits
+                # in the adjacent month.
+                collisions.append({"week_start": week_start, "error": str(exc)})
+                _get_weekly_debug_logger().warning(
+                    "[create_week_action_items_for_ape] duplicate tactic for "
+                    "ape=%s week_start=%s: %s",
+                    ape_id, week_start, exc,
+                )
 
         return {
             "created_count": len(created_ids),
             "skipped_count": skipped_count,
+            "collided_count": len(collisions),
             "created_ids": created_ids,
+            "collisions": collisions,
         }
 
     def get_weekly_action_items(self, week_start_date: Optional[str] = None,

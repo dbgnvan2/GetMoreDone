@@ -17,11 +17,12 @@ class DBManagerProjectBoardsMixin:
             board.display_order = self._next_project_board_order()
         self.db.conn.execute("""
             INSERT INTO project_boards (
-                id, title, annual_plan_element_id, importance, next_step, notes,
+                id, title, annual_plan_element_id, start_date, end_date, importance, next_step, notes,
                 display_order, status, completed_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            board.id, board.title, board.annual_plan_element_id, board.importance,
+            board.id, board.title, board.annual_plan_element_id, board.start_date, board.end_date,
+            board.importance,
             board.next_step, board.notes, board.display_order, board.status, board.completed_at,
             board.created_at, board.updated_at
         ))
@@ -43,11 +44,13 @@ class DBManagerProjectBoardsMixin:
         board.updated_at = datetime.now().isoformat()
         self.db.conn.execute("""
             UPDATE project_boards SET
-                title = ?, annual_plan_element_id = ?, importance = ?, next_step = ?,
+                title = ?, annual_plan_element_id = ?, start_date = ?, end_date = ?,
+                importance = ?, next_step = ?,
                 notes = ?, display_order = ?, status = ?, completed_at = ?, updated_at = ?
             WHERE id = ?
         """, (
-            board.title, board.annual_plan_element_id, board.importance, board.next_step,
+            board.title, board.annual_plan_element_id, board.start_date, board.end_date,
+            board.importance, board.next_step,
             board.notes, board.display_order, board.status, board.completed_at, board.updated_at, board.id
         ))
         self.db.conn.commit()

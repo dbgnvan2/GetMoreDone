@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
+from .. import week_calendar
 from ..paths import app_data_dir_path
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
@@ -423,13 +424,12 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         return options
 
     def _align_to_week_start(self, value: date) -> date:
-        offset = (value.weekday() - self.first_day_of_week) % 7
-        return value - timedelta(days=offset)
+        """WT-M2.B — one owner of week identity (WT-F2c)."""
+        return week_calendar.week_start(value, self.first_day_of_week)
 
     def _align_to_week_end(self, value: date) -> date:
-        last_day_index = (self.first_day_of_week + 6) % 7
-        offset = (last_day_index - value.weekday()) % 7
-        return value + timedelta(days=offset)
+        """WT-M2.B — one owner of week identity (WT-F2c)."""
+        return week_calendar.week_end(value, self.first_day_of_week)
 
     def _set_rolling_window_range(self):
         self.prev_start, self.current_start, self.next_start = self._compute_week_starts()
@@ -486,12 +486,10 @@ class SetWeeklyTacticDialog(ctk.CTkToplevel):
         self.refresh_actions()
 
     def _compute_week_starts(self):
+        """WT-M2.B — one owner of week identity (WT-F2c)."""
         anchor = self.anchor_date or date.today()
-        offset = (anchor.weekday() - self.first_day_of_week) % 7
-        current = anchor - timedelta(days=offset)
-        prev = current - timedelta(days=7)
-        nxt = current + timedelta(days=7)
-        return prev, current, nxt
+        current = self._align_to_week_start(anchor)
+        return current - timedelta(days=7), current, current + timedelta(days=7)
 
     def _get_week_items_for_current_window(self, segment_ids: Optional[List[str]]):
         if self.month_filter_var.get() == self.month_all_label:

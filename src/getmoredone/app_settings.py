@@ -59,6 +59,10 @@ class AppSettings:
     include_sunday: bool = True
     # First day of week for VSP week generation (0=Monday .. 6=Sunday)
     first_day_of_week: int = 0
+    # WT-M2.A — which week counts as week 1 of a year: iso | jan1 | first_full.
+    # Default 'iso' preserves the numbering every existing database was built
+    # with. Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m2a
+    first_week_of_year_rule: str = "iso"
 
     # List view settings
     # Default state for list views (Today, Upcoming, All Items)
@@ -120,6 +124,9 @@ class AppSettings:
                 settings.business_year_start_mmdd = cls._normalize_business_year_start_mmdd(
                     getattr(settings, "business_year_start_mmdd", "01-01")
                 )
+                settings.first_week_of_year_rule = cls._normalize_first_week_of_year_rule(
+                    getattr(settings, "first_week_of_year_rule", "iso")
+                )
                 return settings
             except Exception as e:
                 print(f"Error loading settings: {e}")
@@ -142,6 +149,9 @@ class AppSettings:
         self.business_year_start_mmdd = self._normalize_business_year_start_mmdd(
             self.business_year_start_mmdd
         )
+        self.first_week_of_year_rule = self._normalize_first_week_of_year_rule(
+            self.first_week_of_year_rule
+        )
 
         # Ensure data directory exists
         settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -151,6 +161,16 @@ class AppSettings:
                 json.dump(asdict(self), f, indent=2)
         except Exception as e:
             print(f"Error saving settings: {e}")
+
+    @staticmethod
+    def _normalize_first_week_of_year_rule(value: Optional[str]) -> str:
+        """WT-M2.A.2 — an unknown rule falls back to 'iso' without raising.
+
+        Spec:  docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m2a2
+        Tests: tests/test_week_numbering.py::test_wt_m2a2_unknown_rule_falls_back_to_iso
+        """
+        from .week_calendar import normalize_rule
+        return normalize_rule(value)
 
     @staticmethod
     def _normalize_appearance_mode(value: Optional[str]) -> str:

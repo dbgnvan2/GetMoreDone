@@ -9,6 +9,7 @@ from typing import Optional
 
 from .paths import resolve_db_path
 from .vps_schema import VPSSchema
+from .weekly_tactic_migrations import run_weekly_tactic_migrations
 
 
 class Database:
@@ -33,6 +34,10 @@ class Database:
             self.db_path = resolved_db_path
             self.db_uri = resolved_db_path.startswith("file:")
         self.conn: Optional[sqlite3.Connection] = None
+        # Report from the last run of the Weekly Tactic migrations. Read by
+        # tests and by the app so a large data change is never silent (P2).
+        # Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1
+        self.weekly_tactic_migration_report: Optional[dict] = None
 
     def connect(self) -> sqlite3.Connection:
         """Open database connection and enable foreign keys."""
@@ -324,6 +329,12 @@ class Database:
         # Projects - Projects" default), so only the regular lookup index above
         # (idx_project_boards_ape) is used. Older DBs that created a UNIQUE index
         # are relaxed in _run_migrations (drop idx_project_boards_unique_ape).
+
+        # Weekly Tactic scheduling migrations. Must run last: they are scoped by
+        # annual_plan_element_id (VSP schema) and touch project_boards, both of
+        # which are only guaranteed to exist by this point.
+        # Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#8-implementation-order
+        self.weekly_tactic_migration_report = run_weekly_tactic_migrations(conn)
 
         conn.commit()
 
