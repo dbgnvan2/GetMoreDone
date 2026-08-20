@@ -16,12 +16,17 @@ does not move, because the re-filing cascade resolves the segment by name.
 
 from __future__ import annotations
 
+import ast
+import collections
+import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 
 from src.getmoredone.link_integrity import (
     SEGMENT_ID_TABLES,
+    report_existing_breakage,
     run_link_integrity_migrations,
 )
 from src.getmoredone.models import ProjectBoard
@@ -832,3 +837,333 @@ def test_rn_m3b_tactic_title_follows_rename_without_relinking(tmp_path):
         )
     finally:
         vps.close()
+
+
+# --------------------------------------------------------------------------
+# RN-M5 — repair what is already broken
+# --------------------------------------------------------------------------
+
+def test_rn_m5a_existing_breakage_is_reported(tmp_path):
+    """RN-M5.A — counts AND ids, so a human can go and look.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m5a
+
+    A user who renamed before this change has orphans now. Three kinds, and
+    each must be nameable — a count alone says something is wrong without
+    saying where.
+    """
+    vps = make_vps(tmp_path, name="m5a.db")
+    try:
+        chain = _build_full_chain(vps)
+        original = vps.db.conn.execute(
+            "SELECT * FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+
+        # 1. an APE whose segment cannot be resolved
+        vps.db.conn.execute(
+            "UPDATE annual_plan_elements SET segment_description_id = NULL, "
+            "segment_name = 'Vanished Segment' WHERE id = ?",
+            (chain["ape_id"],),
+        )
+        # 2. an orphaned initiative, and 3. a duplicate on the same APE
+        vps.db.conn.execute(
+            "INSERT INTO annual_initiatives "
+            "(id, annual_plan_id, segment_description_id, year, title, "
+            " created_at, updated_at, annual_plan_element_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ai-orphan", original["annual_plan_id"],
+             original["segment_description_id"], original["year"],
+             "Orphan", "2099-01-01T00:00:00", "2099-01-01T00:00:00", None),
+        )
+        vps.db.conn.execute(
+            "INSERT INTO annual_initiatives "
+            "(id, annual_plan_id, segment_description_id, year, title, "
+            " created_at, updated_at, annual_plan_element_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ai-dupe2", original["annual_plan_id"],
+             original["segment_description_id"], original["year"],
+             original["title"], "2099-01-01T00:00:00", "2099-01-01T00:00:00",
+             chain["ape_id"]),
+        )
+        vps.db.conn.commit()
+
+        breakage = report_existing_breakage(vps.db.conn)
+
+        assert any(r["id"] == chain["ape_id"] for r in breakage["apes_without_segment"]), (
+            f"the unresolvable APE was not named: {breakage['apes_without_segment']}"
+        )
+        assert any(r["id"] == "ai-orphan" for r in breakage["initiatives_without_ape"]), (
+            f"the orphaned initiative was not named: {breakage['initiatives_without_ape']}"
+        )
+        dupes = breakage["duplicate_initiatives"]
+        assert dupes, "the duplicate pair was not reported"
+        entry = next(d for d in dupes if d["annual_plan_element_id"] == chain["ape_id"])
+        assert entry["count"] == 2
+        assert set(entry["ids"]) == {chain["annual_initiative_id"], "ai-dupe2"}
+
+        assert breakage["counts"]["apes_without_segment"] >= 1
+        assert breakage["counts"]["duplicate_initiatives"] >= 1
+    finally:
+        vps.close()
+
+
+def test_rn_m5b_ambiguous_data_is_left_alone(tmp_path):
+    """RN-M5.B — the report changes nothing (RN-INV5, RN-D2).
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m5b
+
+    Whether one of two duplicate initiatives holds work worth keeping is a
+    judgement no assertion can make, so nothing here may merge or delete.
+    Asserted as a full before/after snapshot rather than by spot-checking the
+    duplicate: a repair that touched some OTHER row would pass a narrower test.
+    """
+    vps = make_vps(tmp_path, name="m5b.db")
+    try:
+        chain = _build_full_chain(vps)
+        original = vps.db.conn.execute(
+            "SELECT * FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+        vps.db.conn.execute(
+            "INSERT INTO annual_initiatives "
+            "(id, annual_plan_id, segment_description_id, year, title, "
+            " created_at, updated_at, annual_plan_element_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ai-keepme", original["annual_plan_id"],
+             original["segment_description_id"], original["year"],
+             original["title"], "2099-01-01T00:00:00", "2099-01-01T00:00:00",
+             chain["ape_id"]),
+        )
+        vps.db.conn.commit()
+
+        def _snapshot():
+            return {
+                table: sorted(tuple(r) for r in vps.db.conn.execute(f"SELECT * FROM {table}"))
+                for table in ("annual_initiatives", "annual_plan_elements",
+                              "annual_vision_elements", "vision_segments")
+            }
+
+        before = _snapshot()
+        report_existing_breakage(vps.db.conn)
+        run_link_integrity_migrations(vps.db.conn)
+        after = _snapshot()
+
+        assert after == before, (
+            "reporting or re-running the migration changed rows. Ambiguous "
+            "data must be left exactly as it is."
+        )
+    finally:
+        vps.close()
+
+
+# --------------------------------------------------------------------------
+# RN-M4 — the hole cannot reopen
+# --------------------------------------------------------------------------
+
+SRC = Path(__file__).resolve().parents[1] / "src" / "getmoredone"
+
+# Patterns that mean "a link is being resolved through a name". Each is a
+# regex over source with comments stripped, so the prose explaining why a
+# pattern is forbidden cannot itself trip the scan — the mistake this repo has
+# now made three times (LEARNINGS.md).
+NAME_LINK_PATTERNS = {
+    "segment_join_by_name":
+        r"LOWER\(\s*sd\.name\s*\)\s*=\s*LOWER\(\s*vs\.name\s*\)",
+    "initiative_by_title":
+        r"LOWER\(\s*ai\.title\s*\)\s*=\s*LOWER",
+    "segment_by_name_on_a_link_path":
+        r"resolve_segment_id_by_name\(\s*ape\[",
+    "segment_by_name_via_vps":
+        r"vps\.resolve_segment_id_by_name\(",
+}
+
+# The exact name-based lookups that remain, per file and pattern. Every one is
+# explained in NAME_LOOKUP_ALLOWLIST below.
+#
+# The three patterns absent from this map — segment_join_by_name,
+# segment_by_name_on_a_link_path, segment_by_name_via_vps — are gone from src/
+# entirely, which is what RN-M2.A/B/C did. Their absence is asserted by this
+# dict being exact.
+PERMITTED_NAME_LOOKUPS = {
+    ("link_integrity.py", "initiative_by_title"): 1,
+    ("vps_manager.py", "initiative_by_title"): 1,
+}
+
+# Allowlisted, BY NAME, each with the reason inline (RN-M4.A).
+NAME_LOOKUP_ALLOWLIST = {
+    "vps_manager.py::_heal_annual_initiative_link":
+        "RN-M2.A.1. The one-time heal for a row whose id is still NULL. It "
+        "writes the id when it fires, so it never fires again for that row, "
+        "and it refuses when two initiatives match rather than choosing.",
+    "link_integrity.py::backfill_initiative_ape_links":
+        "RN-M1.B.1. The migration. This is the ONE place the title match is "
+        "allowed to establish the link — RN-D2 says migrate by matching the "
+        "current name once, then never by name again.",
+    "link_integrity.py::backfill_segment_ids":
+        "RN-M1.A.1 / RN-M1.C.1. Same migration, same reason.",
+    "db_manager_project_boards.py::category colour lineage":
+        "Display only. It resolves which vision_category row to read a "
+        "COLOUR from, not which rows are linked — the APE's own "
+        "annual_plan_element_id is the link. It survives a rename because "
+        "RN-M3.A refreshes the APE's name columns and the taxonomy together. "
+        "Fragile, and recorded in BACKLOG.md as worth moving to ids.",
+    "vps_manager_taxonomy.py::get_vision_subsegments/get_vision_categories":
+        "User-input lookup. These take a segment NAME from the caller (a "
+        "screen filter) and find rows under it. RN-M2.B keeps "
+        "resolve_segment_id_by_name and its kind for exactly this.",
+}
+
+
+def _code_without_comments(text: str) -> str:
+    """Source with comments AND docstrings removed, line numbers preserved.
+
+    Two failure modes, both of which this repo has hit:
+
+    * Truncating at the first ``#`` cuts a line short and hides a pattern that
+      lives inside a quoted SQL string. Only whole-line comments are dropped.
+    * A DOCSTRING that explains a forbidden pattern contains that pattern.
+      link_integrity's module docstring quotes
+      ``LOWER(ai.title) = LOWER(ape.key_field)`` to say why it is wrong, and a
+      scan that counted it would report two hits where there is one — so
+      deleting the prose would change the verdict, and pinning a count would
+      pin the prose. Docstrings are blanked via the AST.
+
+    Lines are blanked rather than deleted so reported line numbers still point
+    at the real source.
+    """
+    lines = text.splitlines()
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:      # pragma: no cover - every file here parses
+        tree = None
+
+    if tree is not None:
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Module, ast.ClassDef,
+                                     ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            body = getattr(node, "body", None)
+            if not body:
+                continue
+            first = body[0]
+            if not (isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                continue
+            for i in range(first.lineno - 1, (first.end_lineno or first.lineno)):
+                if i < len(lines):
+                    lines[i] = ""
+
+    return "\n".join(
+        "" if line.strip().startswith("#") else line for line in lines
+    )
+
+
+def _scan_for_name_links(paths):
+    """Every (file, pattern, line) where a link is resolved through a name."""
+    found = []
+    for path in paths:
+        code = _code_without_comments(path.read_text(encoding="utf-8"))
+        for name, pattern in NAME_LINK_PATTERNS.items():
+            for match in re.finditer(pattern, code):
+                line = code[: match.start()].count("\n") + 1
+                found.append((path.name, name, line))
+    return found
+
+
+def test_rn_m4a_no_link_resolves_through_a_name():
+    """RN-M4.A — the hole cannot reopen.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m4a
+
+    Every hit must be one of the allowlisted lookups above, each of which
+    carries its reason. A new one is a new way for a rename to break a link.
+    """
+    hits = _scan_for_name_links(sorted(SRC.rglob("*.py")))
+    counts = collections.Counter((f, p) for f, p, _ in hits)
+
+    # EXACT counts, not a set of permitted files. A file-level allowlist let a
+    # reintroduced name-join hide inside an allowlisted file — verified by
+    # mutation, and it is the same "floor instead of an exact count" mistake
+    # LEARNINGS.md P29 records. A count changes whether the new occurrence is
+    # in a new file or an old one.
+    assert dict(counts) == PERMITTED_NAME_LOOKUPS, (
+        "the name-based lookups in src/ have changed.\n"
+        f"  found:    {dict(sorted(counts.items()))}\n"
+        f"  expected: {dict(sorted(PERMITTED_NAME_LOOKUPS.items()))}\n"
+        "A NEW one is a new way for a rename to break a link — resolve by id. "
+        "If it is genuinely display or user input, add it here AND to "
+        "NAME_LOOKUP_ALLOWLIST with the reason. A REMOVED one is good news: "
+        "delete its entry."
+    )
+
+    assert NAME_LOOKUP_ALLOWLIST, "the allowlist is empty"
+    for key, reason in NAME_LOOKUP_ALLOWLIST.items():
+        assert len(reason) > 40, f"{key} has no real reason written next to it"
+
+
+def test_rn_m4a1_the_scan_can_actually_fire(tmp_path):
+    """RN-M4.A.1 — the scan must flag the four patterns this change removes.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m4a
+
+    A scan that is green on the defect and on the fix alike proves nothing.
+    That mistake was made twice in the weekly-tactic work, and three times in
+    this repo's guard tests generally, so each pattern is driven against a
+    synthetic file containing the exact code this change deleted.
+    """
+    offenders = {
+        "segment_join_by_name":
+            "LEFT JOIN segment_descriptions sd ON LOWER(sd.name) = LOWER(vs.name)",
+        "initiative_by_title":
+            "WHERE LOWER(ai.title) = LOWER(?)",
+        "segment_by_name_on_a_link_path":
+            'segment_id = self.resolve_segment_id_by_name(ape["segment_name"])',
+        "segment_by_name_via_vps":
+            'x = self.vps.resolve_segment_id_by_name(ape["segment_name"])',
+    }
+    assert set(offenders) == set(NAME_LINK_PATTERNS), (
+        "a pattern was added or removed without a matching offender sample, "
+        "so the scan is no longer proven able to fire on all of them"
+    )
+
+    for name, snippet in offenders.items():
+        sample = tmp_path / f"offender_{name}.py"
+        sample.write_text(snippet + "\n", encoding="utf-8")
+        hits = _scan_for_name_links([sample])
+        assert any(h[1] == name for h in hits), (
+            f"the scan does NOT flag {name!r} against the exact code this "
+            f"change removed:\n    {snippet}"
+        )
+
+    # And the other direction: the id-based replacements must NOT trip it.
+    clean = tmp_path / "clean.py"
+    clean.write_text(
+        "LEFT JOIN segment_descriptions sd ON sd.id = vs.segment_description_id\n"
+        "WHERE ai.annual_plan_element_id = ?\n"
+        'segment_id = self._segment_id_for_ape(ape)\n',
+        encoding="utf-8",
+    )
+    assert _scan_for_name_links([clean]) == [], (
+        "the scan flags the id-based code that replaced the defect, so it "
+        "cannot be satisfied by fixing the problem"
+    )
+
+
+def test_rn_m4a_comment_stripper_keeps_hashes_inside_strings(tmp_path):
+    """The scan must not be defeated by its own comment handling.
+
+    Three guards in this repo have died to a stripper that truncated at the
+    first ``#``, hiding a pattern that lived inside a quoted string.
+    """
+    sample = tmp_path / "hashy.py"
+    sample.write_text(
+        '# LOWER(sd.name) = LOWER(vs.name) — explained, must NOT count\n'
+        'q = "SELECT 1 # not a comment: LOWER(sd.name) = LOWER(vs.name)"\n',
+        encoding="utf-8",
+    )
+    hits = _scan_for_name_links([sample])
+    assert len(hits) == 1, (
+        f"expected exactly one hit — the string, not the comment — got {hits}"
+    )
