@@ -109,6 +109,16 @@ Project), every link snapshotted by id, then each level renamed in turn.
   `segment_description_id TEXT NULL REFERENCES segment_descriptions(id)` (RN-D4).
   - **RN-M1.C.1** — Backfilled by name; unmatched reported.
     → `::test_rn_m1c1_vision_segment_link_backfilled`
+  - **RN-M1.C.2** — A row created by the legacy Vision Segment migration keeps
+    the id that migration was **given**, rather than being backfilled from the
+    name a moment later. The legacy row carries `segment_id`, so the name
+    round trip is a loss: with two descriptions differing only by case it
+    resolves to neither. Where two legacy rows collapse into one row and
+    disagree about which description they mean, nothing is stamped and the
+    ambiguity is reported (RN-INV5).
+    → `tests/test_vps_legacy_migration.py::test_rn_m1c_legacy_migration_keeps_the_id_the_legacy_row_carried`
+    → `tests/test_vps_legacy_migration.py::test_rn_m1c_two_legacy_rows_that_collapse_are_not_given_one_of_the_two_ids`
+    → `tests/test_vps_legacy_migration.py::test_rn_m1c_legacy_migration_does_not_stamp_a_dangling_id`
 - **RN-M1.D** — Dirty-state (P8): re-running the migration on a populated
   database changes nothing and reports zeros.
   → `::test_rn_m1d_migration_on_populated_db_run_two`

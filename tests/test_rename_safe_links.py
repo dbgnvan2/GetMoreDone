@@ -815,6 +815,127 @@ def test_rn_m1b1_backfill_survives_an_annual_plan_year_drift(tmp_path):
         vps.close()
 
 
+def _add_twin_initiative_on_a_drifted_plan(vps, chain, created_at: str) -> str:
+    """A second initiative, identical to the real one, on a drifted-year plan.
+
+    The APE's own initiative is then unlinked, so both are candidates for the
+    title match. ``created_at`` decides which one ``ORDER BY created_at ASC``
+    reaches first — older makes the twin win the backfill, newer leaves the
+    heal looking at two.
+    """
+    conn = vps.db.conn
+    real = conn.execute(
+        "SELECT * FROM annual_initiatives WHERE id = ?",
+        (chain["annual_initiative_id"],),
+    ).fetchone()
+    conn.execute(
+        """
+        INSERT INTO annual_plans
+            (id, annual_vision_id, segment_description_id, year, theme, objective,
+             description, status, is_active, created_at, updated_at, created_by_rollover)
+        SELECT 'ap-drift', annual_vision_id, segment_description_id, year + 1, theme,
+               objective, description, status, is_active, created_at, updated_at, 0
+        FROM annual_plans WHERE id = ?
+        """,
+        (real["annual_plan_id"],),
+    )
+    conn.execute(
+        """
+        INSERT INTO annual_initiatives
+            (id, annual_plan_id, segment_description_id, year, title, description,
+             outcome_statement, status, progress_pct, is_active, created_at,
+             updated_at, annual_plan_element_id)
+        VALUES ('ai-twin', 'ap-drift', ?, ?, ?, '', '', 'not_started', 0, 1, ?, ?, NULL)
+        """,
+        (real["segment_description_id"], real["year"], real["title"],
+         created_at, created_at),
+    )
+    conn.execute(
+        "UPDATE annual_initiatives SET annual_plan_element_id = NULL WHERE id = ?",
+        (chain["annual_initiative_id"],),
+    )
+    conn.commit()
+    return "ai-twin"
+
+
+def test_rn_m2a1_heal_prefers_the_candidate_whose_plan_year_agrees(tmp_path):
+    """Widening the title match must not turn one candidate into two.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+
+    The heal's contract is "exactly one match or refuse", so any predicate
+    removed from the candidate query can turn a heal that worked into a
+    refusal — and a refusal is not safe here: the caller then builds ANOTHER
+    initiative. With a twin on a drifted-year plan, dropping the plan-year
+    predicate outright took the count from one to two, the heal returned None,
+    and a THIRD initiative appeared for one plan element.
+
+    So the plan year is a tie-break, not a veto: candidates whose plan year
+    agrees are considered first, and the wider set is used only when that
+    narrower one is empty.
+    """
+    vps = make_vps(tmp_path, name="m2a1d.db")
+    try:
+        chain = _build_full_chain(vps)
+        # Newer than the real one, so ORDER BY created_at puts the real one
+        # first and the heal is looking at two candidates rather than one.
+        _add_twin_initiative_on_a_drifted_plan(vps, chain, "2099-01-01T00:00:00")
+
+        before = vps.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM annual_initiatives"
+        ).fetchone()["n"]
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        resolved = vps._get_or_create_annual_initiative_for_ape(ape)
+        after = vps.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM annual_initiatives"
+        ).fetchone()["n"]
+
+        assert resolved == chain["annual_initiative_id"], (
+            f"healed to {resolved!r}, not the APE's own initiative"
+        )
+        assert after == before, (
+            f"a third initiative was created: {before} -> {after}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_m1b1_backfill_prefers_the_candidate_whose_plan_year_agrees(tmp_path):
+    """The oldest candidate must not win over the one whose plan year agrees.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m1b1
+
+    The backfill links ``matches[0]`` by ``created_at ASC``. Dropping the
+    plan-year predicate outright let a twin on a drifted-year plan into the
+    candidate set, and being older it won — so the APE was permanently
+    attached to the twin and its own initiative was left NULL. RN-INV5: a
+    wrong link is worse than a missing one.
+    """
+    vps = make_vps(tmp_path, name="m1b1c.db")
+    try:
+        chain = _build_full_chain(vps)
+        # Older than the real one, so it wins ORDER BY created_at ASC.
+        twin = _add_twin_initiative_on_a_drifted_plan(
+            vps, chain, "2000-01-01T00:00:00"
+        )
+
+        result = backfill_initiative_ape_links(vps.db.conn)
+
+        linked = vps.db.conn.execute(
+            "SELECT id FROM annual_initiatives WHERE annual_plan_element_id = ?",
+            (chain["ape_id"],),
+        ).fetchall()
+        assert [r["id"] for r in linked] == [chain["annual_initiative_id"]], (
+            f"the APE was linked to {[r['id'] for r in linked]}, not its own "
+            f"initiative; the twin is {twin}"
+        )
+        assert result["ambiguous"] == [], (
+            f"the real initiative was reported as the loser: {result['ambiguous']}"
+        )
+    finally:
+        vps.close()
+
+
 def test_rn_m2a1_ambiguous_legacy_row_is_not_healed(tmp_path):
     """The heal must refuse when two initiatives match (RN-INV5).
 
@@ -1232,12 +1353,13 @@ NAME_LINK_PATTERNS = {
 PERMITTED_NAME_LOOKUPS = {
     # The display colour lineage: two queries, three name joins each.
     ("db_manager_project_boards.py", "entity_join_by_name"): 6,
-    # The migration's one-time title match (RN-M1.B.1).
+    # The ONE title match left in src/. find_initiative_candidates_by_title
+    # serves both establishing paths — the migration's backfill (RN-M1.B.1)
+    # and the runtime heal (RN-M2.A.1), which used to hold a second copy in
+    # vps_manager.py. One query means the two cannot drift apart.
     ("link_integrity.py", "initiative_by_title"): 1,
     # resolve_segment_id_exact, and the backfill's own candidate query.
     ("link_integrity.py", "segment_descriptions_by_name"): 2,
-    # The one-time heal (RN-M2.A.1).
-    ("vps_manager.py", "initiative_by_title"): 1,
     # resolve_segment_id_by_name's DEFINITION and body. RN-M2.B keeps it for
     # genuine name lookups — user input and import. Neither is a caller.
     # resolve_segment_id_by_name's DEFINITION and body, plus one non-persisting
