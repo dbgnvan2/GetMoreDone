@@ -14,7 +14,10 @@ from calendar import monthrange
 
 from .database import Database
 from .db_manager import DatabaseManager
-from .link_integrity import resolve_segment_id_exact
+from .link_integrity import (
+    find_initiative_candidates_by_title,
+    resolve_segment_id_exact,
+)
 from . import week_calendar
 from .weekly_tactic_logging import get_weekly_tactic_logger
 from . import weekly_tactic_titles
@@ -641,6 +644,8 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
         Tests:   tests/test_rename_safe_links.py::test_rn_m2a_initiative_found_by_id_after_rename
                  tests/test_rename_safe_links.py::test_rn_m2a1_legacy_row_heals_on_first_lookup
+                 tests/test_rename_safe_links.py::test_rn_m2a2_initiative_survives_an_annual_plan_year_drift
+                 tests/test_rename_safe_links.py::test_rn_m2a2_year_drift_does_not_duplicate_the_initiative
 
         This used to match ``LOWER(ai.title) = LOWER(ape.key_field)`` and
         resolve the segment by name. Renaming either made the lookup return
@@ -687,6 +692,8 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
 
         Spec:  docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
         Tests: tests/test_rename_safe_links.py::test_rn_m2a1_legacy_row_heals_on_first_lookup
+               tests/test_rename_safe_links.py::test_rn_m2a1_heal_survives_an_annual_plan_year_drift
+               tests/test_rename_safe_links.py::test_rn_m2a1_heal_prefers_the_candidate_whose_plan_year_agrees
 
         Deliberately narrow. It fires only when the id is NULL and EXACTLY ONE
         initiative matches: two matches is the RN-F4 duplicate, and choosing
@@ -694,28 +701,25 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         (RN-INV5). Those are left for the report.
 
         ``ai.year`` is the identifying comparison — the initiative's own year
-        against the APE's. The join on annual_plans added ``ap.year`` against
-        the same APE year: a third copy of one fact, contributing no
-        identifying power and able only to drop a candidate that would have
-        healed correctly. A heal that finds nothing does not fail safe; the
-        caller then creates the duplicate.
+        against the APE's. The annual plan's year is a **tie-break**, applied
+        by ``find_initiative_candidates_by_title`` and shared with the
+        migration's backfill so the two cannot drift.
+
+        Requiring it outright hid an initiative whose plan year had drifted,
+        and this heal finding nothing does not fail safe — the caller then
+        creates the duplicate. Dropping it outright was worse: a twin on a
+        drifted plan joined the candidate set, the count went from one to two,
+        and the refusal above produced a **third** initiative for one plan
+        element. Preferring the agreeing candidates and widening only when
+        there are none does neither.
         """
         was_open = bool(getattr(self.db.conn, "in_transaction", False))
         segment_id = self._segment_id_for_ape(ape)
         if not segment_id:
             return None
-        matches = self.db.conn.execute(
-            """
-            SELECT ai.*
-            FROM annual_initiatives ai
-            WHERE ai.year = ?
-              AND ai.segment_description_id = ?
-              AND LOWER(ai.title) = LOWER(?)
-              AND ai.annual_plan_element_id IS NULL
-            ORDER BY ai.created_at ASC, ai.id ASC
-            """,
-            (int(ape["year"]), segment_id, ape["key_field"]),
-        ).fetchall()
+        matches = find_initiative_candidates_by_title(
+            self.db.conn, ape["year"], segment_id, ape["key_field"]
+        )
         if len(matches) != 1:
             return None
 

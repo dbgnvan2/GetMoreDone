@@ -211,20 +211,74 @@ def backfill_segment_ids(conn: sqlite3.Connection, table: str) -> Dict[str, Any]
 # RN-M1.B.1 / RN-M1.B.2 — backfill the initiative ↔ APE link
 # --------------------------------------------------------------------------
 
+def find_initiative_candidates_by_title(
+    conn: sqlite3.Connection,
+    year: int,
+    segment_id: str,
+    key_field: str,
+) -> List[sqlite3.Row]:
+    """Unlinked initiatives whose title still reads as this APE's key field.
+
+    Purpose: one candidate query for the two places that establish the link by
+             title — the migration's backfill and the runtime heal.
+    Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-m1b1
+    Tests:   tests/test_rename_safe_links.py::test_rn_m1b1_backfill_prefers_the_candidate_whose_plan_year_agrees
+             tests/test_rename_safe_links.py::test_rn_m2a1_heal_prefers_the_candidate_whose_plan_year_agrees
+
+    **The annual plan's year is a tie-break, not a veto.** Candidates whose
+    plan agrees with the APE's year are returned when there are any; the wider
+    set is used only when that narrower one is empty.
+
+    Requiring the plan year outright made a correctly-titled initiative on a
+    drifted-year plan invisible, so neither caller could link it. Dropping it
+    outright was worse in the other direction: a twin on a drifted plan joined
+    the candidate set, and being older it won the backfill's ``created_at``
+    order and took the link, while the heal — whose contract is "exactly one
+    match or refuse" — saw two, refused, and let its caller build a THIRD
+    initiative for one plan element.
+
+    Ordering both tiers by ``created_at ASC, id ASC`` keeps the caller's choice
+    of ``matches[0]`` deterministic.
+    """
+    def _matches(require_plan_year: bool) -> List[sqlite3.Row]:
+        plan_year = "AND ap.year = ?" if require_plan_year else ""
+        params: List[Any] = [int(year), segment_id, key_field]
+        if require_plan_year:
+            params.append(int(year))
+        return conn.execute(
+            f"""
+            SELECT ai.*
+            FROM annual_initiatives ai
+            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
+            WHERE ai.year = ?
+              AND ai.segment_description_id = ?
+              AND LOWER(ai.title) = LOWER(?)
+              AND ai.annual_plan_element_id IS NULL
+              {plan_year}
+            ORDER BY ai.created_at ASC, ai.id ASC
+            """,
+            params,
+        ).fetchall()
+
+    return _matches(True) or _matches(False)
+
+
 def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
     """RN-M1.B.1 — link each initiative to its APE by the title match, once.
 
     Spec:  docs/spec_2026-08-19_rename_safe_links.md#rn-m1b1
     Tests: tests/test_rename_safe_links.py::test_rn_m1b1_initiative_ape_link_backfilled_from_title
            tests/test_rename_safe_links.py::test_rn_m1b2_ambiguous_backfill_is_reported
+           tests/test_rename_safe_links.py::test_rn_m1b1_backfill_survives_an_annual_plan_year_drift
+           tests/test_rename_safe_links.py::test_rn_m1b1_backfill_prefers_the_candidate_whose_plan_year_agrees
 
     This is the **only** time the title match is used to establish the link. It
     reproduces exactly what ``_heal_annual_initiative_link`` does — same year,
     same segment, ``LOWER(title) = LOWER(key_field)`` — so a database that
-    works before the migration links the same way after it. The two move
-    together: both dropped the ``annual_plans.year`` predicate, which compared
-    a third copy of the APE's year and could only hide a row that was going to
-    link correctly.
+    works before the migration links the same way after it. Both call
+    ``find_initiative_candidates_by_title``, so the candidate set cannot drift
+    between them; what they do with it still differs, and deliberately — the
+    heal refuses on more than one, this links the oldest and reports the rest.
 
     RN-M1.B.2: a user who has already renamed may have TWO initiatives matching
     one APE (that is RN-F4's duplicate). The oldest by ``created_at`` is
@@ -252,18 +306,9 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
             # No resolvable segment: the title match alone is not specific
             # enough, since two segments can hold the same key field.
             continue
-        matches = conn.execute(
-            """
-            SELECT ai.id
-            FROM annual_initiatives ai
-            WHERE ai.year = ?
-              AND ai.segment_description_id = ?
-              AND LOWER(ai.title) = LOWER(?)
-              AND ai.annual_plan_element_id IS NULL
-            ORDER BY ai.created_at ASC, ai.id ASC
-            """,
-            (int(ape["year"]), segment_id, ape["key_field"]),
-        ).fetchall()
+        matches = find_initiative_candidates_by_title(
+            conn, ape["year"], segment_id, ape["key_field"]
+        )
         if not matches:
             continue
 

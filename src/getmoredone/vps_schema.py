@@ -464,6 +464,30 @@ class VPSSchema:
             (now, now),
         ).fetchall()
 
+        # RN-M1.C / RN-INV5 — which description each collapsed segment means,
+        # or nothing when the legacy rows disagree.
+        #
+        # segment_cache below is keyed by LOWERED name, so two legacy rows
+        # pointing at two descriptions whose names differ only by case collapse
+        # into ONE new vision_segments row. Stamping the first row's id onto it
+        # asserts a link that is false for the other row's work — its
+        # sub-segment and category would sit under a life segment they never
+        # belonged to, and the backfill's ambiguity report, which used to name
+        # both candidates, would come back clean. A wrong link is worse than a
+        # missing one precisely because the missing one is visible.
+        descriptions_by_segment_name: dict = {}
+        for legacy in legacy_rows:
+            key = ((legacy["segment_name"] or "").strip() or "Uncategorized").lower()
+            if legacy["description_id"]:
+                descriptions_by_segment_name.setdefault(key, set()).add(
+                    legacy["description_id"]
+                )
+
+        def _agreed_description_id(name: str):
+            """The one description every legacy row under this name meant."""
+            candidates = descriptions_by_segment_name.get(name.lower(), set())
+            return next(iter(candidates)) if len(candidates) == 1 else None
+
         segment_cache = {}
         subsegment_cache = {}
         category_cache = {}
@@ -498,9 +522,15 @@ class VPSSchema:
                     #
                     # sd.id, NOT l.segment_id: the LEFT JOIN is what makes a
                     # dangling legacy id come out NULL instead of being written
-                    # verbatim as a reference to a row that is not there. The
-                    # 'Uncategorized' fallback is the same case seen from the
-                    # name side, so it needs no separate branch.
+                    # verbatim as a reference to a row that is not there --
+                    # which raises FOREIGN KEY constraint failed here, inside
+                    # schema init. The 'Uncategorized' fallback is the same
+                    # case seen from the name side, so it needs no branch.
+                    #
+                    # Through _agreed_description_id, so a name two legacy rows
+                    # disagree about is left NULL and reported rather than
+                    # silently resolved in favour of whichever row sorted
+                    # first.
                     conn.execute(
                         """
                         INSERT INTO vision_segments
@@ -508,7 +538,8 @@ class VPSSchema:
                              created_at, updated_at)
                         VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                        (segment_id, segment_name, "", row["description_id"],
+                        (segment_id, segment_name, "",
+                         _agreed_description_id(segment_name),
                          created_at, updated_at),
                     )
                 segment_cache[segment_key] = segment_id
