@@ -1,36 +1,15 @@
-# Multi-Agent Workflow (GetMoreDone)
+# Working agreements (GetMoreDone)
 
-This repository supports a 3-agent workflow:
-- `Code Agent`: ships code + tests.
-- `Docs Agent`: updates requirements/user guide/changelog and doc index.
-- `GitHub Agent`: manages PR lifecycle, labels, release notes, and merge gates.
-
-## Ownership boundaries
-
-`Code Agent` may edit:
-- `src/**`
-- `tests/**`
-- `tools/**`
-- small supporting docs under `docs/` only when needed for technical accuracy
-
-`Docs Agent` may edit:
-- `README.md`
-- `requirements.txt` (dependency narrative updates and pin alignment)
-- `GetMoreDone_MasterSpec_SQLite_v1.md`
-- `docs/USER_GUIDE.md`
-- `docs/DOCUMENTATION_INDEX.md`
-- `docs/ROADMAP.md`
-- `docs/*.md`
-- `CHANGELOG.md`
-
-`GitHub Agent` may edit:
-- `.github/**`
-- release/changelog metadata files
-- no feature code unless explicitly requested
+> **The three-agent branch workflow this file used to describe is retired.**
+> `codex/agent-docs` and `codex/agent-github` were never created as branches,
+> and `codex/agent-code` was last touched 2026-04-03, 131 commits behind
+> `main`. Work happens on `main`, or on a feature branch merged into it. The
+> requirements below are retained because they were never about the agent
+> split — they are about not losing context between sessions.
 
 ## Required handoff artifact
 
-Each agent must write a handoff note in:
+Every batch of work writes a handoff note at:
 - `docs/changes/<yyyy-mm-dd>-<topic>.md`
 
 Use template:
@@ -40,34 +19,30 @@ Minimum fields:
 - Summary of change
 - Files changed
 - Test/verification status
-- Follow-ups for next agent
+- Follow-ups for the next session
 
-## Branch/worktree model
+## Docs sync
 
-Use one branch/worktree per role:
-- `codex/agent-code`
-- `codex/agent-docs`
-- `codex/agent-github`
-
-Bootstrap with:
-- `tools/agents/setup_worktrees.sh`
+If code behaviour, UI text, CLI flags, or dependencies changed, docs and the
+requirements files must be updated in the same change. Enforced by
+`.github/workflows/agent-docs-gate.yml`, which treats both
+`requirements.txt` and `requirements-dev.txt` as dependency files.
 
 ## Merge gates
 
-PRs must satisfy:
-- tests pass (project test workflow)
+- tests pass (`.github/workflows/tests.yml`)
 - docs sync gate passes (`.github/workflows/agent-docs-gate.yml`)
 - UI regression coverage satisfied (per `docs/AGENT_UI_REGRESSION_POLICY.md`)
-- PR checklist completed
 
 ## UI Regression Guardrail
 
-Follow `docs/AGENT_UI_REGRESSION_POLICY.md` for any UI change. Existing user-visible controls are part of the contract and must not be removed, hidden, renamed, or relocated without explicit approval and regression coverage. Before modifying any existing UI, identify the current user-visible actions and preserve them.
+Follow `docs/AGENT_UI_REGRESSION_POLICY.md` for any UI change. Existing
+user-visible controls are part of the contract and must not be removed, hidden,
+renamed, or relocated without explicit approval and regression coverage. Before
+modifying any existing UI, identify the current user-visible actions and
+preserve them.
 
-## Rule of thumb
-
-If code behavior, UI text, CLI flags, or dependencies changed, docs and requirements must be updated in the same PR (or linked follow-up PR owned by Docs Agent).
-
+---
 
 # GetMoreDone — UI Theme System (CustomTkinter)
 

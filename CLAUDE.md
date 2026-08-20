@@ -14,9 +14,16 @@ python run.py
 
 # Tests
 pytest                                          # All tests
+pytest -m "not meta"                            # App behaviour only, no repo/infra tests
+                                                #   (PENDING — the `meta` marker lands with the
+                                                #    test-suite remediation batch)
 pytest -v                                       # Verbose
 pytest tests/test_vps_integration.py -v        # Single file
 pytest --cov=src/getmoredone                   # With coverage
+
+# Three tests build a real on-screen window and take keyboard focus.
+# Skip them while working on the machine. CI never sets this.
+GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest
 
 # Create demo data
 python tools/create_demo_data.py
@@ -63,21 +70,63 @@ CustomTkinter JSON themes in `/themes/`. Loaded at startup via `AppSettings` bef
 - Only one "primary" color for main action emphasis; success/warning/danger colors are for status only.
 - To add a semantic color, centralize it in `theme.py` — do not scatter one-off constants across screen files.
 
-## Multi-agent workflow
+## Working agreements
 
-Three agents operate on separate branches/worktrees:
+Work happens on `main`, or on a feature branch merged into it. There are no
+per-role branches: the three-agent workflow this section used to describe is
+retired — `codex/agent-docs` and `codex/agent-github` never existed as branches,
+and `codex/agent-code` was last touched 2026-04-03, 131 commits behind `main`.
+See `AGENTS.md` for the full agreements.
 
-| Agent | Branch | Owns |
-|---|---|---|
-| Code Agent | `codex/agent-code` | `src/`, `tests/`, `tools/` |
-| Docs Agent | `codex/agent-docs` | `README.md`, `docs/`, `CHANGELOG.md`, `requirements.txt` |
-| GitHub Agent | `codex/agent-github` | `.github/` |
+**After every batch of work**, write a handoff note at
+`docs/changes/<yyyy-mm-dd>-<topic>.md` using template
+`.agents/templates/handoff-note.md`. Required fields: summary, files changed,
+test/verification status, follow-ups.
 
-**After every task**, write a handoff note at `docs/changes/<yyyy-mm-dd>-<topic>.md` using template `.agents/templates/handoff-note.md`. Required fields: summary, files changed, test/verification status, follow-ups.
+If code behavior, UI text, or dependencies changed → docs and the requirements
+files must be updated in the same change. Enforced by the docs sync gate
+(`.github/workflows/agent-docs-gate.yml`), which treats both `requirements.txt`
+and `requirements-dev.txt` as dependency files.
 
-PRs must pass: tests + docs sync gate (`.github/workflows/agent-docs-gate.yml`).
+## Review sweeps
 
-If code behavior, UI text, or dependencies changed → docs and `requirements.txt` must be updated in the same PR (or a linked Docs Agent PR).
+A sweep is a review pass over a batch before it is pushed. The rules exist
+because passes are not free: every fix is new unreviewed surface, and a fix
+pass has been measured introducing defects at roughly the rate it removes them.
+
+- **Maximum 2 sweep passes per batch.** A third only if the previous pass
+  produced a **high-severity** finding.
+- **Stop when a pass yields no finding of medium or higher severity.**
+- **Every finding gets a severity before any fix is written.** Below-medium
+  findings go to `BACKLOG.md`; they are not fixed in-loop.
+- **Every in-loop fix is itself in scope for the next pass.** That is why the
+  cap exists — the fix commit is the least-reviewed code in any change.
+
+**One cold pass is worth more than three warm ones.** A warm pass is run by the
+context that wrote the code and inherits its blind spots; a cold pass gets the
+diff and the range and none of the narrative. Where a batch justifies a second
+pass at all, make it a cold one, and prefer covering a *different failure
+family* (correctness, UI contract, test quality) over repeating the same sweep.
+Evidence in `~/.claude/standards/learnings.md` P26.
+
+## Test rules
+
+- **Every test must be able to fail.** No returning bools, no assert-free
+  bodies. Prove it by mutation — delete or invert the line the test names, run
+  it, confirm red, restore — and mutate with the **verbatim** original, never a
+  simplified reconstruction.
+- **Never modify a test to make it pass** without first stating which applies:
+  (a) the code is wrong, (b) the behaviour changed intentionally, (c) the test
+  was over-specified or vacuous.
+- **Do not assert by grepping source text** unless no behavioural check is
+  practical. Where a source-text guard is unavoidable, parse it (walk the AST,
+  or anchor the match to a whole line) and assert **exact counts**, never
+  `> N` floors — a floor hides the narrowing it was written to catch.
+- **Every `DatabaseManager` in a test takes an explicit `tmp_path` database.**
+  The default path resolves to the user's real application database, and
+  `__init__` runs migrations against it.
+- **Commit test changes separately from `src/` changes**, so the ratio stays
+  visible in `git log --stat`.
 
 ## Global standards
 

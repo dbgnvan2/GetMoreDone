@@ -4,6 +4,18 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 
 ## Deferred — found by review, deliberately not fixed
 
+### The retired multi-agent workflow is still described in four places (2026-08-20)
+
+`CLAUDE.md` and `AGENTS.md` were corrected. These still describe branches that
+do not exist, and were left alone because rewriting them was out of scope:
+
+- `docs/MULTI_AGENT_WORKFLOW.md`
+- `.agents/prompts/code-agent.md`, `docs-agent.md`, `github-agent.md`
+- `tools/agents/setup_worktrees.sh` — creates `codex/agent-{code,docs,github}`
+
+`tools/agents/check_docs_sync.py` is live and correct; it is not part of this.
+
+
 ### Batch 3 final gate: test-quality findings (2026-08-20)
 
 The fifth review round found **no defect reaching a user** — control flow was
