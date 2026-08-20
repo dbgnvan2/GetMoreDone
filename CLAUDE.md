@@ -24,6 +24,10 @@ pytest --cov=src/getmoredone                   # With coverage
 # Skip them while working on the machine. CI never sets this.
 GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest
 
+# A full run is ~55s and spawns subprocesses; on a machine someone is using it
+# is felt. Prefer the files a change touches, and let CI run the whole suite.
+nice -n 19 pytest tests/test_<touched>.py -q
+
 # Create demo data
 python tools/create_demo_data.py
 ```
