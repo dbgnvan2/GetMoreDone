@@ -45,8 +45,8 @@ rows carry both, so the prefix was a third choice that was never reached.
 
 ## What the sweeps added
 
-**Eleven passes: 7, 10, 6, 6, 3, 2, then 11 across two independent reviews,
-then 8, 9 and 2.** Every warm pass found a defect inside its predecessor's fix.
+**Twelve passes: 7, 10, 6, 6, 3, 2, then 11 across two independent reviews,
+then 8, 9, 2, 4.** Every warm pass found a defect inside its predecessor's fix.
 
 The number that matters is the seventh. After six warm passes had the findings
 down to two cosmetic ones, a **cold** review — given the diff and no knowledge
@@ -147,7 +147,7 @@ in a worktree at that commit.
 ## Verification
 
 - Command: `venv/bin/python -m pytest -q`
-- Result: PASS — 1056 passed, 2 skipped, exit code 0
+- Result: PASS — 1061 passed, 2 skipped, exit code 0
 - `PytestReturnNotNoneWarning`: 0. No `GUARD:` line — nothing touched the real
   database or settings file.
 - **Verified in the running app, not only in tests.** Both changed screens were
@@ -194,11 +194,16 @@ it.
   have touched `project_link_notice.py`. It is now covered by an exhaustive
   branch walk rather than by examples, but it is still where I would look
   first.
-- **One decision is still open: the "Unlink" button.** It removes an item's
-  project link and leaves its Annual Plan Element set, while "Clear Project"
-  and dragging onto No Project null it — so the item goes on showing the
-  segment and category of a project it is not on. Recorded in `BACKLOG.md`;
-  it needs a product call, not a fix chosen by me.
+- **Two guards were added late because nothing was checking a whole class.**
+  `tests/test_traceability_refs.py` asserts every `Tests:` reference in `src/`
+  resolves — CLAUDE.md makes them load-bearing for review and nothing verified
+  them. It found six broken on its first run: one file that never existed, two
+  tests renamed out from under their reference, one moved to another file, and
+  a matcher blind spot. `tests/test_tk_offscreen.py` does the same for the
+  window guard.
+- **No decisions are left open.** Both that were — the "Unlink" inconsistency
+  and Annual Plan Element deletion — were taken by the user mid-review and are
+  implemented; see the section above.
 - **The Who filter is unified on two of the Scheduler's four branches, not
   all four.** The project and unlinked branches share one rule; the
   date-filter and default branches go through `get_all_items` /
