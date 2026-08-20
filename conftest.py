@@ -15,6 +15,7 @@ Putting both roots on the path once, here, removes that ordering dependency:
 pytest imports conftest.py before collecting anything.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -35,39 +36,132 @@ import logging
 import pytest
 
 
-def pytest_sessionstart(session):
-    """Stamp the real settings file so an escape can be detected, not assumed.
+def _user_data_fingerprint():
+    """(mtime, size, sha256) for the real settings file and database.
 
-    The redirect fixture below patches one class object. That is exactly the
-    kind of guard that can be defeated without anyone noticing — the suite
-    imports `getmoredone.*` and `src.getmoredone.*` in different files, which
+    Content as well as mtime, because the app rewriting the same values on a
+    window move is not the same event as a test corrupting the file, and the
+    two deserve different words (P1: a transient condition must not be reported
+    as a terminal one).
+
+    Built without ``paths.default_settings_path()``, which calls
+    ``app_data_dir_path()`` and *creates* the directory — a read-only guard
+    should not bring the user's data directory into existence on a machine
+    where the app has never run.
+    """
+    import hashlib
+
+    from platformdirs import user_data_dir
+
+    from src.getmoredone.paths import APP_AUTHOR, APP_NAME
+
+    # Test-only seam: the guard's own test points a nested pytest run at a fake
+    # data directory, so exercising the guard does not require touching the real
+    # files it exists to protect. This lives in conftest, not in the app.
+    override = os.environ.get("GETMOREDONE_TEST_GUARD_DIR")
+    if override:
+        base = Path(override)
+    else:
+        # user_data_dir() computes the path; app_data_dir_path() would also
+        # create it, and a read-only guard must not.
+        base = Path(user_data_dir(APP_NAME, APP_AUTHOR)).expanduser().resolve()
+
+    fingerprint = {}
+    for key, name in (("settings", "settings.json"), ("database", "getmoredone.db")):
+        target = base / name
+        if not target.exists():
+            fingerprint[key] = None
+            continue
+        stat = target.stat()
+        digest = hashlib.sha256(target.read_bytes()).hexdigest() if key == "settings" else None
+        fingerprint[key] = (stat.st_mtime_ns, stat.st_size, digest, str(target))
+    return fingerprint
+
+
+def pytest_sessionstart(session):
+    """Stamp the user's real data files so an escape is detected, not assumed.
+
+    The redirect fixture below patches class objects. That is exactly the kind
+    of guard that can be defeated without anyone noticing — the suite once
+    imported `getmoredone.*` and `src.getmoredone.*` in different files, which
     Python loads as two distinct modules with two distinct classes, so patching
     one left the other writing the user's real file while a test asserting "the
     redirect is in force" passed against the patched twin.
 
-    This checks the artifact instead of the mechanism (P6): if the real file's
-    mtime moves during a run, something escaped, whatever the reason.
+    This checks the artifacts instead of the mechanism (P6). It also points
+    GETMOREDONE_DB at a temporary file: an environment variable has one
+    identity, so it cannot be defeated the way a patched class was.
     """
-    from src.getmoredone.paths import default_settings_path
+    import tempfile
 
-    real = default_settings_path()
-    session.config._real_settings_mtime = (
-        real.stat().st_mtime_ns if real.exists() else None)
+    session.config._user_data_before = _user_data_fingerprint()
+
+    # DatabaseManager() with no path resolves to the real database and runs
+    # migrations on it. paths.resolve_db_path honours this variable first.
+    if not os.environ.get("GETMOREDONE_DB"):
+        handle = tempfile.mkdtemp(prefix="gmd-test-db-")
+        os.environ["GETMOREDONE_DB"] = str(Path(handle) / "test.db")
+        session.config._gmd_db_env_set = True
 
 
+@pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session, exitstatus):
-    from src.getmoredone.paths import default_settings_path
+    """Report an escape without destroying the test report.
 
-    before = getattr(session.config, "_real_settings_mtime", None)
-    real = default_settings_path()
-    after = real.stat().st_mtime_ns if real.exists() else None
-    if before != after:
-        raise pytest.UsageError(
-            f"the test suite wrote the user's real settings file: {real}\n"
-            "Something bypassed the _isolate_user_settings fixture — most "
-            "likely a test importing `getmoredone.app_settings` instead of "
-            "`src.getmoredone.app_settings`, which is a different class object."
+    Raising here aborts the hook chain before the terminal reporter writes its
+    summary: the run goes red, but with no FAILURES section and no counts —
+    only this message, which may not even be the real problem. So it writes a
+    line and sets the exit status instead (P24: the human must be shown the
+    real cause, not a substituted one).
+    """
+    if getattr(session.config, "_gmd_db_env_set", False):
+        os.environ.pop("GETMOREDONE_DB", None)
+
+    before = getattr(session.config, "_user_data_before", None)
+    if before is None:
+        return
+    after = _user_data_fingerprint()
+
+    touched = [key for key in before if before[key] != after[key]]
+    if not touched:
+        return
+
+    lines = []
+    for key in touched:
+        old, new = before[key], after[key]
+        path = (new or old)[3] if (new or old) else key
+        content_changed = (
+            old is None or new is None
+            or old[1] != new[1] or (old[2] is not None and old[2] != new[2])
         )
+        lines.append(
+            f"GUARD: the user's real {key} file changed during this run: {path}"
+        )
+        lines.append(
+            "  Its CONTENT changed — a test wrote it, or it was edited."
+            if content_changed else
+            "  Only its timestamp moved — most likely the GetMoreDone app is "
+            "running and saved on a window move or column drag, which is "
+            "harmless. Re-run with the app closed to be sure."
+        )
+    lines.append(
+        "  If a test did it: something bypassed the isolation in conftest.py."
+    )
+
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        for line in lines:
+            reporter.write_line(line, red=True)
+    else:
+        print("\n".join(lines))
+
+    if any(
+        before[key] is None or after[key] is None
+        or before[key][1] != after[key][1]
+        or (before[key][2] is not None and before[key][2] != after[key][2])
+        for key in touched
+    ):
+        session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -108,6 +202,11 @@ def _isolate_user_settings(tmp_path_factory):
         for cls, original in originals:
             if original is not None:
                 cls.get_settings_path = original
+            else:
+                # Inherited rather than defined here: removing the override
+                # restores the inherited one. Silently skipping would leave the
+                # redirect installed on that class for the rest of the process.
+                delattr(cls, "get_settings_path")
 
 
 @pytest.fixture(autouse=True, scope="session")

@@ -248,3 +248,94 @@ def test_bc3_delete_segment_returns_a_mapping_not_a_scalar(vps):
         f"delete_segment returned {type(counts).__name__}, and the Settings "
         f"screen calls .items() and sum(.values()) on it")
     assert all(isinstance(value, int) for value in counts.values())
+
+
+# ------------------------------------- deletion guard: every table, not one
+
+
+def _full_vsp_chain(vps, segment_id, year=2026):
+    """Build one row in each of the seven tables delete_segment counts.
+
+    Entirely through the manager's public API — this is what ordinary use
+    produces, which is the point: an earlier note in this repo claimed these
+    rows "cannot be exercised" because every table has a NOT NULL foreign key
+    to its parent. That confused *orphan* with *linked*. delete_segment counts
+    `WHERE segment_description_id = ?`, and a normal chain sets that column on
+    every row.
+    """
+    tl = vps.create_tl_vision(
+        segment_description_id=segment_id, start_year=year - 1,
+        end_year=year + 4, title="TL")
+    annual_vision = vps.create_annual_vision(
+        tl_vision_id=tl, segment_description_id=segment_id, year=year, title="AV")
+    plan = vps.create_annual_plan(
+        annual_vision_id=annual_vision, segment_description_id=segment_id,
+        year=year, theme="Theme")
+    initiative = vps.create_annual_initiative(
+        annual_plan_id=plan, segment_description_id=segment_id, year=year,
+        title="AI", auto_create_chain=False)
+    quarter = vps.create_quarter_initiative(
+        segment_description_id=segment_id, quarter=1, year=year, title="QI",
+        annual_initiative_id=initiative, annual_plan_id=plan,
+        auto_create_chain=False)
+    tactic = vps.create_month_tactic(
+        quarter_initiative_id=quarter, segment_description_id=segment_id,
+        month=1, year=year, priority_focus="Focus", auto_create_weeks=False)
+    vps.create_week_action(
+        month_tactic_id=tactic, segment_description_id=segment_id,
+        week_start_date=f"{year}-01-05", week_end_date=f"{year}-01-11",
+        title="WA")
+    return {"annual_plan_id": plan, "quarter_initiative_id": quarter,
+            "month_tactic_id": tactic}
+
+
+ALL_VSP_LABELS = [
+    "TL Visions", "Annual Visions", "Annual Plans", "Annual Initiatives",
+    "Quarter Initiatives", "Month Tactics", "Week Actions",
+]
+
+
+def test_bc3_delete_segment_counts_every_vsp_table(vps):
+    """The docstring says it checks ALL VSP tables. Check all of them."""
+    segment_id = vps.create_segment("Full chain", "desc", "#123456", 90)
+    _full_vsp_chain(vps, segment_id)
+
+    deleted, counts = vps.delete_segment(segment_id)
+
+    assert deleted is False
+    for label in ALL_VSP_LABELS:
+        assert counts.get(label) == 1, (
+            f"{label} was not counted — delete_segment does not check every "
+            f"table after all: {counts}")
+
+
+@pytest.mark.parametrize("label,table", [
+    ("Annual Plans", "annual_plans"),
+    ("Annual Initiatives", "annual_initiatives"),
+    ("Quarter Initiatives", "quarter_initiatives"),
+    ("Month Tactics", "month_tactics"),
+    ("Week Actions", "week_actions"),
+])
+def test_bc3_a_single_non_vision_table_blocks_deletion_on_its_own(vps, label, table):
+    """Each table must block by itself, not only as part of a full chain.
+
+    The parents hang off a *second* segment, so the segment under test is
+    referenced by exactly one row in exactly one table — which is what proves
+    the check is per-table rather than a proxy for "has a TL Vision".
+    """
+    parents = vps.create_segment("Parents", "desc", "#222222", 89)
+    target = vps.create_segment("Target", "desc", "#333333", 88)
+    ids = _full_vsp_chain(vps, parents)
+
+    vps.db.conn.execute(
+        f"UPDATE {table} SET segment_description_id = ? WHERE id = ("
+        f"  SELECT id FROM {table} WHERE segment_description_id = ? LIMIT 1)",
+        (target, parents),
+    )
+    vps.db.conn.commit()
+
+    deleted, counts = vps.delete_segment(target)
+
+    assert deleted is False, f"a segment referenced only by {table} was deleted"
+    assert counts == {label: 1}, (
+        f"expected exactly {label}, got {counts} — the check is not per-table")

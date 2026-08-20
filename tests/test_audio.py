@@ -12,7 +12,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+import json
+import os
+
 import pytest
+from platformdirs import user_data_dir
+
+from src.getmoredone.paths import APP_AUTHOR, APP_NAME
 
 try:
     import pygame
@@ -37,10 +43,29 @@ def test_audio_configuration_allows_playback(tmp_path):
     if pygame is None:
         pytest.skip("pygame not installed; audio features unavailable")
 
-    settings = AppSettings.load()
-    music_folder = (settings.music_folder or "").strip()
+    # Read the *real* settings deliberately. The suite redirects
+    # AppSettings.get_settings_path to a temporary file (conftest.py), so
+    # `AppSettings.load()` here would always see an empty music folder and this
+    # test could never run on any machine — while its skip reason went on
+    # telling the reader to configure it in Settings, advice that could not
+    # have had any effect.
+    #
+    # GETMOREDONE_MUSIC_FOLDER takes precedence, so CI and a headless run can
+    # point this at a fixture without touching user settings at all.
+    music_folder = (os.environ.get("GETMOREDONE_MUSIC_FOLDER") or "").strip()
     if not music_folder:
-        pytest.skip("music folder not configured (Settings > Timer & Audio)")
+        real_settings = Path(user_data_dir(APP_NAME, APP_AUTHOR)) / "settings.json"
+        if real_settings.exists():
+            try:
+                music_folder = (
+                    json.loads(real_settings.read_text()).get("music_folder") or "").strip()
+            except (OSError, ValueError):
+                music_folder = ""
+    if not music_folder:
+        pytest.skip(
+            "no music folder: set GETMOREDONE_MUSIC_FOLDER, or configure one in "
+            "Settings > Timer & Audio (this test reads the real settings file on "
+            "purpose — the suite's settings are redirected to a temp file)")
 
     folder_path = Path(music_folder).expanduser()
     if not folder_path.exists():

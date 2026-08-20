@@ -64,11 +64,12 @@ pass's own fixes**, which is the whole argument for the second pass:
   sweep → fix → sweep → fix, and the second round of fixes is unreviewed code.
   Given the second pass found two defects in the first round, a third pass is
   not unreasonable; it was not run.
-- `delete_segment`'s multi-table check is verified for `tl_visions` only. The
-  other six tables cannot be exercised — every VSP table has a NOT NULL foreign
-  key to its parent, so an orphan cannot be inserted, and
-  `PRAGMA foreign_keys = OFF` is ignored while the connection holds a
-  transaction. Recorded in `BACKLOG.md` rather than hidden behind a passing test.
+- ~~`delete_segment`'s multi-table check cannot be exercised.~~ **That claim was
+  wrong** and a third sweep pass caught it. It confused *orphan* with *linked*:
+  the check counts `WHERE segment_description_id = ?`, and an ordinary chain
+  through the manager's API sets that column on all seven tables. Now covered by
+  a test for all seven plus a parametrised one proving each non-vision table
+  blocks on its own.
 - The dedupe can now merge and delete rows it previously left alone. Blast
   radius on the live database today is zero (25 week rows, all Monday-aligned,
   no same-week groups), and every merge is logged with survivor and deleted ids.

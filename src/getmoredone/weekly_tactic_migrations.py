@@ -280,16 +280,22 @@ def run_weekly_tactic_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
     # change (P6: a status believed without checking what it now describes).
     resolved = set(report["dedupe"].get("snapped_ids", []))
     resolved |= set(report["dedupe"].get("deleted_ids", []))
+    remaining_collisions = [
+        entry for entry in report["week_start_normalization"].get("collisions", [])
+        if entry["id"] not in resolved
+    ]
+    # Carry the whole report so a future reader of another key gets one, but
+    # recompute "collided" — spreading it unchanged next to a filtered list left
+    # the count and the list disagreeing by exactly the collisions the dedupe
+    # had just resolved.
     still_blocked = {
         **report["week_start_normalization"],
-        "collisions": [
-            entry for entry in report["week_start_normalization"].get("collisions", [])
-            if entry["id"] not in resolved
-        ],
+        "collisions": remaining_collisions,
+        "collided": len(remaining_collisions),
     }
     report["collisions_resolved_by_dedupe"] = (
         len(report["week_start_normalization"].get("collisions", []))
-        - len(still_blocked["collisions"])
+        - len(remaining_collisions)
     )
     report["invariant_repair"] = repair_weekly_tactic_invariants(
         conn, normalization=still_blocked

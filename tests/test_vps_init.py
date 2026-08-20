@@ -8,7 +8,7 @@ Test script to verify VPS database initialization.
 # must come before the getmoredone imports either way.
 import sys
 from pathlib import Path as _Path
-sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
 
 import sys
 import os

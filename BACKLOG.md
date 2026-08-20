@@ -47,23 +47,40 @@ fixed; each is a decision, not an oversight.
   They have now drifted twice (the project link, then the APE ordering). Factor
   the new-item assembly out so they cannot drift a third time.
 
-### delete_segment's multi-table check is verified for one table only (2026-08-19)
+### delete_segment coverage — resolved, and the entry was wrong (2026-08-19)
 
-`VPSManager.delete_segment` counts seven VSP tables and its docstring says it
-"Checks ALL VSP tables to prevent silent data loss via cascade deletion". Only
-the `tl_visions` count is covered by a test. The other six cannot be exercised:
-every VSP table has a NOT NULL foreign key to its parent
-(`annual_plans.annual_vision_id`, `quarter_initiatives.annual_plan_id`,
-`month_tactics.quarter_initiative_id`, `week_actions.month_tactic_id`), so an
-orphan cannot be inserted, and deleting a parent cascades the children away
-before `delete_segment` ever counts them. `PRAGMA foreign_keys = OFF` is ignored
-while the connection holds a transaction open, so the usual trick does not work
-either.
+This was recorded as "cannot be exercised: every VSP table has a NOT NULL
+foreign key to its parent, so an orphan cannot be inserted". That reasoning
+confused *orphan* with *linked*. `delete_segment` counts
+`WHERE segment_description_id = ?`, and an ordinary chain built through the
+manager's own API sets that column on all seven tables — no orphan required.
 
-So the per-table counting is defence-in-depth against legacy rows the current
-schema can no longer produce. Not a defect; an unverified claim. Either close it
-with a fixture that writes rows through a second raw connection to a file-backed
-database, or soften the docstring to say what is actually guaranteed.
+Now covered by `tests/test_vps_segments.py::test_bc3_delete_segment_counts_every_vsp_table`
+(all seven at once) and a parametrised companion that hangs the parents off a
+second segment so each non-vision table blocks deletion on its own. Kept here as
+a record of the wrong call, not as outstanding work.
+
+### An unreadable week start disables WT-INV5 database-wide, with only a log line (2026-08-19)
+
+If two week items on one Annual Plan Element share a `start_date` that is not a
+date, they are duplicates as far as the unique index is concerned but belong to
+no week. The dedupe reports them under `unmergeable` and deliberately does not
+merge them — merging would be irreversible and `''` means "no start date", not
+"the same week". The consequence is that `create_weekly_tactic_unique_index`
+raises, is caught, and the index is **never created**, so WT-INV5 is unenforced
+for *every* APE and week in the database from then on, not just for the bad rows.
+
+`unique_index_enforced` has no consumer outside the migration and its tests, and
+`unmergeable_groups` reaches only `weekly_tactic_debug.log`. There is no in-app
+way to find the offending ids or clear the state.
+
+Mitigating: `normalize_week_item_starts` falls back to `due_date`, so the
+empty-start case is rescued whenever the due date parses; the genuinely stuck
+case is a non-empty unparseable string. Not reachable on the live database today
+(25 week rows, all Monday-aligned).
+
+Wanted: a startup banner or a Settings diagnostic naming the rows, rather than a
+log line nobody reads. Needs a UI decision, which is why it is here.
 
 ### Other known items
 
