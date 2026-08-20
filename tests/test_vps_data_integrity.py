@@ -218,6 +218,23 @@ def test_deletion_protection_completeness():
     # BC3: returning a value from a test makes pytest ignore the verdict.
 
 
+# Tables that carry segment_description_id but are not CHILDREN of a segment,
+# so delete_segment does not count them as blocking:
+#
+#   segment_descriptions  the segment itself.
+#   vision_segments       the same concept in a second table (RN-D4). One
+#                         shadow row exists per segment, created automatically
+#                         by sync_vision_segments_with_settings — counting it
+#                         would make every segment report 1 blocking record and
+#                         become permanently undeletable.
+#
+# annual_plan_elements and annual_vision_elements gained the column in RN-M1
+# and are NOT listed here: whether an APE should block a segment delete is a
+# real open question, recorded in BACKLOG.md. This fixture creates none, so it
+# does not arise; if one ever does, this assertion is what will say so.
+_NOT_CHILDREN_OF_A_SEGMENT = {"segment_descriptions", "vision_segments"}
+
+
 def test_comprehensive_count():
     """Test what a comprehensive count should look like."""
     print("\n" + "=" * 60)
@@ -294,7 +311,7 @@ def test_comprehensive_count():
             col[1] == "segment_description_id"
             for col in manager.db.conn.execute(f"PRAGMA table_info({row[0]})")
         )
-        and row[0] != "segment_descriptions"
+        and row[0] not in _NOT_CHILDREN_OF_A_SEGMENT
     )
     assert len(tables) >= 6, (
         f"only {len(tables)} tables reference segment_description_id: {tables}"

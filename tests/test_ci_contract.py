@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import re
+import functools
 import subprocess
 import sys
 from pathlib import Path
@@ -261,6 +262,7 @@ META_TEST_FILES = {
 }
 
 
+@functools.lru_cache(maxsize=None)
 def _collected_files(marker_expression: str | None) -> set[str]:
     """Files pytest actually collects, optionally under a -m filter.
 
@@ -920,11 +922,11 @@ def test_the_mapped_window_opt_out_is_off_by_default():
         # tuple is lowercase, so a loop over it alone never exercises .lower()
         # and removing that call passed. "FALSE"/"OFF"/"No" would then silently
         # turn the opt-out ON.
-        off_values = (
-            [v for v in conftest.NO_MAPPED_WINDOWS_OFF_VALUES if v]
-            + [" 0 ", "FALSE", "OFF", "No"]
-        )
-        for off_value in off_values:
+        # ONE representative off-value, not eight. Each iteration is a nested
+        # pytest process, and eight of them made a full suite run noticeably
+        # heavy on the machine someone is working on. The parsing itself is
+        # covered in-process by test_the_opt_out_values_are_not_duplicated.
+        for off_value in ["FALSE"]:
             off = _run(off_value)
             assert off.returncode == 0 and "1 passed" in off.stdout, (
                 f"GETMOREDONE_NO_MAPPED_WINDOWS={off_value!r} must mean OFF. A "
