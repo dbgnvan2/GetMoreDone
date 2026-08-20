@@ -53,10 +53,17 @@ def resource_root() -> Path:
     return project_root()
 
 
-def app_data_dir_path() -> Path:
-    """Directory for user-writable app data (DB, settings, exports, etc.)."""
+def app_data_dir_path(create: bool = True) -> Path:
+    """Directory for user-writable app data (DB, settings, exports, etc.).
+
+    ``create=False`` computes the path without bringing it into existence, for
+    callers that are only *deciding* where something would live. Creating a
+    directory is a side effect, and a caller that is merely answering "does
+    this file exist?" must not have one.
+    """
     p = Path(user_data_dir(APP_NAME, APP_AUTHOR)).expanduser().resolve()
-    p.mkdir(parents=True, exist_ok=True)
+    if create:
+        p.mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -158,3 +165,30 @@ def legacy_dot_dir() -> Path:
     Kept for backward compatibility.
     """
     return Path.home() / ".getmoredone"
+
+
+def google_auth_dir(create: bool = False) -> Path:
+    """Directory holding the Google OAuth ``credentials.json`` and token.
+
+    Purpose: give the three default-path sites in ``google_calendar`` one rule,
+             so a check and the constructor can never look in different places.
+    Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-3
+    Tests:   tests/test_google_calendar_paths.py::test_bi3_auth_dir_prefers_the_legacy_directory_when_it_exists
+
+    ``~/.getmoredone`` wins whenever it already exists. That is where README.md
+    and INSTALL.md tell people to put ``credentials.json``, it is what
+    ``tools/import_gmd_from_gmail.py`` reads, and an existing install already
+    has a token there — moving the default would silently log those users out.
+    A machine with no such directory uses the app data directory instead, like
+    every other user-writable file.
+
+    Defaults to ``create=False``: three of the four callers only need to know
+    *where* to look. Only the token write, which is about to put a file there,
+    asks for the directory to exist.
+    """
+    target = legacy_dot_dir()
+    if not target.is_dir():
+        target = app_data_dir_path(create=False)
+    if create:
+        target.mkdir(parents=True, exist_ok=True)
+    return target

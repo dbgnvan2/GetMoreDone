@@ -6,7 +6,8 @@ import os
 import pickle
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-from pathlib import Path
+
+from . import paths
 
 try:
     from google.auth.transport.requests import Request
@@ -43,10 +44,13 @@ class GoogleCalendarManager:
                 "google-auth-httplib2 google-api-python-client"
             )
 
-        # Default paths
-        self.data_dir = Path.home() / ".getmoredone"
-        self.data_dir.mkdir(exist_ok=True)
-
+        # Read the arguments before touching the filesystem. This used to
+        # create the data directory first and consult them afterwards, so
+        # constructing the manager with two explicit paths still made a folder
+        # in the user's home that nothing then used (P13 — a step nested under
+        # the wrong scope). The directory is created where it is written to,
+        # not here.
+        self.data_dir = paths.google_auth_dir()
         self.credentials_file = credentials_file or str(self.data_dir / "credentials.json")
         self.token_file = token_file or str(self.data_dir / "token.pickle")
 
@@ -159,18 +163,41 @@ class GoogleCalendarManager:
                         )
 
             # Save the credentials for next run
-            try:
-                with open(self.token_file, 'wb') as token:
-                    pickle.dump(creds, token)
-                # Set secure permissions
-                os.chmod(self.token_file, 0o600)
-                print(f"✅ Token saved to: {self.token_file}\n")
-            except Exception as e:
-                print(f"⚠️  Warning: Failed to save token: {e}")
-                print("You may need to re-authenticate next time.\n")
+            self._save_token(creds)
 
         self.service = build('calendar', 'v3', credentials=creds)
         print("✅ Google Calendar service initialized successfully!")
+
+    def _save_token(self, creds) -> bool:
+        """Write the OAuth token to ``self.token_file``.
+
+        Purpose: create the directory at the point a file is written to it.
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-3
+        Tests:   tests/test_google_calendar_paths.py::test_bi3_saving_a_token_creates_its_parent_directory
+
+        ``__init__`` used to create the default data directory whether or not
+        it was going to be used. Creating it here instead also covers an
+        explicit ``token_file`` in a directory that does not exist yet: the
+        write is deliberately warn-only, so that case degraded to
+        re-authenticating on every run behind a printed warning.
+
+        Returns True when the token reached disk, so a caller can tell a saved
+        token from a warned-about one rather than inferring it from stdout.
+        """
+        try:
+            parent = os.path.dirname(os.path.abspath(self.token_file))
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(self.token_file, 'wb') as token:
+                pickle.dump(creds, token)
+            # Set secure permissions
+            os.chmod(self.token_file, 0o600)
+            print(f"✅ Token saved to: {self.token_file}\n")
+            return True
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to save token: {e}")
+            print("You may need to re-authenticate next time.\n")
+            return False
 
     def _get_local_timezone(self) -> str:
         """
@@ -319,8 +346,7 @@ class GoogleCalendarManager:
         if credentials_file:
             return os.path.exists(credentials_file)
 
-        default_path = Path.home() / ".getmoredone" / "credentials.json"
-        return default_path.exists()
+        return (paths.google_auth_dir() / "credentials.json").exists()
 
     @staticmethod
     def check_token_validity(token_file: Optional[str] = None) -> dict:
@@ -331,7 +357,7 @@ class GoogleCalendarManager:
             dict with keys: exists, valid, client_id, error
         """
         if not token_file:
-            token_file = str(Path.home() / ".getmoredone" / "token.pickle")
+            token_file = str(paths.google_auth_dir() / "token.pickle")
 
         result = {
             'exists': False,

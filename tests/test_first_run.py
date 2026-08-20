@@ -56,11 +56,13 @@ def test_rm5a_google_features_report_unavailable_without_credentials(tmp_path, m
     """Constructing the manager with no credentials must raise a *typed* error
     naming the missing file — not return a half-built object that fails later.
 
-    Path.home() is redirected because the constructor does
-    ``(Path.home() / ".getmoredone").mkdir()`` before it looks at the injected
-    paths — without this the test would create that folder in a real home
-    directory on every CI run.
+    The home and app data directories are redirected as a safety net. Since
+    BI3 the constructor creates neither — both arguments are given here, so it
+    never needs a default path — but a redirect is what makes "nothing was
+    created" a claim this test can honestly check on a developer machine that
+    has a real ``~/.getmoredone``.
     """
+    from src.getmoredone import paths as gmd_paths
     from src.getmoredone.google_calendar import GoogleCalendarManager
 
     if not GoogleCalendarManager.is_available():
@@ -68,15 +70,19 @@ def test_rm5a_google_features_report_unavailable_without_credentials(tmp_path, m
 
     fake_home = tmp_path / "home"
     fake_home.mkdir()
+    fake_app_data = tmp_path / "appdata"
     monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setattr(gmd_paths, "legacy_dot_dir", lambda: fake_home / ".getmoredone")
+    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda create=True: fake_app_data)
 
     missing = tmp_path / "credentials.json"
     with pytest.raises((FileNotFoundError, RuntimeError)) as excinfo:
         GoogleCalendarManager(credentials_file=str(missing),
                               token_file=str(tmp_path / "token.pickle"))
 
-    # The dot-dir must have landed in the fake home, nowhere else.
-    assert (fake_home / ".getmoredone").exists()
+    # Nothing was created anywhere: not the legacy dot-dir, not the app data dir.
+    assert list(fake_home.iterdir()) == []
+    assert not fake_app_data.exists()
 
     message = str(excinfo.value)
     assert "credentials" in message.lower(), (
@@ -277,10 +283,17 @@ def test_rm5c_tests_never_touch_the_real_user_data_dir(tmp_path):
 def test_rm5a_constructing_the_manager_does_not_touch_the_real_home(tmp_path, monkeypatch):
     """Assert the isolation this file's docstring claims.
 
-    ``GoogleCalendarManager.__init__`` calls ``(Path.home() / ".getmoredone").mkdir()``
-    before consulting its arguments, so a test that forgets to redirect
-    ``Path.home()`` silently creates that folder on whatever machine runs it.
+    ``GoogleCalendarManager.__init__`` used to call
+    ``(Path.home() / ".getmoredone").mkdir()`` *before* consulting its
+    arguments, so a test that forgot to redirect ``Path.home()`` silently
+    created that folder on whatever machine ran it. This asserted that folder
+    was the one and only thing created; BI3 made it create nothing at all.
+
+    The directory-resolution rules themselves live in
+    ``tests/test_google_calendar_paths.py``. This stays here because it is what
+    the file's isolation claim rests on.
     """
+    from src.getmoredone import paths as gmd_paths
     from src.getmoredone.google_calendar import GoogleCalendarManager
 
     if not GoogleCalendarManager.is_available():
@@ -288,13 +301,19 @@ def test_rm5a_constructing_the_manager_does_not_touch_the_real_home(tmp_path, mo
 
     fake_home = tmp_path / "home"
     fake_home.mkdir()
+    fake_app_data = tmp_path / "appdata"
     monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setattr(gmd_paths, "legacy_dot_dir", lambda: fake_home / ".getmoredone")
+    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda create=True: fake_app_data)
 
     with pytest.raises((FileNotFoundError, RuntimeError)):
         GoogleCalendarManager(credentials_file=str(tmp_path / "nope.json"),
                               token_file=str(tmp_path / "nope.pickle"))
 
     created = list(fake_home.iterdir())
-    assert [p.name for p in created] == [".getmoredone"], (
-        f"unexpected files created in home: {created}"
+    assert created == [], (
+        f"constructing with explicit paths created files in home: {created}"
+    )
+    assert not fake_app_data.exists(), (
+        "constructing with explicit paths created the app data directory"
     )
