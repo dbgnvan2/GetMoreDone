@@ -221,8 +221,11 @@ def test_bp5_the_scheduler_asks_for_a_count_not_a_list(db_manager):
             who_var=SimpleNamespace(get=lambda: "All"),
             selected_date_filter=None,
             selected_project_id="__none__",
+            segment_filter_var=SimpleNamespace(get=lambda: "All"),
+            subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
         )
         stub._item_matches_filters = lambda item: True
+        stub._load_unlinked_items = lambda who: DragScheduleScreen._load_unlinked_items(stub, who)
         items = DragScheduleScreen.load_items(stub)
     finally:
         db_mgr.get_unlinked_action_items = real_list
@@ -269,8 +272,11 @@ def test_bp5_the_cap_is_announced_in_the_log(db_manager, caplog):
         who_var=SimpleNamespace(get=lambda: "All"),
         selected_date_filter=None,
         selected_project_id="__none__",
+        segment_filter_var=SimpleNamespace(get=lambda: "All"),
+        subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
     )
     stub._item_matches_filters = lambda item: True
+    stub._load_unlinked_items = lambda who: DragScheduleScreen._load_unlinked_items(stub, who)
 
     with caplog.at_level(logging.WARNING, logger="src.getmoredone.screens.drag_schedule"):
         DragScheduleScreen.load_items(stub)
@@ -280,3 +286,131 @@ def test_bp5_the_cap_is_announced_in_the_log(db_manager, caplog):
         f"the cap dropped {total - DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT} "
         f"items without a word; log said {messages}")
     assert any("500 of 525" in message for message in messages), messages
+
+
+# --------------------------------------------------- sweep findings
+
+
+def _unlinked_stub(db_mgr, who="All", segment="All"):
+    from types import SimpleNamespace
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    stub = SimpleNamespace(
+        db_manager=db_mgr,
+        days_var=SimpleNamespace(get=lambda: "7"),
+        who_var=SimpleNamespace(get=lambda: who),
+        selected_date_filter=None,
+        selected_project_id="__none__",
+        segment_filter_var=SimpleNamespace(get=lambda: segment),
+        subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
+    )
+    stub._item_matches_filters = lambda item: True
+    stub._load_unlinked_items = lambda w: DragScheduleScreen._load_unlinked_items(stub, w)
+    stub.load_items = lambda: DragScheduleScreen.load_items(stub)
+    return stub
+
+
+def test_f3_the_who_filter_runs_before_the_cap_not_after(db_manager):
+    """A capped list filtered in Python drops rows the filter would have kept.
+
+    Sweep F3. The cap takes the top 500 by priority; filtering that slice for
+    one person hides everyone that person owns from rank 501 down, while the
+    box goes on announcing a total for the *unfiltered* population.
+    """
+    db_mgr, _vps_mgr = db_manager
+    cap = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+
+    # Everyone else outranks Ana, so she is entirely below the cap. All four
+    # factors are set because create_action_item recomputes priority_score from
+    # them and zeroes it if any is missing — with every score equal the ORDER BY
+    # falls through to title, "Ana" sorts first and lands inside the cap, and
+    # the fixture proves nothing.
+    for i in range(cap + 20):
+        db_mgr.create_action_item(
+            ActionItem(who="Bob", title=f"Bob {i:04d}",
+                       importance=20, urgency=20, size=16, value=16),
+            apply_defaults=False)
+    for i in range(4):
+        db_mgr.create_action_item(
+            ActionItem(who="Ana", title=f"Ana {i}",
+                       importance=1, urgency=1, size=2, value=2),
+            apply_defaults=False)
+
+    # The fixture only bites if Ana really is below the cap.
+    top = db_mgr.get_unlinked_action_items(status_filter="open")
+    assert not any(item.who == "Ana" for item in top), (
+        "Ana is inside the top 500, so this test cannot detect the bug")
+
+    items = _unlinked_stub(db_mgr, who="Ana").load_items()
+
+    assert len(items) == 4, (
+        "Ana's items fell below the cap and were filtered out of a slice that "
+        "never contained them")
+    assert {item.who for item in items} == {"Ana"}
+
+
+def test_f3_the_announced_total_describes_the_same_population_as_the_list(db_manager):
+    """"showing N of M" has to be N and M of the *same* set."""
+    db_mgr, _vps_mgr = db_manager
+    for i in range(30):
+        db_mgr.create_action_item(
+            ActionItem(who="Bob", title=f"Bob {i}"), apply_defaults=False)
+    for i in range(4):
+        db_mgr.create_action_item(
+            ActionItem(who="Ana", title=f"Ana {i}"), apply_defaults=False)
+
+    stub = _unlinked_stub(db_mgr, who="Ana")
+    items = stub.load_items()
+
+    assert stub.unlinked_total == len(items) == 4, (
+        f"the box would announce {stub.unlinked_total} for a list of {len(items)}")
+
+
+def test_f3_a_segment_filtered_view_is_not_capped(db_manager):
+    """The lineage filters cannot be pushed into SQL, so the cap steps aside.
+
+    Otherwise a segment filter searches only the top 500 and reports nothing
+    about the rest.
+    """
+    db_mgr, _vps_mgr = db_manager
+    cap = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+    for i in range(cap + 15):
+        db_mgr.create_action_item(
+            ActionItem(who="Bob", title=f"Bob {i:04d}"), apply_defaults=False)
+
+    filtered = _unlinked_stub(db_mgr, segment="Personal")
+    assert len(filtered.load_items()) == cap + 15, (
+        "the segment filter only ever saw the top 500 rows")
+
+    # ...and with no lineage filter active the cap is still doing its job.
+    plain = _unlinked_stub(db_mgr)
+    assert len(plain.load_items()) == cap
+
+
+def test_f7_the_multi_link_count_and_list_agree(db_manager):
+    """The banner's number and the list that would explain it share a FROM."""
+    db_mgr, vps_mgr = db_manager
+    seg_name = vps_mgr.get_all_segments(active_only=False)[0]["name"]
+    ape_id = _seed_ape(vps_mgr, seg_name, "Sub 1", "Cat 1")
+    board_a = db_mgr.ensure_project_board_for_ape(ape_id)
+    ape_id2 = _seed_ape(vps_mgr, seg_name, "Sub 2", "Cat 2")
+    board_b = db_mgr.ensure_project_board_for_ape(ape_id2)
+
+    item_id = db_mgr.create_action_item(
+        ActionItem(who="Test", title="Two boards"), apply_defaults=False)
+    db_mgr.link_action_item_to_project_board(board_a, item_id)
+    db_mgr.link_action_item_to_project_board(board_b, item_id)
+
+    assert db_mgr.count_items_on_multiple_project_boards() == 1
+    assert len(db_mgr.get_items_on_multiple_project_boards()) == 1
+
+    # A link row whose item is gone must not be counted by one and missed by
+    # the other — the banner would name a number nothing could show.
+    db_mgr.db.conn.execute("PRAGMA foreign_keys = OFF")
+    try:
+        db_mgr.db.conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,))
+        db_mgr.db.conn.commit()
+        assert db_mgr.count_items_on_multiple_project_boards() == len(
+            db_mgr.get_items_on_multiple_project_boards()) == 0
+    finally:
+        db_mgr.db.conn.execute("PRAGMA foreign_keys = ON")

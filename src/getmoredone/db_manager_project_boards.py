@@ -240,14 +240,19 @@ class DBManagerProjectBoardsMixin:
         Spec:    docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl12
         Tests:   tests/test_item_editor_project_link.py::test_pl12_followup_inherits_project_link
 
-        Every link is copied, not just the first, so an item that the Projects
-        screen filed under several boards does not silently lose the rest.
-        Returns the number of links copied.
+        Exactly **one** link is copied — the source's first. Sweep F2: copying
+        every link meant a follow-up of a legacy multi-filed row was itself a
+        new multi-filed row, so the count BP2 reports could go *up* while the
+        notice beside it promised the number only ever falls. An Action Item
+        belongs to exactly one Project, and a copy is an Action Item.
+
+        Returns the number of links copied (0 or 1).
         """
         board_ids = self.get_project_board_ids_for_item(source_id)
         if not board_ids:
             return 0
 
+        board_ids = board_ids[:1]
         now = datetime.now().isoformat()
         with self.db.conn:
             for board_id in board_ids:
@@ -319,12 +324,18 @@ class DBManagerProjectBoardsMixin:
         A count query rather than ``len(...)`` of the full list, so the caller
         that only wants the number does not load every row (P9).
         """
+        # The same FROM as get_items_on_multiple_project_boards, deliberately:
+        # a count over project_board_items alone would include a row whose item
+        # no longer exists, so the banner could name a number the list cannot
+        # show (P19). Cascade delete makes that unreachable today; the two
+        # queries agreeing by construction is what keeps it that way.
         row = self.db.conn.execute("""
             SELECT COUNT(*) AS n FROM (
-                SELECT item_id
-                FROM project_board_items
-                GROUP BY item_id
-                HAVING COUNT(project_board_id) > 1
+                SELECT pbi.item_id
+                FROM action_items ai
+                JOIN project_board_items pbi ON pbi.item_id = ai.id
+                GROUP BY pbi.item_id
+                HAVING COUNT(pbi.project_board_id) > 1
             )
         """).fetchone()
         return int(row["n"]) if row else 0
@@ -344,6 +355,7 @@ class DBManagerProjectBoardsMixin:
         self,
         status_filter: str = "open",
         limit: Optional[int] = UNLINKED_ITEMS_DEFAULT_LIMIT,
+        who_filter: Optional[str] = None,
     ) -> List[ActionItem]:
         """Return action items that are NOT linked to any project board.
 
@@ -356,12 +368,15 @@ class DBManagerProjectBoardsMixin:
         ``limit=None`` restores the uncapped behaviour. What the cap dropped is
         not silent: :meth:`count_unlinked_action_items` returns the true total,
         and the Scheduler labels the box "showing N of M" (P9).
+
+        ``who_filter`` is here rather than left to the caller because a cap
+        applied before a filter drops rows the filter would have kept, and then
+        the "showing N of M" describes a different set than the one on screen
+        (sweep F3). The count takes the same argument for the same reason.
         """
         query = "SELECT ai.*" + self._UNLINKED_FROM
         params: List[object] = []
-        if status_filter:
-            query += " AND ai.status = ?"
-            params.append(status_filter)
+        query, params = self._apply_unlinked_filters(query, params, status_filter, who_filter)
 
         query += " ORDER BY ai.priority_score DESC, ai.title COLLATE NOCASE ASC"
         if limit is not None:
@@ -371,7 +386,29 @@ class DBManagerProjectBoardsMixin:
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._row_to_action_item(row) for row in rows]
 
-    def count_unlinked_action_items(self, status_filter: str = "open") -> int:
+    @staticmethod
+    def _apply_unlinked_filters(query, params, status_filter, who_filter):
+        """The WHERE clauses the list and the count must share.
+
+        Two queries with two hand-written filter blocks is exactly how a count
+        and a list come to disagree (P19), so there is one block.
+        """
+        if status_filter:
+            query += " AND ai.status = ?"
+            params.append(status_filter)
+        if who_filter:
+            # Matched the way the Scheduler matched it in Python: trimmed and
+            # case-insensitive, so pushing it into SQL does not change which
+            # rows come back.
+            query += " AND LOWER(TRIM(ai.who)) = ?"
+            params.append(who_filter.strip().lower())
+        return query, params
+
+    def count_unlinked_action_items(
+        self,
+        status_filter: str = "open",
+        who_filter: Optional[str] = None,
+    ) -> int:
         """How many action items are not linked to any project board.
 
         Purpose: BP5 — the Scheduler wanted the number, not the rows, and was
@@ -381,9 +418,7 @@ class DBManagerProjectBoardsMixin:
         """
         query = "SELECT COUNT(*) AS n" + self._UNLINKED_FROM
         params: List[object] = []
-        if status_filter:
-            query += " AND ai.status = ?"
-            params.append(status_filter)
+        query, params = self._apply_unlinked_filters(query, params, status_filter, who_filter)
         row = self.db.conn.execute(query, params).fetchone()
         return int(row["n"]) if row else 0
 

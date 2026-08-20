@@ -547,8 +547,14 @@ def test_pl12_2_followup_of_an_unfiled_item_stays_unfiled(tmp_path):
         vps.close()
 
 
-def test_pl12_3_multi_link_source_copies_every_link(tmp_path):
-    """All of them, not just the first (P2)."""
+def test_pl12_3_a_copy_of_a_multi_linked_item_lands_on_one_board(tmp_path):
+    """The copy gets one project, not the source's several (sweep F2).
+
+    This asserted the opposite until BP1 made filing exclusive everywhere. A
+    follow-up that copied every link was a *new* multi-filed row, so the count
+    BP2 reports could go up while the notice beside it said the number only
+    ever falls — a promise the code did not keep.
+    """
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
@@ -558,11 +564,14 @@ def test_pl12_3_multi_link_source_copies_every_link(tmp_path):
         item = make_daily_item(vps, "Task")
         manager.link_action_item_to_project_board(first.id, item.id)
         manager.link_action_item_to_project_board(second.id, item.id)
+        assert manager.count_items_on_multiple_project_boards() == 1
 
         new_id = manager.create_followup_item(item.id)
 
-        assert sorted(manager.get_project_board_ids_for_item(new_id)) == sorted(
-            [first.id, second.id])
+        assert manager.get_project_board_ids_for_item(new_id) == [first.id], (
+            "the copy inherited every link and is itself multi-filed")
+        assert manager.count_items_on_multiple_project_boards() == 1, (
+            "copying an item raised the number of items filed under several projects")
     finally:
         vps.close()
 

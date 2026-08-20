@@ -14,9 +14,8 @@ from ..color_contrast import pick_text_color
 from ..models import ActionItem, PriorityFactors, ProjectBoard, ProjectBoardStatus
 from ..paths import project_root
 from .project_link_notice import (
-    describe_bulk_relink,
+    confirm_exclusive_relink,
     describe_outstanding_multi_links,
-    describe_single_relink,
 )
 from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
@@ -398,37 +397,15 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
             self.on_linked()
         self.refresh_results()
 
-    def _items_losing_links(self, item_ids) -> list[str]:
-        """Which of these items are filed under a board other than this one."""
-        losing = []
-        for item_id in item_ids:
-            others = [
-                board_id
-                for board_id in self.db_manager.get_project_board_ids_for_item(item_id)
-                if board_id != self.board_id
-            ]
-            if others:
-                losing.append(item_id)
-        return losing
-
     def _confirm_relink(self, item_ids) -> bool:
         """Ask before an exclusive link unfiles items from other boards.
 
-        Returns True when nothing would be lost, so the ordinary case (an item
-        with no project yet) is not interrupted.
+        The Scheduler's drag-drop asks the same question through the same
+        helper — this used to be the only surface that asked, while the more
+        destructive one (drag onto "No Project" also clears the Annual Plan
+        Element) said nothing (P5).
         """
-        losing = self._items_losing_links(item_ids)
-        if not losing:
-            return True
-
-        board = self.db_manager.get_project_board(self.board_id)
-        title = board.title if board else None
-        if len(item_ids) == 1:
-            count = len(self.db_manager.get_project_board_ids_for_item(losing[0]))
-            question = describe_single_relink(count, title)
-        else:
-            question = describe_bulk_relink(len(losing), title)
-        return messagebox.askyesno("Change Project", question, parent=self)
+        return confirm_exclusive_relink(self, self.db_manager, item_ids, self.board_id)
 
     def _on_item_checkbox_toggled(self, item_id: str):
         if item_id in self.checked_items:
@@ -484,8 +461,24 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         if not self._confirm_relink(selected):
             return
 
+        # One transaction: a failure part-way through used to leave the first
+        # few items moved off their old boards and the rest untouched, with the
+        # exception escaping a Tk callback into a stderr a double-clicked app
+        # has nowhere to send (P2 — the drop was invisible).
+        try:
+            with self.db_manager.transaction():
+                for item_id in selected:
+                    self.db_manager.link_item_to_project_exclusive(self.board_id, item_id)
+        except Exception as exc:
+            messagebox.showerror(
+                "Link Failed",
+                f"None of the {len(selected)} selected items were moved: {exc}",
+                parent=self,
+            )
+            self.refresh_results()
+            return
+
         for item_id in selected:
-            self.db_manager.link_item_to_project_exclusive(self.board_id, item_id)
             self.checked_items.discard(item_id)
 
         if self.on_linked and callable(self.on_linked):
@@ -990,6 +983,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         if label is None:
             return
         try:
+            items = self.db_manager.get_items_on_multiple_project_boards()
             count = int(self.db_manager.count_items_on_multiple_project_boards())
         except Exception as exc:
             # A cosmetic banner must not take the whole Projects screen down,
@@ -998,7 +992,7 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 "[projects] could not count multi-project items: %s", exc)
             label.configure(text="")
             return
-        label.configure(text=describe_outstanding_multi_links(count))
+        label.configure(text=describe_outstanding_multi_links(count, items))
 
     def _schedule_card_render(self, _event=None):
         if self._render_after_id:

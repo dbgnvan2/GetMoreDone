@@ -37,7 +37,7 @@ def _dialog_stub(manager, board_id, checked=()):
         refreshed=0,
     )
     stub.refresh_results = lambda: setattr(stub, "refreshed", stub.refreshed + 1)
-    for name in ("_link", "_link_selected_items", "_items_losing_links", "_confirm_relink"):
+    for name in ("_link", "_link_selected_items", "_confirm_relink"):
         method = getattr(LinkProjectActionItemsDialog, name)
         setattr(stub, name, (lambda m: lambda *a, **kw: m(stub, *a, **kw))(method))
     return stub
@@ -406,3 +406,182 @@ def test_bp1_the_real_dialog_moves_an_item_and_says_so(tmp_path, monkeypatch, an
     finally:
         root.destroy()
         vps.close()
+
+
+# --------------------------------------------------- sweep findings
+
+
+def test_f1_dragging_onto_a_project_asks_before_unfiling(tmp_path, answers):
+    """The Scheduler deleted links with no confirmation while this dialog asked.
+
+    Sweep F1: BP1's own docstring justified itself with "the Scheduler already
+    relinks exclusively", which was true of the link and false of the consent
+    (P5 — the sibling call was not hardened).
+    """
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        old = _board(manager, "Old Project", ape_id)
+        new = _board(manager, "New Project", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(old.id, item.id)
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[item], refreshed=0)
+        stub.refresh = lambda: setattr(stub, "refreshed", stub.refreshed + 1)
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, new.id)
+        assert manager.get_project_board_ids_for_item(item.id) == [old.id], (
+            "the drag unfiled the item after the user said no")
+        assert answers["messages"], "the drag deleted a link without asking"
+
+        answers["reply"] = True
+        ds.DragScheduleScreen._drop_onto_project(stub, new.id)
+        assert manager.get_project_board_ids_for_item(item.id) == [new.id]
+    finally:
+        vps.close()
+
+
+def test_f1_dragging_an_unfiled_item_asks_nothing(tmp_path, answers):
+    """The Scheduler's ordinary gesture — filing loose work — is not interrupted."""
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        items = [make_daily_item(vps, f"Task {i}") for i in range(3)]
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=items)
+        stub.refresh = lambda: None
+        ds.DragScheduleScreen._drop_onto_project(stub, board.id)
+
+        assert answers["messages"] == []
+        for item in items:
+            assert manager.get_project_board_ids_for_item(item.id) == [board.id]
+    finally:
+        vps.close()
+
+
+def test_f1_dropping_onto_no_project_asks_before_clearing_the_ape(tmp_path, answers):
+    """The worse of the two drops: it also nulls the Annual Plan Element."""
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(board.id, item.id)
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[item])
+        stub.refresh = lambda: None
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+        assert manager.get_project_board_ids_for_item(item.id) == [board.id]
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
+        assert "Annual Plan Element" in answers["messages"][0], answers["messages"][0]
+
+        answers["reply"] = True
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+        assert manager.get_project_board_ids_for_item(item.id) == []
+        assert manager.get_action_item(item.id).annual_plan_element_id is None
+    finally:
+        vps.close()
+
+
+def test_f4_the_banner_names_the_items_not_only_the_count(tmp_path):
+    """A number with no way to find what it refers to is not actionable.
+
+    Sweep F4: ``get_items_on_multiple_project_boards`` had no caller in src/ —
+    the same "built but not wired" class this batch deletes elsewhere (P21).
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager, item, _ = _three_linked(vps)
+
+        texts = []
+        stub = SimpleNamespace(
+            db_manager=manager,
+            multi_link_label=SimpleNamespace(
+                configure=lambda **kw: texts.append(kw.get("text"))),
+        )
+        pb.ProjectBoardsScreen._refresh_multi_link_notice(stub)
+
+        assert "Legacy multi-filed task" in texts[0], texts[0]
+        assert "3 projects" in texts[0], texts[0]
+    finally:
+        vps.close()
+
+
+def test_f4_the_banner_caps_the_names_and_says_how_many_it_left_out(tmp_path):
+    """Naming 200 items in a header label is its own failure (P9)."""
+    from src.getmoredone.screens.project_link_notice import MULTI_LINK_NAMES_SHOWN
+
+    rows = [{"id": str(i), "title": f"Item {i}", "board_count": 2} for i in range(12)]
+    text = describe_outstanding_multi_links(len(rows), rows)
+
+    assert text.count("Item ") == MULTI_LINK_NAMES_SHOWN
+    assert f"and {12 - MULTI_LINK_NAMES_SHOWN} more" in text, text
+
+
+def test_f5_a_failed_bulk_link_moves_nothing(tmp_path, monkeypatch, answers):
+    """Half a batch applied is worse than none: the selection is gone either way.
+
+    Sweep F5. Each exclusive link opened its own transaction, so a failure on
+    item three left the first two moved off their old boards and the exception
+    escaping a Tk callback, where this repo has already lost one.
+    """
+    import sqlite3
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        old = _board(manager, "Old Project", ape_id)
+        new = _board(manager, "New Project", ape_id)
+        items = [make_daily_item(vps, f"Task {i}") for i in range(3)]
+        for item in items:
+            manager.link_item_to_project_exclusive(old.id, item.id)
+
+        real = manager.link_item_to_project_exclusive
+        calls = {"n": 0}
+
+        def explode_on_the_third(board_id, item_id):
+            calls["n"] += 1
+            if calls["n"] == 3:
+                raise sqlite3.OperationalError("simulated failure mid-batch")
+            return real(board_id, item_id)
+
+        monkeypatch.setattr(manager, "link_item_to_project_exclusive", explode_on_the_third)
+        errors = []
+        monkeypatch.setattr(pb.messagebox, "showerror",
+                            lambda title, message, **kw: errors.append(message))
+
+        stub = _dialog_stub(manager, new.id, checked=[i.id for i in items])
+        stub._link_selected_items()
+
+        for item in items:
+            assert manager.get_project_board_ids_for_item(item.id) == [old.id], (
+                "the batch was half-applied — some items moved, some did not")
+        assert errors, "the failure reached nobody"
+        assert stub.checked_items == {i.id for i in items}, "the selection was consumed"
+    finally:
+        vps.close()
+
+
+def test_f6_the_dead_title_builder_is_gone():
+    """BP6 removed its last caller; it is the same class as the BP4 deletions."""
+    from src.getmoredone.screens import title_format
+
+    assert not hasattr(title_format, "build_action_item_title")

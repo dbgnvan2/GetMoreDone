@@ -59,15 +59,6 @@ def _normalize_title_body(value: str | None) -> str:
     return body
 
 
-def build_action_item_title(context: str | None, title: str | None) -> str:
-    """Compose a stored title from context + title fields."""
-    c = (context or "").strip()
-    t = (title or "").strip()
-    if c and t:
-        return f"{c} - {t}"
-    return t or c
-
-
 def format_column_text(value: str | None, max_chars: int) -> str:
     """Clamp text for fixed-width list columns using character count."""
     text = (value or "").strip()

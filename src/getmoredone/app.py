@@ -68,11 +68,9 @@ class GetMoreDoneApp(ctk.CTk):
         # means deleting links the user was never asked about (P2). The
         # Projects screen shows the same count, and each item is resolved when
         # it is next re-filed.
-        self.multi_linked_item_count = 0
         try:
-            self.multi_linked_item_count = (
-                self.db_manager.count_items_on_multiple_project_boards())
-            notice = describe_outstanding_multi_links(self.multi_linked_item_count)
+            multi_linked = self.db_manager.get_items_on_multiple_project_boards()
+            notice = describe_outstanding_multi_links(len(multi_linked), multi_linked)
             if notice:
                 print(f"[DATA] {notice}")
         except Exception as exc:

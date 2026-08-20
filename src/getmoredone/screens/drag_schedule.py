@@ -7,11 +7,14 @@ import logging
 import customtkinter as ctk
 from datetime import datetime, timedelta
 import tkinter as tk
+from tkinter import messagebox
 from typing import Optional, TYPE_CHECKING
 
+from ..db_manager import DatabaseManager
 from ..models import ActionItem
 from ..app_settings import AppSettings
 from ..color_contrast import pick_text_color
+from .project_link_notice import confirm_exclusive_relink
 from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, combo_box_style, semantic_colors
 from .drag_schedule_support import (
@@ -424,21 +427,7 @@ class DragScheduleScreen(ctk.CTkFrame):
 
         if self.selected_project_id:
             if self.selected_project_id == "__none__":
-                # BP5 — the query is capped, so say what the cap left out
-                # rather than presenting a partial list as the whole one (P9).
-                unlinked = self.db_manager.get_unlinked_action_items(status_filter="open")
-                total = self.db_manager.count_unlinked_action_items(status_filter="open")
-                self.unlinked_shown, self.unlinked_total = len(unlinked), total
-                if total > len(unlinked):
-                    logging.getLogger(__name__).warning(
-                        "[scheduler] unlinked list capped: showing %s of %s items",
-                        len(unlinked), total,
-                    )
-                return [
-                    item for item in unlinked
-                    if (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
-                    and self._item_matches_filters(item)
-                ]
+                return self._load_unlinked_items(who_filter)
             else:
                 return [
                     item for item in self.db_manager.get_project_board_items(self.selected_project_id)
@@ -476,6 +465,41 @@ class DragScheduleScreen(ctk.CTkFrame):
             return f"showing {shown} of {total} unlinked items"
         return f"{total} unlinked items"
 
+    def _load_unlinked_items(self, who_filter):
+        """The "No Project" list, capped, with the cap described honestly.
+
+        Purpose: BP5 capped the query so the Scheduler stopped loading every
+                 unlinked row to render a handful. Sweep F3: the cap ran
+                 *before* the Who and segment filters, so a filtered view
+                 silently dropped matching items while the box announced
+                 "showing 500 of 525" — a number describing a different set
+                 than the one on screen (P9/P3).
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp5
+        Tests:   tests/test_db_project_drag.py::test_f3_a_filtered_unlinked_view_is_not_capped
+
+        ``who_filter`` is pushed into SQL so the cap and the count describe the
+        same population. The segment/subsegment filters are derived from an
+        item's lineage and cannot be, so when one of them is active the query
+        runs uncapped rather than truncating before the filter has looked.
+        """
+        segment_filtered = (
+            (self.segment_filter_var.get() or "All").strip() != "All"
+            or (self.subsegment_filter_var.get() or "All").strip() != "All"
+        )
+        limit = None if segment_filtered else DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+        unlinked = self.db_manager.get_unlinked_action_items(
+            status_filter="open", who_filter=who_filter, limit=limit)
+        total = self.db_manager.count_unlinked_action_items(
+            status_filter="open", who_filter=who_filter)
+
+        self.unlinked_shown, self.unlinked_total = len(unlinked), total
+        if total > len(unlinked):
+            logging.getLogger(__name__).warning(
+                "[scheduler] unlinked list capped: showing %s of %s items",
+                len(unlinked), total,
+            )
+        return [item for item in unlinked if self._item_matches_filters(item)]
+
     def build_project_boxes(self):
         projects = self.db_manager.get_project_boards(show_pending=True)
         # Filter projects by current segment/subsegment filters if applicable
@@ -500,8 +524,11 @@ class DragScheduleScreen(ctk.CTkFrame):
             filtered_projects.sort(key=lambda x: (x.get("title") or "").lower())
 
         # "No Project" special filter box. BP5 — a count query, not the length
-        # of every unlinked row in the database.
-        unlinked_count = self.db_manager.count_unlinked_action_items(status_filter="open")
+        # of every unlinked row in the database. Sweep F3: counted with the
+        # same Who filter the list uses, so the number and the rows agree.
+        who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+        unlinked_count = self.db_manager.count_unlinked_action_items(
+            status_filter="open", who_filter=who_filter)
         no_project_color = self.palette["surface_subtle"]
         no_project_text = pick_text_color(no_project_color)
         project_box_height = int(self.date_box_height * 1.5)
@@ -1285,17 +1312,48 @@ class DragScheduleScreen(ctk.CTkFrame):
             notify_weekly_tactic_changes(self.db_manager, self)
             self.refresh()
         elif target_project_id:
-            for item in self.drag_items:
-                if target_project_id == "__none__":
-                    self.db_manager.clear_item_project_links(item.id)
-                else:
-                    self.db_manager.link_item_to_project_exclusive(target_project_id, item.id)
-            self.refresh()
+            self._drop_onto_project(target_project_id)
 
         if self.drag_label:
             self.drag_label.place_forget()
         self.drag_item = None
         self.drag_items = []
+
+    def _drop_onto_project(self, target_project_id: str):
+        """File the dragged items under one project, or clear their project.
+
+        Purpose: sweep F1 — this was the surface that deleted project links
+                 with no confirmation while the Projects screen asked, so the
+                 same destructive write was guarded in one place and silent in
+                 the other (P5). Dropping onto "No Project" is the worse of the
+                 two: ``clear_item_project_links`` also nulls the item's
+                 Annual Plan Element.
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp1
+        Tests:   tests/test_project_multi_link.py::test_f1_dragging_onto_a_project_asks_before_unfiling
+
+        One question per drag, not one per item, and nothing is written unless
+        the whole batch can be — a half-applied drag leaves some items moved
+        and the rest where they were, with no way to tell which.
+        """
+        board_id = None if target_project_id == "__none__" else target_project_id
+        item_ids = [item.id for item in self.drag_items]
+        if not confirm_exclusive_relink(self, self.db_manager, item_ids, board_id):
+            return
+
+        try:
+            with self.db_manager.transaction():
+                for item_id in item_ids:
+                    if board_id is None:
+                        self.db_manager.clear_item_project_links(item_id)
+                    else:
+                        self.db_manager.link_item_to_project_exclusive(board_id, item_id)
+        except Exception as exc:
+            messagebox.showerror(
+                "Move Failed",
+                f"None of the {len(item_ids)} dragged items were moved: {exc}",
+                parent=self,
+            )
+        self.refresh()
 
     def update_drag_position(self):
         if not self.drag_label:
