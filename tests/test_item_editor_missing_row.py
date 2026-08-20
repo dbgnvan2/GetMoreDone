@@ -113,7 +113,14 @@ def test_save_refuses_when_a_stale_copy_hides_a_deleted_row(deleted_item):
     assert stub.save_item() is False, "the editor reported a successful save"
     assert texts and "no longer exists" in texts[0], texts
 
-    assert stub.save_item_if_needed() is False
+    # A *fresh* stub: the save above already ran the re-read and left
+    # ``stub.item`` None, so re-using it would test the None path again rather
+    # than the stale-copy path this test is named for (P24).
+    other_texts = []
+    other = _stub(manager, gone_id,
+                  ActionItem(id=gone_id, who="Self", title="Doomed"), other_texts)
+    assert other.save_item_if_needed() is False
+    assert other_texts and "no longer exists" in other_texts[0], other_texts
 
 
 def test_save_refuses_when_the_row_is_gone(deleted_item):

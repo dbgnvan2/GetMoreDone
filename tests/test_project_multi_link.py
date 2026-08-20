@@ -180,7 +180,7 @@ def test_bp1_bulk_link_asks_once_before_dropping_links(tmp_path, answers):
         _dialog_stub(manager, new.id, checked=selected)._link_selected_items()
 
         assert len(answers["messages"]) == 1, "one question per batch, not per item"
-        assert "2 selected items:" in answers["messages"][0], answers["messages"][0]
+        assert "2 of the selected items:" in answers["messages"][0], answers["messages"][0]
         assert "2 already filed under another project" in answers["messages"][0]
         for item_id in selected:
             assert manager.get_project_board_ids_for_item(item_id) == [new.id]
@@ -331,14 +331,56 @@ def test_bp2_the_confirmation_names_what_is_being_lost(tmp_path, answers):
     vps = make_vps(tmp_path)
     try:
         manager, item, boards = _three_linked(vps)
+        elsewhere = _board(manager, "Somewhere Else", None)
+
+        answers["reply"] = False
+        _dialog_stub(manager, elsewhere.id)._link(item.id)
+
+        message = answers["messages"][0]
+        assert "filed under 3 projects" in message, message
+        assert "Somewhere Else" in message
+        assert "the other 2 projects" in message, message
+    finally:
+        vps.close()
+
+
+def test_p10_the_target_board_is_not_counted_as_a_link_being_lost(tmp_path, answers):
+    """Filing an item under a board it is already on removes nothing.
+
+    ``classify_losses`` excludes the target; the count beside it did not, so an
+    item whose only board *is* the target reached "already filed under another
+    project … removes that link" — where no link is removed at all, the row
+    being deleted and re-inserted under the same board (P19: two halves of one
+    decision measuring different things).
+    """
+    from tests.weekly_tactic_fixtures import seed_second_ape
+
+    vps = make_vps(tmp_path)
+    try:
+        manager, item, boards = _three_linked(vps)
 
         answers["reply"] = False
         _dialog_stub(manager, boards[0].id)._link(item.id)
 
         message = answers["messages"][0]
-        assert "filed under 3 projects" in message, message
-        assert "Board 0" in message
-        assert "the other 2 projects" in message, message
+        assert "filed under 2 projects" in message, message
+        assert "the other 1 project" in message, message
+
+        # And an item whose ONLY board is the target loses no link at all.
+        answers["messages"].clear()
+        ape_b = seed_second_ape(vps)
+        solo_board = _board(manager, "Solo", ape_b)
+        solo = make_daily_item(vps, "Solo task")
+        manager.link_item_to_project_exclusive(solo_board.id, solo.id)
+        stored = manager.get_action_item(solo.id)
+        stored.annual_plan_element_id = seed_ape(
+            vps, subsegment="Third", key_field="Third")
+        manager.update_action_item(stored)
+
+        _dialog_stub(manager, solo_board.id)._link(solo.id)
+        if answers["messages"]:
+            assert "removes that link" not in answers["messages"][0], (
+                answers["messages"][0])
     finally:
         vps.close()
 
@@ -354,7 +396,8 @@ def test_bp1_every_surface_uses_the_same_sentence():
     assert "the other 2 projects" in single
 
     cleared = describe_single_relink(2, None)
-    assert "Clearing the project removes all of them" in cleared
+    assert "unfiles it from all of them" in cleared
+    assert "Annual Plan Element is not affected" in cleared
 
     # One existing link is the Projects screen's ordinary case, and the plural
     # form got it wrong in both halves of the sentence.
@@ -362,14 +405,16 @@ def test_bp1_every_surface_uses_the_same_sentence():
     assert "already filed under another project" in one
     assert "removes that link" in one
     assert "1 projects" not in one and "the other 0" not in one
-    assert "removes that link" in describe_single_relink(1, None)
+    assert "unfiles it" in describe_single_relink(1, None)
 
     # Two projects means one *other* project, not "1 projects".
     two = describe_single_relink(2, "Website Rebuild")
     assert "the other 1 project." in two, two
 
-    assert "1 selected item:" in describe_bulk_relink(1, "Website Rebuild")
-    assert "4 selected items:" in describe_bulk_relink(4, None)
+    assert "1 of the selected item:" in describe_bulk_relink(
+        1, "Website Rebuild", batch_size=1)
+    assert "4 of the selected items:" in describe_bulk_relink(
+        4, None, batch_size=4)
     assert "this project" in describe_bulk_relink(4, None)
 
 
@@ -481,8 +526,14 @@ def test_f1_dragging_an_unfiled_item_asks_nothing(tmp_path, answers):
         vps.close()
 
 
-def test_f1_dropping_onto_no_project_asks_before_clearing_the_ape(tmp_path, answers):
-    """The worse of the two drops: it also nulls the Annual Plan Element."""
+def test_f1_dropping_onto_no_project_keeps_the_plan_element(tmp_path, answers):
+    """Detaching removes the link and nothing else.
+
+    Taking an item off a project is one action, not two: the user may be about
+    to file it under a different one, and losing its place in the plan in
+    between is a loss they never asked for. The Projects screen's own "Unlink"
+    button always behaved this way; the other two paths now match it.
+    """
     from types import SimpleNamespace
     import src.getmoredone.screens.drag_schedule as ds
 
@@ -501,13 +552,13 @@ def test_f1_dropping_onto_no_project_asks_before_clearing_the_ape(tmp_path, answ
         answers["reply"] = False
         ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
         assert manager.get_project_board_ids_for_item(item.id) == [board.id]
-        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
-        assert "Annual Plan Element" in answers["messages"][0], answers["messages"][0]
+        assert "not affected" in answers["messages"][0], answers["messages"][0]
 
         answers["reply"] = True
         ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
         assert manager.get_project_board_ids_for_item(item.id) == []
-        assert manager.get_action_item(item.id).annual_plan_element_id is None
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id, (
+            "unfiling destroyed the item's place in the plan")
     finally:
         vps.close()
 
@@ -598,12 +649,14 @@ def test_f6_the_dead_title_builder_is_gone():
 # --------------------------------------------- sweep, second pass
 
 
-def test_s2_2_dropping_onto_no_project_asks_even_with_no_board_link(tmp_path, answers):
-    """The Annual Plan Element is destroyed whether or not a link exists.
 
-    Sweep pass 2. ``items_losing_links`` read only project links, so an item
-    with an APE set from the editor's Annual Plan field — and no board row —
-    had it nulled with nothing asked (P13: the guard measured the wrong thing).
+def test_unlinking_keeps_the_plan_element(tmp_path, answers):
+    """Detaching removes the link and nothing else.
+
+    An item with an Annual Plan Element and no project row therefore loses
+    nothing at all when dropped on "No Project", so it is not interrupted —
+    and its place in the plan survives, ready for the project it is on its way
+    to.
     """
     from types import SimpleNamespace
     import src.getmoredone.screens.drag_schedule as ds
@@ -620,16 +673,11 @@ def test_s2_2_dropping_onto_no_project_asks_even_with_no_board_link(tmp_path, an
 
         stub = SimpleNamespace(db_manager=manager, drag_items=[item])
         stub.refresh = lambda: None
-
-        answers["reply"] = False
         ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
-        assert answers["messages"], "the Annual Plan Element went without a question"
-        assert "Annual Plan Element" in answers["messages"][0], answers["messages"][0]
+
+        assert answers["messages"] == [], (
+            f"interrupted for a change that does not happen: {answers['messages']}")
         assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
-
-        answers["reply"] = True
-        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
-        assert manager.get_action_item(item.id).annual_plan_element_id is None
     finally:
         vps.close()
 
@@ -734,13 +782,9 @@ def test_s2_8_an_unreadable_board_is_still_a_filing_not_a_clear(tmp_path, monkey
 # ---------------------------------------------- sweep, third pass
 
 
-def test_s3_1_a_mixed_bulk_clear_names_both_kinds_of_loss(tmp_path, answers):
-    """"2 items are filed under a project" was false when only one was.
 
-    Sweep pass 3. S2-2 widened what counts as a loss and left the bulk sentence
-    describing the old, narrower one; its test dragged a single item, so it
-    took the one-item branch and never read this wording (P19).
-    """
+def test_a_bulk_unlink_counts_only_the_items_that_are_filed(tmp_path, answers):
+    """Items with nothing to unfile are not counted and not mentioned."""
     from types import SimpleNamespace
     import src.getmoredone.screens.drag_schedule as ds
 
@@ -749,53 +793,44 @@ def test_s3_1_a_mixed_bulk_clear_names_both_kinds_of_loss(tmp_path, answers):
         manager = vps.db_manager
         ape_id = seed_ape(vps)
         board = _board(manager, "Website Rebuild", ape_id)
-
         filed = make_daily_item(vps, "Filed")
         manager.link_item_to_project_exclusive(board.id, filed.id)
+        loose = make_daily_item(vps, "Loose")
 
-        ape_only = make_daily_item(vps, "Plan only")
-        stored = manager.get_action_item(ape_only.id)
-        stored.annual_plan_element_id = ape_id
-        manager.update_action_item(stored)
-
-        nothing = make_daily_item(vps, "Loose")
-
-        stub = SimpleNamespace(
-            db_manager=manager, drag_items=[filed, ape_only, nothing])
+        stub = SimpleNamespace(db_manager=manager, drag_items=[filed, loose])
         stub.refresh = lambda: None
-
         answers["reply"] = False
         ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
 
         message = answers["messages"][0]
-        assert "1 filed under a project" in message, message
-        assert "1 with an Annual Plan Element" in message, message
-        assert "2 of the dragged items" in message, message
+        assert "1 of the dragged items is filed under a project" in message, message
+        assert "not affected" in message, message
     finally:
         vps.close()
 
 
-def test_s3_1_the_single_message_only_promises_an_ape_the_item_has(tmp_path, answers):
-    """An item with a project link and no Annual Plan Element loses only the link."""
+
+def test_the_single_message_only_promises_what_this_write_does(tmp_path, answers):
+    """Filing names the plan element only when it actually moves."""
     from types import SimpleNamespace
     import src.getmoredone.screens.drag_schedule as ds
 
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
-        seed_ape(vps)
-        board = _board(manager, "No Plan Element", None)
+        ape_id = seed_ape(vps)
+        same = _board(manager, "Same plan element", ape_id)
+        other = _board(manager, "Other", ape_id)
         item = make_daily_item(vps, "Task")
-        manager.link_item_to_project_exclusive(board.id, item.id)
-        assert manager.get_action_item(item.id).annual_plan_element_id is None
+        manager.link_item_to_project_exclusive(same.id, item.id)
 
         stub = SimpleNamespace(db_manager=manager, drag_items=[item])
         stub.refresh = lambda: None
-
         answers["reply"] = False
-        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+        ds.DragScheduleScreen._drop_onto_project(stub, other.id)
 
         message = answers["messages"][0]
+        # Both boards share a plan element, so nothing about it changes.
         assert "Annual Plan Element" not in message, message
         assert "removes that link" in message, message
     finally:
@@ -824,29 +859,31 @@ def test_s3_2_an_unselected_no_project_box_says_its_number_is_unfiltered(tmp_pat
 # --------------------------------------------- sweep, fourth pass
 
 
-def test_s4_1_the_editor_still_warns_a_multi_filed_item_about_its_plan_element(
-        tmp_path, monkeypatch):
-    """Adding ``clears_ape`` with a default silently disarmed this call site.
 
-    Sweep pass 4. ``_confirm_dropping_extra_project_links`` is the *only*
-    dialog a multi-filed item gets — the other editor guard is scoped to items
-    with no extra links — so defaulting the new flag to False deleted the
-    Annual Plan Element warning from the one path that showed it (P22).
+def test_s4_1_the_editor_warns_a_multi_filed_item_when_the_plan_element_moves(
+        tmp_path, monkeypatch):
+    """Adding a parameter with a default silently disarmed this call site once.
+
+    The editor's multi-filed dialog is the only one such an item ever gets, so
+    a defaulted flag there is a warning nobody sees (P22).
     """
     import tkinter.messagebox as messagebox
     from src.getmoredone.screens.item_editor import ItemEditorDialog
+    from tests.weekly_tactic_fixtures import seed_second_ape
 
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
-        ape_id = seed_ape(vps)
-        first = _board(manager, "First", ape_id)
-        second = _board(manager, "Second", ape_id)
+        ape_a = seed_ape(vps)
+        ape_b = seed_second_ape(vps)
+        first = _board(manager, "First", ape_a)
+        second = _board(manager, "Second", ape_a)
+        target = _board(manager, "Target", ape_b)
         item = make_daily_item(vps, "Task")
         manager.link_action_item_to_project_board(first.id, item.id)
         manager.link_action_item_to_project_board(second.id, item.id)
         stored = manager.get_action_item(item.id)
-        stored.annual_plan_element_id = ape_id
+        stored.annual_plan_element_id = ape_a
         manager.update_action_item(stored)
 
         asked = []
@@ -855,77 +892,68 @@ def test_s4_1_the_editor_still_warns_a_multi_filed_item_about_its_plan_element(
 
         stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=1,
                                item_id=item.id, item=manager.get_action_item(item.id))
-        stub._project_change_moves_the_ape = (
-            lambda bid: ItemEditorDialog._project_change_moves_the_ape(stub, bid))
-        ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
-
+        ItemEditorDialog._confirm_dropping_extra_project_links(stub, target.id)
         assert "Annual Plan Element" in asked[0], asked[0]
 
-        # ...and an item with no plan element is not warned about losing one.
-        bare = make_daily_item(vps, "No plan element")
-        manager.link_action_item_to_project_board(first.id, bare.id)
-        manager.link_action_item_to_project_board(second.id, bare.id)
-        manager.db.conn.execute(
-            "UPDATE action_items SET annual_plan_element_id = NULL WHERE id = ?",
-            (bare.id,))
-        manager.db.conn.commit()
-
+        # ...and filing under a board with the same plan element does not
+        # claim it moves.
         asked.clear()
-        stub.item_id = bare.id
-        stub.item = manager.get_action_item(bare.id)
-        ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
+        ItemEditorDialog._confirm_dropping_extra_project_links(stub, second.id)
         assert "Annual Plan Element" not in asked[0], asked[0]
     finally:
         vps.close()
 
 
-def test_s4_2_the_bulk_clear_sentence_only_names_losses_that_apply():
-    """The per-item clause was made conditional; the closing sentence was not."""
-    filed_only = describe_bulk_clear(3, 0, ape_total=0)
-    assert "Annual Plan Element" not in filed_only, filed_only
-    assert "clears the project link." in filed_only, filed_only
 
-    ape_only = describe_bulk_clear(0, 2, ape_total=2)
-    assert "project link" not in ape_only, ape_only
-    assert "clears the Annual Plan Element." in ape_only, ape_only
+def test_the_bulk_unlink_sentence_says_what_it_does_and_what_it_does_not():
+    """One loss, named; and the one it does not take, named too.
 
-    both = describe_bulk_clear(1, 1, ape_total=2)
-    assert "the project link and the Annual Plan Element" in both, both
+    The sentence had to describe two losses and got that wrong three times in
+    a row. Removing the second loss removed the second half of the problem —
+    but it has to say so, or a user who remembers the old behaviour has no way
+    to tell.
+    """
+    assert describe_bulk_clear(0) == ""
+    one = describe_bulk_clear(1, batch_size=1)
+    assert "1 of the dragged item is filed under a project" in one, one
+    assert "Annual Plan Element is not affected" in one, one
 
-    # ape_total is what the write actually does, and is NOT the ape-only
-    # bucket: filed items carry an Annual Plan Element too (sweep pass 5).
-    filed_with_ape = describe_bulk_clear(3, 0, ape_total=3)
-    assert "the project link and the Annual Plan Element" in filed_with_ape
+    many = describe_bulk_clear(3, batch_size=5, verb="selected")
+    assert "3 of the selected items are filed under a project" in many, many
+    assert "Annual Plan Element is not affected" in many, many
 
 
-def test_s4_4_the_bulk_clear_plural_reads_as_english():
-    """"3 with an Annual Plan Elements" — the article goes with the plural."""
-    assert "3 with Annual Plan Elements" in describe_bulk_clear(1, 3, ape_total=4)
-    assert "1 with an Annual Plan Element" in describe_bulk_clear(1, 1, ape_total=2)
-    # Nothing at stake produces no sentence, rather than "0 items: ."
-    assert describe_bulk_clear(0, 0, ape_total=0) == ""
+
+def test_the_bulk_unlink_plural_reads_as_english():
+    """The noun follows the batch, the verb follows the affected count."""
+    assert "1 of the dragged item is filed" in describe_bulk_clear(1, batch_size=1)
+    assert "1 of the dragged items is filed" in describe_bulk_clear(1, batch_size=3)
+    assert "2 of the dragged items are filed" in describe_bulk_clear(2, batch_size=3)
+
 
 
 def test_p6_the_batch_noun_is_pluralised_from_the_batch_not_the_affected_count():
     """"1 of the dragged item" — two dragged, one affected (sweep pass 6)."""
-    one_of_two = describe_bulk_clear(1, 0, ape_total=0, batch_size=2)
-    assert "1 of the dragged items:" in one_of_two, one_of_two
-    assert "dragged item:" not in one_of_two, one_of_two
+    one_of_two = describe_bulk_clear(1, batch_size=2)
+    assert "1 of the dragged items" in one_of_two, one_of_two
+    one_of_one = describe_bulk_clear(1, batch_size=1)
+    assert "1 of the dragged item " in one_of_one, one_of_one
 
-    # A genuinely single-item batch still reads as one.
-    one_of_one = describe_bulk_clear(1, 0, ape_total=0, batch_size=1)
-    assert "1 of the dragged item:" in one_of_one, one_of_one
+    # The relink sibling was given the same shape only in pass 10.
+    assert "2 of the selected items" in describe_bulk_relink(2, "Alpha", batch_size=5)
+    assert "1 of the dragged items" in describe_bulk_relink(
+        1, "Alpha", verb="dragged", batch_size=2)
+
 
 
 def test_p6_each_surface_names_the_action_the_user_took():
     """A drag is not a selection, and the Projects dialog has no drag."""
-    dragged = describe_bulk_relink(2, "Alpha", verb="dragged")
-    assert "2 dragged items:" in dragged, dragged
-    selected = describe_bulk_relink(2, "Alpha")
-    assert "2 selected items:" in selected, selected
-
+    dragged = describe_bulk_relink(2, "Alpha", verb="dragged", batch_size=2)
+    assert "2 of the dragged items" in dragged, dragged
+    selected = describe_bulk_relink(2, "Alpha", batch_size=2)
+    assert "2 of the selected items" in selected, selected
     assert "of the selected items" in describe_bulk_clear(
-        2, 0, ape_total=0, batch_size=2, verb="selected")
+        2, batch_size=2, verb="selected")
 
 
 def test_s4_6_both_who_branches_read_a_blank_filter_the_same_way(tmp_path):
@@ -970,16 +998,9 @@ def test_s4_6_both_who_branches_read_a_blank_filter_the_same_way(tmp_path):
         vps.close()
 
 
-def test_s5_1_a_bulk_clear_names_the_plan_element_every_affected_item_loses(
-        tmp_path, answers):
-    """Clearing nulls the Annual Plan Element of every item, not just some.
 
-    Sweep pass 5. Pass 4 built the closing sentence from the ape-*only* bucket,
-    so a batch of items that were filed under an APE-bearing board — which is
-    how they got an APE — was told only the project link would go. An
-    under-warning before a destructive write, and it disagreed with the
-    single-item sentence about the identical write (P2/P5).
-    """
+def test_a_bulk_unlink_leaves_every_plan_element_intact(tmp_path, answers):
+    """Two items filed under an Annual Plan Element keep it when unfiled."""
     from types import SimpleNamespace
     import src.getmoredone.screens.drag_schedule as ds
 
@@ -992,23 +1013,22 @@ def test_s5_1_a_bulk_clear_names_the_plan_element_every_affected_item_loses(
         for item in items:
             manager.link_item_to_project_exclusive(board.id, item.id)
         assert all(manager.get_action_item(i.id).annual_plan_element_id == ape_id
-                   for i in items), "filing did not stamp the APE — fixture is wrong"
+                   for i in items)
 
         stub = SimpleNamespace(db_manager=manager, drag_items=items)
         stub.refresh = lambda: None
-
-        answers["reply"] = False
         ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
 
-        message = answers["messages"][0]
-        assert "Annual Plan Element" in message, message
-        assert "the project link and the Annual Plan Element" in message, message
+        for item in items:
+            assert manager.get_project_board_ids_for_item(item.id) == []
+            assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
     finally:
         vps.close()
 
 
-def test_s5_1_a_batch_with_no_plan_element_is_not_warned_about_one(tmp_path, answers):
-    """...and the over-warning pass 4 removed does not come back."""
+
+def test_a_batch_with_nothing_filed_is_not_interrupted(tmp_path, answers):
+    """Nothing to unfile means nothing to consent to."""
     from types import SimpleNamespace
     import src.getmoredone.screens.drag_schedule as ds
 
@@ -1016,21 +1036,13 @@ def test_s5_1_a_batch_with_no_plan_element_is_not_warned_about_one(tmp_path, ans
     try:
         manager = vps.db_manager
         seed_ape(vps)
-        board = _board(manager, "No Plan Element", None)
-        items = [make_daily_item(vps, f"Task {i}") for i in range(2)]
-        for item in items:
-            manager.link_item_to_project_exclusive(board.id, item.id)
-            assert manager.get_action_item(item.id).annual_plan_element_id is None
+        items = [make_daily_item(vps, f"Loose {i}") for i in range(2)]
 
         stub = SimpleNamespace(db_manager=manager, drag_items=items)
         stub.refresh = lambda: None
-
-        answers["reply"] = False
         ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
 
-        message = answers["messages"][0]
-        assert "Annual Plan Element" not in message, message
-        assert "clears the project link." in message, message
+        assert answers["messages"] == []
     finally:
         vps.close()
 
@@ -1293,7 +1305,10 @@ def test_c2_2_no_combination_of_arguments_produces_a_false_sentence():
                     # Nothing to take a plan element from, so nothing to replace.
                     assert "replaces" not in text, text
                 if outcome is APE_UNCHANGED and count:
-                    assert "Annual Plan Element" not in text, text
+                    # The clearing sentence names the plan element only to say
+                    # it is untouched — that is not a claim of loss.
+                    assert ("Annual Plan Element" not in text
+                            or "not affected" in text), text
 
     # affected == 0 is what a batch of loose items each carrying their own
     # plan element actually produces, and the walk that "covered everything"
@@ -1304,8 +1319,14 @@ def test_c2_2_no_combination_of_arguments_produces_a_false_sentence():
                 for ape_only in (0, 1, 3):
                     text = describe_bulk_relink(
                         affected, title, ape_outcome=outcome,
-                        ape_only_count=ape_only)
+                        ape_only_count=ape_only, batch_size=affected + ape_only)
                     if affected + ape_only == 0:
+                        assert text == "", text
+                        continue
+                    if not affected and outcome is APE_UNCHANGED:
+                        # Nothing is unfiled and no plan element moves, so
+                        # there is nothing to consent to and no sentence to
+                        # show — rather than "…filing under “X” . Continue?".
                         assert text == "", text
                         continue
                     assert text.endswith("Continue?")
@@ -1364,7 +1385,7 @@ def test_f1_a_batch_that_only_loses_plan_elements_is_counted_and_named(tmp_path,
 
         message = answers["messages"][0]
         assert "0 " not in message, message
-        assert "3 selected items" in message, message
+        assert "3 of the selected items" in message, message
         assert "Annual Plan Element" in message, message
         for item in items:
             assert manager.get_action_item(item.id).annual_plan_element_id == own_ape
@@ -1555,5 +1576,90 @@ def test_f1_clearing_a_tactics_project_promises_nothing_it_will_not_do(tmp_path,
         assert answers["messages"] == [], (
             f"asked about a change that will not happen: {answers['messages']}")
         assert manager.get_action_item(tactic.id).annual_plan_element_id == ape_id
+    finally:
+        vps.close()
+
+
+def test_p10_a_refused_link_reports_instead_of_escaping_a_tk_callback(tmp_path, monkeypatch, answers):
+    """`link_item_to_project_exclusive` raises for a tactic; `_link` must catch it.
+
+    The dialog no longer lists Weekly Tactics, so this is unreachable through
+    the UI — but the bulk path beside it was guarded and this one was not, and
+    an unguarded raise in a Tk callback is invisible in a double-clicked app.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        item = make_daily_item(vps, "Task")
+
+        def explode(board_id, item_id):
+            raise ValueError("simulated refusal")
+
+        monkeypatch.setattr(manager, "link_item_to_project_exclusive", explode)
+        errors = []
+        monkeypatch.setattr(pb.messagebox, "showerror",
+                            lambda title, msg, **kw: errors.append(msg))
+
+        _dialog_stub(manager, board.id)._link(item.id)
+
+        assert errors and "simulated refusal" in errors[0], errors
+    finally:
+        vps.close()
+
+
+def test_p10_a_blank_board_title_is_still_a_filing(tmp_path, answers):
+    """A board saved with an empty title must not read as a clear.
+
+    Every branch treats a falsy title as "this is a clear", so an empty one
+    turned filing into "Clearing the project…". The fallback is a phrase, not a
+    name, so it is not wrapped in quotation marks either.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        old = _board(manager, "Old Project", ape_id)
+        blank = _board(manager, "", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(old.id, item.id)
+
+        answers["reply"] = False
+        _dialog_stub(manager, blank.id)._link(item.id)
+
+        message = answers["messages"][0]
+        assert "Clearing" not in message, message
+        assert "unfiles" not in message, message
+        assert "the selected project" in message, message
+        assert "“the selected project”" not in message, (
+            "a stand-in phrase is quoted as though it were a project name")
+    finally:
+        vps.close()
+
+
+def test_p10_a_tactic_in_a_batch_is_not_counted_as_a_loss(tmp_path, answers):
+    """`classify_losses` skips tactics, because filing one is refused.
+
+    Without the skip the dialog counts a loss for an item the write will
+    refuse to touch, and a batch of nothing but tactics raises a dialog for an
+    operation that does nothing at all.
+    """
+    from src.getmoredone.screens.project_link_notice import classify_losses
+    from tests.weekly_tactic_fixtures import make_week_item
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        tactic = make_week_item(vps, ape_id)
+        manager.link_action_item_to_project_board(board.id, tactic.id)
+        other = _board(manager, "Elsewhere", None)
+
+        with_links, ape_only = classify_losses(manager, [tactic.id], other.id)
+        assert (with_links, ape_only) == ([], []), (
+            "a Weekly Tactic was counted as losing something to a write that "
+            "is refused")
     finally:
         vps.close()

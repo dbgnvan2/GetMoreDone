@@ -59,19 +59,23 @@ def test_update_vision_element_updates_mirror_rows(tmp_path):
         manager.close()
 
 
-def test_delete_annual_records_for_vision_element_clears_links(tmp_path):
+def test_delete_annual_records_is_refused_while_action_items_remain(tmp_path):
+    """An Annual Plan Element is deleted only when it has no child records.
+
+    This used to null ``annual_plan_element_id`` on every item pointing at the
+    element. For an ordinary item that silently detached it from the plan; for
+    a Weekly Tactic it produced a row ``update_action_item`` then refuses to
+    save ("A Weekly Tactic must belong to an Annual Plan Element") — a value no
+    supported path can create, written by a supported path.
+    """
+    from src.getmoredone.vps_manager import ActionItemsAttachedError
+
     manager = _manager(tmp_path)
     try:
         segment_name, sub_name = _seed_segment_and_subsegment(manager, "Archive")
         ve_id = manager.create_or_get_vision_element(segment_name, sub_name, "Archive")
         ids = manager.create_annual_records_from_vision_element(2026, ve_id)
         ape_id = ids["annual_plan_element_id"]
-
-        board_row = manager.db.conn.execute(
-            "SELECT id FROM project_boards WHERE annual_plan_element_id = ?",
-            (ape_id,),
-        ).fetchone()
-        assert board_row is not None
 
         weekly = ActionItem(
             who="VSP",
@@ -83,31 +87,24 @@ def test_delete_annual_records_for_vision_element_clears_links(tmp_path):
         )
         manager.db_manager.create_action_item(weekly, apply_defaults=False)
 
-        deleted = manager.delete_annual_records_for_vision_element(2026, ve_id)
-        assert deleted is True
+        with pytest.raises(ActionItemsAttachedError) as excinfo:
+            manager.delete_annual_records_for_vision_element(2026, ve_id)
+        assert "Weekly Parent" in str(excinfo.value)
 
-        ave_count = manager.db.conn.execute(
-            "SELECT COUNT(*) AS c FROM annual_vision_elements WHERE year = 2026 AND vision_element_id = ?",
-            (ve_id,),
-        ).fetchone()["c"]
-        ape_count = manager.db.conn.execute(
-            "SELECT COUNT(*) AS c FROM annual_plan_elements WHERE year = 2026 AND vision_element_id = ?",
-            (ve_id,),
-        ).fetchone()["c"]
-        assert ave_count == 0
-        assert ape_count == 0
+        # Nothing was destroyed on the way to the refusal.
+        assert manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM annual_plan_elements WHERE id = ?",
+            (ape_id,)).fetchone()["c"] == 1
+        stored = manager.db_manager.get_action_item(weekly.id)
+        assert stored.annual_plan_element_id == ape_id
+        manager.db_manager.update_action_item(stored)   # still saveable
 
-        linked = manager.db.conn.execute(
-            "SELECT annual_plan_element_id FROM action_items WHERE id = ?",
-            (weekly.id,),
-        ).fetchone()
-        assert linked and linked["annual_plan_element_id"] is None
-
-        board_row = manager.db.conn.execute(
-            "SELECT id FROM project_boards WHERE annual_plan_element_id = ?",
-            (ape_id,),
-        ).fetchone()
-        assert board_row is None
+        # Once the child is gone the element deletes cleanly.
+        manager.db_manager.delete_action_item(weekly.id)
+        assert manager.delete_annual_records_for_vision_element(2026, ve_id) is True
+        assert manager.db.conn.execute(
+            "SELECT COUNT(*) AS c FROM annual_plan_elements WHERE id = ?",
+            (ape_id,)).fetchone()["c"] == 0
     finally:
         manager.close()
 

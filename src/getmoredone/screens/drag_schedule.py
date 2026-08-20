@@ -1437,14 +1437,16 @@ class DragScheduleScreen(ctk.CTkFrame):
             else:
                 item_ids.append(item.id)
         if tactics:
-            messagebox.showinfo(
-                "Weekly Tactic",
-                f"{len(tactics)} of the dragged items "
-                f"{'is a Weekly Tactic' if len(tactics) == 1 else 'are Weekly Tactics'}"
-                ", which belong to their Annual Plan Element rather than to a "
-                "project. They were left where they are.",
-                parent=self,
-            )
+            if len(tactics) == 1:
+                text = ("“%s” is a Weekly Tactic, which belongs to its Annual "
+                        "Plan Element rather than to a project. It was left "
+                        "where it is." % tactics[0].title)
+            else:
+                text = ("%d of the dragged items are Weekly Tactics, which "
+                        "belong to their Annual Plan Element rather than to a "
+                        "project. They were left where they are."
+                        % len(tactics))
+            messagebox.showinfo("Weekly Tactic", text, parent=self)
         if not item_ids:
             self.refresh()
             return

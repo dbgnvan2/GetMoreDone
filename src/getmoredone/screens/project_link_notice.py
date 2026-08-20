@@ -23,6 +23,15 @@ from typing import Iterable, List, Optional
 # plan element clears it, and saying "replaces" there is simply false.
 APE_UNCHANGED, APE_CLEARED, APE_REPLACED = None, "cleared", "replaced"
 
+# Stands in for a board title that cannot be read or is blank. It is a phrase
+# rather than a name, so it is never wrapped in quotation marks.
+UNNAMED_PROJECT = "the selected project"
+
+
+def _name(title: str) -> str:
+    """Quote a real project name; leave a stand-in phrase unquoted."""
+    return title if title == UNNAMED_PROJECT else f"\u201c{title}\u201d"
+
 
 def describe_single_relink(count: int, target_title: Optional[str],
                            ape_outcome: Optional[str] = APE_UNCHANGED) -> str:
@@ -72,12 +81,11 @@ def describe_single_relink(count: int, target_title: Optional[str],
             # (target_title is set here, so APE_REPLACED really is a replace.)
             return (
                 "This item has its own Annual Plan Element.\n\n"
-                f"Filing it under “{target_title}” {outcome}. Continue?"
+                f"Filing it under {_name(target_title)} {outcome}. Continue?"
             )
-        return (
-            "This item has an Annual Plan Element.\n\n"
-            "Removing the project also clears it. Continue?"
-        )
+        # Unreachable: clearing no longer counts an Annual Plan Element as a
+        # loss, so an item with no link never reaches a dialog at all.
+        return "This item is about to be re-filed.\n\nContinue?"
 
     if count == 1:
         # "filed under 1 projects ... removes it from the other 0" is what the
@@ -86,29 +94,34 @@ def describe_single_relink(count: int, target_title: Optional[str],
         if target_title:
             return (
                 f"{filed}\n\n"
-                f"Filing it under “{target_title}” removes that link"
+                f"Filing it under {_name(target_title)} removes that link"
                 f"{ape_clause}. Continue?"
             )
-        return f"{filed}\n\nClearing the project removes that link{ape_clause}. Continue?"
+        return (
+            f"{filed}\n\nRemoving the project unfiles it. Its Annual Plan "
+            "Element is not affected. Continue?"
+        )
 
     others = count - 1
     plural = "project" if others == 1 else "projects"
     if target_title:
         return (
             f"This item is filed under {count} projects.\n\n"
-            f"Filing it under “{target_title}” removes it from the other "
+            f"Filing it under {_name(target_title)} removes it from the other "
             f"{others} {plural}{ape_clause}. Continue?"
         )
     return (
         f"This item is filed under {count} projects.\n\n"
-        f"Clearing the project removes all of them{ape_clause}. Continue?"
+        "Removing the project unfiles it from all of them. Its Annual Plan "
+        "Element is not affected. Continue?"
     )
 
 
 def describe_bulk_relink(item_count: int, target_title: Optional[str],
                          verb: str = "selected",
                          ape_outcome: Optional[str] = APE_UNCHANGED,
-                         ape_only_count: int = 0) -> str:
+                         ape_only_count: int = 0,
+                         batch_size: Optional[int] = None) -> str:
     """What a batch link is about to unfile.
 
     ``item_count`` counts the items that would lose a *link*;
@@ -136,8 +149,14 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str],
     # false for the items filed under nothing; printing only ``item_count`` was
     # false about the size of the loss. Each count now sits against the clause
     # it is true of (P19).
-    noun = "item" if total == 1 else "items"
-    target = "\u201c%s\u201d" % target_title if target_title else "this project"
+    # "N of the selected items", pluralised from the *batch* — the same shape
+    # describe_bulk_clear was given in pass 6 and this sibling never got. It
+    # printed the affected count as though it were the batch, and pluralised
+    # from it, so five selected with two affected read "2 selected items" and
+    # a two-item batch with one affected read "1 dragged item" — in a branch
+    # only reached when the batch is *not* one item (P5).
+    noun = "item" if (batch_size or total) == 1 else "items"
+    target = _name(target_title) if target_title else "this project"
     parts = []
     if item_count:
         parts.append("%d already filed under another project" % item_count)
@@ -162,59 +181,38 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str],
         does.append("removes the existing links")
     if ape_phrase:
         does.append(ape_phrase)
+    if not does:
+        # Nothing would actually happen, so there is nothing to consent to —
+        # the alternative was "…so filing under “Alpha” . Continue?". The
+        # sibling dead branch in describe_single_relink was kept truthful for
+        # exactly this reason and this one was not (P19).
+        return ""
 
     return (
-        "%d %s %s: %s.\n\n"
+        "%d of the %s %s: %s.\n\n"
         "An Action Item belongs to exactly one Project, so filing under "
         "%s %s. Continue?" % (total, verb, noun, ", ".join(parts),
                               target, " and ".join(does))
     )
 
 
-def describe_bulk_clear(filed_count: int, ape_only_count: int, ape_total: int,
-                        batch_size: Optional[int] = None,
+def describe_bulk_clear(filed_count: int, batch_size: Optional[int] = None,
                         verb: str = "dragged") -> str:
-    """What dropping a batch onto "No Project" destroys.
+    """What removing a batch from their projects destroys: the links.
 
-    Two different losses, counted separately. The sentence used to say "N
-    dragged items are filed under a project" using the *total* number affected,
-    which was false whenever part of the batch had only an Annual Plan Element
-    to lose — and the single-item test never reached this branch to notice
-    (sweep pass 3, P19).
+    Nothing else. Detaching used to null each item's Annual Plan Element too,
+    which this sentence had to describe in two parts and got wrong three times.
+    Removing the second loss removed the second part.
     """
-    total = filed_count + ape_only_count
-    if not total:
+    if not filed_count:
         return ""
-
-    # ``ape_total`` is how many of the affected items lose an Annual Plan
-    # Element, and it is required rather than defaulted: it is NOT the same
-    # number as ``ape_only_count``. ``clear_item_project_links`` nulls the APE
-    # of every item it touches, and an item filed under an APE-bearing board
-    # has one. Defaulting it to the ape-only bucket made this sentence promise
-    # less than the write performs — an under-warning before a destructive
-    # action (sweep pass 5, P2/P5) — so there is no default to fall into.
-    #
-    # The noun is pluralised from the size of the *batch*, not from the number
-    # affected: "1 of the dragged item" is what the affected count produces
-    # when two items are dragged and one of them has something to lose.
-    noun = "item" if (batch_size or total) == 1 else "items"
-    parts = []
-    losses = []
-    if filed_count:
-        parts.append(f"{filed_count} filed under a project")
-        losses.append("the project link")
-    if ape_only_count:
-        # "an Annual Plan Elements" — the article has to go with the plural.
-        parts.append(f"{ape_only_count} with an Annual Plan Element"
-                     if ape_only_count == 1
-                     else f"{ape_only_count} with Annual Plan Elements")
-    if ape_total:
-        losses.append("the Annual Plan Element")
-    # "of the dragged items", not "dragged items": this is the number that
-    # loses something, not the size of the drag (sweep pass 4).
+    noun = "item" if (batch_size or filed_count) == 1 else "items"
+    subject = ("is filed under a project" if filed_count == 1
+               else "are filed under a project")
     return (
-        f"{total} of the {verb} {noun}: " + ", ".join(parts) + ".\n\n"
-        f"Removing the project clears {' and '.join(losses)}. Continue?"
+        f"{filed_count} of the {verb} {noun} {subject}.\n\n"
+        "Removing the project unfiles them. Their Annual Plan Element is not "
+        "affected. Continue?"
     )
 
 
@@ -258,9 +256,16 @@ def classify_losses(db_manager, item_ids: Iterable[str],
     """
     with_links, ape_only = [], []
     target_ape = None
-    if target_board_id is not None:
-        board = db_manager.get_project_board(target_board_id)
-        target_ape = board.annual_plan_element_id if board else None
+    if target_board_id is None:
+        # Detaching removes the link and nothing else, so the only thing at
+        # stake is the link itself. The Annual Plan Element stays — an item
+        # taken off one project on the way to another keeps its place in the
+        # plan in between.
+        return [i for i in item_ids
+                if db_manager.get_project_board_ids_for_item(i)], []
+
+    board = db_manager.get_project_board(target_board_id)
+    target_ape = board.annual_plan_element_id if board else None
 
     for item_id in item_ids:
         others = [
@@ -341,12 +346,51 @@ def _is_weekly_tactic(db_manager, item_id: str) -> bool:
     return bool(checker(item_id))
 
 
-def has_annual_plan_element(db_manager, item_id: Optional[str]) -> bool:
-    """Does this item have an Annual Plan Element that a clear would destroy?"""
+def ape_outcome_for_change(db_manager, item_id: Optional[str],
+                           target_board_id: Optional[str]) -> Optional[str]:
+    """What filing under (or clearing) ``target_board_id`` does to the item's APE.
+
+    The single implementation of the rule, including the unreadable-board case:
+    ``link_item_to_project_exclusive`` guards its APE write with ``if board:``,
+    so a board row that cannot be read means the plan element is not touched
+    and the dialog must not say it is.
+    """
     if not item_id:
-        return False
+        return APE_UNCHANGED
+    target_ape = None
+    if target_board_id is not None:
+        board = db_manager.get_project_board(target_board_id)
+        if board is None:
+            return APE_UNCHANGED
+        target_ape = board.annual_plan_element_id
+    return _ape_outcome(db_manager, item_id, target_ape)
+
+
+def _ape_outcome(db_manager, item_id: str, target_ape: Optional[str]) -> Optional[str]:
+    """What this write does to the item's Annual Plan Element.
+
+    A Weekly Tactic keeps its plan element whatever happens (PL6, enforced in
+    ``db_manager_project_boards``): filing one is refused outright and clearing
+    leaves the APE alone. The writer learned that rule and the describer did
+    not, so dragging a tactic onto "No Project" showed "Removing the project
+    also clears it" over a write that changed nothing — an affirmative
+    confirmation in front of a silent no-op (P19: the two layers disagreed
+    about the same rule).
+    """
+    if _is_weekly_tactic(db_manager, item_id):
+        return APE_UNCHANGED
     item = db_manager.get_action_item(item_id)
-    return bool(item and item.annual_plan_element_id)
+    current = getattr(item, "annual_plan_element_id", None) if item else None
+    if not current or current == target_ape:
+        return APE_UNCHANGED
+    return APE_REPLACED if target_ape else APE_CLEARED
+
+
+def _is_weekly_tactic(db_manager, item_id: str) -> bool:
+    checker = getattr(db_manager, "is_weekly_tactic", None)
+    if checker is None:          # a stub without the predicate
+        return False
+    return bool(checker(item_id))
 
 
 def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
@@ -378,7 +422,11 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
         # ``title`` falsy, and every branch below reads a falsy title as "this
         # is a clear" — so filing under it would have been described as
         # clearing the project (P14: an empty value read as a different state).
-        title = (board.title if board else "") or "the selected project"
+        # A phrase, not a title: quoting it produced Filing it under “the
+        # selected project”. Marked so the describers can tell them apart.
+        title = (board.title if board else "") or None
+        if title is None:
+            title = UNNAMED_PROJECT
         target_ape = board.annual_plan_element_id if board else None
         ape_known = board is not None
 
@@ -389,22 +437,25 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
 
     if len(item_ids) == 1:
         only = (with_links + ape_only)[0]
-        count = len(db_manager.get_project_board_ids_for_item(only))
+        # Exclude the target, exactly as classify_losses does three lines up.
+        # Counting it made an item whose ONLY board is the target arrive at the
+        # "already filed under another project … removes that link" branch,
+        # where no link is removed at all — the row is deleted and re-inserted
+        # under the same board. The two halves of one decision have to measure
+        # the same thing (P19).
+        count = len([b for b in db_manager.get_project_board_ids_for_item(only)
+                     if b != target_board_id])
         question = describe_single_relink(
             count, title,
             ape_outcome=(_ape_outcome(db_manager, only, target_ape)
                          if ape_known else APE_UNCHANGED))
     elif clearing:
         question = describe_bulk_clear(
-            len(with_links), len(ape_only),
-            ape_total=sum(1 for item_id in with_links + ape_only
-                          if has_annual_plan_element(db_manager, item_id)),
-            batch_size=len(item_ids), verb=verb,
-        )
+            len(with_links), batch_size=len(item_ids), verb=verb)
     else:
         question = describe_bulk_relink(
             len(with_links), title, verb=verb,
-            ape_only_count=len(ape_only),
+            ape_only_count=len(ape_only), batch_size=len(item_ids),
             ape_outcome=(_bulk_ape_outcome(
                 db_manager, with_links + ape_only, target_ape)
                 if ape_known else APE_UNCHANGED))

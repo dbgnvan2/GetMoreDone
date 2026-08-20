@@ -916,7 +916,8 @@ def test_sweep3_the_confirmation_message_names_the_target_project(tmp_path, monk
 
         asked.clear()
         ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
-        assert "Clearing the project" in asked["message"]
+        assert "unfiles it from all of them" in asked["message"]
+        assert "not affected" in asked["message"]
     finally:
         vps.close()
 

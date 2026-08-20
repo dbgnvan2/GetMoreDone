@@ -23,6 +23,30 @@ from .vps_manager_planning import VPSPlanningMixin
 from .vps_manager_taxonomy import VPSTaxonomyMixin, VisionElementHasDependentsError
 
 
+class ActionItemsAttachedError(Exception):
+    """Raised when an Annual Plan Element still has Action Items on it.
+
+    Purpose: an Annual Plan Element is deleted only when it has no child
+             records. The delete used to null ``annual_plan_element_id`` on
+             every item pointing at it, which for a Weekly Tactic produced a
+             row ``update_action_item`` then refuses to save — a value no
+             supported path can create, written by a supported path — and for
+             an ordinary item silently detached it from the plan.
+    Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp1
+    Tests:   tests/test_vps_ape_deletion.py
+    """
+
+    def __init__(self, titles):
+        self.titles = list(titles)
+        shown = ", ".join(self.titles[:5])
+        if len(self.titles) > 5:
+            shown += f", and {len(self.titles) - 5} more"
+        super().__init__(
+            f"{len(self.titles)} action item(s) are still on this Annual Plan "
+            f"Element: {shown}. Move or delete them first."
+        )
+
+
 class ProjectBoardsAttachedError(Exception):
     """Raised when an annual plan element cannot be deleted because user projects
     are still attached to it.
@@ -197,13 +221,23 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             if has_real_projects:
                 raise ProjectBoardsAttachedError([b["title"] for b in attached])
 
+            # An Annual Plan Element is deleted only when it has no child
+            # records. This used to null the APE on every item pointing at it,
+            # which silently detached ordinary items from the plan and left
+            # Weekly Tactics in a state the application's own writer rejects
+            # ("A Weekly Tactic must belong to an Annual Plan Element").
+            # Tests: tests/test_vps_ape_deletion.py
+            items = self.db.conn.execute(
+                "SELECT title FROM action_items WHERE annual_plan_element_id = ? "
+                "ORDER BY title COLLATE NOCASE",
+                (ape_id,),
+            ).fetchall()
+            if items:
+                raise ActionItemsAttachedError([row["title"] for row in items])
+
             # Only a single empty auto-created default board remains: safe to remove.
             self.db.conn.execute(
                 "DELETE FROM project_boards WHERE annual_plan_element_id = ?",
-                (ape_id,),
-            )
-            self.db.conn.execute(
-                "UPDATE action_items SET annual_plan_element_id = NULL WHERE annual_plan_element_id = ?",
                 (ape_id,),
             )
 

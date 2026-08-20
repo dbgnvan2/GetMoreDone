@@ -233,17 +233,22 @@ class DBManagerProjectBoardsMixin:
         self.db.conn.commit()
 
     def clear_item_project_links(self, item_id: str):
-        """Remove all project links and clear APE for an action item."""
-        now = datetime.now().isoformat()
+        """Remove an item from every project. Its Annual Plan Element stays.
+
+        Purpose: taking an item off a project is one action, not two. Removing
+                 the link used to null ``annual_plan_element_id`` as well, so
+                 an item detached on the way to a *different* project lost its
+                 place in the plan in between — and the Projects screen's own
+                 "Unlink" button never did that, so the two paths disagreed
+                 about what unlinking means.
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp1
+        Tests:   tests/test_project_multi_link.py::test_unlinking_keeps_the_plan_element
+
+        Filing under a project still stamps that project's Annual Plan Element
+        onto the item — the board decides while the item is on it. Detaching
+        simply stops that, and leaves what was there.
+        """
         self.db.conn.execute("DELETE FROM project_board_items WHERE item_id = ?", (item_id,))
-        # A Weekly Tactic must keep its Annual Plan Element — the raw UPDATE
-        # here bypasses ``update_action_item``'s validation, so nulling it
-        # produced a row the application then refused to save.
-        if not self.is_weekly_tactic(item_id):
-            self.db.conn.execute(
-                "UPDATE action_items SET annual_plan_element_id = NULL, updated_at = ? WHERE id = ?",
-                (now, item_id)
-            )
         self.db.conn.commit()
 
     def is_weekly_tactic(self, item_id: str) -> bool:

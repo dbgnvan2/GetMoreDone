@@ -106,11 +106,14 @@ def test_clear_item_project_links(db_manager):
     
     # Clear links
     db_mgr.clear_item_project_links(item_id)
-    
-    # Verify unlinked and APE cleared
+
+    # Unlinked — and the Annual Plan Element survives. Removing an item from a
+    # project is one action, not two: the user may be on the way to filing it
+    # under a different project, and losing its place in the plan in between is
+    # a loss they never asked for.
     assert len(db_mgr.get_project_board_ids_for_item(item_id)) == 0
     updated_item = db_mgr.get_action_item(item_id)
-    assert updated_item.annual_plan_element_id is None
+    assert updated_item.annual_plan_element_id == ape_id
 
 
 # ----------------------------------------------------------------- BP5

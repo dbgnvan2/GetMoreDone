@@ -417,7 +417,18 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         """
         if not self._confirm_relink([item_id]):
             return
-        self.db_manager.link_item_to_project_exclusive(self.board_id, item_id)
+        # ``link_item_to_project_exclusive`` raises for a Weekly Tactic (PL6).
+        # The list no longer offers tactics, so this is unreachable through the
+        # UI — but an unguarded raise in a Tk ``command`` goes to a stderr a
+        # double-clicked app has nowhere to send, which is how this repo lost a
+        # dialog once already. The bulk path beside it is guarded; this one was
+        # not (P5).
+        try:
+            self.db_manager.link_item_to_project_exclusive(self.board_id, item_id)
+        except Exception as exc:
+            messagebox.showerror("Link Failed", str(exc), parent=self)
+            self.refresh_results()
+            return
         if item_id in self.checked_items:
             self.checked_items.remove(item_id)
         if self.on_linked and callable(self.on_linked):
