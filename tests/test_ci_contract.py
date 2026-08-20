@@ -955,8 +955,9 @@ def test_bi1_publish_job_downloads_every_build_artifact():
         "the publish job never downloads the builds it is publishing"
     )
     for job, artifact in BUILD_ARTIFACTS.items():
-        assert f"name: {artifact}" in body, (
-            f"the publish job does not download {artifact}, uploaded by {job}"
+        assert re.search(rf"^\s*name:\s*{re.escape(artifact)}\s*$", body, re.MULTILINE), (
+            f"the publish job does not download exactly {artifact}, uploaded "
+            f"by {job}"
         )
 
 
@@ -969,9 +970,15 @@ def test_bi1_uploaded_artifact_names_match_what_publish_downloads():
     """
     jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     for job, artifact in BUILD_ARTIFACTS.items():
-        assert f"name: {artifact}" in _code_only(jobs[job]), (
-            f"{job} does not upload an artifact named {artifact}, which the "
-            "publish job downloads by that name"
+        # Line-anchored: `name: GetMoreDone-win64` is a SUBSTRING of
+        # `name: GetMoreDone-win64-x86`, so a suffix rename on one side only
+        # stayed green — and on a real tag that is download-artifact failing
+        # after both builds have run. Third instance of this class in this
+        # batch; see LEARNINGS.md.
+        assert re.search(rf"^\s*name:\s*{re.escape(artifact)}\s*$",
+                         _code_only(jobs[job]), re.MULTILINE), (
+            f"{job} does not upload an artifact named exactly {artifact}, "
+            "which the publish job downloads by that name"
         )
 
 

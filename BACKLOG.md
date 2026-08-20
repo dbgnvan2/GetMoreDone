@@ -4,6 +4,53 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 
 ## Deferred — found by review, deliberately not fixed
 
+### Batch 3 final gate: test-quality findings (2026-08-20)
+
+The fifth review round found **no defect reaching a user** — control flow was
+proven unchanged across all seven `_authenticate` paths and every release guard
+was mutation-proved still firing. These are the test-quality findings from the
+same pass, recorded rather than fixed in-loop. They are squarely in scope for
+the test-suite remediation batch (`prompt-test-suite-remediation.md`, task 4).
+
+Each was demonstrated by a mutation, not argued for:
+
+- **`test_bi3_a_failed_status_print_does_not_discard_a_valid_token` passes with
+  its own defect reintroduced.** Move the status line back inside the `try`
+  *and* drop `OSError` from `_say`, and it still passes: the except-handler's
+  own `_say` raises the fixture's `OSError` first, so the run never reaches
+  `FileNotFoundError`. It asserts two negatives and never asserts the token
+  survived. **The tenth test in this batch that could not fail.**
+- **`_say`'s `OSError` arm is untested** — the arm the helper exists for
+  (closed pipe, `--noconsole`). Removing it passes 19/19.
+- **Adding `-e`/`--editable` to `PIP_OPTIONS_TAKING_A_VALUE` opened a hole**:
+  `pip install -e requests` is now invisible to the "every dependency comes
+  from a requirements file" guard. Pip-semantically correct, but a widening of
+  the guard.
+- **Three improvements are unlocked**: the `- run: <cmd>` branch in
+  `_run_step_lines`, the pip global-options regex, and `_code_only()` on the
+  `-r requirements` findall each work but have no test, so reverting any of
+  them stays green.
+- **`test_the_opt_out_values_are_not_duplicated_across_modules` scans only its
+  own file**, despite the name. A duplicate in another test module is not
+  caught.
+- **Two `.gmd-optout-probe` changes contradict each other**: the `finally`
+  block's comment justifies loud cleanup because a leftover breaks
+  `test_rm3d_all_test_files_are_collected`, but the same commit excluded the
+  directory from that test. The premise is now false and the exclusion is inert.
+- **The `else:` relocations in `_authenticate` are untested** — moving the
+  status prints back inside the `try` passes, because the load-bearing fix is
+  `_say` swallowing. Correct defence-in-depth, unlocked.
+
+### Pre-existing, found by the same pass
+
+- **`_authenticate()` accepts an expired token with no refresh_token.**
+  `if not creds:` is false for a truthy `Credentials` object, so re-auth is
+  skipped, `_save_token` re-saves the dead token, and the user is told
+  "Google Calendar service initialized successfully" before every API call
+  fails. Verified identical before and after this batch — not a regression, but
+  a real defect.
+
+
 ### Google auth: adjacent items from the Batch 3 reviews (2026-08-20)
 
 Found by the three reviews of Batch 3, recorded rather than fixed because each
