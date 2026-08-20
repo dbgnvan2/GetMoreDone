@@ -464,7 +464,8 @@ class WeeklyTacticEngine:
             status="open",
             item_type="week",
             annual_plan_element_id=ape["id"],
-            segment_description_id=self.vps.resolve_segment_id_by_name(ape["segment_name"]),
+            # RN-M2.B: by id, not by name.
+            segment_description_id=self.vps._segment_id_for_ape(ape),
         )
         self.db_manager.create_action_item(tactic, apply_defaults=False)
         report.record("weekly_tactic", tactic.id, title)

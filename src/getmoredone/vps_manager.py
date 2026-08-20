@@ -291,11 +291,16 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             ave_id = f"ave-{uuid4().hex[:8]}"
             self.db.conn.execute("""
                 INSERT INTO annual_vision_elements
-                (id, year, vision_element_id, segment_name, subsegment_name, category_name, key_field, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, year, vision_element_id, segment_name, subsegment_name, category_name, key_field, segment_description_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ave_id, year, vision_element_id, data["segment_name"],
-                data["subsegment_name"], data["category_name"], data["key_field"], now, now
+                data["subsegment_name"], data["category_name"], data["key_field"],
+                # RN-M2.B: stamp the id at create time. Backfilling covers rows
+                # written before this change; without this, every NEW row would
+                # need the migration to catch up with it on the next launch.
+                self.resolve_segment_id_by_name(data["segment_name"]),
+                now, now
             ))
 
         ape_row = self.db.conn.execute(
@@ -308,11 +313,14 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             ape_id = f"ape-{uuid4().hex[:8]}"
             self.db.conn.execute("""
                 INSERT INTO annual_plan_elements
-                (id, year, vision_element_id, annual_vision_element_id, segment_name, subsegment_name, category_name, key_field, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, year, vision_element_id, annual_vision_element_id, segment_name, subsegment_name, category_name, key_field, segment_description_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 ape_id, year, vision_element_id, ave_id, data["segment_name"],
-                data["subsegment_name"], data["category_name"], data["key_field"], now, now
+                data["subsegment_name"], data["category_name"], data["key_field"],
+                # RN-M2.B — see the AVE insert above.
+                self.resolve_segment_id_by_name(data["segment_name"]),
+                now, now
             ))
 
         if commit:
@@ -413,7 +421,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             active_only=False,
         )
         if not existing:
-            segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+            segment_id = self._segment_id_for_ape(ape)
             if not segment_id:
                 raise ValueError(f"Segment '{ape['segment_name']}' not found.")
             self.create_quarter_initiative(
@@ -476,7 +484,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             active_only=False,
         )
         if not month_rows:
-            segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+            segment_id = self._segment_id_for_ape(ape)
             if not segment_id:
                 raise ValueError(f"Segment '{ape['segment_name']}' not found.")
             self.create_month_tactic(
@@ -524,11 +532,99 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         ).fetchone()
         return dict(row) if row else None
 
+    def _segment_id_for_ape(self, ape: Dict[str, Any]) -> Optional[str]:
+        """The APE's segment, by id (RN-M2.B).
+
+        Purpose: renaming a segment must not break the re-filing cascade.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-m2b
+        Tests:   tests/test_rename_safe_links.py::test_rn_m2b_cascade_survives_a_segment_rename
+
+        Every link caller went through ``resolve_segment_id_by_name`` and raised
+        ``ValueError("Segment '<new name>' not found.")`` once the name moved —
+        so an ordinary date change on a filed Action Item raised, and the item
+        silently did not move (spec §2).
+
+        The name lookup remains as a one-time heal for a row the migration
+        could not resolve, and writes the id when it succeeds so it never fires
+        again. ``resolve_segment_id_by_name`` itself stays for genuine NAME
+        lookups — user input and import — and is no longer a link path.
+        """
+        # `ape` arrives as a dict on some paths and a sqlite3.Row on others,
+        # and a Row has no .get(). Reading by key with a membership test works
+        # for both; .get() raised AttributeError in create_week_action_items.
+        def _field(name):
+            try:
+                return ape[name]
+            except (KeyError, IndexError):
+                return None
+
+        existing = _field("segment_description_id")
+        if existing:
+            return existing
+
+        healed = self.resolve_segment_id_by_name(_field("segment_name"))
+        if healed and _field("id"):
+            self.db.conn.execute(
+                "UPDATE annual_plan_elements SET segment_description_id = ? "
+                "WHERE id = ? AND segment_description_id IS NULL",
+                (healed, ape["id"]),
+            )
+        return healed
+
     def _find_annual_initiative_for_ape(self, ape: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+        """The APE's Annual Initiative, resolved by id (RN-M2.A).
+
+        Purpose: renaming anything must not change which initiative an APE has.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+        Tests:   tests/test_rename_safe_links.py::test_rn_m2a_initiative_found_by_id_after_rename
+                 tests/test_rename_safe_links.py::test_rn_m2a1_legacy_row_heals_on_first_lookup
+
+        This used to match ``LOWER(ai.title) = LOWER(ape.key_field)`` and
+        resolve the segment by name. Renaming either made the lookup return
+        None, so the next assignment built a SECOND Annual Initiative and a
+        second Quarter Initiative for the same APE and quarter (RN-F4).
+
+        The title match survives only as a one-time heal for a row whose id is
+        still NULL — a database migrated while two initiatives matched, or a
+        row written by an older build. When it fires it WRITES the id, so it
+        never fires again for that row. It runs inside the caller's
+        transaction, so a cascade rollback takes it with it.
+        """
+        row = self.db.conn.execute(
+            """
+            SELECT ai.*
+            FROM annual_initiatives ai
+            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
+            WHERE ai.annual_plan_element_id = ?
+              AND ap.year = ?
+            ORDER BY ai.created_at ASC
+            LIMIT 1
+            """,
+            (ape["id"], int(ape["year"])),
+        ).fetchone()
+        if row:
+            return dict(row)
+
+        healed = self._heal_annual_initiative_link(ape)
+        return healed
+
+    def _heal_annual_initiative_link(
+        self, ape: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """RN-M2.A.1 — link a legacy NULL row once, by the old title match.
+
+        Spec:  docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+        Tests: tests/test_rename_safe_links.py::test_rn_m2a1_legacy_row_heals_on_first_lookup
+
+        Deliberately narrow. It fires only when the id is NULL and EXACTLY ONE
+        initiative matches: two matches is the RN-F4 duplicate, and choosing
+        between them here would silently pick one of a user's two plans
+        (RN-INV5). Those are left for the report.
+        """
+        segment_id = self._segment_id_for_ape(ape)
         if not segment_id:
             return None
-        row = self.db.conn.execute(
+        matches = self.db.conn.execute(
             """
             SELECT ai.*
             FROM annual_initiatives ai
@@ -537,12 +633,21 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
               AND ai.segment_description_id = ?
               AND LOWER(ai.title) = LOWER(?)
               AND ap.year = ?
-            ORDER BY ai.created_at ASC
-            LIMIT 1
+              AND ai.annual_plan_element_id IS NULL
+            ORDER BY ai.created_at ASC, ai.id ASC
             """,
             (int(ape["year"]), segment_id, ape["key_field"], int(ape["year"])),
-        ).fetchone()
-        return dict(row) if row else None
+        ).fetchall()
+        if len(matches) != 1:
+            return None
+
+        row = dict(matches[0])
+        self.db.conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = ? WHERE id = ?",
+            (ape["id"], row["id"]),
+        )
+        row["annual_plan_element_id"] = ape["id"]
+        return row
 
     def _get_or_create_annual_initiative_for_ape(
         self, ape: Dict[str, Any], created_by_rollover: bool = False
@@ -587,7 +692,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         """
         year = int(ape["year"])
         segment_name = ape["segment_name"]
-        segment_id = self.resolve_segment_id_by_name(segment_name)
+        segment_id = self._segment_id_for_ape(ape)
         if not segment_id:
             raise ValueError(f"Segment '{segment_name}' not found.")
 
@@ -767,7 +872,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         skipped_count = 0
         key_field = ape["key_field"]
         who_value = ape["segment_name"] or "VSP"
-        segment_id = self.resolve_segment_id_by_name(ape["segment_name"])
+        segment_id = self._segment_id_for_ape(ape)
 
         for week_start in week_start_dates:
             if week_start in existing:

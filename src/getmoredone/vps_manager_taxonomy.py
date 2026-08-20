@@ -198,9 +198,19 @@ class VPSTaxonomyMixin:
         if row:
             return row["id"]
         seg_id = f"vsg-{uuid4().hex[:8]}"
+        # RN-M1.C: link to the segment description of the same name if there is
+        # exactly one. None is correct when there is not — the row is reported
+        # by the migration rather than guessed at (RN-INV5).
+        description = self.db.conn.execute(
+            "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+            (norm,),
+        ).fetchall()
+        description_id = description[0]["id"] if len(description) == 1 else None
         self.db.conn.execute(
-            "INSERT INTO vision_segments (id, name, vision_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            (seg_id, norm, "", now, now)
+            "INSERT INTO vision_segments "
+            "(id, name, vision_text, segment_description_id, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (seg_id, norm, "", description_id, now, now)
         )
         return seg_id
 
@@ -675,20 +685,35 @@ class VPSTaxonomyMixin:
 
     def sync_vision_segments_with_settings(self):
         """Ensure every Settings life segment exists in vision_segments."""
-        settings_rows = self.db.conn.execute("SELECT name FROM segment_descriptions").fetchall()
+        settings_rows = self.db.conn.execute(
+            "SELECT id, name FROM segment_descriptions"
+        ).fetchall()
         now = datetime.now().isoformat()
         for row in settings_rows:
             name = (row["name"] or "").strip()
             if not name:
                 continue
             existing = self.db.conn.execute(
-                "SELECT id FROM vision_segments WHERE LOWER(name) = LOWER(?)",
+                "SELECT id, segment_description_id FROM vision_segments "
+                "WHERE LOWER(name) = LOWER(?)",
                 (name,),
             ).fetchone()
             if not existing:
+                # RN-M1.C / RN-M2.C: stamp the id at create time. This runs at
+                # every manager init, AFTER the migration, so a row created
+                # here without its id would be unlinked until the next launch.
                 self.db.conn.execute(
-                    "INSERT INTO vision_segments (id, name, vision_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                    (f"vsg-{uuid4().hex[:8]}", name, "", now, now),
+                    "INSERT INTO vision_segments "
+                    "(id, name, vision_text, segment_description_id, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (f"vsg-{uuid4().hex[:8]}", name, "", row["id"], now, now),
+                )
+            elif not existing["segment_description_id"]:
+                # Heal a legacy row while we are here and certain: this row was
+                # found BY the name that segment_descriptions row carries.
+                self.db.conn.execute(
+                    "UPDATE vision_segments SET segment_description_id = ? WHERE id = ?",
+                    (row["id"], existing["id"]),
                 )
         self.db.conn.commit()
 
@@ -735,7 +760,10 @@ class VPSTaxonomyMixin:
                 COALESCE(sd.is_active, 1) AS is_active,
                 sd.id AS settings_segment_id
             FROM vision_segments vs
-            LEFT JOIN segment_descriptions sd ON LOWER(sd.name) = LOWER(vs.name)
+            -- RN-M2.C: by id, not by name. rename_vision_segment updates
+            -- vision_segments only, so a name join found nothing after a
+            -- rename and the segment lost its colour and order.
+            LEFT JOIN segment_descriptions sd ON sd.id = vs.segment_description_id
             ORDER BY vs.name COLLATE NOCASE ASC
             """
         )
@@ -781,7 +809,10 @@ class VPSTaxonomyMixin:
             """
             SELECT sd.id AS settings_id
             FROM vision_segments vs
-            LEFT JOIN segment_descriptions sd ON LOWER(sd.name) = LOWER(vs.name)
+            -- RN-M2.C: by id, not by name. rename_vision_segment updates
+            -- vision_segments only, so a name join found nothing after a
+            -- rename and the segment lost its colour and order.
+            LEFT JOIN segment_descriptions sd ON sd.id = vs.segment_description_id
             WHERE vs.id = ?
             """,
             (segment_id,),
@@ -810,7 +841,10 @@ class VPSTaxonomyMixin:
             """
             SELECT vs.id, vs.name, sd.id AS settings_id
             FROM vision_segments vs
-            LEFT JOIN segment_descriptions sd ON LOWER(sd.name) = LOWER(vs.name)
+            -- RN-M2.C: by id, not by name. rename_vision_segment updates
+            -- vision_segments only, so a name join found nothing after a
+            -- rename and the segment lost its colour and order.
+            LEFT JOIN segment_descriptions sd ON sd.id = vs.segment_description_id
             WHERE vs.id = ?
             """,
             (segment_id,),
