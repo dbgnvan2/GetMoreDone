@@ -132,6 +132,9 @@ pip install -r requirements.txt
 python run.py
 ```
 
+`requirements.txt` is the runtime set. Contributors who also want to run the
+test suite install `requirements-dev.txt` instead, which includes it.
+
 On Linux you may need your distribution's Tk package first, e.g.
 `sudo apt install python3-tk`.
 
@@ -169,6 +172,11 @@ To enable it you need your own Google Cloud OAuth credentials:
 4. Download the JSON and save it as `credentials.json` at:
    - macOS/Linux: `~/.getmoredone/credentials.json`
    - Windows: `%USERPROFILE%\.getmoredone\credentials.json`
+
+   Create that folder if it does not exist — GetMoreDone uses it whenever it is
+   present. If you have never had one, the app looks in its own data directory
+   instead (see **Where your data lives** below), and the message it shows when
+   credentials are missing names the exact path it checked.
 
 The first calendar action opens a browser to authorise. If sign-in misbehaves,
 run `python3 tools/diagnose_google_auth.py` from a source checkout.

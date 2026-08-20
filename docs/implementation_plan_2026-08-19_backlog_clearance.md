@@ -1,6 +1,7 @@
 # Implementation plan — Backlog clearance (2026-08-19)
 
-Status: Batch 1 complete (2026-08-19). Batch 2 complete (2026-08-19). Batch 3 outstanding.
+Status: Batch 1 complete (2026-08-19). Batch 2 complete (2026-08-19).
+Batch 3 complete (2026-08-20).
 Source: [`BACKLOG.md`](../BACKLOG.md) open items, plus the two decisions taken today.
 
 ## Decisions taken
@@ -55,13 +56,34 @@ BP6 was confirmed with the user before doing it, as the plan required.
 | **BP5** | A3: give the Scheduler a count query instead of `len(get_unlinked_action_items(...))`, and a `limit` on the list path with the drop announced ("showing N of M", P9). | `tests/test_db_project_drag.py` — a real-scale fixture big enough that the cap bites |
 | **BP6** | A2: decide `weekly_items.py`. Recommendation: **stop prefixing** — build the title from what the user typed. Lineage already comes from the APE and parent, and the prefix is a third-choice fallback. | `tests/test_weekly_items_title.py` — an item created from a legacy-shaped tactic gets an unprefixed title, and its lineage still resolves |
 
-## Batch 3 — Infra
+## Batch 3 — Infra — **complete**
+
+Handoff: [`docs/changes/2026-08-20-backlog-batch-3.md`](changes/2026-08-20-backlog-batch-3.md).
+BI1 and BI2 cross the multi-agent ownership boundaries in `CLAUDE.md` (`.github/` is the GitHub Agent's, `requirements.txt` the Docs Agent's).
+Confirmed with the user before starting: done here on `main`, as Batches 1 and 2
+were. The agent branches are dormant — `codex/agent-docs` and `codex/agent-github`
+were never created and `codex/agent-code` is 131 commits behind, last touched
+2026-04-03.
 
 | ID | Work | Test |
 |---|---|---|
 | **BI1** | D1: replace the two per-OS release calls with one `publish` job (`needs: [build-windows, build-macos]`) that downloads both artifacts and makes a single release call. | `tests/test_ci_contract.py` — assert exactly one job calls `action-gh-release`, and it needs both builds |
 | **BI2** | D3: split `requirements-dev.txt` out of `requirements.txt`, and delete the hardcoded `TEST_ONLY_PACKAGES` set in `tests/test_release_licensing.py` that exists to compensate. | That test, rewritten to read the two files |
 | **BI3** | D4: `GoogleCalendarManager.__init__` must read its arguments before touching the filesystem — only create the directory when it is actually going to use the default paths, and use `paths.app_data_dir_path()` for consistency with the rest of the app. | A test constructing it with explicit paths and asserting `~/.getmoredone` is not created (no `Path.home()` monkeypatching needed afterwards) |
+
+## Batch 4 — rename-safe links (next)
+
+Added 2026-08-20 at the user's request, so the overall plan names what follows
+Batch 3. It is a separate, already-approved spec and plan, not a rewrite of
+anything above:
+
+- **Kickoff:** [`docs/changes/2026-08-19-rename-safe-links-kickoff.md`](changes/2026-08-19-rename-safe-links-kickoff.md)
+- **Spec:** [`docs/spec_2026-08-19_rename_safe_links.md`](spec_2026-08-19_rename_safe_links.md)
+- **Plan:** [`docs/implementation_plan_2026-08-19_rename_safe_links.md`](implementation_plan_2026-08-19_rename_safe_links.md)
+
+17 leaf acceptance criteria, built in that plan's §3 order, starting with
+RN-M2.D — the breakage matrix, which fails at three of six renames today and is
+the acceptance criterion for the whole spec. Not started.
 
 ## Not in this plan
 

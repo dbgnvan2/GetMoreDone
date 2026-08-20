@@ -55,6 +55,30 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The release workflow publishes once, after both builds succeed.** `build-windows`
+  and `build-macos` each called `softprops/action-gh-release`, so a tagged run made two
+  release calls. Whichever finished first created the public Release; if the other then
+  failed, that Release stayed up carrying one platform's assets, because a failed job does
+  not un-publish a Release another job already created. A single `publish` job now runs
+  `needs: [build-windows, build-macos]`, downloads both artifacts and makes one release
+  call, so a half-succeeded run publishes nothing. The release notes are generated once
+  rather than once per platform.
+- **Test-only dependencies moved to `requirements-dev.txt`.** `requirements.txt` is now the
+  runtime set — the list that ships inside the binary. `requirements-dev.txt` includes it and
+  adds pytest, so one install still gives a contributor everything. Two places had been
+  carrying a hand-maintained copy of which packages were test-only: a `TEST_ONLY_PACKAGES`
+  set in `tests/test_release_licensing.py` and a `grep -v '^pytest'` in `start.sh`. Both are
+  gone; a third test-only package would have slipped past both and been treated as a shipped
+  dependency.
+- **`GoogleCalendarManager` reads its arguments before touching the filesystem.** Constructing
+  it with explicit `credentials_file` and `token_file` created `~/.getmoredone` anyway and then
+  never used it. The default location is now resolved by `paths.google_auth_dir()`, shared by
+  the constructor and the two static checks that previously each hardcoded the path — changing
+  only the constructor would have left `has_credentials()` looking somewhere else. `~/.getmoredone`
+  is still used whenever it exists; a machine that has never had one uses the application data
+  directory. The directory is created where the token is written, which also fixes an explicit
+  `token_file` in a non-existent directory failing behind a warning and re-authenticating every run.
+
 - **An Action Item belongs to exactly one Project, on every screen.** The Projects
   screen's "Link Action Items" dialog used to *add* a project to an item while the
   Scheduler and the item editor *moved* it, so the same item could accumulate boards
@@ -100,6 +124,11 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tests. Rescheduling is unchanged — drag an item in the Scheduler, or edit its dates.
 
 ### Fixed
+
+- **The test suite no longer has to steal keyboard focus.** Three tests build a real
+  on-screen window to read geometry. `GETMOREDONE_NO_MAPPED_WINDOWS=1` now skips them, with a
+  skip reason naming the variable so a suppressed run cannot be mistaken for a passing one.
+  It is opt-in and `tests/test_ci_contract.py` asserts no workflow ever sets it.
 
 - **A Weekly Tactic can no longer be filed under a Project**, which was never
   intended — the item editor already refused, the Projects screen's "Link Action

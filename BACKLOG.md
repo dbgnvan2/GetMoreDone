@@ -1,25 +1,28 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-08-19 (Batch 2 complete, twelve review passes)
+Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev requirements, BI3 calendar paths)
 
 ## Deferred — found by review, deliberately not fixed
 
-### Release workflow: concurrent release creation (2026-08-18)
+### Release workflow: concurrent release creation — FIXED 2026-08-20 (BI1)
 
-`build-windows` and `build-macos` both call `softprops/action-gh-release` with the
-same `tag_name`, so the first tagged run is a check-then-create race between two
-jobs. **Not fixed**, but the original reason given here was wrong: a red job does
-not un-publish a Release. If one job wins the create and the other errors, the
-result is a public, permanent Release carrying one platform's assets only — the
-same outcome `fail_on_unmatched_files` was added to prevent. The real reason to
-defer is that the window is narrow and we accept it for now, not that it is
-harmless. `fail_on_unmatched_files: true` makes a red publish job *more* likely,
-so do not dismiss one as "the known race" without checking which it is.
-(v0.2.0 published cleanly, but that run predates the action bump and is one draw
-of a timing window, so it is not evidence either way.)
-Fix when convenient: a `publish` job with
-`needs: [build-windows, build-macos]` that downloads both artifacts and makes a
-single release call. Recorded in `LEARNINGS.md` under Open risks.
+`build-windows` and `build-macos` both called `softprops/action-gh-release` with
+the same `tag_name`, so a tagged run was a check-then-create race between two
+jobs, and a red job does not un-publish a Release: if one job won the create and
+the other errored, the result was a public, permanent Release carrying one
+platform's assets only — the same outcome `fail_on_unmatched_files` was added to
+prevent.
+
+Fixed as the entry proposed: a single `publish` job with
+`needs: [build-windows, build-macos]` downloads both artifacts and makes one
+release call, so a half-succeeded run publishes nothing at all. The release notes
+are generated once instead of once per platform.
+
+**Still untested against a real tagged run.** CI is the one thing that cannot be
+verified by running it here; the guarantee rests on
+`tests/test_ci_contract.py::test_bi1_*` reading the YAML. The first `v*` tag after
+this change is the real test — watch it, and if the `publish` job fails, no
+Release is created, which is the intended behaviour rather than a regression.
 
 ### Item editor Project link: deferred decisions — all resolved in Batch 2 (2026-08-19)
 
@@ -164,12 +167,15 @@ log line nobody reads. Needs a UI decision, which is why it is here.
   failing test reporting green since `delete_segment`'s return shape changed.
   Another opened the user's real database. All four files now assert;
   `PytestReturnNotNoneWarning` count is 0. See `LEARNINGS.md`.
-- `requirements.txt` mixes test-only and runtime dependencies, forcing
-  `tests/test_release_licensing.py` to carry a hardcoded `TEST_ONLY_PACKAGES` set.
-  A `requirements-dev.txt` split would remove the guesswork.
-- `GoogleCalendarManager.__init__` creates `~/.getmoredone` before reading its own
-  arguments, so merely constructing it touches the real home directory; tests
-  redirect `Path.home()` to work around it.
+- [x] **Done 2026-08-20 (BI2).** `requirements-dev.txt` split out; `TEST_ONLY_PACKAGES`
+  deleted and `start.sh`'s `grep -v '^pytest'` with it — there were **two** hardcoded
+  copies of the answer, not one. The split is asserted as set disjointness rather than
+  by naming pytest, so a third test-only package cannot land in the wrong file.
+- [x] **Done 2026-08-20 (BI3).** `GoogleCalendarManager.__init__` reads its arguments
+  first and creates nothing. The default location moved into
+  `paths.google_auth_dir()`, shared by the constructor and the two static checks that
+  each hardcoded it — fixing only the constructor would have left `has_credentials()`
+  looking in a different directory. `~/.getmoredone` still wins when it exists.
 - The `LICENSE` is an unreviewed draft. It carries a warning header protected by
   `test_rm2a_license_carries_the_unreviewed_draft_warning`; have a lawyer review it
   before the first paid sale, then delete the header and that test together.

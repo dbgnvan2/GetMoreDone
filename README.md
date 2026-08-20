@@ -92,6 +92,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# ...or, to run the tests as well (this includes requirements.txt):
+pip install -r requirements-dev.txt
 ```
 
 #### 2. Create Demo Data (Optional)
@@ -377,7 +380,16 @@ GetMoreDone stores credentials in your home directory:
 ~/.getmoredone/token.pickle      # Auth token (auto-generated)
 ```
 
-This keeps credentials secure and shared across all projects.
+This keeps credentials secure and shared across all projects — the Gmail
+importer in `tools/` reads the same file.
+
+`~/.getmoredone/` is used whenever it exists, so creating it and putting
+`credentials.json` there is always the right move. On a machine that has never
+had one, GetMoreDone looks in its own application data directory instead
+(`~/Library/Application Support/GetMoreDone/` on macOS,
+`%APPDATA%\GetMoreDone\` on Windows) rather than creating a dot-directory the
+app may never need. Neither directory is created just by opening the calendar
+dialog; the error message names the exact path it looked in.
 
 **Setup (One-Time):**
 
@@ -462,6 +474,13 @@ python3 tools/diagnose_google_auth.py
 
 ### Running Tests
 
+Test-only packages live in `requirements-dev.txt`, which includes
+`requirements.txt`, so one install covers both:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
 ```bash
 # Run all tests
 pytest
@@ -471,6 +490,10 @@ pytest --cov=src/getmoredone
 
 # Run specific test file
 pytest tests/test_database.py -v
+
+# Three tests build a real on-screen window and take keyboard focus.
+# Skip them while you are working on the machine (CI never sets this):
+GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest
 ```
 
 ### Database

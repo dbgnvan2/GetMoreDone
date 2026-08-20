@@ -71,13 +71,19 @@ Referenced by ID from the global catalogue; listed here because they recur.
   *Ask:* does this `transaction()` contain anything besides the writes the
   `except` is apologising for? If yes, the rollback is wider than the message.
 
-- **2026-08-18 — `build-windows` and `build-macos` call `action-gh-release` concurrently
-  with the same `tag_name`.** Check-then-create race on the first tagged run. A red job
-  does **not** un-publish a Release: if one job wins the create and the other errors,
-  the outcome is a public Release carrying one platform's assets — the very thing
-  `fail_on_unmatched_files` was added to prevent. Deferred because the window is narrow,
-  not because it is harmless. Tracked in `BACKLOG.md`. A serialised `publish` job with
-  `needs: [build-windows, build-macos]` removes it.
+- **RESOLVED 2026-08-20 (BI1) — `build-windows` and `build-macos` no longer call
+  `action-gh-release` concurrently.** The defect: a check-then-create race on a tagged
+  run, where a red job does **not** un-publish a Release, so one job winning the create
+  while the other errored left a public Release carrying one platform's assets — the very
+  thing `fail_on_unmatched_files` was added to prevent. Fixed by the serialised `publish`
+  job this entry proposed: `needs: [build-windows, build-macos]`, both artifacts
+  downloaded, one release call.
+
+  **Still unverified against a real tagged run**, and that is the honest status. CI is the
+  one thing that cannot be tested by running it locally; `tests/test_ci_contract.py::test_bi1_*`
+  read the YAML and are the only check that exists before a real `v*` tag. Each was
+  mutation-checked (second release call reintroduced, `needs:` narrowed, a download step
+  deleted — all three go red). That proves the tests can fail, not that the workflow runs.
 - **RESOLVED 2026-08-19 — the four action major bumps are now verified on real
   runners.** `tests.yml` run `32200605573` (666 passed on 3.11/3.12/3.13) and
   `build-release.yml` run `32200724360` (both OS jobs green) executed on commits
