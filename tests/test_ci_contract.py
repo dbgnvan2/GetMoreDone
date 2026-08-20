@@ -73,6 +73,12 @@ def _run_step_lines(text: str) -> list[str]:
             in_run, run_indent = True, indent
         elif stripped.startswith("run:"):
             collected.append(stripped[len("run:"):].strip())
+        elif re.match(r"^-\s+run:\s*\S", stripped):
+            # `- run: <command>` — run as a step's FIRST key, the same YAML
+            # style this repo already uses for `- uses: actions/checkout@v7`.
+            # It matched neither branch above, so the line was dropped before
+            # any check saw it: `- run: pip install pytest` was invisible.
+            collected.append(stripped.split("run:", 1)[1].strip())
     return collected
 
 
@@ -133,6 +139,19 @@ PIP_OPTIONS_TAKING_A_VALUE = frozenset({
     "--global-option", "--config-settings",
     "-t", "--target",
     "--prefix",
+    "--root", "--src",
+    "--cache-dir",
+    "--proxy",
+    "--timeout",
+    "--retries",
+    "--python-version", "--python", "--platform", "--abi", "--implementation",
+    "--cert", "--client-cert",
+    "--log",
+    "--upgrade-strategy",
+    "--progress-bar",
+    "--report",
+    "--exists-action",
+    "-e", "--editable",
 })
 
 
@@ -155,7 +174,11 @@ def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
     so the runtime set is still what CI installs.
     """
     text = TESTS_WORKFLOW.read_text(encoding="utf-8")
-    installs = re.findall(r"-r\s+(requirements(?:-dev)?\.txt)", text)
+    # _code_only: reading the raw text meant
+    # `# python -m pip install -r requirements-dev.txt` satisfied this while CI
+    # installed nothing at all. The pip guard below already did this; this half
+    # did not.
+    installs = re.findall(r"-r\s+(requirements(?:-dev)?\.txt)", _code_only(text))
     assert installs, (
         "tests.yml must install from requirements.txt or requirements-dev.txt, "
         "so a missing or wrong dependency declaration fails CI instead of "
@@ -168,7 +191,10 @@ def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
     # `pip3 install X` and `sudo pip install X` — three spellings it used to
     # catch. A silent miss here is exactly what it exists to prevent.
     for line in _run_step_lines(_code_only(text)):
-        match = re.search(r"\bpip[0-9]*\s+install\b(.*)$", line.strip())
+        # `pip [global options] install ...`: requiring `install` as the very
+        # next token let `pip --no-cache-dir install X` through untouched.
+        match = re.search(r"\bpip[0-9]*\s+(?:-\S+(?:\s+\S+)?\s+)*?install\b(.*)$",
+                          line.strip())
         if not match:
             continue
         args = match.group(1).split()
@@ -709,9 +735,11 @@ def test_no_workflow_disables_the_mapped_window_tests():
     Set in CI it would turn the only coverage of the sash-drag and pin-drag
     contracts into a permanent silent skip.
     """
+    from conftest import NO_MAPPED_WINDOWS_ENV
+
     offenders = [
         wf.name for wf in _workflows()
-        if "GETMOREDONE_NO_MAPPED_WINDOWS" in wf.read_text(encoding="utf-8")
+        if NO_MAPPED_WINDOWS_ENV in wf.read_text(encoding="utf-8")
     ]
     assert not offenders, (
         f"{offenders} set GETMOREDONE_NO_MAPPED_WINDOWS. That variable is a "
@@ -743,11 +771,13 @@ def test_the_mapped_window_opt_out_is_off_by_default():
     probe_dir = REPO_ROOT / ".gmd-optout-probe"
     probe = probe_dir / "test_probe.py"
 
+    from conftest import NO_MAPPED_WINDOWS_ENV
+
     def _run(env_value):
         env = dict(os.environ)
-        env.pop("GETMOREDONE_NO_MAPPED_WINDOWS", None)
+        env.pop(NO_MAPPED_WINDOWS_ENV, None)
         if env_value is not None:
-            env["GETMOREDONE_NO_MAPPED_WINDOWS"] = env_value
+            env[NO_MAPPED_WINDOWS_ENV] = env_value
         # No -rs here on purpose: pytest.ini's addopts must be what produces
         # the skip reason, so deleting that line fails this test.
         return subprocess.run(
@@ -786,7 +816,7 @@ def test_the_mapped_window_opt_out_is_off_by_default():
         assert "1 skipped" in on.stdout, (
             f"GETMOREDONE_NO_MAPPED_WINDOWS=1 must skip it.\n{_describe(on)}"
         )
-        assert "GETMOREDONE_NO_MAPPED_WINDOWS" in on.stdout, (
+        assert NO_MAPPED_WINDOWS_ENV in on.stdout, (
             "the skip REASON must be printed, so a suppressed run cannot be "
             "mistaken for a passing one. This depends on addopts = -rs in "
             f"pytest.ini.\n{_describe(on)}"
@@ -797,7 +827,14 @@ def test_the_mapped_window_opt_out_is_off_by_default():
         # own sibling fix argued against.
         import conftest
 
-        off_values = [v for v in conftest.NO_MAPPED_WINDOWS_OFF_VALUES if v] + [" 0 "]
+        # Upper-case forms included deliberately: every value in conftest's
+        # tuple is lowercase, so a loop over it alone never exercises .lower()
+        # and removing that call passed. "FALSE"/"OFF"/"No" would then silently
+        # turn the opt-out ON.
+        off_values = (
+            [v for v in conftest.NO_MAPPED_WINDOWS_OFF_VALUES if v]
+            + [" 0 ", "FALSE", "OFF", "No"]
+        )
         for off_value in off_values:
             off = _run(off_value)
             assert off.returncode == 0 and "1 passed" in off.stdout, (
@@ -827,6 +864,8 @@ def test_the_opt_out_values_are_not_duplicated_across_modules():
     The guard test used to re-spell both the variable name and the whole falsy
     tuple, in the same commit that argued against exactly that duplication.
     """
+    import ast
+
     import conftest
 
     assert conftest.NO_MAPPED_WINDOWS_ENV == "GETMOREDONE_NO_MAPPED_WINDOWS"
@@ -835,6 +874,27 @@ def test_the_opt_out_values_are_not_duplicated_across_modules():
             f"{off_value!r} is no longer treated as 'off', so setting the "
             "variable to it would silently turn the opt-out ON"
         )
+
+    # And no module may keep a SECOND copy. Asserting the six strings are still
+    # in conftest's tuple is not a duplication check — a drifted copy elsewhere
+    # left that green, which is what the name promises and did not deliver.
+    tree = ast.parse(Path(__file__).read_text(encoding="utf-8"))
+    duplicates = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            literal = ast.dump(node.value)
+            if '"GETMOREDONE_NO_MAPPED_WINDOWS"' in literal.replace("'", '"'):
+                duplicates.append(f"line {node.lineno}: the env var name")
+            if literal.count("Constant") >= 4 and all(
+                f"'{v}'" in literal or f'"{v}"' in literal for v in ("0", "false", "off")
+            ):
+                duplicates.append(f"line {node.lineno}: the off-values tuple")
+    assert not duplicates, (
+        f"a second copy of conftest's opt-out constants lives here: "
+        f"{duplicates}. Import NO_MAPPED_WINDOWS_ENV / "
+        "NO_MAPPED_WINDOWS_OFF_VALUES instead — two copies drift and only one "
+        "of them is the one the fixture reads."
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1003,9 +1063,30 @@ def test_bi1_job_level_if_parser_finds_block_scalars():
     assert "always()" in captured, f"block scalar not captured: {captured!r}"
     assert "refs/tags/v" in captured
 
-    # A step-level if: (6 spaces) is not the job's.
-    step_only = "    runs-on: ubuntu-latest\n    steps:\n      - if: startsWith(github.ref, 'refs/tags/v')\n"
-    assert _job_level_if(step_only) is None
+    # A step-level if: is not the job's — in BOTH step spellings.
+    #
+    # The dash form alone did not separate a correct parser from a relaxed one:
+    # `^\\s+if:` cannot match a dash line either, so `^(\\s{4})if:` -> `^(\\s+)if:`
+    # passed. The 8-space form under `- name:` is what distinguishes them, and
+    # it is the form a real workflow uses.
+    dash_form = (
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - if: startsWith(github.ref, 'refs/tags/v')\n"
+    )
+    assert _job_level_if(dash_form) is None
+
+    named_step_form = (
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - name: Publish\n"
+        "        if: startsWith(github.ref, 'refs/tags/v')\n"
+    )
+    assert _job_level_if(named_step_form) is None, (
+        "a step's if: was read as the job's. Deleting the job gate and putting "
+        "the tag condition on a step would then look correctly gated, while "
+        "every push cut a public Release."
+    )
 
 
 def test_bi1_selftest_still_gates_publication_through_needs():

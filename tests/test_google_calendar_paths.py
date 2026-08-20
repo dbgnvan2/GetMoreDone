@@ -431,6 +431,61 @@ def test_bi3_no_bare_print_remains_in_the_module():
 # BI3 — the message the user actually sees (P25: test the surface, not the lib)
 # --------------------------------------------------------------------------
 
+def test_bi3_the_dialog_actually_uses_the_message_helper():
+    """P25 — wired at the library, unverified at the front end.
+
+    ``missing_credentials_message()`` is tested directly below, but nothing
+    bound it to the surface that shows it. Verified by mutation: reverting the
+    dialog's call site to the old hardcoded string, leaving the helper intact,
+    left the whole file green. The assertion that used to catch that was
+    removed along with a tautology in the same edit.
+
+    AST rather than a substring: this file has already been bitten three times
+    by a text match hitting a comment.
+    """
+    import ast
+
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/getmoredone/screens/calendar_dialog.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    calls = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "missing_credentials_message"
+    ]
+    assert calls, (
+        "calendar_dialog.py never calls missing_credentials_message(). The "
+        "helper is tested and the dialog shows something else."
+    )
+
+    # And that call must be what the error label is configured with.
+    wired = False
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr != "configure":
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != "text":
+                continue
+            if any(
+                isinstance(inner, ast.Call)
+                and isinstance(inner.func, ast.Name)
+                and inner.func.id == "missing_credentials_message"
+                for inner in ast.walk(keyword.value)
+            ):
+                wired = True
+    assert wired, (
+        "no error label is configured with missing_credentials_message(). The "
+        "dialog builds its own string, so the path it names is not the path "
+        "has_credentials() checked — which README.md and INSTALL.md promise."
+    )
+
+
 def test_bi3_the_dialog_message_names_the_path_that_was_checked(
     redirected_home, monkeypatch
 ):
