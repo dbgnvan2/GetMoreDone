@@ -124,8 +124,16 @@ def test_a_mapped_window_is_invisible_but_still_measurable(mapped_windows):
         window.update_idletasks()
         alpha = float(window.attributes("-alpha"))
         width = window.winfo_width()
+        # deiconify must not undo it either: a screen calling deiconify after
+        # construction put its window back on the display.
+        window.deiconify()
+        window.update_idletasks()
+        alpha_after_deiconify = float(window.attributes("-alpha"))
     finally:
         window.destroy()
+    assert alpha_after_deiconify == 0.0, (
+        "deiconify() made the window visible again"
+    )
 
     assert alpha == 0.0, (
         f"a mapped window is visible (alpha={alpha}). It will appear over the "

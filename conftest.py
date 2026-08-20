@@ -165,6 +165,71 @@ def pytest_sessionfinish(session, exitstatus):
 
 
 @pytest.fixture(autouse=True, scope="session")
+def _forbid_resolving_the_real_database():
+    """Fail the test that reaches for the real database, at the moment it does.
+
+    Purpose: turn a silent write to production data into an immediate error.
+    Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md
+    Tests:   tests/test_live_data_guard.py
+
+    ``GETMOREDONE_DB`` (set in ``pytest_sessionstart``) already redirects the
+    default, and the fingerprint check at session end *detects* an escape. Both
+    are worth keeping, but neither says WHICH test did it: the fingerprint fires
+    after the run, naming a file rather than a test.
+
+    This raises inside ``resolve_db_path`` instead, so the traceback points at
+    the offending line. It is the third layer on purpose — the incident in
+    `3892159` was ``DatabaseManager()`` with no path, whose ``__init__`` runs
+    migrations, a row-deleting dedupe and a date-moving repair against the
+    user's real data.
+
+    Patched on both import spellings: ``getmoredone.paths`` and
+    ``src.getmoredone.paths`` are different module objects, and patching one
+    leaves the other live — the trap this file already documents for
+    ``AppSettings``.
+    """
+    import importlib
+
+    from platformdirs import user_data_dir
+
+    from src.getmoredone.paths import APP_AUTHOR, APP_NAME
+
+    real_dir = Path(user_data_dir(APP_NAME, APP_AUTHOR)).expanduser().resolve()
+
+    patched = []
+    for module_name in ("src.getmoredone.paths", "getmoredone.paths"):
+        module = importlib.import_module(module_name)
+        original = module.resolve_db_path
+
+        def _guarded(db_path=None, __original=original):
+            resolved = __original(db_path)
+            # An in-memory target is a string, not a path — always fine.
+            if isinstance(resolved, Path):
+                try:
+                    inside_real = resolved.resolve().is_relative_to(real_dir)
+                except (OSError, ValueError):
+                    inside_real = False
+                if inside_real:
+                    raise AssertionError(
+                        f"a test resolved the REAL application database: "
+                        f"{resolved}\n"
+                        "Pass an explicit tmp_path database. Constructing a "
+                        "DatabaseManager with no path runs migrations, a "
+                        "row-deleting dedupe and a date-moving repair against "
+                        "the user's own data."
+                    )
+            return resolved
+
+        module.resolve_db_path = _guarded
+        patched.append((module, original))
+    try:
+        yield real_dir
+    finally:
+        for module, original in patched:
+            module.resolve_db_path = original
+
+
+@pytest.fixture(autouse=True, scope="session")
 def _isolate_user_settings(tmp_path_factory):
     """Keep the suite out of the user's real settings.json.
 
@@ -248,10 +313,6 @@ def _isolate_weekly_tactic_log(tmp_path_factory):
 # ``mapped_windows`` fixture). Everything else is withdrawn on creation.
 _WINDOWS_MAY_BE_MAPPED = False
 
-# Set alongside it: a mapped window is made fully transparent so the tests that
-# need real geometry do not put anything on screen or take keyboard focus.
-_MAPPED_WINDOWS_INVISIBLE = False
-
 
 # Setting this makes ``mapped_windows`` skip instead of mapping, for running
 # the suite on a machine someone is working on. It is deliberately an opt-IN
@@ -297,18 +358,16 @@ def mapped_windows():
             "geometry tests."
         )
 
-    global _WINDOWS_MAY_BE_MAPPED, _MAPPED_WINDOWS_INVISIBLE
+    global _WINDOWS_MAY_BE_MAPPED
+    # Mapped, and — like every other window in the suite — fully transparent.
+    # Tk still lays it out, so winfo_width()/winfo_x() return real numbers and
+    # event_generate works, but nothing is drawn. Moving it off-screen does not
+    # work here (macOS clamps it back onto the display); alpha does.
     _WINDOWS_MAY_BE_MAPPED = True
-    # Mapped but fully transparent. Tk still lays the window out, so
-    # winfo_width()/winfo_x() return real numbers and event_generate works —
-    # but nothing is drawn over the user's screen. Moving it off-screen does
-    # not work here (macOS clamps it back onto the display); alpha does.
-    _MAPPED_WINDOWS_INVISIBLE = True
     try:
         yield
     finally:
         _WINDOWS_MAY_BE_MAPPED = False
-        _MAPPED_WINDOWS_INVISIBLE = False
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -344,13 +403,17 @@ def _keep_tk_windows_off_screen():
 
         def _init(self, *args, __original=original_init, **kwargs):
             __original(self, *args, **kwargs)
+            # Transparent FIRST, unconditionally. withdraw() happens after the
+            # window already exists and has been mapped, so every one of the
+            # hundreds of window-building tests flashed a visible frame in the
+            # gap — withdrawing later removes the window, not the flash. Alpha
+            # closes the gap; the withdraw below still does the real work.
+            try:
+                self.attributes("-alpha", 0.0)
+            except Exception:
+                pass
             if _WINDOWS_MAY_BE_MAPPED:
-                if _MAPPED_WINDOWS_INVISIBLE:
-                    # Transparent, not withdrawn: geometry still resolves.
-                    try:
-                        self.attributes("-alpha", 0.0)
-                    except Exception:
-                        pass
+                # Stays mapped and transparent, so geometry resolves.
                 return
             try:
                 self.withdraw()
@@ -364,6 +427,13 @@ def _keep_tk_windows_off_screen():
         _silence(cls, "lift", lambda self, *a, **k: None)
         _silence(cls, "focus_force", lambda self, *a, **k: None)
         _silence(cls, "grab_set", lambda self, *a, **k: None)
+        # deiconify is deliberately NOT silenced. Silencing it hung
+        # tests/test_item_editor_sash.py — verified by bisection — and it is
+        # unnecessary: the alpha above is applied at creation, so a window that
+        # deiconifies is mapped and still fully transparent.
+        # deiconify undoes the withdraw above. It was not silenced, so any
+        # screen that calls it — directly or via wm_deiconify — put its window
+        # back on the user's display after the guard had removed it.
 
     try:
         yield
