@@ -719,3 +719,93 @@ def test_s2_8_an_unreadable_board_is_still_a_filing_not_a_clear(tmp_path, monkey
         assert "the selected project" in message, message
     finally:
         vps.close()
+
+
+# ---------------------------------------------- sweep, third pass
+
+
+def test_s3_1_a_mixed_bulk_clear_names_both_kinds_of_loss(tmp_path, answers):
+    """"2 items are filed under a project" was false when only one was.
+
+    Sweep pass 3. S2-2 widened what counts as a loss and left the bulk sentence
+    describing the old, narrower one; its test dragged a single item, so it
+    took the one-item branch and never read this wording (P19).
+    """
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+
+        filed = make_daily_item(vps, "Filed")
+        manager.link_item_to_project_exclusive(board.id, filed.id)
+
+        ape_only = make_daily_item(vps, "Plan only")
+        stored = manager.get_action_item(ape_only.id)
+        stored.annual_plan_element_id = ape_id
+        manager.update_action_item(stored)
+
+        nothing = make_daily_item(vps, "Loose")
+
+        stub = SimpleNamespace(
+            db_manager=manager, drag_items=[filed, ape_only, nothing])
+        stub.refresh = lambda: None
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+
+        message = answers["messages"][0]
+        assert "1 filed under a project" in message, message
+        assert "1 with an Annual Plan Element" in message, message
+        assert "2 dragged items" in message, message
+    finally:
+        vps.close()
+
+
+def test_s3_1_the_single_message_only_promises_an_ape_the_item_has(tmp_path, answers):
+    """An item with a project link and no Annual Plan Element loses only the link."""
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        seed_ape(vps)
+        board = _board(manager, "No Plan Element", None)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(board.id, item.id)
+        assert manager.get_action_item(item.id).annual_plan_element_id is None
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[item])
+        stub.refresh = lambda: None
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+
+        message = answers["messages"][0]
+        assert "Annual Plan Element" not in message, message
+        assert "removes that link" in message, message
+    finally:
+        vps.close()
+
+
+def test_s3_2_an_unselected_no_project_box_says_its_number_is_unfiltered(tmp_path):
+    """The box count is not segment-filtered; every other box on the row is.
+
+    Sweep pass 3. S2-3 made the number honest on the selected path and left the
+    unselected one reporting a different population with the same words (P5).
+    """
+    from types import SimpleNamespace
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    def box(lineage_filtered):
+        stub = SimpleNamespace(unlinked_shown=None, unlinked_total=None)
+        stub._lineage_filter_active = lambda: lineage_filtered
+        return stub
+
+    assert DragScheduleScreen._unlinked_box_text(box(True), 30) == (
+        "30 unlinked items (unfiltered)")
+    assert DragScheduleScreen._unlinked_box_text(box(False), 30) == "30 unlinked items"

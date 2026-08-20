@@ -459,6 +459,18 @@ class DragScheduleScreen(ctk.CTkFrame):
                 items.append(item)
         return [item for item in items if self._item_matches_filters(item)]
 
+    def _lineage_filter_active(self) -> bool:
+        """Is a segment or subsegment filter narrowing what the screen shows?
+
+        These are derived from an item's lineage rather than stored on the row,
+        so they cannot go into SQL — which is why the unlinked query fetches
+        wider than it shows and why a count query cannot answer for them.
+        """
+        return (
+            (self.segment_filter_var.get() or "All").strip() != "All"
+            or (self.subsegment_filter_var.get() or "All").strip() != "All"
+        )
+
     def _unlinked_box_text(self, total: int) -> str:
         """The "No Project" box's second line.
 
@@ -469,6 +481,12 @@ class DragScheduleScreen(ctk.CTkFrame):
         """
         shown = getattr(self, "unlinked_shown", None)
         if shown is None:
+            # This box is not the selected one, so no filtered pass has run for
+            # it. The count is Who-filtered (SQL) but not segment-filtered —
+            # every other box in the row is — so say which number this is
+            # rather than letting it read as the filtered one (sweep pass 3).
+            if self._lineage_filter_active():
+                return f"{total} unlinked items (unfiltered)"
             return f"{total} unlinked items"
         if getattr(self, "unlinked_total", None) is None:
             # A lineage filter searched a capped slice, so the population
@@ -489,17 +507,15 @@ class DragScheduleScreen(ctk.CTkFrame):
                  "showing 500 of 525" — a number describing a different set
                  than the one on screen (P9/P3).
         Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp5
-        Tests:   tests/test_db_project_drag.py::test_f3_a_filtered_unlinked_view_is_not_capped
+        Tests:   tests/test_db_project_drag.py::test_f3_a_segment_filtered_view_searches_past_the_default_cap
 
-        ``who_filter`` is pushed into SQL so the cap and the count describe the
-        same population. The segment/subsegment filters are derived from an
+        ``who_filter`` is applied in the query so the cap and the count describe
+        the same population. The segment/subsegment filters are derived from an
         item's lineage and cannot be, so when one of them is active the query
-        runs uncapped rather than truncating before the filter has looked.
+        fetches up to ``UNLINKED_FILTERED_LIMIT`` — wider than the default cap,
+        so the filter has more than the top 500 to look at, but still bounded.
         """
-        segment_filtered = (
-            (self.segment_filter_var.get() or "All").strip() != "All"
-            or (self.subsegment_filter_var.get() or "All").strip() != "All"
-        )
+        segment_filtered = self._lineage_filter_active()
         # A lineage filter cannot go into SQL, so the query has to fetch more
         # than it will show — but not *everything*, which is the unbounded load
         # BP5 exists to remove (S2-4). A ten-times ceiling instead of no

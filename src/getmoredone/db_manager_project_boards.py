@@ -404,9 +404,14 @@ class DBManagerProjectBoardsMixin:
         ``.strip().lower()`` on both sides — exactly the predicate the Scheduler
         applied in Python before the filter moved into the query, so moving it
         changed *when* rows are dropped (before the cap, not after) and not
-        *which* ones.
+        *which* ones. That includes the blank case: the Python form was
+        ``item.who and item.who.strip().lower() == ...``, so an owner-less row
+        never matched, and a whitespace-only filter matches nothing here for
+        the same reason (sweep pass 3).
         """
         target = who_filter.strip().lower()
+        if not target:
+            return []
         rows = self.db.conn.execute(
             "SELECT DISTINCT who FROM action_items WHERE who IS NOT NULL"
         ).fetchall()

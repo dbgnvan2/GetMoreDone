@@ -18,14 +18,21 @@ from tkinter import messagebox
 from typing import Iterable, List, Optional
 
 
-def describe_single_relink(count: int, target_title: Optional[str]) -> str:
+def describe_single_relink(count: int, target_title: Optional[str],
+                           clears_ape: bool = False) -> str:
     """What the user is about to lose by filing one item under one project.
 
     ``count`` is how many projects the item currently sits on. One is the
     ordinary case from the Projects screen (moving an item between two boards);
     more than one only happens on rows that predate exclusive filing.
     ``target_title`` is None when the project is being cleared instead.
+
+    ``clears_ape`` says whether this item actually has an Annual Plan Element
+    to lose. The sentence used to promise it unconditionally, so an item with
+    no APE was warned about losing one (sweep pass 3).
     """
+    ape_clause = (", and also clears the item's Annual Plan Element"
+                  if clears_ape else "")
     if count == 0:
         # No link at all — the only thing at stake is the Annual Plan Element,
         # which clear_item_project_links also nulls (S2-2). Saying "filed under
@@ -44,10 +51,7 @@ def describe_single_relink(count: int, target_title: Optional[str]) -> str:
                 f"{filed}\n\n"
                 f"Filing it under “{target_title}” removes that link. Continue?"
             )
-        return (
-            f"{filed}\n\nClearing the project removes that link, and also clears "
-            "the item's Annual Plan Element. Continue?"
-        )
+        return f"{filed}\n\nClearing the project removes that link{ape_clause}. Continue?"
 
     others = count - 1
     plural = "project" if others == 1 else "projects"
@@ -59,8 +63,7 @@ def describe_single_relink(count: int, target_title: Optional[str]) -> str:
         )
     return (
         f"This item is filed under {count} projects.\n\n"
-        "Clearing the project removes all of them, and also clears the item's "
-        "Annual Plan Element. Continue?"
+        f"Clearing the project removes all of them{ape_clause}. Continue?"
     )
 
 
@@ -80,17 +83,27 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str]) -> str:
     )
 
 
-def describe_bulk_clear(item_count: int) -> str:
+def describe_bulk_clear(filed_count: int, ape_only_count: int = 0) -> str:
     """What dropping a batch onto "No Project" destroys.
 
-    Clearing also nulls the item's Annual Plan Element, so this loses more than
-    the link and says so.
+    Two different losses, counted separately. The sentence used to say "N
+    dragged items are filed under a project" using the *total* number affected,
+    which was false whenever part of the batch had only an Annual Plan Element
+    to lose — and the single-item test never reached this branch to notice
+    (sweep pass 3, P19).
     """
-    noun = "item is" if item_count == 1 else "items are"
+    total = filed_count + ape_only_count
+    noun = "item" if total == 1 else "items"
+    parts = []
+    if filed_count:
+        parts.append(f"{filed_count} filed under a project")
+    if ape_only_count:
+        plural = "" if ape_only_count == 1 else "s"
+        parts.append(f"{ape_only_count} with an Annual Plan Element{plural}")
     return (
-        f"{item_count} dragged {noun} filed under a project.\n\n"
-        "Removing the project also clears the item's Annual Plan Element. "
-        "Continue?"
+        f"{total} dragged {noun}: " + ", ".join(parts) + ".\n\n"
+        "Removing the project clears the project link and the Annual Plan "
+        "Element. Continue?"
     )
 
 
@@ -111,7 +124,20 @@ def items_losing_links(db_manager, item_ids: Iterable[str],
     it has no link to drop. Sweep pass 2 (S2-2): reading only the links meant
     exactly that item had its APE deleted with no question asked.
     """
-    losing = []
+    with_links, ape_only = classify_losses(db_manager, item_ids, target_board_id)
+    return with_links + ape_only
+
+
+def classify_losses(db_manager, item_ids: Iterable[str],
+                    target_board_id: Optional[str]):
+    """Split the affected items by *what* they would lose.
+
+    Returns ``(with_links, ape_only)``. The two are counted separately because
+    the sentence shown to the user names them separately — collapsing them into
+    one number made the bulk-clear dialog claim items were "filed under a
+    project" when their only loss was an Annual Plan Element (sweep pass 3).
+    """
+    with_links, ape_only = [], []
     for item_id in item_ids:
         others = [
             board_id
@@ -119,10 +145,10 @@ def items_losing_links(db_manager, item_ids: Iterable[str],
             if board_id != target_board_id
         ]
         if others:
-            losing.append(item_id)
+            with_links.append(item_id)
         elif target_board_id is None and _has_annual_plan_element(db_manager, item_id):
-            losing.append(item_id)
-    return losing
+            ape_only.append(item_id)
+    return with_links, ape_only
 
 
 def _has_annual_plan_element(db_manager, item_id: str) -> bool:
@@ -138,8 +164,8 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     with no project yet — is never interrupted. One question per batch.
     """
     item_ids = list(item_ids)
-    losing = items_losing_links(db_manager, item_ids, target_board_id)
-    if not losing:
+    with_links, ape_only = classify_losses(db_manager, item_ids, target_board_id)
+    if not with_links and not ape_only:
         return True
 
     # Branch on whether this is a clear, not on whether the board title
@@ -153,12 +179,15 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
         title = board.title if board else "the selected project"
 
     if len(item_ids) == 1:
-        count = len(db_manager.get_project_board_ids_for_item(losing[0]))
-        question = describe_single_relink(count, title)
+        only = (with_links + ape_only)[0]
+        count = len(db_manager.get_project_board_ids_for_item(only))
+        question = describe_single_relink(
+            count, title,
+            clears_ape=clearing and _has_annual_plan_element(db_manager, only))
     elif clearing:
-        question = describe_bulk_clear(len(losing))
+        question = describe_bulk_clear(len(with_links), len(ape_only))
     else:
-        question = describe_bulk_relink(len(losing), title)
+        question = describe_bulk_relink(len(with_links), title)
     return messagebox.askyesno("Change Project", question, parent=parent)
 
 

@@ -225,6 +225,7 @@ def test_bp5_the_scheduler_asks_for_a_count_not_a_list(db_manager):
             subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
             UNLINKED_FILTERED_LIMIT=DragScheduleScreen.UNLINKED_FILTERED_LIMIT,
         )
+        stub._lineage_filter_active = lambda: DragScheduleScreen._lineage_filter_active(stub)
         stub._item_matches_filters = lambda item: True
         stub._load_unlinked_items = lambda who: DragScheduleScreen._load_unlinked_items(stub, who)
         items = DragScheduleScreen.load_items(stub)
@@ -245,24 +246,28 @@ def test_bp5_the_box_says_showing_n_of_m_when_capped(db_manager):
     from types import SimpleNamespace
     from src.getmoredone.screens.drag_schedule import DragScheduleScreen
 
-    capped = SimpleNamespace(unlinked_shown=500, unlinked_total=525)
-    assert DragScheduleScreen._unlinked_box_text(capped, 525) == (
-        "showing 500 of 525 unlinked items")
+    def box(shown=None, total=None, lineage_filtered=False, **kw):
+        stub = SimpleNamespace(unlinked_shown=shown, unlinked_total=total, **kw)
+        stub._lineage_filter_active = lambda: lineage_filtered
+        return stub
 
-    whole = SimpleNamespace(unlinked_shown=12, unlinked_total=12)
-    assert DragScheduleScreen._unlinked_box_text(whole, 12) == "12 unlinked items"
+    assert DragScheduleScreen._unlinked_box_text(box(500, 525), 525) == (
+        "showing 500 of 525 unlinked items")
+    assert DragScheduleScreen._unlinked_box_text(box(12, 12), 12) == "12 unlinked items"
 
     # Before this load wrote anything (another project box is selected) there
     # is nothing to qualify — and the stale pair must not leak through (S2-5).
-    fresh = SimpleNamespace(unlinked_shown=None, unlinked_total=None)
-    assert DragScheduleScreen._unlinked_box_text(fresh, 12) == "12 unlinked items"
-    assert DragScheduleScreen._unlinked_box_text(SimpleNamespace(), 12) == (
-        "12 unlinked items")
+    assert DragScheduleScreen._unlinked_box_text(box(), 12) == "12 unlinked items"
+
+    # ...but if a lineage filter is on, the number in front of the user is the
+    # only one on the row that the filter did not narrow, so it says which it
+    # is (sweep pass 3).
+    assert DragScheduleScreen._unlinked_box_text(box(lineage_filtered=True), 12) == (
+        "12 unlinked items (unfiltered)")
 
     # A lineage filter that searched a capped slice does not know its own
     # total, and must not borrow the unfiltered one (S2-3).
-    unknown = SimpleNamespace(unlinked_shown=3, unlinked_total=None)
-    assert DragScheduleScreen._unlinked_box_text(unknown, 5000) == (
+    assert DragScheduleScreen._unlinked_box_text(box(3, None), 5000) == (
         "showing 3 (filtered, not all items searched)")
 
 
@@ -286,6 +291,7 @@ def test_bp5_the_cap_is_announced_in_the_log(db_manager, caplog):
         subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
         UNLINKED_FILTERED_LIMIT=DragScheduleScreen.UNLINKED_FILTERED_LIMIT,
     )
+    stub._lineage_filter_active = lambda: DragScheduleScreen._lineage_filter_active(stub)
     stub._item_matches_filters = lambda item: True
     stub._load_unlinked_items = lambda who: DragScheduleScreen._load_unlinked_items(stub, who)
 
@@ -316,6 +322,7 @@ def _unlinked_stub(db_mgr, who="All", segment="All"):
         subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
         UNLINKED_FILTERED_LIMIT=DragScheduleScreen.UNLINKED_FILTERED_LIMIT,
     )
+    stub._lineage_filter_active = lambda: DragScheduleScreen._lineage_filter_active(stub)
     stub._item_matches_filters = lambda item: True
     stub._load_unlinked_items = lambda w: DragScheduleScreen._load_unlinked_items(stub, w)
     stub.load_items = lambda: DragScheduleScreen.load_items(stub)
@@ -392,15 +399,33 @@ def test_f3_a_segment_filtered_view_searches_past_the_default_cap(db_manager):
         db_mgr.create_action_item(
             ActionItem(who="Bob", title=f"Bob {i:04d}"), apply_defaults=False)
 
-    filtered = _unlinked_stub(db_mgr, segment="Personal")
-    assert len(filtered.load_items()) == cap + 15, (
-        "the segment filter only ever saw the top 500 rows")
+    # Intercept the boundary call: asserting the *constant* would stay green
+    # through a regression back to limit=None, because an unbounded query also
+    # returns all cap + 15 rows on this fixture (sweep pass 3, P10).
+    limits = []
+    real = db_mgr.get_unlinked_action_items
 
-    # ...and with no lineage filter active the cap is still doing its job.
-    plain = _unlinked_stub(db_mgr)
-    assert len(plain.load_items()) == cap
+    def spy(*args, **kwargs):
+        limits.append(kwargs.get("limit", "not-passed"))
+        return real(*args, **kwargs)
 
-    # The filtered path has a ceiling of its own, ten times the default.
+    db_mgr.get_unlinked_action_items = spy
+    try:
+        filtered = _unlinked_stub(db_mgr, segment="Personal")
+        assert len(filtered.load_items()) == cap + 15, (
+            "the segment filter only ever saw the top 500 rows")
+        assert limits == [DragScheduleScreen.UNLINKED_FILTERED_LIMIT], (
+            f"the filtered path asked for limit={limits} — None means the "
+            "whole-table load BP5 removed is back")
+
+        # ...and with no lineage filter active the cap is still doing its job.
+        limits.clear()
+        plain = _unlinked_stub(db_mgr)
+        assert len(plain.load_items()) == cap
+        assert limits == [DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT]
+    finally:
+        db_mgr.get_unlinked_action_items = real
+
     assert DragScheduleScreen.UNLINKED_FILTERED_LIMIT == cap * 10
 
 
@@ -520,7 +545,15 @@ def test_s2_1_the_who_filter_matches_non_ascii_and_odd_whitespace(db_manager):
             status_filter="open", who_filter=who) == 1, (
             f"the count disagrees with the list for who_filter={who!r}")
 
-    # A row with no owner at all must not be swept in by COALESCE.
+    # A row with no owner at all is not swept in by another owner's filter...
     db_mgr.create_action_item(ActionItem(who="", title="Nobody"), apply_defaults=False)
     assert db_mgr.count_unlinked_action_items(
         status_filter="open", who_filter="Bob") == 1
+
+    # ...nor reachable by a blank filter. The Python predicate this replaced
+    # was `item.who and ...`, so an owner-less row never matched (sweep pass 3).
+    for blank in ("   ", "\t"):
+        assert db_mgr.get_unlinked_action_items(
+            status_filter="open", who_filter=blank) == []
+        assert db_mgr.count_unlinked_action_items(
+            status_filter="open", who_filter=blank) == 0

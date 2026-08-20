@@ -55,20 +55,21 @@ Referenced by ID from the global catalogue; listed here because they recur.
   `_DeferredCommitConnection.__exit__` calls `self._conn.rollback()` on the raw
   connection, which discards everything uncommitted — including an enclosing
   `transaction()`'s work.
-  **Half-realised on 2026-08-19 (Batch 2).** This entry used to read "no caller
-  inside `transaction()`". `link_item_to_project_exclusive` now has two, both
-  added by the Batch 2 sweep fixes and both wrapping the call in
-  `try/except Exception`: `LinkProjectActionItemsDialog._link_selected_items`
-  and `DragScheduleScreen._drop_onto_project`. Still safe, and only because
-  both are top-level Tk callbacks — `transaction()` rolls back and re-raises
-  before the `except` runs, so there is no outer transaction to lose. It
-  becomes a real bug the day either is reached from inside another
-  `transaction()`: the re-entrant path yields without deferring, the inner
-  `with self.db.conn:` rolls back the raw connection, and the caught exception
-  hides the loss of the outer transaction's writes.
-  *Ask:* is this `with conn:` nested inside a `transaction()` whose exception
-  the caller swallows? For the two call sites above: is either now reachable
-  from another `transaction()`?
+  **Realised on 2026-08-19 (Batch 2), and safe by accident of scope.** This
+  entry used to read "no caller inside `transaction()`". The nesting now
+  happens: `LinkProjectActionItemsDialog._link_selected_items` and
+  `DragScheduleScreen._drop_onto_project` both open a `transaction()` around
+  `link_item_to_project_exclusive` and both catch the exception. The inner
+  `with self.db.conn:` *does* roll back the whole connection, outer transaction
+  included — the outcome is correct only because that outer transaction
+  contains nothing but the batch being abandoned, so discarding all of it is
+  exactly what is wanted, and the error text ("None of the N items were
+  moved") is true.
+  It becomes a real bug the moment either call sits inside a transaction that
+  holds anything else: those unrelated writes go too, and the caught exception
+  hides it.
+  *Ask:* does this `transaction()` contain anything besides the writes the
+  `except` is apologising for? If yes, the rollback is wider than the message.
 
 - **2026-08-18 — `build-windows` and `build-macos` call `action-gh-release` concurrently
   with the same `tag_name`.** Check-then-create race on the first tagged run. A red job
