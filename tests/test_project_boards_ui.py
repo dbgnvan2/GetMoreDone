@@ -1,5 +1,7 @@
 from src.getmoredone.screens.project_boards import ProjectBoardsScreen
 
+from tests.source_asserts import assigns_self_attribute
+
 
 def test_project_board_edit_icon_is_upright_pencil():
     # Fallback still exists
@@ -7,11 +9,34 @@ def test_project_board_edit_icon_is_upright_pencil():
 
 
 def test_project_board_edit_icon_image_is_loaded():
+    """The card falls back to a text glyph when no image loaded.
+
+    The body of this test was `pass`. It constructed a screen and asserted
+    nothing, so it reported green whether the icon logic worked, was deleted,
+    or had never existed.
+
+    Building the real screen needs a full Tk stack, so this asserts the
+    contract the card actually depends on: `edit_icon_image` is consulted to
+    choose between the image and the `ICON_EDIT` glyph, so it must exist as an
+    attribute on any constructed screen — including when the image fails to
+    load, where it must be falsy rather than absent.
+    """
     screen = ProjectBoardsScreen.__new__(ProjectBoardsScreen)
-    # Mocking project_root to ensure we look in the right place if needed, 
-    # but here we just check if the attribute exists after __init__
-    # For a unit test without full tk, we can just check the logic in __init__
-    pass
+
+    # Not yet initialised: the card's `text=""  if self.edit_icon_image else ...`
+    # would raise AttributeError, which is exactly what the fallback exists to
+    # avoid. __init__ must set it unconditionally.
+    assert assigns_self_attribute(ProjectBoardsScreen.__init__, "edit_icon_image"), (
+        "ProjectBoardsScreen.__init__ no longer assigns self.edit_icon_image, "
+        "so the edit button's image/glyph fallback raises AttributeError"
+    )
+
+    # And the text fallback it falls back TO must still exist.
+    assert ProjectBoardsScreen.ICON_EDIT, "the text fallback glyph is gone"
+    assert not hasattr(screen, "edit_icon_image"), (
+        "an uninitialised screen should not already carry the attribute — if "
+        "it does, this test is asserting a class attribute, not __init__'s work"
+    )
 
 
 def test_card_release_selects_project_when_not_dragged():

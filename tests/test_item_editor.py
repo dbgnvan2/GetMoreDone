@@ -514,9 +514,19 @@ def test_refresh_timer_button_state_noop_when_open():
 
 
 def test_refresh_timer_button_state_noop_without_button():
-    # Completed item whose editor never built a Timer button (must not raise).
+    """A completed item whose editor never built a Timer button.
+
+    "Must not raise" was the whole test — an exception does fail it, but
+    nothing said so, and nothing distinguished "handled the missing button"
+    from "returned early for some other reason". Both are asserted now.
+    """
     dialog = SimpleNamespace(item=SimpleNamespace(status="completed"))
+
     ItemEditorDialog._refresh_timer_button_state(dialog)
+
+    assert not hasattr(dialog, "timer_button"), (
+        "the method invented a timer button that the editor never built"
+    )
 
 
 class _FakeWidget:
@@ -706,4 +716,12 @@ def test_reload_swallows_widget_teardown_error():
         _pre_timer_field_values={},
         _current_timer_field_values=boom,
     )
-    ItemEditorDialog._reload_editable_notes(dialog)  # must not raise
+    ItemEditorDialog._reload_editable_notes(dialog)
+
+    # The point is that the AttributeError was swallowed and the reload still
+    # did its job. "Must not raise" alone would also pass on a method that
+    # returned immediately without reloading anything.
+    assert dialog.item is not None, (
+        "the reload swallowed the teardown error but also skipped the reload"
+    )
+    assert dialog.item.description == "d"

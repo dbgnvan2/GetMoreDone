@@ -257,6 +257,7 @@ META_TEST_FILES = {
     "tests/test_release_docs.py",
     "tests/test_repo_hygiene.py",
     "tests/test_traceability_refs.py",
+    "tests/test_no_vacuous_tests.py",
 }
 
 

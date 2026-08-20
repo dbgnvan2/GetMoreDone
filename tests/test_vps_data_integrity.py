@@ -280,47 +280,75 @@ def test_comprehensive_count():
         title="Action"
     )
 
-    print("✓ Created full hierarchy")
-
-    # Manual comprehensive count
-    tables = [
-        'tl_visions',
-        'annual_visions',
-        'annual_plans',
-        'quarter_initiatives',
-        'month_tactics',
-        'week_actions'
-    ]
-
-    print("\nComprehensive count by table:")
-    total = 0
+    # Every table that carries a segment_description_id, discovered from the
+    # schema rather than listed here. A hardcoded list is how this assertion
+    # was wrong twice while I wrote it: it omitted annual_initiatives, so the
+    # total disagreed with delete_segment's by exactly that table's rows. A
+    # derived list also means a new VPS level is covered the day it is added.
+    tables = sorted(
+        row[0]
+        for row in manager.db.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+        if any(
+            col[1] == "segment_description_id"
+            for col in manager.db.conn.execute(f"PRAGMA table_info({row[0]})")
+        )
+        and row[0] != "segment_descriptions"
+    )
+    assert len(tables) >= 6, (
+        f"only {len(tables)} tables reference segment_description_id: {tables}"
+    )
+    on_disk = {}
     for table in tables:
-        cursor = manager.db.conn.execute(
+        count = manager.db.conn.execute(
             f"SELECT COUNT(*) FROM {table} WHERE segment_description_id = ?",
             (segment_id,)
-        )
-        count = cursor.fetchone()[0]
-        if count > 0:
-            print(f"  {table}: {count}")
-            total += count
+        ).fetchone()[0]
+        on_disk[table] = count
 
-    print(f"\nTotal records: {total}")
+    # The hierarchy exists. Deliberately NOT "one row per table":
+    #   * creating a month tactic seeds its weeks, so this fixture yields
+    #     2 month_tactics and 9 week_actions, not 1 each;
+    #   * action_items carries segment_description_id too and legitimately
+    #     holds zero here.
+    # Both were assertions I wrote and had to correct — the invariant worth
+    # asserting is the one below, that the number the user is shown matches the
+    # rows that actually block the delete.
+    total = sum(on_disk.values())
+    assert total > 0, f"no VPS rows were created at all: {on_disk}"
 
-    # Try enhanced deletion
+    # delete_segment must REFUSE, and report every level — the whole point of
+    # the mapping return. Everything below was previously printed, including
+    # the line claiming the implementation "sees ALL record types", which was
+    # emitted without checking anything.
     success, counts = manager.delete_segment(segment_id)
-    print(f"\n✓ ENHANCED delete_segment() now returns:")
-    print(f"  Success: {success}")
-    print(f"  Counts: {counts}")
-    print(f"  Type: {type(counts)}")
 
-    if not success and isinstance(counts, dict):
-        print(
-            f"✓ Enhanced implementation sees ALL {len(counts)} record types!")
-        total_reported = sum(counts.values())
-        print(f"✓ Total records reported: {total_reported}")
-        print(f"  Breakdown:")
-        for label, count in counts.items():
-            print(f"    - {label}: {count}")
+    assert success is False, (
+        "delete_segment removed a segment with six levels of children under it"
+    )
+    assert isinstance(counts, dict), (
+        f"delete_segment returned {type(counts).__name__}, not a mapping — the "
+        "Settings screen iterates it and would break"
+    )
+    assert sum(counts.values()) == total, (
+        f"delete_segment reports {sum(counts.values())} blocking records; the "
+        f"database holds {total}. The number shown to the user must match the "
+        f"rows that actually block the delete. Reported: {counts}"
+    )
+    assert all(v >= 0 for v in counts.values()), f"negative counts: {counts}"
+
+    # And nothing was deleted by the refusal.
+    still_there = {
+        table: manager.db.conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE segment_description_id = ?",
+            (segment_id,)
+        ).fetchone()[0]
+        for table in tables
+    }
+    assert still_there == on_disk, (
+        f"a refused delete removed rows anyway: {on_disk} -> {still_there}"
+    )
 
     manager.close()
 

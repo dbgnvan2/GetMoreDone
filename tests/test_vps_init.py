@@ -18,82 +18,83 @@ import os
 from src.getmoredone.database import Database
 from src.getmoredone.vps_manager import VPSManager
 
-def test_vps_init():
-    """Test VPS database initialization."""
-    print("Testing VPS database initialization...")
+def test_vps_init(tmp_path):
+    """VPS schema initialisation, asserted rather than printed.
 
-    # Initialize database with test path
-    test_db_path = "data/test_vps.db"
+    This was a demonstration script: every check was a ``print("✓ ...")``, so
+    it reported success whether the tables existed or not, and its final line
+    claimed "All VPS database initialization tests passed!" without a single
+    assertion behind it.
 
-    # Remove existing test database
-    if os.path.exists(test_db_path):
-        os.remove(test_db_path)
-        print(f"Removed existing test database: {test_db_path}")
+    It also wrote its database to the relative path ``data/test_vps.db`` — a
+    file in whatever directory the suite happened to run from, left behind
+    afterwards and offered to the reader to inspect. It now uses ``tmp_path``,
+    like every other test.
+    """
+    test_db_path = str(tmp_path / "vps.db")
 
-    # Initialize database
     db = Database(test_db_path)
     db.connect()
     db.initialize_schema()
-    print("✓ Database schema initialized")
 
-    # Check if VPS tables exist
+    # The VPS tables exist.
     cursor = db.conn.execute("""
         SELECT name FROM sqlite_master
-        WHERE type='table' AND name LIKE '%segment%' OR name LIKE '%vision%' OR name LIKE '%tactic%'
+        WHERE type='table' AND (name LIKE '%segment%' OR name LIKE '%vision%'
+                                OR name LIKE '%tactic%')
         ORDER BY name
     """)
     tables = [row[0] for row in cursor.fetchall()]
-    print(f"✓ Found {len(tables)} VPS tables: {', '.join(tables)}")
+    assert tables, "initialize_schema created no VPS tables at all"
+    for required in ("segment_descriptions",):
+        assert required in tables, f"{required} missing from {tables}"
 
-    # Check if segments are seeded
-    cursor = db.conn.execute("SELECT COUNT(*) FROM segment_descriptions")
-    segment_count = cursor.fetchone()[0]
-    print(f"✓ Found {segment_count} life segments")
+    # The life segments are seeded.
+    segment_count = db.conn.execute(
+        "SELECT COUNT(*) FROM segment_descriptions"
+    ).fetchone()[0]
+    assert segment_count > 0, (
+        "no life segments were seeded — the VPS screens open on an empty list"
+    )
 
-    # Check if action_items has VPS columns
-    cursor = db.conn.execute("PRAGMA table_info(action_items)")
-    columns = [row[1] for row in cursor.fetchall()]
-    vps_columns = [col for col in columns if 'habit' in col.lower() or 'percent' in col.lower() or 'week_action' in col.lower() or 'segment' in col.lower()]
-    print(f"✓ Found VPS columns in action_items: {', '.join(vps_columns)}")
-
+    # action_items carries the VPS columns the planning screens read.
+    columns = [row[1] for row in db.conn.execute("PRAGMA table_info(action_items)")]
+    vps_columns = [
+        c for c in columns
+        if any(k in c.lower() for k in ("habit", "percent", "week_action", "segment"))
+    ]
+    assert vps_columns, (
+        f"action_items has no VPS columns; found {columns}"
+    )
     db.close()
 
-    print("\n✅ All VPS database initialization tests passed!")
-
-    # Test VPS manager
-    print("\nTesting VPS manager...")
+    # And the manager can round-trip a vision through that schema.
     vps_manager = VPSManager(test_db_path)
+    try:
+        segments = vps_manager.get_all_segments()
+        assert len(segments) == segment_count, (
+            f"manager sees {len(segments)} segments, the table holds {segment_count}"
+        )
 
-    # Get all segments
-    segments = vps_manager.get_all_segments()
-    print(f"✓ Retrieved {len(segments)} segments via manager")
-    for seg in segments[:3]:  # Show first 3
-        print(f"  - {seg['name']}: {seg['color_hex']}")
+        first = segments[0]
+        vision_id = vps_manager.create_tl_vision(
+            segment_description_id=first["id"],
+            start_year=2025,
+            end_year=2030,
+            title="Health & Vitality Vision",
+            vision_statement="Achieve optimal physical and mental health",
+        )
+        assert vision_id, "create_tl_vision returned nothing"
 
-    # Create a test TL Vision
-    health_segment = segments[0]  # Health
-    vision_id = vps_manager.create_tl_vision(
-        segment_description_id=health_segment['id'],
-        start_year=2025,
-        end_year=2030,
-        title="Health & Vitality Vision",
-        vision_statement="Achieve optimal physical and mental health through consistent habits"
-    )
-    print(f"✓ Created test TL Vision: {vision_id}")
+        vision = vps_manager.get_tl_vision(vision_id)
+        assert vision is not None, "the vision did not survive the round trip"
+        assert vision["title"] == "Health & Vitality Vision"
 
-    # Retrieve the vision
-    vision = vps_manager.get_tl_vision(vision_id)
-    print(f"✓ Retrieved TL Vision: {vision['title']}")
+        visions = vps_manager.get_tl_visions(segment_id=first["id"])
+        assert any(v["id"] == vision_id for v in visions), (
+            "the new vision is not returned when querying its own segment"
+        )
+    finally:
+        vps_manager.close()
 
-    # Get visions for segment
-    visions = vps_manager.get_tl_visions(segment_id=health_segment['id'])
-    print(f"✓ Found {len(visions)} visions for {health_segment['name']} segment")
 
-    vps_manager.close()
-
-    print("\n✅ All VPS manager tests passed!")
-    print(f"\nTest database created at: {test_db_path}")
-    print("You can inspect it with: sqlite3 data/test_vps.db")
-
-if __name__ == "__main__":
-    test_vps_init()

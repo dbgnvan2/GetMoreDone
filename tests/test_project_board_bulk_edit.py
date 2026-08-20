@@ -126,20 +126,38 @@ class TestBulkUpdateActionItems:
             assert item.importance == new_priority
 
     def test_bulk_update_empty_list(self, db_manager):
-        """Handle empty item list gracefully."""
-        # Act - should not raise
+        """An empty list must be a no-op, not just a non-crash.
+
+        "Should not raise" passed equally on a call that quietly updated every
+        row in the table, which is the failure worth guarding against here.
+        """
+        before = db_manager.get_all_items()
+        snapshot = {i.id: (i.start_date, i.importance) for i in before}
+
         db_manager.bulk_update_action_items([], start_date="2026-06-20", priority=5)
-        # Pass
+
+        after = {i.id: (i.start_date, i.importance) for i in db_manager.get_all_items()}
+        assert after == snapshot, (
+            "bulk_update_action_items([]) changed rows it was given no ids for"
+        )
 
     def test_bulk_update_nonexistent_items(self, db_manager):
-        """Handle nonexistent item IDs gracefully."""
-        # Act - should not raise
+        """Unknown ids must touch nothing, and must not create rows."""
+        before = db_manager.get_all_items()
+        snapshot = {i.id: (i.start_date, i.importance) for i in before}
+
         db_manager.bulk_update_action_items(
             ["nonexistent-1", "nonexistent-2"],
             start_date="2026-06-20",
             priority=5
         )
-        # Pass
+
+        after_items = db_manager.get_all_items()
+        after = {i.id: (i.start_date, i.importance) for i in after_items}
+        assert after == snapshot, "unknown ids changed existing rows"
+        assert len(after_items) == len(before), (
+            "unknown ids created rows instead of being ignored"
+        )
 
     def test_bulk_update_mixed_items(self, db_manager, sample_action_items):
         """Update mix of existing and nonexistent items - only process existing."""
