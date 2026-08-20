@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Optional
 
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from ..color_contrast import pick_text_color
-from ..vps_manager import ProjectBoardsAttachedError
+from ..vps_manager import ActionItemsAttachedError, ProjectBoardsAttachedError
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 
 if TYPE_CHECKING:
@@ -515,6 +515,23 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
                 "You must delete or reassign all Projects from an APE before you "
                 f"can delete an APE.\n\n{len(exc.board_titles)} project(s) attached:\n"
                 f"{project_list}",
+            )
+            return
+        except ActionItemsAttachedError as exc:
+            # An Annual Plan Element is deleted only when it has no child
+            # records. This handler caught the *projects* refusal and not the
+            # items one, so the new exception would have escaped a Tk callback
+            # into a stderr a double-clicked app has nowhere to send (P5 — the
+            # sibling exception was not handled).
+            # Tests: tests/test_vps_ape_deletion_ui.py
+            shown = "\n".join(f"  • {title}" for title in exc.titles[:10])
+            if len(exc.titles) > 10:
+                shown += f"\n  • ... and {len(exc.titles) - 10} more"
+            messagebox.showerror(
+                "Action Items Attached",
+                "You must move or delete all Action Items on an APE before you "
+                f"can delete it.\n\n{len(exc.titles)} action item(s) attached:\n"
+                f"{shown}",
             )
             return
 

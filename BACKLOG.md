@@ -66,17 +66,11 @@ took each decision and closed it. Kept here as the record of what was decided.
   now. Verified the switch is a genuine no-op there: `_apply_defaults` never
   touches `annual_plan_element_id`, so the item's plan element is the board's
   either way.
-- **Deleting an Annual Plan Element leaves any Weekly Tactic on it unsaveable.**
-  `vps_manager.py:206` runs
-  `UPDATE action_items SET annual_plan_element_id = NULL WHERE annual_plan_element_id = ?`
-  before removing the element. For an `item_type='week'` row that produces
-  exactly the state the project-filing guard was written to prevent:
-  reproduced, and `update_action_item` then raises
-  "A Weekly Tactic must belong to an Annual Plan Element" on it. The same class
-  as the fix in this batch, in a different writer. **Not fixed** — the choice
-  is between refusing the deletion while tactics reference the element and
-  deleting them with it, and that is a decision about VSP deletion semantics,
-  not about project filing. **Needs a call.**
+- ~~**Deleting an Annual Plan Element leaves any Weekly Tactic on it
+  unsaveable.**~~ **Decided and fixed (2026-08-19):** an Annual Plan Element is
+  deleted only when it has no child records. `delete_annual_records_for_vision_element`
+  raises `ActionItemsAttachedError` naming the items, and destroys nothing on
+  the way to the refusal.
 - **A project's Annual Plan Element is synced onto its items only at link
   time.** `update_project_board` changes a board's plan element and touches
   none of its items; `delete_project_board` removes the board and leaves every
@@ -91,14 +85,11 @@ took each decision and closed it. Kept here as the record of what was decided.
 - **`LinkProjectActionItemsDialog` renders up to 200 rows eagerly** on open,
   each with four widgets, and does it again on every keystroke in Search. On a
   real database this takes long enough to notice.
-- **The Projects screen's "Unlink" button and every other unfiling path
-  disagree.** Unlink removes the project link and leaves
-  `annual_plan_element_id` set; "Clear Project" and dragging onto No Project
-  null it. Measured: after Unlink the item still shows the segment, subsegment
-  and category of the project it just left, in every list view. This is a
-  decision, not an oversight — either Unlink should clear the plan element too,
-  or the other two should not — and it is the one part of the "exactly one
-  Project" model that is still inconsistent. **Needs a call.**
+- ~~**The Projects screen's "Unlink" button and every other unfiling path
+  disagree.**~~ **Decided and fixed (2026-08-19):** removing an item from a
+  project removes only the link; its Annual Plan Element stays, because the
+  user may be on the way to a different project. Unlink was right all along —
+  `clear_item_project_links` was the one overreaching.
 - **`build_item_from_form` canonicalises a Weekly Tactic title from the item's
   *stored* start date**, before the form's start date is written onto it. That
   is the order `save_item` used before BP3 and was preserved deliberately; it

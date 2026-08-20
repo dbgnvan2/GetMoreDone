@@ -45,7 +45,8 @@ rows carry both, so the prefix was a third choice that was never reached.
 
 ## What the sweeps added
 
-**Nine passes: 7, 10, 6, 6, 3, 2, then 11 across two independent reviews, then 8.** Every warm pass found a defect inside its predecessor's fix.
+**Eleven passes: 7, 10, 6, 6, 3, 2, then 11 across two independent reviews,
+then 8, 9 and 2.** Every warm pass found a defect inside its predecessor's fix.
 
 The number that matters is the seventh. After six warm passes had the findings
 down to two cosmetic ones, a **cold** review — given the diff and no knowledge
@@ -146,7 +147,7 @@ in a worktree at that commit.
 ## Verification
 
 - Command: `venv/bin/python -m pytest -q`
-- Result: PASS — 1039 passed, 2 skipped, exit code 0
+- Result: PASS — 1056 passed, 2 skipped, exit code 0
 - `PytestReturnNotNoneWarning`: 0. No `GUARD:` line — nothing touched the real
   database or settings file.
 - **Verified in the running app, not only in tests.** Both changed screens were
@@ -157,8 +158,33 @@ in a worktree at that commit.
   passed: the confirmation read "This item is filed under 1 projects … removes
   it from the other 0" for the ordinary one-link case. That dialog is now a test.
 
+## Two decisions the user took mid-review
+
+Both were surfaced as inconsistencies I would not resolve unilaterally, and
+both turned out to *remove* a class of problem rather than fix an instance:
+
+- **Removing an item from a project removes only the link.** Its Annual Plan
+  Element stays, because the user may be on the way to a different project. The
+  confirmation sentence that had to describe two losses — and was wrong three
+  passes running — now describes one.
+- **An Annual Plan Element is deleted only when it has no child records.** That
+  replaced a silent detach (and, for a Weekly Tactic, a row the app refuses to
+  save) with a refusal that names what is in the way.
+
+The second one immediately produced a defect of its own, which I found before
+the sweep did: the screen that deletes an Annual Plan Element caught the
+*projects* refusal and not the new *items* one, so it would have escaped a Tk
+callback — the same failure this batch has been closing all day, in the fix for
+it.
+
 ## Risks / Known gaps
 
+- **The test suite used to throw dozens of modal windows over the user's
+  desktop**, because proving a control is wired means building a real window
+  (P25). They are withdrawn now, with an explicit opt-out for the three tests
+  that read real geometry — `winfo_width()` on a withdrawn window returns 1,
+  and `event_generate` on one does not fail, it deadlocks. Two hangs found by
+  bisecting a suite that stopped at 27% and then 68%.
 - **The warm-pass curve was misleading.** Findings fell 7 → 10 → 6 → 6 → 3 → 2
   and looked converged. A cold pass then found two high-severity defects
   immediately. Do not read a falling count from self-review as evidence that

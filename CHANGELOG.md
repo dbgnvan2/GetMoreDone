@@ -65,6 +65,17 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   answer. Filing under a project replaces that plan element with the project's (or
   clears it, if the project has none); clearing the project clears it. All three were
   silent before.
+- **Removing an item from a project removes only the project link.** Its Annual
+  Plan Element stays, because you may be on the way to filing it under a different
+  project and losing your place in the plan in between helps nobody. The Projects
+  screen's **Unlink** button always behaved this way; **Clear Project** and dragging
+  onto **No Project** used to clear the plan element as well, so the same intention
+  had two outcomes depending on which control you reached for. Filing an item under
+  a project still stamps that project's plan element onto it.
+- **An Annual Plan Element can only be deleted when nothing is on it.** Deleting one
+  used to detach every Action Item pointing at it — silently for an ordinary item,
+  and leaving a Weekly Tactic in a state the app refuses to save. It now says which
+  items are in the way, and deletes nothing until you have moved them.
 - **A project decides its items' Annual Plan Element, including when it has none.**
   Moving an item to a project with no plan element used to leave the *previous*
   project's on the item, so it went on claiming a place in the plan belonging to a
