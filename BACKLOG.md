@@ -4,6 +4,21 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 
 ## Deferred — found by review, deliberately not fixed
 
+### Test-suite remediation leftovers (2026-08-20)
+
+- **Random-order testing is untested.** `pytest-randomly` is not a dev
+  dependency and one was not added for this batch. The suite was run with every
+  file in reverse order (identical result, no order-dependence), which catches
+  gross ordering problems but not seed-sensitive interactions.
+- **Two fixtures are named `test_*`** — `test_item` and `test_contact` in
+  `tests/test_obsidian_integration.py`. Legal, but a trap: every scanner for
+  vacuous tests has to special-case them, and a reader sees a test that returns
+  a value. Rename to `sample_*`.
+- **Ten tests recorded above from Batch 3 remain unable to fail.** The vacuous
+  scan does not catch them — they assert *something*, just not the thing their
+  name claims. They need individual attention rather than a scan.
+
+
 ### The retired multi-agent workflow is still described in four places (2026-08-20)
 
 `CLAUDE.md` and `AGENTS.md` were corrected. These still describe branches that
