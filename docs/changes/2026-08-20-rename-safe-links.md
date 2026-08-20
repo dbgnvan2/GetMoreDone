@@ -23,7 +23,7 @@ current name and never matched by name again.
 - Spec coverage generated mechanically by cross-checking the spec's `::test_`
   references against `pytest --collect-only`:
   `docs/spec_coverage_2026-08-19_rename_safe_links.md` — 17 criteria, 0
-  missing, 13 further tests beyond the spec.
+  missing, 14 further tests beyond the spec.
 
 ## One correction to the spec, made before any code was written
 
@@ -84,7 +84,7 @@ not a finding.
 **New**
 - `src/getmoredone/link_integrity.py` — schema, backfill, the shared
   `resolve_segment_id_exact`, and RN-M5 reporting.
-- `tests/test_rename_safe_links.py` — 35 tests.
+- `tests/test_rename_safe_links.py` — 36 tests.
 - `docs/spec_coverage_2026-08-19_rename_safe_links.md` — generated.
 
 **Changed**
@@ -116,8 +116,6 @@ not a finding.
 - **`annual_vision_elements` now blocks a segment delete** as well as
   `annual_plan_elements`. That may be stricter than intended; recorded in
   `BACKLOG.md`.
-- **Eight low-severity findings** from the reviews are in `BACKLOG.md`, not
-  fixed in-loop, per the sweep rules.
 - **Three review rounds, and every one found a defect in its predecessor's
   fix.** Round three found two more highs, both created by the round-two fixes:
   my "never guess" change made *new* data fail hard (an ambiguous segment name
@@ -133,4 +131,5 @@ not a finding.
 ## Next agent actions
 
 - Verify in the running app per §5, and read the first migration report.
-- The eight low findings in `BACKLOG.md`.
+- The fourteen low findings in `BACKLOG.md`, starting with `create_segment`'s
+  missing case-insensitive guard — it is the root cause of the ambiguity class.
