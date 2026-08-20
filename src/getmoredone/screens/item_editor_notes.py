@@ -80,6 +80,13 @@ class ItemEditorNotesMixin:
             # Already has an ID, nothing to do — unless the row behind it is
             # gone, in which case the caller is about to attach a note to an
             # item that does not exist (P6: a status with no artifact).
+            #
+            # Re-read rather than trusting ``self.item``: that copy is loaded
+            # once when the dialog opens and refreshed only after a save, so
+            # for a row deleted *while* the editor sat open it stays a stale
+            # non-None object and the guard never fired — the case its own
+            # comment named.
+            self.item = self.db_manager.get_action_item(self.item_id)
             if self.item is None:
                 self.error_label.configure(
                     text="Error: this item no longer exists — it was deleted elsewhere")

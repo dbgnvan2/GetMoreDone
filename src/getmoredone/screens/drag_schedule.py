@@ -1421,7 +1421,34 @@ class DragScheduleScreen(ctk.CTkFrame):
         and the rest where they were, with no way to tell which.
         """
         board_id = None if target_project_id == "__none__" else target_project_id
-        item_ids = [item.id for item in self.drag_items]
+
+        # PL6 — a Weekly Tactic cannot be filed under a Project; its Annual
+        # Plan Element is what its title is derived from, and the link would
+        # re-stamp it. The item editor disables the button and the Projects
+        # dialog no longer lists tactics; this screen listed them and dropped
+        # them straight onto a board, silently re-parenting them to another
+        # lineage. Said out loud rather than dropped silently (P2), and the
+        # rest of the drag still goes through.
+        # Tests: tests/test_project_multi_link.py::test_f2_dragging_a_tactic_onto_a_project_is_refused
+        tactics, item_ids = [], []
+        for item in self.drag_items:
+            if board_id is not None and self.db_manager.is_weekly_tactic(item.id):
+                tactics.append(item)
+            else:
+                item_ids.append(item.id)
+        if tactics:
+            messagebox.showinfo(
+                "Weekly Tactic",
+                f"{len(tactics)} of the dragged items "
+                f"{'is a Weekly Tactic' if len(tactics) == 1 else 'are Weekly Tactics'}"
+                ", which belong to their Annual Plan Element rather than to a "
+                "project. They were left where they are.",
+                parent=self,
+            )
+        if not item_ids:
+            self.refresh()
+            return
+
         if not confirm_exclusive_relink(self, self.db_manager, item_ids, board_id,
                                         verb="dragged"):
             return

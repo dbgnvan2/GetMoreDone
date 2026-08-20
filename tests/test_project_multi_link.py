@@ -180,7 +180,8 @@ def test_bp1_bulk_link_asks_once_before_dropping_links(tmp_path, answers):
         _dialog_stub(manager, new.id, checked=selected)._link_selected_items()
 
         assert len(answers["messages"]) == 1, "one question per batch, not per item"
-        assert "2 selected items are" in answers["messages"][0], answers["messages"][0]
+        assert "2 selected items:" in answers["messages"][0], answers["messages"][0]
+        assert "2 already filed under another project" in answers["messages"][0]
         for item_id in selected:
             assert manager.get_project_board_ids_for_item(item_id) == [new.id]
     finally:
@@ -367,8 +368,8 @@ def test_bp1_every_surface_uses_the_same_sentence():
     two = describe_single_relink(2, "Website Rebuild")
     assert "the other 1 project." in two, two
 
-    assert "1 selected item is" in describe_bulk_relink(1, "Website Rebuild")
-    assert "4 selected items are" in describe_bulk_relink(4, None)
+    assert "1 selected item:" in describe_bulk_relink(1, "Website Rebuild")
+    assert "4 selected items:" in describe_bulk_relink(4, None)
     assert "this project" in describe_bulk_relink(4, None)
 
 
@@ -919,9 +920,9 @@ def test_p6_the_batch_noun_is_pluralised_from_the_batch_not_the_affected_count()
 def test_p6_each_surface_names_the_action_the_user_took():
     """A drag is not a selection, and the Projects dialog has no drag."""
     dragged = describe_bulk_relink(2, "Alpha", verb="dragged")
-    assert "2 dragged items are" in dragged, dragged
+    assert "2 dragged items:" in dragged, dragged
     selected = describe_bulk_relink(2, "Alpha")
-    assert "2 selected items are" in selected, selected
+    assert "2 selected items:" in selected, selected
 
     assert "of the selected items" in describe_bulk_clear(
         2, 0, ape_total=0, batch_size=2, verb="selected")
@@ -1239,8 +1240,25 @@ def test_c6_creating_an_item_from_a_board_files_it_exclusively(tmp_path, monkeyp
             refresh=lambda: None,
             edit_item=lambda item_id: opened.append(item_id),
         )
+        # Exclusive and additive are indistinguishable by *outcome* here — the
+        # item is brand new with the board's plan element already on it — so
+        # the call itself is what has to be asserted. The earlier version of
+        # this test passed with the additive call restored, and the one before
+        # that passed with the call deleted outright (P24).
+        additive = []
+        monkeypatch.setattr(
+            manager, "link_action_item_to_project_board",
+            lambda *a, **k: additive.append(a))
+        exclusive = []
+        real_exclusive = manager.link_item_to_project_exclusive
+        monkeypatch.setattr(
+            manager, "link_item_to_project_exclusive",
+            lambda b, i: (exclusive.append((b, i)), real_exclusive(b, i))[1])
+
         pb.ProjectBoardsScreen.create_action_item(stub, board.id)
         assert not errors, errors
+        assert not additive, "the additive link call is back"
+        assert exclusive, "nothing was filed exclusively"
 
         assert opened, "no item was created"
         new_id = opened[0]
@@ -1295,8 +1313,20 @@ def test_c2_2_no_combination_of_arguments_produces_a_false_sentence():
                         assert "replaces" not in text, text
                     if outcome is APE_UNCHANGED and not ape_only:
                         assert "Annual Plan Element" not in text, text
-                    # The number must be the whole batch, never one bucket.
-                    assert f"{affected + ape_only} " in text, (affected, ape_only, text)
+                    # The total heads the sentence, and each bucket is
+                    # named against the clause it is actually true of — the
+                    # earlier version demanded only the total, which is how the
+                    # mixed batch came to say "N already filed under another
+                    # project" about items filed under nothing.
+                    assert text.startswith(f"{affected + ape_only} "), text
+                    if affected:
+                        assert f"{affected} already filed under another project" in text, text
+                    else:
+                        assert "already filed under another project" not in text, text
+                    if ape_only:
+                        assert f"{ape_only} carrying" in text, text
+                    else:
+                        assert "carrying" not in text, text
 
 
 # ------------------------------------------------- eighth pass (cold)
@@ -1361,11 +1391,20 @@ def test_f2_filing_never_strips_a_weekly_tactics_plan_element(tmp_path):
         tactic = make_week_item(vps, ape_id)
         bare = _board(manager, "No plan element", None)
 
-        manager.link_item_to_project_exclusive(bare.id, tactic.id)
+        # Filing is refused outright, not merely when it would null the APE:
+        # a board with a *different* plan element would re-stamp the tactic and
+        # leave a perfectly valid-looking row in the wrong lineage.
+        with _pytest.raises(ValueError, match="Weekly Tactic"):
+            manager.link_item_to_project_exclusive(bare.id, tactic.id)
+        other = _board(manager, "Different plan element", seed_ape(
+            vps, subsegment="Elsewhere", key_field="Other"))
+        with _pytest.raises(ValueError, match="Weekly Tactic"):
+            manager.link_item_to_project_exclusive(other.id, tactic.id)
 
         after = manager.get_action_item(tactic.id)
         assert after.annual_plan_element_id == ape_id, (
             "the Weekly Tactic lost the plan element it is required to have")
+        assert manager.get_project_board_ids_for_item(tactic.id) == []
         # ...and the row is still saveable through the ordinary path.
         manager.update_action_item(after)
 
@@ -1449,5 +1488,72 @@ def test_f5_one_implementation_of_what_happens_to_the_plan_element(tmp_path):
         # An unreadable board: the write skips the APE, so the answer is
         # "unchanged", not "cleared".
         assert ape_outcome_for_change(manager, item.id, "no-such-board") is APE_UNCHANGED
+    finally:
+        vps.close()
+
+
+def test_f2_dragging_a_tactic_onto_a_project_is_refused(tmp_path, monkeypatch, answers):
+    """The Scheduler lists Weekly Tactics; it must not file them under a board.
+
+    `drag_schedule` had no `item_type` check at all, so a tactic dropped on a
+    project box was re-stamped with that board's Annual Plan Element — the
+    exact thing PL6 forbids, and it left a perfectly valid-looking row in the
+    wrong lineage, so nothing downstream ever caught it.
+    """
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+    from tests.weekly_tactic_fixtures import make_week_item
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        other_ape = seed_ape(vps, subsegment="Elsewhere", key_field="Other")
+        board = _board(manager, "Website Rebuild", other_ape)
+        tactic = make_week_item(vps, ape_id)
+        daily = make_daily_item(vps, "An ordinary task")
+
+        told = []
+        monkeypatch.setattr(ds.messagebox, "showinfo",
+                            lambda title, msg, **kw: told.append(msg))
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[tactic, daily])
+        stub.refresh = lambda: None
+        ds.DragScheduleScreen._drop_onto_project(stub, board.id)
+
+        assert told, "the tactic was silently left behind with no word"
+        assert "Weekly Tactic" in told[0], told[0]
+        assert manager.get_project_board_ids_for_item(tactic.id) == []
+        assert manager.get_action_item(tactic.id).annual_plan_element_id == ape_id
+        # ...and the rest of the drag still went through.
+        assert manager.get_project_board_ids_for_item(daily.id) == [board.id]
+    finally:
+        vps.close()
+
+
+def test_f1_clearing_a_tactics_project_promises_nothing_it_will_not_do(tmp_path, answers):
+    """A tactic keeps its plan element, so there is nothing to confirm.
+
+    The writer learned that and the describer did not, so dragging a tactic
+    onto "No Project" showed "Removing the project also clears it" over a write
+    that changed nothing — an affirmative confirmation in front of a no-op.
+    """
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+    from tests.weekly_tactic_fixtures import make_week_item
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id)
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[tactic])
+        stub.refresh = lambda: None
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+
+        assert answers["messages"] == [], (
+            f"asked about a change that will not happen: {answers['messages']}")
+        assert manager.get_action_item(tactic.id).annual_plan_element_id == ape_id
     finally:
         vps.close()

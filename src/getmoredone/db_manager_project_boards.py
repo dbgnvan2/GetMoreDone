@@ -177,6 +177,7 @@ class DBManagerProjectBoardsMixin:
 
     def link_item_to_project_exclusive(self, board_id: str, item_id: str):
         """Link an action item to exactly one project board, clearing previous project links and syncing APE."""
+        self._refuse_if_weekly_tactic(item_id)
         now = datetime.now().isoformat()
 
         # One transaction: step 1 destroys rows and step 2 recreates them, so a
@@ -207,7 +208,7 @@ class DBManagerProjectBoardsMixin:
             # this write would change the item's APE.
             # Tests: tests/test_project_multi_link.py::test_c3_a_board_with_no_plan_element_clears_the_items
             board = self.get_project_board(board_id)
-            if board and self._may_set_ape(item_id, board.annual_plan_element_id):
+            if board:
                 self.db.conn.execute(
                     "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
                     (board.annual_plan_element_id, now, item_id)
@@ -235,38 +236,51 @@ class DBManagerProjectBoardsMixin:
         """Remove all project links and clear APE for an action item."""
         now = datetime.now().isoformat()
         self.db.conn.execute("DELETE FROM project_board_items WHERE item_id = ?", (item_id,))
-        if self._may_set_ape(item_id, None):
+        # A Weekly Tactic must keep its Annual Plan Element — the raw UPDATE
+        # here bypasses ``update_action_item``'s validation, so nulling it
+        # produced a row the application then refused to save.
+        if not self.is_weekly_tactic(item_id):
             self.db.conn.execute(
                 "UPDATE action_items SET annual_plan_element_id = NULL, updated_at = ? WHERE id = ?",
                 (now, item_id)
             )
         self.db.conn.commit()
 
-    def _may_set_ape(self, item_id: str, new_ape: Optional[str]) -> bool:
-        """Refuse an Annual Plan Element write that would invalidate the row.
+    def is_weekly_tactic(self, item_id: str) -> bool:
+        """Is this row a Weekly Tactic (``item_type='week'``)?
 
-        Purpose: a Weekly Tactic must belong to an Annual Plan Element —
-                 ``update_action_item`` raises ValueError without one (WT-M1).
-                 These two methods write the APE with raw SQL, which bypasses
-                 that validation, so nulling it produced a ``item_type='week'``
-                 row the application's own writer then refused to save: a value
-                 no supported code path can create, written by a supported code
-                 path (P2 — the write reported success and left the row
-                 unusable).
-        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1
-        Tests:   tests/test_project_multi_link.py::test_f2_filing_never_strips_a_weekly_tactics_plan_element
-
-        A Weekly Tactic should not be filed under a project at all (PL6, which
-        the item editor enforces); this is the backstop for the surfaces that
-        do not, and it protects the link write without silently dropping it —
-        the link itself is still made, only the invalidating APE write is not.
+        The one predicate behind PL6, so the writer that refuses the operation
+        and the dialog that describes it cannot disagree about which rows the
+        rule covers.
         """
-        if new_ape:
-            return True
         row = self.db.conn.execute(
             "SELECT item_type FROM action_items WHERE id = ?", (item_id,)
         ).fetchone()
-        return not (row and row["item_type"] == "week")
+        return bool(row and row["item_type"] == "week")
+
+    def _refuse_if_weekly_tactic(self, item_id: str) -> None:
+        """A Weekly Tactic cannot be filed under a Project (PL6).
+
+        Purpose: a tactic's Annual Plan Element is what its canonical title is
+                 derived from, and filing re-stamps that APE — so the link is
+                 forbidden outright, not merely when it would null the APE.
+                 Guarding only the null write closed the loud half of the class
+                 (a row ``update_action_item`` then refuses to save) and left
+                 the quiet half open: filing a tactic under a board with a
+                 *different* plan element silently re-parented it to another
+                 lineage, and the result looked perfectly valid (P5, P13).
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1
+        Tests:   tests/test_project_multi_link.py::test_f2_filing_never_strips_a_weekly_tactics_plan_element
+
+        Raises ValueError, the way ``update_action_item`` already does for the
+        same invariant, so a surface that has not filtered tactics out fails
+        loudly rather than corrupting the plan.
+        """
+        if self.is_weekly_tactic(item_id):
+            raise ValueError(
+                "A Weekly Tactic cannot be filed under a Project: its Annual "
+                "Plan Element is what its title is derived from."
+            )
 
     def inherit_project_links(self, source_id: str, new_id: str) -> int:
         """Copy an item's project links onto an item derived from it.

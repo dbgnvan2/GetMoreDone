@@ -1191,6 +1191,11 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         """Save the item. Returns True on success, False on validation/save error."""
         try:
             is_new = not self.item_id
+            if not is_new:
+                # Re-read before trusting it: ``self.item`` is loaded when the
+                # dialog opens, so a row deleted while it sat open leaves a
+                # stale non-None copy here.
+                self.item = self.db_manager.get_action_item(self.item_id)
             if not is_new and self.item is None:
                 # The row this editor was opened on no longer exists — deleted
                 # from a list, or from a second editor window. Before BP3 this
@@ -1741,6 +1746,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         if dialog.result:
             # Reload the item to get updated is_meeting and meeting_start_time
             self.item = self.db_manager.get_action_item(self.item_id)
+            if self.item is None:
+                self.error_label.configure(
+                    text="Error: this item no longer exists — it was deleted elsewhere")
+                return
             # Update the is_meeting checkbox to reflect the change
             self.is_meeting_var.set(self.item.is_meeting)
             # Update the meeting time display

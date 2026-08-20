@@ -66,6 +66,17 @@ took each decision and closed it. Kept here as the record of what was decided.
   now. Verified the switch is a genuine no-op there: `_apply_defaults` never
   touches `annual_plan_element_id`, so the item's plan element is the board's
   either way.
+- **Deleting an Annual Plan Element leaves any Weekly Tactic on it unsaveable.**
+  `vps_manager.py:206` runs
+  `UPDATE action_items SET annual_plan_element_id = NULL WHERE annual_plan_element_id = ?`
+  before removing the element. For an `item_type='week'` row that produces
+  exactly the state the project-filing guard was written to prevent:
+  reproduced, and `update_action_item` then raises
+  "A Weekly Tactic must belong to an Annual Plan Element" on it. The same class
+  as the fix in this batch, in a different writer. **Not fixed** — the choice
+  is between refusing the deletion while tactics reference the element and
+  deleting them with it, and that is a decision about VSP deletion semantics,
+  not about project filing. **Needs a call.**
 - **A project's Annual Plan Element is synced onto its items only at link
   time.** `update_project_board` changes a board's plan element and touches
   none of its items; `delete_project_board` removes the board and leaves every

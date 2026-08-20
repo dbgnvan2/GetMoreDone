@@ -96,6 +96,26 @@ def deleted_item(tmp_path, monkeypatch):
         vps.close()
 
 
+def test_save_refuses_when_a_stale_copy_hides_a_deleted_row(deleted_item):
+    """The realistic shape: the editor still holds the object it loaded.
+
+    ``self.item`` is read once when the dialog opens and refreshed only after a
+    save, so a row deleted *while* the editor sits open leaves a stale non-None
+    copy — and a guard that only checks ``self.item is None`` never fires for
+    the case its own comment named (P6: trusting a cached value instead of the
+    artifact).
+    """
+    manager, gone_id = deleted_item
+    texts = []
+    stub = _stub(manager, gone_id,
+                 ActionItem(id=gone_id, who="Self", title="Doomed"), texts)
+
+    assert stub.save_item() is False, "the editor reported a successful save"
+    assert texts and "no longer exists" in texts[0], texts
+
+    assert stub.save_item_if_needed() is False
+
+
 def test_save_refuses_when_the_row_is_gone(deleted_item):
     manager, gone_id = deleted_item
     texts = []
@@ -142,13 +162,19 @@ def test_the_calendar_path_refuses_too(deleted_item, monkeypatch):
     """
     manager, gone_id = deleted_item
     texts = []
-    stub = _stub(manager, gone_id, None, texts)
+    # A *stale* copy, which is the real shape of this bug: the row is gone but
+    # the editor still holds the object it loaded when it opened.
+    stub = _stub(manager, gone_id, ActionItem(id=gone_id, who="Self", title="Doomed"), texts)
     opened = []
     stub.create_calendar_event = lambda: ItemEditorDialog.create_calendar_event(stub)
 
-    import src.getmoredone.screens.item_editor as ie
-    monkeypatch.setattr(ie, "CalendarEventDialog",
-                        lambda *a, **k: opened.append(a), raising=False)
+    # ``create_calendar_event`` imports the dialog inside the function, so a
+    # patch on item_editor's namespace is never consulted — and raising=False
+    # silenced the "no such attribute" that would have said so, leaving an
+    # assertion that could not fail. Patch the module it actually imports from.
+    import src.getmoredone.screens.calendar_dialog as cd
+    monkeypatch.setattr(cd, "CalendarEventDialog",
+                        lambda *a, **k: opened.append(a))
 
     stub.create_calendar_event()
 

@@ -60,10 +60,16 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Scheduler and the item editor *moved* it, so the same item could accumulate boards
   depending on which screen you used. Linking now moves the item everywhere. Because
   that means links get deleted, all three screens ask the same question before
-  unfiling anything — naming the project you are filing under and how many links go —
-  and nothing is removed without an answer. Dropping an item onto **No Project** in
-  the Scheduler also says that it clears the item's Annual Plan Element, which it
-  always did silently.
+  unfiling anything — naming the project you are filing under, how many links go, and
+  what happens to the item's Annual Plan Element — and nothing is removed without an
+  answer. Filing under a project replaces that plan element with the project's (or
+  clears it, if the project has none); clearing the project clears it. All three were
+  silent before.
+- **A project decides its items' Annual Plan Element, including when it has none.**
+  Moving an item to a project with no plan element used to leave the *previous*
+  project's on the item, so it went on claiming a place in the plan belonging to a
+  project it was no longer on — visible as the wrong Segment and Category in every
+  list view.
 - **Items already filed under several projects are reported, not quietly cleaned up.**
   The Projects screen names them above the board list, with how many projects each
   sits on, and the count appears at start-up. Nothing is deleted for you: each one is
@@ -84,6 +90,18 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A Weekly Tactic can no longer be filed under a Project**, which was never
+  intended — the item editor already refused, the Projects screen's "Link Action
+  Items" dialog did not. Filing one under a project with no Annual Plan Element
+  stripped the tactic's own, leaving a row the app then refused to save.
+- **The item editor no longer says "Saved" when it saved nothing.** If the item was
+  deleted elsewhere while its editor was open — from a list, or a second editor
+  window — Save reported success, closed the window and discarded every edit. It now
+  says the item no longer exists and stays open.
+- **A search in "Link Action Items" no longer leaves items selected that you cannot
+  see.** Typing in the search box rebuilt the list with every checkbox cleared while
+  the selection was kept behind the scenes, so "Link Selected" could re-file items
+  that had scrolled out of the list entirely.
 - **The item editor's Save and its Create Note both build a new item the same way.**
   They assembled the fields separately and had already disagreed twice about what a
   new item gets, so which button you pressed could change what was stored — most

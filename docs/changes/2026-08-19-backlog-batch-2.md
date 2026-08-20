@@ -7,7 +7,7 @@
 ## Summary
 
 Batch 2 of [`docs/implementation_plan_2026-08-19_backlog_clearance.md`](../implementation_plan_2026-08-19_backlog_clearance.md):
-the project-link model, plus everything five sweep passes found on top of it.
+the project-link model, plus everything eight review passes found on top of it.
 
 **BP3 — one builder for a new Action Item.** `save_item` (the Save button) and
 `save_item_if_needed` ("Create Note", "Link Note", the calendar dialog) both
@@ -45,11 +45,24 @@ rows carry both, so the prefix was a third choice that was never reached.
 
 ## What the sweeps added
 
-Five passes: **7, 10, 6, 6, 3** — and every pass found a defect inside its
-predecessor's fix. That is now eight consecutive passes across two batches with
-the same result. The count finally fell on the fifth, and so did the severity:
-the last pass found one real defect and two accuracy problems, against seven
-and ten data-affecting ones at the start.
+**Nine passes: 7, 10, 6, 6, 3, 2, then 11 across two independent reviews, then 8.** Every warm pass found a defect inside its predecessor's fix.
+
+The number that matters is the seventh. After six warm passes had the findings
+down to two cosmetic ones, a **cold** review — given the diff and no knowledge
+of the six passes — and a **correctness/UI** review covering the families the
+failure-pattern sweep explicitly does not, were run in parallel. They
+independently found the *same two high-severity defects*, both of which every
+warm pass had walked past:
+
+* the item editor reporting **"✓ Saved" while discarding every edit** when the
+  row behind it had been deleted elsewhere — a regression BP3 introduced, which
+  turned an `AttributeError` the user could see into a success message;
+* a search in "Link Action Items" leaving items **selected but invisible**,
+  which BP1 turned from harmless into destructive.
+
+Six passes by the context that wrote the code did not find either. That is the
+cost of self-review, measured, and the argument for running a cold pass on
+anything that matters.
 
 - Pass 1's two worst: the Scheduler's drag-drop deleted project links with no
   confirmation while the Projects dialog asked — BP1's own docstring justified
@@ -78,6 +91,30 @@ and ten data-affecting ones at the start.
   project link and then cleared both plan elements too. It also found a test
   from pass 4 whose assertion could not fail — it queried for a row the fixture
   never contained.
+- Pass 6 found that pass 5's docstring — written to stop an inaccurate claim —
+  was itself inaccurate: a blank Who filter produces **three** different
+  answers across the Scheduler, not two.
+- The cold and correctness passes found the two above plus nine more, including
+  filing silently replacing an item's Annual Plan Element, a board with no plan
+  element leaving the previous board's behind, and two assertions lost with a
+  deleted test while the note replacing it claimed to have carried them over.
+- A second cold pass, over the commit that fixed the first one, found that the
+  "a board decides the plan element, including when it has none" fix **created
+  database rows the application refuses to save**: filing a Weekly Tactic under
+  a project with no plan element nulled the tactic's own, and
+  `update_action_item` then raises on that row. A value no supported path can
+  create, written by a supported path. It also found that the test I had
+  written for "files it exclusively" passed with the link call deleted
+  outright, and that my "exhaustive" branch walk had an escape hatch over
+  exactly the case the live caller hits.
+
+The Annual Plan Element clause in the confirmation went wrong **three times in
+a row** — promised unconditionally, then only for the clearing direction, then
+"replaces" for a board with nothing to replace it with. Each was found by
+reading one live message. It is now pinned by an exhaustive walk of every
+`(count, direction, outcome)` combination, including the ones no caller
+produces today, because "no caller produces it today" is what the next caller
+changes.
 
 Every fix has a test proven to fail against the exact commit it fixes, checked
 in a worktree at that commit.
@@ -109,7 +146,7 @@ in a worktree at that commit.
 ## Verification
 
 - Command: `venv/bin/python -m pytest -q`
-- Result: PASS — 1019 passed, 2 skipped, exit code 0
+- Result: PASS — 1039 passed, 2 skipped, exit code 0
 - `PytestReturnNotNoneWarning`: 0. No `GUARD:` line — nothing touched the real
   database or settings file.
 - **Verified in the running app, not only in tests.** Both changed screens were
@@ -122,13 +159,20 @@ in a worktree at that commit.
 
 ## Risks / Known gaps
 
-- **Five passes were run; a sixth was not.** The curve finally turned on the
-  fifth — 3 findings against 6, and only one of them a real defect. That is the
-  first genuine sign of diminishing returns across two batches. It is a
-  judgement call, not a proof: every pass so far has found something in its
-  predecessor's work, and pass 5's own fixes are unswept. If a sixth pass is
-  run, the place to look is `describe_bulk_clear` and `_apply_unlinked_filters`
-  — the two functions that have now been rewritten by three consecutive passes.
+- **The warm-pass curve was misleading.** Findings fell 7 → 10 → 6 → 6 → 3 → 2
+  and looked converged. A cold pass then found two high-severity defects
+  immediately. Do not read a falling count from self-review as evidence that
+  the code is clean; it is evidence that the reviewer has run out of new
+  assumptions to question, which is not the same thing.
+- **The confirmation logic is the most-rewritten code here** — seven passes
+  have touched `project_link_notice.py`. It is now covered by an exhaustive
+  branch walk rather than by examples, but it is still where I would look
+  first.
+- **One decision is still open: the "Unlink" button.** It removes an item's
+  project link and leaves its Annual Plan Element set, while "Clear Project"
+  and dragging onto No Project null it — so the item goes on showing the
+  segment and category of a project it is not on. Recorded in `BACKLOG.md`;
+  it needs a product call, not a fix chosen by me.
 - **The Who filter is unified on two of the Scheduler's four branches, not
   all four.** The project and unlinked branches share one rule; the
   date-filter and default branches go through `get_all_items` /

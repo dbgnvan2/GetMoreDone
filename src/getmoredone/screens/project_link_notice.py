@@ -128,31 +128,46 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str],
     total = item_count + ape_only_count
     if not total:
         # Nothing at stake produces no sentence, the way describe_bulk_clear
-        # already behaves — rather than "0 selected items are …".
+        # already behaves — rather than "0 selected items are ...".
         return ""
 
-    noun = "item is" if total == 1 else "items are"
-    target = f"“{target_title}”" if target_title else "this project"
+    # Two buckets, named separately — the same shape describe_bulk_clear uses.
+    # Printing the *total* against "already filed under another project" was
+    # false for the items filed under nothing; printing only ``item_count`` was
+    # false about the size of the loss. Each count now sits against the clause
+    # it is true of (P19).
+    noun = "item" if total == 1 else "items"
+    target = "\u201c%s\u201d" % target_title if target_title else "this project"
+    parts = []
+    if item_count:
+        parts.append("%d already filed under another project" % item_count)
+    if ape_only_count:
+        parts.append("%d carrying %s" % (
+            ape_only_count,
+            "an Annual Plan Element of its own" if ape_only_count == 1
+            else "Annual Plan Elements of their own"))
 
-    if not item_count:
-        # Nothing is unfiled — the whole batch is here for its plan elements.
-        verb_phrase = ("replaces each item's Annual Plan Element with the "
-                       "project's" if ape_outcome == APE_REPLACED and target_title
-                       else "clears each item's Annual Plan Element")
-        return (
-            f"{total} {verb} {noun} carrying an Annual Plan Element of their "
-            f"own.\n\nFiling under {target} {verb_phrase}. Continue?"
-        )
     if ape_outcome == APE_UNCHANGED:
-        ape_clause = ""
+        ape_phrase = ""
     elif target_title and ape_outcome == APE_REPLACED:
-        ape_clause = " and replaces each item's Annual Plan Element with the project's"
+        ape_phrase = ("replaces its Annual Plan Element with the project's"
+                      if total == 1
+                      else "replaces each item's Annual Plan Element with the project's")
     else:
-        ape_clause = " and clears each item's Annual Plan Element"
+        ape_phrase = ("clears its Annual Plan Element" if total == 1
+                      else "clears each item's Annual Plan Element")
+
+    does = []
+    if item_count:
+        does.append("removes the existing links")
+    if ape_phrase:
+        does.append(ape_phrase)
+
     return (
-        f"{total} {verb} {noun} already filed under another project.\n\n"
-        f"An Action Item belongs to exactly one Project, so filing under "
-        f"{target} removes the existing links{ape_clause}. Continue?"
+        "%d %s %s: %s.\n\n"
+        "An Action Item belongs to exactly one Project, so filing under "
+        "%s %s. Continue?" % (total, verb, noun, ", ".join(parts),
+                              target, " and ".join(does))
     )
 
 
@@ -253,6 +268,10 @@ def classify_losses(db_manager, item_ids: Iterable[str],
             for board_id in db_manager.get_project_board_ids_for_item(item_id)
             if board_id != target_board_id
         ]
+        if _is_weekly_tactic(db_manager, item_id) and target_board_id is not None:
+            # Filing is refused for a tactic, so there is nothing to warn about
+            # and nothing to consent to.
+            continue
         if others:
             with_links.append(item_id)
         elif ape_known and _ape_would_change(db_manager, item_id, target_ape):
@@ -296,12 +315,30 @@ def ape_outcome_for_change(db_manager, item_id: Optional[str],
 
 
 def _ape_outcome(db_manager, item_id: str, target_ape: Optional[str]) -> Optional[str]:
-    """What this write does to the item's Annual Plan Element."""
+    """What this write does to the item's Annual Plan Element.
+
+    A Weekly Tactic keeps its plan element whatever happens (PL6, enforced in
+    ``db_manager_project_boards``): filing one is refused outright and clearing
+    leaves the APE alone. The writer learned that rule and the describer did
+    not, so dragging a tactic onto "No Project" showed "Removing the project
+    also clears it" over a write that changed nothing — an affirmative
+    confirmation in front of a silent no-op (P19: the two layers disagreed
+    about the same rule).
+    """
+    if _is_weekly_tactic(db_manager, item_id):
+        return APE_UNCHANGED
     item = db_manager.get_action_item(item_id)
     current = getattr(item, "annual_plan_element_id", None) if item else None
     if not current or current == target_ape:
         return APE_UNCHANGED
     return APE_REPLACED if target_ape else APE_CLEARED
+
+
+def _is_weekly_tactic(db_manager, item_id: str) -> bool:
+    checker = getattr(db_manager, "is_weekly_tactic", None)
+    if checker is None:          # a stub without the predicate
+        return False
+    return bool(checker(item_id))
 
 
 def has_annual_plan_element(db_manager, item_id: Optional[str]) -> bool:
@@ -337,7 +374,11 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     ape_known = clearing
     if not clearing:
         board = db_manager.get_project_board(target_board_id)
-        title = board.title if board else "the selected project"
+        # ``or``, not a None check: a board saved with an empty title made
+        # ``title`` falsy, and every branch below reads a falsy title as "this
+        # is a clear" — so filing under it would have been described as
+        # clearing the project (P14: an empty value read as a different state).
+        title = (board.title if board else "") or "the selected project"
         target_ape = board.annual_plan_element_id if board else None
         ape_known = board is not None
 
