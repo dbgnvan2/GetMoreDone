@@ -1074,7 +1074,10 @@ PERMITTED_NAME_LOOKUPS = {
     # fallback in _segment_id_for_ape. That fallback returns an answer to the
     # CALLER and writes nothing — refusing to answer made the cascade raise.
     ("vps_manager.py", "segment_by_name_any_caller"): 2,
-    ("vps_manager.py", "segment_descriptions_by_name"): 1,
+    # resolve_segment_id_by_name's body, plus create_segment's case-collision
+    # check — a UNIQUENESS guard, not a link resolution. It exists to stop the
+    # ambiguity class being created in the first place.
+    ("vps_manager.py", "segment_descriptions_by_name"): 2,
     # db_manager's own non-persisting fallback: the helper's definition and
     # its call site, plus the body's query.
     ("db_manager.py", "segment_by_name_any_caller"): 2,
@@ -1632,5 +1635,86 @@ def test_rn_the_cascade_resolver_reads_the_id_not_the_name(tmp_path):
             "the cascade's segment resolver did not read the stored id — with "
             "the name drifted, only the id column has the right answer"
         )
+    finally:
+        vps.close()
+
+
+# --------------------------------------------------------------------------
+# The root cause: two segments whose names differ only by case
+# --------------------------------------------------------------------------
+
+def test_rn_create_segment_refuses_a_case_only_duplicate(tmp_path):
+    """Remove the ambiguity class rather than coping with it everywhere.
+
+    `segment_descriptions.name` is UNIQUE but SQLite's UNIQUE is
+    case-SENSITIVE, so "Health" and "health" were both legal — and every link
+    resolver then had to decide which one a name meant. The migration reports
+    such a row and refuses to link it, the resolvers refuse to write, and the
+    cascade falls back to a by-name answer. All of that exists to survive a
+    state the app should not create.
+    """
+    vps = make_vps(tmp_path, name="casedupe.db")
+    try:
+        existing = vps.get_all_segments(active_only=False)[0]["name"]
+
+        with pytest.raises(ValueError, match="already exists"):
+            vps.create_segment(existing.upper(), "d", "#123456", 90)
+        with pytest.raises(ValueError, match="already exists"):
+            vps.create_segment(existing.lower(), "d", "#123456", 91)
+        # Whitespace must not be a way around it either.
+        with pytest.raises(ValueError, match="already exists"):
+            vps.create_segment(f"  {existing}  ", "d", "#123456", 92)
+
+        # A genuinely different name still works.
+        new_id = vps.create_segment("Utterly Distinct", "d", "#123456", 93)
+        assert new_id, "a non-colliding segment was refused"
+
+        names = [s["name"] for s in vps.get_all_segments(active_only=False)]
+        assert sum(1 for n in names if n.lower() == existing.lower()) == 1, (
+            f"a case-duplicate reached the table: {names}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_renaming_a_segment_does_not_create_a_second_vision_segment(tmp_path):
+    """RN-INV2 — renaming never causes a duplicate.
+
+    `update_segment` looked up the vision segment by the OLD name. When that
+    missed, its else-branch inserted a SECOND vision_segments row — so the
+    rename path itself broke the invariant, and the new row carried no
+    `segment_description_id` either.
+    """
+    vps = make_vps(tmp_path, name="renamedupe.db")
+    try:
+        chain = _build_full_chain(vps)
+        before = vps.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM vision_segments"
+        ).fetchone()["n"]
+
+        # Drift the vision segment's name so the OLD-name lookup cannot find
+        # it — exactly the state a partial rename leaves behind.
+        vps.db.conn.execute(
+            "UPDATE vision_segments SET name = 'Drifted Away' WHERE id = ?",
+            (chain["vision_segment_id"],),
+        )
+        vps.db.conn.commit()
+
+        vps.update_segment(chain["segment_description_id"], name="Renamed In Settings")
+
+        after = vps.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM vision_segments"
+        ).fetchone()["n"]
+        assert after == before, (
+            f"the rename created a duplicate vision segment: {before} -> {after}"
+        )
+        renamed = vps.db.conn.execute(
+            "SELECT name, segment_description_id FROM vision_segments WHERE id = ?",
+            (chain["vision_segment_id"],),
+        ).fetchone()
+        assert renamed["name"] == "Renamed In Settings", (
+            "the rename did not reach the linked vision segment"
+        )
+        assert renamed["segment_description_id"] == chain["segment_description_id"]
     finally:
         vps.close()
