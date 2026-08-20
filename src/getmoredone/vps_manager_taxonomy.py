@@ -450,6 +450,19 @@ class VPSTaxonomyMixin:
         # through THIS path left the initiative showing the old composite.
         # Delegating rather than pasting a third copy — the duplication
         # between these two functions is what produced the gap.
+        # RE-POINT: the stored segment id is stale by construction here, so
+        # COALESCE's "keep what is there" is wrong on this path — it left the
+        # plan element on the OLD segment when the new name was ambiguous.
+        # Clearing it is correct: RN-M5 then names the row, and
+        # _segment_id_for_ape still answers the cascade from the name.
+        repointed = resolve_segment_id_exact(self.db.conn, segment_name)
+        for table in ("annual_vision_elements", "annual_plan_elements"):
+            self.db.conn.execute(
+                f"UPDATE {table} SET segment_description_id = ? "
+                "WHERE vision_element_id = ?",
+                (repointed, vision_element_id),
+            )
+
         self._sync_vision_element_derived_fields(
             vision_element_id, previous_key_field=previous_key_field
         )
@@ -978,6 +991,21 @@ class VPSTaxonomyMixin:
         if settings_id:
             success, _counts = self.delete_segment(settings_id)
             return bool(success)
+
+        # Ambiguous is NOT "genuinely unlinked". Falling through here raised an
+        # uncaught FOREIGN KEY constraint failed with dependents present — and
+        # had the FK not blocked it, vision_elements.segment_id is
+        # ON DELETE CASCADE, so this line would have deleted the whole vision
+        # element tree with none of delete_segment's protection.
+        candidates = self.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+            (row["name"],),
+        ).fetchone()["n"]
+        if candidates > 1:
+            raise ValueError(
+                f"'{row['name']}' matches {candidates} life segments, so which "
+                "one this belongs to is ambiguous. Rename one of them first."
+            )
 
         # Genuinely unlinked and unresolvable: the shadow row alone.
         cur = self.db.conn.execute("DELETE FROM vision_segments WHERE id = ?", (segment_id,))

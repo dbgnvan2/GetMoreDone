@@ -344,12 +344,27 @@ def report_existing_breakage(conn: sqlite3.Connection) -> Dict[str, Any]:
         # per launch forever. A report that cries wolf on normal data trains
         # the reader to ignore it, and this is the log the spec's §10
         # human-review step depends on.
+        # EVERY initiative with no APE. RN-INV5 says reported, never silently
+        # skipped, and two attempts to filter this list were both wrong:
+        #
+        #   `title LIKE '%|%|%'` dropped an initiative that WAS derived and was
+        #   then retitled by the user — contradicting the hand-edited-title fix
+        #   in the same change, and discriminating breakage by a display string,
+        #   which RN-INV3 forbids.
+        #
+        #   A lineage EXISTS() check could not tell a hand-created initiative
+        #   from an orphaned one either: both share their segment and year with
+        #   a plan element.
+        #
+        # The noise problem was never the report — it was the LOG. An
+        # initiative with no APE is a legitimate, hand-created row as often as
+        # it is breakage, so _log_report states it at INFO and reserves WARNING
+        # for what genuinely needs a human.
         result["initiatives_without_ape"] = [
             {"id": r["id"], "title": r["title"], "year": r["year"]}
             for r in conn.execute(
                 "SELECT id, title, year FROM annual_initiatives "
-                "WHERE annual_plan_element_id IS NULL "
-                "  AND title LIKE '%|%|%'"
+                "WHERE annual_plan_element_id IS NULL"
             ).fetchall()
         ]
         result["duplicate_initiatives"] = [
@@ -418,8 +433,16 @@ def _log_report(report: Dict[str, Any]) -> None:
     says nothing, so a line in this log always means something needs a human.
     """
     breakage = report.get("existing_breakage") or {}
+    # An initiative with no plan element is as often a hand-created row as it
+    # is breakage, so it is stated, not warned about. A WARNING here fired at
+    # every launch forever and trained the reader to ignore the log — which is
+    # the log the spec's §10 human-review step depends on.
+    informational = {"initiatives_without_ape"}
     for key, rows in breakage.items():
         if key == "counts" or not rows:
+            continue
+        if key in informational:
+            logger.info("link-integrity: %d %s (may be intentional)", len(rows), key)
             continue
         logger.warning(
             "link-integrity: %d %s need a human: %s", len(rows), key, rows

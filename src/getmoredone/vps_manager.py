@@ -559,23 +559,40 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             except (KeyError, IndexError):
                 return None
 
+        was_open = bool(getattr(self.db.conn, "in_transaction", False))
         existing = _field("segment_description_id")
         if existing:
             return existing
 
-        # Exact, not first-match: writing an id here for a name that matches
-        # two segments is the guess the migration deliberately refused.
+        # Exact, not first-match: WRITING an id for a name that matches two
+        # segments is the guess the migration deliberately refused.
         healed = resolve_segment_id_exact(self.db.conn, _field("segment_name"))
+        if healed is None:
+            # But refusing to write is not a reason to break the cascade.
+            #
+            # Returning None here made assign_ape_to_month raise
+            # `ValueError: Segment '<name>' not found.` — verbatim the spec §2
+            # failure this change exists to remove — for every plan element
+            # created while two segment descriptions differ only by case
+            # (segment_descriptions.name is UNIQUE but CASE-SENSITIVE, and
+            # create_segment does not guard against it).
+            #
+            # So fall back to the by-name answer for the CALLER, and do not
+            # persist it. The column stays NULL, RN-M5 names the row, and the
+            # cascade keeps working — which is exactly how it behaved before
+            # this change, rather than worse.
+            return self.resolve_segment_id_by_name(_field("segment_name"))
+
         if healed and _field("id"):
             self.db.conn.execute(
                 "UPDATE annual_plan_elements SET segment_description_id = ? "
                 "WHERE id = ? AND segment_description_id IS NULL",
                 (healed, ape["id"]),
             )
-            self._commit_heal()
+            self._commit_heal(was_open)
         return healed
 
-    def _commit_heal(self) -> None:
+    def _commit_heal(self, was_already_in_a_transaction: bool) -> None:
         """Persist a heal written during what callers treat as a read.
 
         Purpose: a lookup must not leave an open write transaction behind.
@@ -588,10 +605,28 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         used as a pure read from weekly_tactic's before-snapshot and from
         unassign_ape_from_month, either of which can return without committing.
 
-        Inside a caller's transaction the shared connection defers the commit
-        (see _DeferredCommitConnection), so a cascade rollback still takes the
-        heal with it — which is the behaviour RN-M2.A's risk table wanted.
+        Inside ``DatabaseManager.transaction()`` the shared connection defers
+        the commit (see _DeferredCommitConnection), so a cascade rollback still
+        takes the heal with it — the behaviour RN-M2.A's risk table wanted.
+
+        That deferral does NOT cover a raw ``conn.execute("BEGIN")``, of which
+        there are four: rename_vision_segment / _subsegment / _category and
+        delete_entity_cascade. A heal reached from inside one of those would
+        commit the caller's work mid-transaction and make its rollback a no-op.
+        No healer is reachable from them today — verified — so this is a trap
+        rather than a defect, and it is one added call from becoming live.
+        Recorded in BACKLOG.md.
         """
+        if was_already_in_a_transaction:
+            # Someone else's transaction was open before the heal wrote, so the
+            # write belongs to them: committing here would publish their work
+            # and make their rollback a no-op. Their commit or rollback takes
+            # the heal with it, which is correct either way.
+            #
+            # The flag is captured BEFORE the heal's own UPDATE, because that
+            # UPDATE opens a transaction itself — checking in_transaction here
+            # would always be True and nothing would ever commit.
+            return
         try:
             self.db.conn.commit()
         except Exception:
@@ -649,6 +684,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         between them here would silently pick one of a user's two plans
         (RN-INV5). Those are left for the report.
         """
+        was_open = bool(getattr(self.db.conn, "in_transaction", False))
         segment_id = self._segment_id_for_ape(ape)
         if not segment_id:
             return None
@@ -675,7 +711,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             (ape["id"], row["id"]),
         )
         row["annual_plan_element_id"] = ape["id"]
-        self._commit_heal()
+        self._commit_heal(was_open)
         return row
 
     def _get_or_create_annual_initiative_for_ape(

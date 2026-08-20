@@ -1570,6 +1570,22 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         segment_id = row["segment_description_id"] if row else None
         return segment_id
 
+    def _resolve_segment_id_by_name(self, name):
+        """First segment description matching this name, or None.
+
+        Used only where nothing is persisted (see _segment_from_annual_plan).
+        Link WRITES go through resolve_segment_id_exact, which refuses to guess.
+        """
+        text = (name or "").strip()
+        if not text:
+            return None
+        row = self.db.conn.execute(
+            "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?) "
+            "ORDER BY id",
+            (text,),
+        ).fetchone()
+        return row["id"] if row else None
+
     def _segment_from_annual_plan(self, annual_plan_element_id: Optional[str]) -> Optional[str]:
         """The APE's segment, by id (RN-M2.B).
 
@@ -1597,7 +1613,13 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             return None
         if row["segment_description_id"]:
             return row["segment_description_id"]
-        return resolve_segment_id_exact(self.db.conn, row["segment_name"])
+        exact = resolve_segment_id_exact(self.db.conn, row["segment_name"])
+        if exact is not None:
+            return exact
+        # Nothing is persisted from here, so a by-name answer on an ambiguous
+        # name is a display/derivation choice, not a written link. Stamping the
+        # item with NO segment would be the worse outcome, and silent.
+        return self._resolve_segment_id_by_name(row["segment_name"])
 
     def _get_first_day_of_week(self) -> int:
         """The configured first day of the week, from the one calendar.
