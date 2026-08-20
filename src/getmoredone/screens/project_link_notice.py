@@ -93,17 +93,26 @@ def describe_bulk_clear(filed_count: int, ape_only_count: int = 0) -> str:
     (sweep pass 3, P19).
     """
     total = filed_count + ape_only_count
+    if not total:
+        return ""
+
     noun = "item" if total == 1 else "items"
     parts = []
+    losses = []
     if filed_count:
         parts.append(f"{filed_count} filed under a project")
+        losses.append("the project link")
     if ape_only_count:
-        plural = "" if ape_only_count == 1 else "s"
-        parts.append(f"{ape_only_count} with an Annual Plan Element{plural}")
+        # "an Annual Plan Elements" — the article has to go with the plural.
+        parts.append(f"{ape_only_count} with an Annual Plan Element"
+                     if ape_only_count == 1
+                     else f"{ape_only_count} with Annual Plan Elements")
+        losses.append("the Annual Plan Element")
+    # "of the dragged items", not "dragged items": this is the number that
+    # loses something, not the size of the drag (sweep pass 4).
     return (
-        f"{total} dragged {noun}: " + ", ".join(parts) + ".\n\n"
-        "Removing the project clears the project link and the Annual Plan "
-        "Element. Continue?"
+        f"{total} of the dragged {noun}: " + ", ".join(parts) + ".\n\n"
+        f"Removing the project clears {' and '.join(losses)}. Continue?"
     )
 
 
@@ -146,12 +155,15 @@ def classify_losses(db_manager, item_ids: Iterable[str],
         ]
         if others:
             with_links.append(item_id)
-        elif target_board_id is None and _has_annual_plan_element(db_manager, item_id):
+        elif target_board_id is None and has_annual_plan_element(db_manager, item_id):
             ape_only.append(item_id)
     return with_links, ape_only
 
 
-def _has_annual_plan_element(db_manager, item_id: str) -> bool:
+def has_annual_plan_element(db_manager, item_id: Optional[str]) -> bool:
+    """Does this item have an Annual Plan Element that a clear would destroy?"""
+    if not item_id:
+        return False
     item = db_manager.get_action_item(item_id)
     return bool(item and item.annual_plan_element_id)
 
@@ -183,7 +195,7 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
         count = len(db_manager.get_project_board_ids_for_item(only))
         question = describe_single_relink(
             count, title,
-            clears_ape=clearing and _has_annual_plan_element(db_manager, only))
+            clears_ape=clearing and has_annual_plan_element(db_manager, only))
     elif clearing:
         question = describe_bulk_clear(len(with_links), len(ape_only))
     else:

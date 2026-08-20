@@ -263,7 +263,7 @@ def test_bp5_the_box_says_showing_n_of_m_when_capped(db_manager):
     # only one on the row that the filter did not narrow, so it says which it
     # is (sweep pass 3).
     assert DragScheduleScreen._unlinked_box_text(box(lineage_filtered=True), 12) == (
-        "12 unlinked items (unfiltered)")
+        "12 unlinked items (before the segment filter)")
 
     # A lineage filter that searched a capped slice does not know its own
     # total, and must not borrow the unfiltered one (S2-3).

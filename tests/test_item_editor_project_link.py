@@ -887,7 +887,8 @@ def test_sweep3_the_confirmation_message_names_the_target_project(tmp_path, monk
             lambda title, message, **kw: asked.update(
                 title=title, message=message) or True)
 
-        stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=2)
+        stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=2,
+                               item_id=None)
         result = ItemEditorDialog._confirm_dropping_extra_project_links(stub, board.id)
 
         assert result is True

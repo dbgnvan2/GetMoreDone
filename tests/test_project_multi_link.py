@@ -20,6 +20,7 @@ import src.getmoredone.screens.project_boards as pb
 from src.getmoredone.models import ProjectBoard
 from src.getmoredone.screens.project_boards import LinkProjectActionItemsDialog
 from src.getmoredone.screens.project_link_notice import (
+    describe_bulk_clear,
     describe_bulk_relink,
     describe_outstanding_multi_links,
     describe_single_relink,
@@ -760,7 +761,7 @@ def test_s3_1_a_mixed_bulk_clear_names_both_kinds_of_loss(tmp_path, answers):
         message = answers["messages"][0]
         assert "1 filed under a project" in message, message
         assert "1 with an Annual Plan Element" in message, message
-        assert "2 dragged items" in message, message
+        assert "2 of the dragged items" in message, message
     finally:
         vps.close()
 
@@ -807,5 +808,108 @@ def test_s3_2_an_unselected_no_project_box_says_its_number_is_unfiltered(tmp_pat
         return stub
 
     assert DragScheduleScreen._unlinked_box_text(box(True), 30) == (
-        "30 unlinked items (unfiltered)")
+        "30 unlinked items (before the segment filter)")
     assert DragScheduleScreen._unlinked_box_text(box(False), 30) == "30 unlinked items"
+
+
+# --------------------------------------------- sweep, fourth pass
+
+
+def test_s4_1_the_editor_still_warns_a_multi_filed_item_about_its_plan_element(
+        tmp_path, monkeypatch):
+    """Adding ``clears_ape`` with a default silently disarmed this call site.
+
+    Sweep pass 4. ``_confirm_dropping_extra_project_links`` is the *only*
+    dialog a multi-filed item gets — the other editor guard is scoped to items
+    with no extra links — so defaulting the new flag to False deleted the
+    Annual Plan Element warning from the one path that showed it (P22).
+    """
+    import tkinter.messagebox as messagebox
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        first = _board(manager, "First", ape_id)
+        second = _board(manager, "Second", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_action_item_to_project_board(first.id, item.id)
+        manager.link_action_item_to_project_board(second.id, item.id)
+        stored = manager.get_action_item(item.id)
+        stored.annual_plan_element_id = ape_id
+        manager.update_action_item(stored)
+
+        asked = []
+        monkeypatch.setattr(messagebox, "askyesno",
+                            lambda title, message, **kw: asked.append(message) or True)
+
+        stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=1,
+                               item_id=item.id)
+        ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
+
+        assert "Annual Plan Element" in asked[0], asked[0]
+
+        # ...and an item with no plan element is not warned about losing one.
+        bare = make_daily_item(vps, "No plan element")
+        manager.link_action_item_to_project_board(first.id, bare.id)
+        manager.link_action_item_to_project_board(second.id, bare.id)
+        manager.db.conn.execute(
+            "UPDATE action_items SET annual_plan_element_id = NULL WHERE id = ?",
+            (bare.id,))
+        manager.db.conn.commit()
+
+        asked.clear()
+        stub.item_id = bare.id
+        ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
+        assert "Annual Plan Element" not in asked[0], asked[0]
+    finally:
+        vps.close()
+
+
+def test_s4_2_the_bulk_clear_sentence_only_names_losses_that_apply():
+    """The per-item clause was made conditional; the closing sentence was not."""
+    filed_only = describe_bulk_clear(3, 0)
+    assert "Annual Plan Element" not in filed_only, filed_only
+    assert "clears the project link." in filed_only, filed_only
+
+    ape_only = describe_bulk_clear(0, 2)
+    assert "project link" not in ape_only, ape_only
+    assert "clears the Annual Plan Element." in ape_only, ape_only
+
+    both = describe_bulk_clear(1, 1)
+    assert "the project link and the Annual Plan Element" in both, both
+
+
+def test_s4_4_the_bulk_clear_plural_reads_as_english():
+    """"3 with an Annual Plan Elements" — the article goes with the plural."""
+    assert "3 with Annual Plan Elements" in describe_bulk_clear(1, 3)
+    assert "1 with an Annual Plan Element" in describe_bulk_clear(1, 1)
+    # Nothing at stake produces no sentence, rather than "0 items: ."
+    assert describe_bulk_clear(0, 0) == ""
+
+
+def test_s4_6_both_who_branches_read_a_blank_filter_the_same_way(tmp_path):
+    """The same screen must not list rows one way and count them another.
+
+    Sweep pass 4: the unlinked branch returned nothing for a whitespace-only
+    filter while the project-board branch listed the rows whose owner was also
+    whitespace (P5).
+    """
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+    from src.getmoredone.models import ActionItem
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        blank_owner = ActionItem(who="   ", title="Whitespace owner")
+
+        assert DragScheduleScreen._matches_who(blank_owner, "   ") is False
+        assert DragScheduleScreen._matches_who(blank_owner, None) is True
+        assert manager.get_unlinked_action_items(who_filter="   ") == []
+
+        named = ActionItem(who="Ana", title="Named")
+        assert DragScheduleScreen._matches_who(named, "ana") is True
+        assert DragScheduleScreen._matches_who(named, "Bob") is False
+    finally:
+        vps.close()

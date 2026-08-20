@@ -33,7 +33,11 @@ from .item_editor_dialogs import (
     ShowRelatedDialog,
 )
 from .item_editor_project_dialog import SetProjectDialog
-from .project_link_notice import confirm_exclusive_relink, describe_single_relink
+from .project_link_notice import (
+    confirm_exclusive_relink,
+    describe_single_relink,
+    has_annual_plan_element,
+)
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 # Still used by _canonical_weekly_tactic_title, which is about Weekly Tactic
 # titles, not the removed Context field.
@@ -633,7 +637,17 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
             board = self.db_manager.get_project_board(board_id)
             target = board.title if board else "the selected project"
         # BP1 — the Projects screen asks the same question in the same words.
-        question = describe_single_relink(count, target)
+        # ``clears_ape`` has to be passed, not defaulted: this is the *only*
+        # dialog a multi-filed item gets (the guard below it is scoped to
+        # items with no extra links), so letting it default to False deleted
+        # the Annual Plan Element warning from the one path that shows it
+        # (sweep pass 4, P22 — a new parameter with a default that silently
+        # changes an existing call site).
+        question = describe_single_relink(
+            count, target,
+            clears_ape=(board_id is None
+                        and has_annual_plan_element(self.db_manager, self.item_id)),
+        )
         return messagebox.askyesno("Change Project", question, parent=self)
 
     def _apply_project_link(self, item_id: str) -> bool:

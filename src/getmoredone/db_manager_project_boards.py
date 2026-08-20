@@ -404,10 +404,14 @@ class DBManagerProjectBoardsMixin:
         ``.strip().lower()`` on both sides — exactly the predicate the Scheduler
         applied in Python before the filter moved into the query, so moving it
         changed *when* rows are dropped (before the cap, not after) and not
-        *which* ones. That includes the blank case: the Python form was
-        ``item.who and item.who.strip().lower() == ...``, so an owner-less row
-        never matched, and a whitespace-only filter matches nothing here for
-        the same reason (sweep pass 3).
+        *which* ones — with one deliberate exception. The Python form was
+        ``item.who and item.who.strip().lower() == ...``, which excluded a row
+        with no owner but *did* match a whitespace-only owner against a
+        whitespace-only filter. A blank filter matches nothing here instead,
+        because "filter by nobody" returning a set of rows is a worse answer
+        than returning none; ``DragScheduleScreen._matches_who`` applies the
+        same rule on the project-board branch so the two cannot disagree about
+        the same screen (sweep pass 4).
         """
         target = who_filter.strip().lower()
         if not target:

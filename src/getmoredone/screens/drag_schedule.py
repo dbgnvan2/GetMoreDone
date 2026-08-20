@@ -439,7 +439,7 @@ class DragScheduleScreen(ctk.CTkFrame):
                 return [
                     item for item in self.db_manager.get_project_board_items(self.selected_project_id)
                     if item.status == "open"
-                    and (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
+                    and self._matches_who(item, who_filter)
                     and self._item_matches_filters(item)
                 ]
 
@@ -458,6 +458,23 @@ class DragScheduleScreen(ctk.CTkFrame):
             if item.id not in no_date_ids:
                 items.append(item)
         return [item for item in items if self._item_matches_filters(item)]
+
+    @staticmethod
+    def _matches_who(item, who_filter) -> bool:
+        """Does this item belong to the filtered owner?
+
+        The unlinked branch applies the same rule in SQL. Both treat a
+        whitespace-only filter as matching nothing, rather than as matching the
+        rows whose owner is also whitespace: the two branches disagreeing meant
+        the same screen listed those rows under a project box and reported zero
+        under "No Project" (sweep pass 4, P5).
+        """
+        if who_filter is None:
+            return True
+        target = who_filter.strip().lower()
+        if not target:
+            return False
+        return bool(item.who) and item.who.strip().lower() == target
 
     def _lineage_filter_active(self) -> bool:
         """Is a segment or subsegment filter narrowing what the screen shows?
@@ -481,12 +498,14 @@ class DragScheduleScreen(ctk.CTkFrame):
         """
         shown = getattr(self, "unlinked_shown", None)
         if shown is None:
-            # This box is not the selected one, so no filtered pass has run for
-            # it. The count is Who-filtered (SQL) but not segment-filtered —
-            # every other box in the row is — so say which number this is
-            # rather than letting it read as the filtered one (sweep pass 3).
+            # This box is not the selected one, so no lineage-filtered pass has
+            # run for it and the count is the Who-filtered total. Qualified with
+            # what is actually true of *this* number: "(unfiltered)" was wrong
+            # twice over — the count is Who-filtered, and the sibling boxes'
+            # "N open items" is filtered on neither axis, so it is not the odd
+            # one out for being unfiltered (sweep pass 4).
             if self._lineage_filter_active():
-                return f"{total} unlinked items (unfiltered)"
+                return f"{total} unlinked items (before the segment filter)"
             return f"{total} unlinked items"
         if getattr(self, "unlinked_total", None) is None:
             # A lineage filter searched a capped slice, so the population
