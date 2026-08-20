@@ -83,6 +83,38 @@ Graded below medium and deliberately not fixed in-loop.
   `create_segment`/`update_segment` would close it at the source.
 
 
+### Found by the second cold pass (2026-08-20)
+
+Below medium, or bigger than this batch. Not fixed in-loop.
+
+- **The legacy migration still collapses two case-colliding segments into one
+  `vision_segments` row.** Withholding the id stamp stops the row *asserting* a
+  life segment it is only half entitled to, and the ambiguity now reaches the
+  report — but both sub-segments still hang off the one row, and the second
+  one's `vision_elements.key_field` still spells the segment the other way, so
+  the tree and the key field disagree. Fixing it means keying `segment_cache`
+  by description id rather than lowered name, which changes the shape of
+  migrated data. No test covers the residual mis-filing.
+- **`backfill_initiative_ape_links` does not guard `_table_exists` for
+  `annual_plans`**, which its candidate query joins. Unreachable today —
+  `VPSSchema.initialize_vps_schema` runs before it — but a direct call on a
+  partial database raises `no such table` inside `initialize_schema`.
+- **An initiative whose `annual_plan_id` names no surviving plan is invisible
+  to the title match**, because the candidate query inner-joins `annual_plans`.
+  It needs a database corrupted by another build: the FK is `NOT NULL
+  REFERENCES annual_plans(id) ON DELETE CASCADE` and `PRAGMA foreign_keys` is
+  ON at the one connection site.
+- **The plan-year tie-break can prefer the wrong initiative.** When two
+  initiatives match one plan element by title, the one whose annual plan agrees
+  about the year is preferred — a heuristic, not evidence. If the plan element's
+  *own* initiative is the drifted one, the tie-break takes the stale twin. The
+  batch's base commit did the same; what changed is that the demoted candidate
+  is now named in the report instead of being dropped silently
+  (`test_rn_m1b1_backfill_surfaces_the_candidate_the_tie_break_demoted`). The
+  runtime heal has no report channel, so there it is still silent. Telling the
+  two apart needs something the data does not currently hold.
+
+
 ### Test-suite remediation leftovers (2026-08-20)
 
 - **Random-order testing is untested.** `pytest-randomly` is not a dev

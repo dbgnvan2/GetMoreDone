@@ -136,9 +136,15 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stored separately on the plan, the plan element and the initiative, so any path
   that updates one without the others makes them disagree — and when they disagreed
   the initiative went invisible and the next assignment built a duplicate, which is
-  the very bug this lookup was rewritten to prevent. The same condition is gone from
-  the one-time heal and from the migration's backfill, where the initiative's own
-  year already does the identifying.
+  the very bug this lookup was rewritten to prevent.
+
+  Where the initiative is matched by its **title** instead — the one-time repair and
+  the upgrade step, both used only for rows that have no id yet — the plan's year is
+  now a tie-break rather than a requirement. An initiative whose plan agrees about the
+  year is preferred; the wider set is only consulted when none does. Dropping the
+  requirement outright would have let a same-titled initiative on a stale plan take
+  the link, or made the repair see two candidates, decline to choose, and leave the
+  caller to create a third.
 - **A database upgraded from the oldest Vision Segment layout keeps the life segment
   each row was already attached to.** The upgrade knew the segment's id — the old row
   carried it — but wrote only the name and let a later step look the id up again from
@@ -146,7 +152,9 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   could not choose between them, so the row was left unlinked and reported as needing
   a human decision that the data had already made. The upgrade now keeps the id it
   was given, and still leaves a row unlinked when it genuinely points at a segment
-  that no longer exists.
+  that no longer exists — or when two old rows collapse into one and disagree about
+  which life segment they meant, which is reported for a person to settle rather than
+  decided in favour of whichever row happened to sort first.
 
 - **Renaming anything no longer breaks a link.** A segment, sub-segment, category,
   vision element key field, Project or Weekly Tactic can be renamed and every link

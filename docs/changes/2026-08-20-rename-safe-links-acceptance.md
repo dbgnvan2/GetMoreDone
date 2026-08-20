@@ -98,12 +98,9 @@ built a second initiative, and **RN-F4's duplicate reappeared through the
 function written to close RN-F4**. Measured: the test reports a genuinely
 different initiative id, not a count.
 
-Same predicate at the two title-match sites. There `ai.year` is the identifying
-comparison — the initiative's own year against the APE's. `ap.year` is a third
-copy of that one fact, contributing no identifying power and able only to drop
-a candidate that would have linked correctly. A heal that finds nothing does
-not fail safe: the caller then creates the duplicate. All three moved together,
-so the backfill's documented claim to reproduce the heal stays true.
+At the two **title**-match sites — the heal and the migration's backfill, both
+reached only by a row that has no id yet — the same predicate turned out to be
+doing something different, and removing it outright was a mistake. See below.
 
 ### `vps_schema.py` — the fourth INSERT, and why it was not the same fix
 
@@ -127,6 +124,105 @@ The migration now calls the same idempotent column adder first, and stamps
 `sd.id` from the LEFT JOIN — never `l.segment_id`, because the legacy table's
 FK is not enforced retroactively and writing the raw value through raises
 `FOREIGN KEY constraint failed` inside schema init. Measured, by mutation.
+
+### What the cold pass found — three regressions I introduced
+
+Per `CLAUDE.md`'s budget: two warm passes at most, one cold pass always, a
+further pass only after a high-severity finding. The cold pass was given the
+diff and the range and no narrative. It produced **one high and two medium**,
+and **all three were inside my own fixes**. Each was reproduced against the
+pre-fix source before being believed.
+
+**The plan year at the title-match sites is a tie-break, not a veto.** My
+reasoning — "`ai.year` already does the identifying, `ap.year` adds no
+identifying power" — was true about identifying power and false about
+*narrowing*, and narrowing is what those two sites depend on.
+
+| With a twin initiative on a drifted-year plan | Before this batch | After my fix |
+|---|---|---|
+| backfill | links the APE's own initiative, `ambiguous=[]` | links the **twin** (older, wins `created_at ASC`); the real one left NULL and reported as the loser |
+| heal | heals; 2 initiatives → 2 | returns None on 2 candidates; `_get_or_create` builds a **third**; 2 → 3 |
+
+The heal's own docstring argued against what I did to it: a heal that finds
+nothing does not fail safe, because the caller then creates the duplicate.
+
+`find_initiative_candidates_by_title` now prefers candidates whose plan year
+agrees and widens **only when there are none**. That is identical to the old
+behaviour whenever the old behaviour found anything, and different only where
+it found nothing — so no regression is possible. Both tiers are load-bearing,
+proved by mutation: return only the wide set and the two "prefers" tests
+redden; return only the narrow set and the two drift tests redden. It also
+collapses the two copies of the title match into one query, which is why
+RN-M4's exact count moves a lookup out of `vps_manager.py`.
+
+**The legacy migration must not pick a side (high).** `segment_cache` is keyed
+by *lowered* name, so two legacy rows pointing at two descriptions differing
+only by case collapse into one `vision_segments` row. Stamping the first row's
+id asserted a link that is false for the other row's work, and the backfill's
+ambiguity report — which had named both candidates — came back clean:
+
+```
+pre-fix : ('vsg-…','Health', None)   ambiguous=[{candidates: [seg-upper, seg-lower]}]
+post-fix: ('vsg-…','Health','seg-upper')   ambiguous=[]
+```
+
+That inverts the rule stated at the top of `link_integrity.py` — a wrong link
+is worse than a missing one, because the missing one is visible in the report.
+It was also irreversible: `vision_segments_legacy` is dropped in the same
+function, and the backfill only revisits rows that are still NULL. Stamping now
+requires that every legacy row collapsing into a name agrees on which
+description it means.
+
+My own test could not have caught it: it seeded **one** legacy row and then
+asserted `ambiguous == []` — asserting the silence without exercising the
+collision its fixture name advertised.
+
+### The second cold pass — required, and it earned it
+
+The budget allows a further pass only after a high-severity finding, and the
+first cold pass produced one. This second pass was given the two **fix**
+commits and a different set of failure families. It produced **one medium-high
+and one medium**, again inside my own work.
+
+Its headline finding was real but its baseline was wrong: it compared against
+my mid-batch commit rather than the batch base. Measured on the mirror fixture
+— the plan element's *own* initiative on the drifted plan, a stale twin on an
+agreeing one:
+
+| | links | reports |
+|---|---|---|
+| `ddcea71`, the batch base | the stale twin | nothing |
+| `48bfe57`, mid-batch | the right one | the twin |
+| my tie-break, as first written | the stale twin | nothing |
+
+So preferring the agreeing candidates does not regress the base — it returns
+the base's answer whenever the base had one, and answers only where the base
+returned nothing. **What was genuinely wrong is the silence.** Both
+orientations are reachable and nothing in the data separates them, so the
+preference is a guess, and RN-INV5 — stated at the top of `link_integrity.py`
+— does not permit making one quietly.
+
+The helper now returns the preferred candidates *and* all of them. The backfill
+links the preferred one and reports every other candidate, including the ones
+the tie-break demoted; previously it reported only the losers inside the
+winning tier, which is what made the tie-break invisible. The heal takes only
+the preferred list: it has no report channel, and refusing there is not safe.
+
+The second finding was my own test. `..._prefers_the_candidate_whose_plan_year_agrees`
+asserted `ambiguous == []` — pinning the silence, so the correct fix above
+would have turned it red for doing the right thing. A test that rejects the fix
+for a defect is worse than no test. It now asserts the link *and* that the twin
+is named.
+
+Also corrected: five written claims the code did not do, including the heal's
+"EXACTLY ONE initiative matches" (it is one *candidate*, after a choice this
+path cannot report) and RN-M4's allowlist entry for a title match that no
+longer lives in `vps_manager.py`.
+
+Four further findings were graded low and recorded in `BACKLOG.md` rather than
+fixed: the residual mis-filing the legacy collapse still causes, a missing
+`_table_exists` guard for `annual_plans`, an orphaned-plan initiative being
+invisible to the title match, and the tie-break's remaining silence in the heal.
 
 ## Files changed
 
@@ -153,8 +249,10 @@ FK is not enforced retroactively and writing the raw value through raises
   tests/test_weekly_tactic_schema.py tests/test_vps_integration.py
   tests/test_weekly_tactic_cascade.py tests/test_vps_fixes.py
   tests/test_database.py -q`
-- Result: **PASS — 212 passed, exit 0**, read from the exit code. Zero
-  `GUARD:` lines, so no test reached the real database.
+  plus `tests/test_traceability_refs.py` and `tests/test_no_vacuous_tests.py`.
+- Result: **PASS — 223 passed, exit 0**, read from the exit code. Zero
+  `GUARD:` lines, so no test reached the real database. The eight meta files
+  pass separately: 206 passed, 1 skipped.
 - The full suite was **not** run locally, by instruction. CI runs it on three
   Python versions.
 
@@ -166,8 +264,14 @@ FK is not enforced retroactively and writing the raw value through raises
 | `..._year_drift_does_not_duplicate_the_initiative` | same — reports a different initiative id |
 | `..._heal_survives_an_annual_plan_year_drift` | the `ap.year` join back in `_heal_annual_initiative_link` only |
 | `..._backfill_survives_an_annual_plan_year_drift` | the `ap.year` join back in `backfill_initiative_ape_links` only |
-| `test_rn_m1c_legacy_migration_keeps_the_id...` | the whole `vps_schema` change reverted to HEAD |
-| `test_rn_m1c_legacy_migration_does_not_stamp_a_dangling_id` | stamping `row["legacy_segment_id"]` — red with `FOREIGN KEY constraint failed` |
+| `test_rn_m1c_legacy_migration_keeps_the_id...` | the whole `vps_schema` change reverted to `ddcea71` |
+| `test_rn_m1c_legacy_migration_does_not_stamp_a_dangling_id` | stamping `row["legacy_segment_id"]` — red with `FOREIGN KEY constraint failed` inside `initialize_schema` |
+| `..._heal_prefers_the_candidate_whose_plan_year_agrees` | `return _matches(False)` — the narrow tier removed |
+| `..._backfill_prefers_the_candidate_whose_plan_year_agrees` | the same |
+| `..._two_legacy_rows_that_collapse_are_not_given_one_of_the_two_ids` | stamping `row["description_id"]` instead of the agreed one |
+
+The two drift tests redden on the opposite mutation, `return _matches(True)` —
+so neither tier of the tie-break is decoration.
 
 Each of the first four was mutated **one site at a time**, confirming each test
 guards its own site and not a neighbour's.
@@ -182,6 +286,12 @@ was redundant, so the branch went instead of the test being kept as decoration.
 - **The user's real database was modified.** Five rows re-pointed from Wellness
   to Health, on their explicit instruction, through the app's own methods, with
   two backups taken. Reversible by restoring `.pre-wellness-merge.bak`.
+- **The finding count is not the reassuring part.** Every fix commit in this
+  batch contained a defect found by the next pass, and the highest-severity
+  finding overall was created by a fix rather than found in the original code.
+  Two cold passes, five findings at medium or above, **all five inside my own
+  fixes**. The passes stopped because the second one's findings were a wrong
+  baseline and a bad assertion in a test — not because the count fell.
 - **`vps_schema.py` runs against every user database at launch.** The change is
   inside schema initialization, which is the highest-blast-radius code here. It
   is guarded by `_table_exists(conn, "vision_segments_legacy")` and so is inert
