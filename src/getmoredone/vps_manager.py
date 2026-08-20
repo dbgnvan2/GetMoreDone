@@ -1245,7 +1245,40 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
 
     def create_segment(self, name: str, description: str, color_hex: str,
                        order_index: int) -> str:
-        """Create a new life segment."""
+        """Create a new life segment.
+
+        Purpose: two segments whose names differ only by case are the root of
+                 every ambiguity the rename-safe-links work had to handle.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+        Tests:   tests/test_rename_safe_links.py::test_rn_create_segment_refuses_a_case_only_duplicate
+
+        ``segment_descriptions.name`` is UNIQUE, but SQLite's UNIQUE is
+        case-SENSITIVE — so "Health" and "health" were both legal, and every
+        link resolver then had to decide which one a name meant. The migration
+        reports such a row and refuses to link it; the resolvers refuse to
+        write; and the cascade falls back to a by-name answer. All of that
+        machinery exists to survive a state the app should not create.
+
+        Refusing here removes the class rather than coping with it. Existing
+        collisions are untouched — they are reported by the migration, and
+        resolving one is a decision for the person whose data it is.
+        """
+        clean = (name or "").strip()
+        if not clean:
+            raise ValueError("A life segment needs a name.")
+
+        collision = self.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+            (clean,),
+        ).fetchone()
+        if collision:
+            raise ValueError(
+                f"A life segment called '{collision['name']}' already exists. "
+                "Two segments whose names differ only by case cannot be told "
+                "apart when resolving links, so pick a different name."
+            )
+
+        name = clean
         segment_id = f"seg-{uuid4().hex[:8]}"
         now = datetime.now().isoformat()
 
@@ -1290,10 +1323,20 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         # If the segment display name changed in Settings, rename linked vision segment.
         if "name" in updates and updates["name"] and updates["name"] != old_name:
             new_name = updates["name"].strip()
+            # By id, falling back to the old name only for a row the migration
+            # could not link. Looking up by the OLD name was invisible to the
+            # RN-M4 scan, and when it missed, the else-branch below created a
+            # SECOND vision_segments row — RN-INV2, "renaming never causes a
+            # duplicate", broken by the rename path itself.
             vision_seg = self.db.conn.execute(
-                "SELECT id FROM vision_segments WHERE LOWER(name) = LOWER(?)",
-                (old_name,),
+                "SELECT id FROM vision_segments WHERE segment_description_id = ?",
+                (segment_id,),
             ).fetchone()
+            if not vision_seg:
+                vision_seg = self.db.conn.execute(
+                    "SELECT id FROM vision_segments WHERE LOWER(name) = LOWER(?)",
+                    (old_name,),
+                ).fetchone()
             if vision_seg:
                 self.db.conn.execute(
                     "UPDATE vision_segments SET name = ?, updated_at = ? WHERE id = ?",
@@ -1308,9 +1351,16 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             else:
                 seg_id = f"vsg-{uuid4().hex[:8]}"
                 now = datetime.now().isoformat()
+                # Stamp the id. Two of the four INSERT INTO vision_segments
+                # sites were hardened by RN-M1.C and this one was not, so a row
+                # created here was unlinked until the next launch's backfill —
+                # and get_vision_segments_admin's id-join returned it with no
+                # colour and no order in the meantime.
                 self.db.conn.execute(
-                    "INSERT INTO vision_segments (id, name, vision_text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                    (seg_id, new_name, "", now, now),
+                    "INSERT INTO vision_segments "
+                    "(id, name, vision_text, segment_description_id, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (seg_id, new_name, "", segment_id, now, now),
                 )
         self.db.conn.commit()
         return True
