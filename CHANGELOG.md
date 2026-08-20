@@ -128,6 +128,26 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A plan element's Annual Initiative is found by its id and nothing else.** The
+  lookup resolved by id — correct — and then also required the initiative's annual
+  plan to carry the same year as the plan element. A plan element id identifies one
+  plan element and a plan element carries one year, so that extra condition could
+  never find a *different* initiative; it could only hide the right one. The year is
+  stored separately on the plan, the plan element and the initiative, so any path
+  that updates one without the others makes them disagree — and when they disagreed
+  the initiative went invisible and the next assignment built a duplicate, which is
+  the very bug this lookup was rewritten to prevent. The same condition is gone from
+  the one-time heal and from the migration's backfill, where the initiative's own
+  year already does the identifying.
+- **A database upgraded from the oldest Vision Segment layout keeps the life segment
+  each row was already attached to.** The upgrade knew the segment's id — the old row
+  carried it — but wrote only the name and let a later step look the id up again from
+  that name. If two life segments' names differed only in capitalisation, the lookup
+  could not choose between them, so the row was left unlinked and reported as needing
+  a human decision that the data had already made. The upgrade now keeps the id it
+  was given, and still leaves a row unlinked when it genuinely points at a segment
+  that no longer exists.
+
 - **Renaming anything no longer breaks a link.** A segment, sub-segment, category,
   vision element key field, Project or Weekly Tactic can be renamed and every link
   survives. Renaming a segment used to make an ordinary date change on a filed Action

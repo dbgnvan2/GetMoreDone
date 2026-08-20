@@ -1,6 +1,6 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev requirements, BI3 calendar paths)
+Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy migration's discarded id closed; §5 and the migration report signed off)
 
 ## Deferred — found by review, deliberately not fixed
 
@@ -9,9 +9,11 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 From the third review round, not fixed in-loop:
 
 - **`update_segment`'s `vision_segments` lookup is invisible to the RN-M4
-  scan** and its `else` branch inserts a second row without
-  `segment_description_id`. Two of four `INSERT INTO vision_segments` sites
-  were hardened; `vps_manager.py` and `vps_schema.py` were not.
+  scan.** The insert half of this is done — all four `INSERT INTO
+  vision_segments` sites now stamp `segment_description_id` (`vps_manager.py`
+  in the third round, `vps_schema.py` in `af9a88e`). What remains is that the
+  RN-M4 guard cannot see this lookup at all, so a regression here would not
+  be caught by the scan that exists to catch it.
 - **`_commit_heal` is safe only inside `DatabaseManager.transaction()`.** Four
   raw `conn.execute("BEGIN")` blocks exist (the three renames and
   `delete_entity_cascade`). No healer is reachable from them today — the code
@@ -33,12 +35,6 @@ From the third review round, not fixed in-loop:
 Graded below medium by the two reviews of Batch 4 and deliberately not fixed
 in-loop, per the sweep rules — each fix is new unreviewed surface.
 
-- **`_find_annual_initiative_for_ape`'s id lookup still filters `ap.year = ape.year`.**
-  A correctly-linked initiative whose annual plan's year drifts becomes
-  invisible and gets duplicated on the next assignment — RN-F4 by another route.
-- **`update_segment`'s `INSERT INTO vision_segments`** (`vps_manager.py`) still
-  omits `segment_description_id`, unlike the two sibling inserts that were
-  fixed. Self-heals at the next sync, but leaves the row colourless until then.
 - **`link_integrity.add_segment_description_id_columns` returns `False` for
   both "column already there" and "table absent",** so the report cannot tell
   a no-op from a missing table. `test_rn_m1d` is satisfied by either.
@@ -56,6 +52,35 @@ in-loop, per the sweep rules — each fix is new unreviewed surface.
 - **Whether an Annual Plan Element should block a segment delete** is now
   answered yes (it does), but `annual_vision_elements` blocking too may be
   stricter than intended. Worth a look the first time it refuses.
+
+
+### Found while closing the rename-safe-links acceptance items (2026-08-20)
+
+Graded below medium and deliberately not fixed in-loop.
+
+- **Segment names longer than 15 characters are clipped with an ellipsis in
+  every VSP chip.** `_clip_label(name, 15)` — "Health and Fitness" renders as
+  "Health and Fit…". Pre-existing display behaviour, not a rename regression,
+  but a user who renames a segment to something descriptive cannot read it
+  back. The same static method is copy-pasted into six screen modules
+  (`vision_segments`, `vision_elements`, `annual_vision_segments`,
+  `ape_assignment`, `ape_period_view`, `weekly_items`) with three different
+  limits (15, 18, 20), so widening it is six edits.
+- **`screens/vps_planning.py` (51 KB, `VPSPlanningScreen`) has no caller on
+  the run path.** `app.show_vps_planning` is a compatibility shim that
+  redirects to `show_vision_planning_hub`; the only import is in
+  `tests/test_vps_fixes.py`. P21: a component kept alive by its own test.
+- **`VPSSchema.initialize_vps_schema` runs twice per launch.** `DatabaseManager`
+  and `VPSManager` share one `Database` and both call `initialize_schema`. The
+  weekly-tactic and link-integrity migrations are behind a once-per-`Database`
+  guard for exactly this; the VSP schema is not. Idempotent today — the second
+  legacy pass returns early because `vision_segments_legacy` is gone — so this
+  is wasted work rather than a defect. Observed directly by tracing the call.
+- **`segment_descriptions.name` permits an empty or whitespace-only name.**
+  `NOT NULL` does not exclude `''`. Nothing produces one today, and the branch
+  that would have defended against it in the legacy migration was removed
+  rather than left untestable (see `a79aeca`). A validation guard in
+  `create_segment`/`update_segment` would close it at the source.
 
 
 ### Test-suite remediation leftovers (2026-08-20)
