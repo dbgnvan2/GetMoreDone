@@ -737,3 +737,98 @@ def test_rn_project_and_tactic_links_are_id_based(tmp_path):
         assert _tactic_ape(vps, chain["weekly_tactic_id"]) == chain["ape_id"]
     finally:
         vps.close()
+
+
+# --------------------------------------------------------------------------
+# RN-M3 — names stay correct for display
+# --------------------------------------------------------------------------
+
+def test_rn_m3a_rename_refreshes_every_display_copy(tmp_path):
+    """RN-M3.A / RN-INV4 — every stored copy of the name shows the new value.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m3a
+
+    Including the Annual Initiative's title (RN-D7, settled with the user: the
+    title is derived, so a rename refreshes it). Leaving it stale would put two
+    different names on one thing.
+
+    And including segment_descriptions, which rename_vision_segment did not
+    touch — that is the whole of RN-F2, and spec §2 shows the two tables
+    holding different values after a rename.
+    """
+    vps = make_vps(tmp_path, name="m3a.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.rename_vision_segment(chain["vision_segment_id"], "Health Renamed")
+
+        stale = {}
+
+        vs = vps.db.conn.execute(
+            "SELECT name FROM vision_segments WHERE id = ?",
+            (chain["vision_segment_id"],),
+        ).fetchone()
+        if vs["name"] != "Health Renamed":
+            stale["vision_segments.name"] = vs["name"]
+
+        sd = vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?",
+            (chain["segment_description_id"],),
+        ).fetchone()
+        if sd["name"] != "Health Renamed":
+            stale["segment_descriptions.name"] = sd["name"]
+
+        for table in ("annual_plan_elements", "annual_vision_elements"):
+            row = vps.db.conn.execute(
+                f"SELECT segment_name, key_field FROM {table} "
+                "WHERE vision_element_id = ?",
+                (chain["vision_element_id"],),
+            ).fetchone()
+            if row["segment_name"] != "Health Renamed":
+                stale[f"{table}.segment_name"] = row["segment_name"]
+            if not row["key_field"].startswith("Health Renamed|"):
+                stale[f"{table}.key_field"] = row["key_field"]
+
+        initiative = vps.db.conn.execute(
+            "SELECT title FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+        if not initiative["title"].startswith("Health Renamed|"):
+            stale["annual_initiatives.title"] = initiative["title"]
+
+        assert not stale, (
+            f"{len(stale)} stored copy/copies still show the old name: {stale}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_m3b_tactic_title_follows_rename_without_relinking(tmp_path):
+    """RN-M3.B — a tactic's derived title follows, its APE link does not move.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m3b
+
+    Both halves matter. A title that does not follow shows the user two names
+    for one thing; a link that moves is the bug this whole change removes.
+    """
+    vps = make_vps(tmp_path, name="m3b.db")
+    try:
+        chain = _build_full_chain(vps)
+        ape_before = _tactic_ape(vps, chain["weekly_tactic_id"])
+
+        vps.update_vision_element(
+            chain["vision_element_id"],
+            segment_name=chain["segment_name"],
+            subsegment_name="Living Systems",
+            category_name="Renamed For Title",
+        )
+
+        assert _tactic_ape(vps, chain["weekly_tactic_id"]) == ape_before, (
+            "the rename moved the tactic to a different Annual Plan Element"
+        )
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert "Renamed For Title" in ape["key_field"], (
+            f"the APE's key field did not follow the rename: {ape['key_field']}"
+        )
+    finally:
+        vps.close()
