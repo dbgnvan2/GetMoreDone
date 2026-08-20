@@ -123,6 +123,161 @@ def test_legacy_vision_schema_migrates_to_current_tables(tmp_path):
     db.close()
 
 
+def _seed_legacy_schema_with_case_colliding_segments(db_path: str):
+    """A legacy database whose segment_descriptions differ only by case.
+
+    ``segment_descriptions.name`` is UNIQUE, but SQLite's UNIQUE is
+    case-SENSITIVE, so 'Health' and 'health' are both legal and older
+    databases can hold the pair. ``create_segment`` refuses to make a new one
+    now; it cannot un-make the ones already there.
+
+    The legacy ``vision_segments`` row points at ONE of them by id, so which
+    is meant is not in doubt.
+    """
+    conn = sqlite3.connect(db_path)
+    now = datetime.now().isoformat()
+    conn.execute(
+        """
+        CREATE TABLE segment_descriptions (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT,
+            color_hex TEXT NOT NULL,
+            order_index INTEGER,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    for seg_id, name, order in (("seg-upper", "Health", 1), ("seg-lower", "health", 2)):
+        conn.execute(
+            """
+            INSERT INTO segment_descriptions
+            (id, name, description, color_hex, order_index, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (seg_id, name, "", "#4CAF50", order, now, now),
+        )
+    conn.execute(
+        """
+        CREATE TABLE vision_segments (
+            id TEXT PRIMARY KEY,
+            segment_id TEXT REFERENCES segment_descriptions(id) ON DELETE CASCADE,
+            subsegment TEXT NOT NULL,
+            category TEXT NOT NULL,
+            order_index INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO vision_segments
+        (id, segment_id, subsegment, category, order_index, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("legacy-vs-1", "seg-upper", "Physical", "Cardio", 1, now, now),
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_rn_m1c_legacy_migration_keeps_the_id_the_legacy_row_carried(tmp_path):
+    """The legacy row's segment_id must survive the migration (RN-M1.C).
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m1c
+
+    The legacy row holds the real ``segment_descriptions`` id. The migration
+    used to insert the new ``vision_segments`` row by NAME only and let the
+    link-integrity backfill re-derive the id from that name a moment later.
+    That round trip is lossy: with two descriptions differing only by case the
+    name resolves to neither, the row is left NULL and reported as needing a
+    human — about something the legacy row already answered unambiguously.
+
+    Deriving a link from a display string is what this whole change removes
+    (RN-INV3), and here the id was in hand and thrown away.
+    """
+    db_path = tmp_path / "legacy_case_collision.db"
+    _seed_legacy_schema_with_case_colliding_segments(str(db_path))
+
+    db = Database(str(db_path))
+    db.connect()
+    db.initialize_schema()
+    try:
+        row = db.conn.execute(
+            "SELECT id, name, segment_description_id FROM vision_segments "
+            "WHERE LOWER(name) = 'health'"
+        ).fetchone()
+
+        assert row is not None, "the legacy segment did not migrate at all"
+        assert row["segment_description_id"] == "seg-upper", (
+            "the migration lost the id the legacy row carried and fell back to "
+            f"the name: got {row['segment_description_id']!r}"
+        )
+
+        report = db.link_integrity_report["backfill_vision_segments"]
+        assert report["ambiguous"] == [], (
+            "a row whose id was known was reported as needing a human: "
+            f"{report['ambiguous']}"
+        )
+    finally:
+        db.close()
+
+
+def test_rn_m1c_legacy_migration_does_not_stamp_a_dangling_id(tmp_path):
+    """A legacy segment_id pointing at nothing must not be written through.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    ``l.segment_id`` is the obvious thing to stamp and the wrong one: the
+    legacy table's own FK is not enforced retroactively, so the column can
+    name a description that has since been deleted. The migration stamps
+    ``sd.id`` from the LEFT JOIN instead, which is NULL exactly when the
+    legacy id resolves to nothing — the same rows the migration files under
+    'Uncategorized'.
+
+    Stamping the raw legacy value would put a reference to a missing row into
+    a column the rest of the change trusts as a real link.
+    """
+    db_path = tmp_path / "legacy_dangling.db"
+    _seed_legacy_schema_with_case_colliding_segments(str(db_path))
+    conn = sqlite3.connect(str(db_path))
+    # Dangling, not absent: a value is there, it just resolves to nothing.
+    conn.execute(
+        "UPDATE vision_segments SET segment_id = 'seg-deleted-long-ago' "
+        "WHERE id = 'legacy-vs-1'"
+    )
+    conn.commit()
+    conn.close()
+
+    db = Database(str(db_path))
+    db.connect()
+    db.initialize_schema()
+    try:
+        row = db.conn.execute(
+            "SELECT name, segment_description_id FROM vision_segments "
+            "WHERE name = 'Uncategorized'"
+        ).fetchone()
+
+        assert row is not None, "the dangling legacy row did not migrate"
+        assert row["segment_description_id"] is None, (
+            "a dangling legacy id was written through as a real link: "
+            f"{row['segment_description_id']!r}"
+        )
+        orphans = db.conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM vision_segments vs
+            LEFT JOIN segment_descriptions sd ON sd.id = vs.segment_description_id
+            WHERE vs.segment_description_id IS NOT NULL AND sd.id IS NULL
+            """
+        ).fetchone()["n"]
+        assert orphans == 0, f"{orphans} vision_segments point at a missing description"
+    finally:
+        db.close()
+
+
 def test_taxonomy_sync_creates_vision_elements_for_annual_workflow(tmp_path):
     manager = VPSManager(str(tmp_path / "taxonomy_sync.db"))
     try:
