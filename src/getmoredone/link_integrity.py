@@ -72,7 +72,12 @@ def add_segment_description_id_columns(conn: sqlite3.Connection) -> Dict[str, bo
         conn.execute(
             f"ALTER TABLE {table} "
             "ADD COLUMN segment_description_id TEXT "
-            "REFERENCES segment_descriptions(id)"
+            # ON DELETE SET NULL, not a bare reference: deleting a life segment
+            # must null the link, not fail with FOREIGN KEY constraint failed.
+            # A plain REFERENCES made delete_segment raise for a segment with
+            # no children at all, because sync_vision_segments_with_settings
+            # had created a vision_segments row pointing at it.
+            "REFERENCES segment_descriptions(id) ON DELETE SET NULL"
         )
         conn.execute(
             f"CREATE INDEX IF NOT EXISTS idx_{table}_segment_description "
@@ -95,7 +100,7 @@ def add_initiative_ape_column(conn: sqlite3.Connection) -> bool:
     conn.execute(
         "ALTER TABLE annual_initiatives "
         "ADD COLUMN annual_plan_element_id TEXT "
-        "REFERENCES annual_plan_elements(id)"
+        "REFERENCES annual_plan_elements(id) ON DELETE SET NULL"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_annual_initiatives_ape "
