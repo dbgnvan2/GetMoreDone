@@ -242,3 +242,80 @@ def _isolate_weekly_tactic_log(tmp_path_factory):
         handler.close()
         for restored in original:
             logger.addHandler(restored)
+
+
+# Set while a test has explicitly asked for a mapped window (see the
+# ``mapped_windows`` fixture). Everything else is withdrawn on creation.
+_WINDOWS_MAY_BE_MAPPED = False
+
+
+@pytest.fixture
+def mapped_windows():
+    """Let this test's windows actually appear.
+
+    Only for tests that read real geometry — ``winfo_width`` on a withdrawn
+    window returns 1, so the sash-drag contract cannot be checked without a
+    laid-out window. Everything else stays withdrawn, so a full run puts one
+    window on screen briefly instead of dozens of modals over the user's work.
+    """
+    global _WINDOWS_MAY_BE_MAPPED
+    _WINDOWS_MAY_BE_MAPPED = True
+    try:
+        yield
+    finally:
+        _WINDOWS_MAY_BE_MAPPED = False
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _keep_tk_windows_off_screen():
+    """No test may put a window over the user's work or take their keyboard.
+
+    Purpose: several tests build a real ``CTk`` root or ``CTkToplevel`` because
+             that is the only way to prove a control is wired to the database
+             rather than merely rendered (P25). On macOS every one of those
+             appears, raises itself and grabs focus, so a full run threw dozens
+             of modals over whatever the user was doing.
+    Tests:   tests/test_tk_offscreen.py
+
+    Windows are withdrawn on creation. Moving them off-screen instead does not
+    work here: macOS clamps a window back onto the display (``+12000+12000``
+    lands at the bottom-right corner), so it would still be visible.
+
+    Session-scoped and autouse because the classes are patched once, at import
+    time, and a window built at module scope has to be covered too.
+    """
+    import customtkinter as ctk
+    import tkinter as tk
+
+    patched = []
+
+    def _silence(cls, name, replacement):
+        if hasattr(cls, name):
+            patched.append((cls, name, getattr(cls, name)))
+            setattr(cls, name, replacement)
+
+    for cls in (ctk.CTk, ctk.CTkToplevel):
+        original_init = cls.__init__
+
+        def _init(self, *args, __original=original_init, **kwargs):
+            __original(self, *args, **kwargs)
+            if _WINDOWS_MAY_BE_MAPPED:
+                return
+            try:
+                self.withdraw()
+            except Exception:
+                pass
+
+        patched.append((cls, "__init__", original_init))
+        cls.__init__ = _init
+
+        # The calls that would show a window, raise it, or seize the keyboard.
+        _silence(cls, "lift", lambda self, *a, **k: None)
+        _silence(cls, "focus_force", lambda self, *a, **k: None)
+        _silence(cls, "grab_set", lambda self, *a, **k: None)
+
+    try:
+        yield
+    finally:
+        for cls, name, original in reversed(patched):
+            setattr(cls, name, original)

@@ -132,7 +132,7 @@ def test_downward_drag_does_not_pin(tmp_path):
 
 # ----------------------- event-level test -----------------------
 
-def test_real_grip_events_pin_on_upward_drag(tmp_path):
+def test_real_grip_events_pin_on_upward_drag(tmp_path, mapped_windows):
     """Fires the actual Tk bindings on a grip widget (press + release, NO motion
     event) and confirms the item is pinned and re-renders at the top."""
     root, db, screen = _make_screen(tmp_path, titles=("A", "B", "C"), withdraw=False)

@@ -36,7 +36,7 @@ def _make_dialog():
     return root, dialog
 
 
-def test_sash_drag_resizes_both_panels_and_pins_right_edge():
+def test_sash_drag_resizes_both_panels_and_pins_right_edge(mapped_windows):
     root, dialog = _make_dialog()
     try:
         mf = dialog.main_frame
