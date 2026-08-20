@@ -9,6 +9,7 @@ from typing import Optional
 
 from .paths import resolve_db_path
 from .vps_schema import VPSSchema
+from .link_integrity import run_link_integrity_migrations
 from .weekly_tactic_migrations import run_weekly_tactic_migrations
 
 
@@ -115,6 +116,10 @@ class Database:
         # tests and by the app so a large data change is never silent (P2).
         # Spec: docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1
         self.weekly_tactic_migration_report: Optional[dict] = None
+        # RN-M1. Same once-per-Database guard: two managers share one
+        # Database, and an unguarded call runs the backfill twice per
+        # launch, overwriting the first (real) report with a no-op one.
+        self.link_integrity_report: Optional[dict] = None
 
     def connect(self) -> sqlite3.Connection:
         """Open database connection and enable foreign keys."""
@@ -421,6 +426,13 @@ class Database:
         # second, no-op one.
         if self.weekly_tactic_migration_report is None:
             self.weekly_tactic_migration_report = run_weekly_tactic_migrations(conn)
+
+        # RN-M1. After the weekly-tactic migrations on purpose: the backfill
+        # reads annual_plan_elements, which the VSP schema above creates.
+        # Guarded the same way and for the same reason — two managers share one
+        # Database, so an unguarded call runs twice per launch.
+        if self.link_integrity_report is None:
+            self.link_integrity_report = run_link_integrity_migrations(conn)
 
         conn.commit()
 
