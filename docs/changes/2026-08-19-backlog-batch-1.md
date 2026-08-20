@@ -60,10 +60,12 @@ pass's own fixes**, which is the whole argument for the second pass:
 
 ## Risks / Known gaps
 
-- **The last fix commit (5cdb7a9) was not itself swept.** The loop ran
-  sweep → fix → sweep → fix, and the second round of fixes is unreviewed code.
-  Given the second pass found two defects in the first round, a third pass is
-  not unreasonable; it was not run.
+- **The third pass ran, and found 11 more** — including a wrong claim shipped
+  into three documents, and a guard that destroyed the test report when it
+  fired. Its fixes (ffa23ce) are themselves unswept. Three passes in a row each
+  found a defect inside the previous pass's fix, so a fourth would likely find
+  something; the returns are shrinking (9 → 8 → 11, but the last set was
+  mostly in test scaffolding rather than shipped behaviour).
 - ~~`delete_segment`'s multi-table check cannot be exercised.~~ **That claim was
   wrong** and a third sweep pass caught it. It confused *orphan* with *linked*:
   the check counts `WHERE segment_description_id = ?`, and an ordinary chain
@@ -80,4 +82,6 @@ pass's own fixes**, which is the whole argument for the second pass:
 ## Next agent actions
 
 - Batch 2 (the project-link model) is next in the plan.
-- Consider a third sweep pass over 5cdb7a9 before Batch 2 starts.
+- The Batch 1 test scaffolding is now guarded by artifact checks rather than
+  mechanism checks: if a future change starts writing the user's real settings
+  or database, the run fails and says which file and whether the content moved.
