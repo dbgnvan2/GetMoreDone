@@ -476,6 +476,24 @@ class VPSTaxonomyMixin:
             """,
             (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
         )
+        # RN-M3.A / RN-D7 — an Annual Initiative's title is DERIVED from the
+        # APE's key field, the same way a Weekly Tactic's is derived from its
+        # APE and week. Leaving it stale after a rename puts two different
+        # names on one thing.
+        #
+        # Joined through annual_plan_element_id, which RN-M1.B added. Matching
+        # on the OLD title here would be the very bug this change removes: the
+        # rename has already moved the key field by the time this runs.
+        self.db.conn.execute(
+            """
+            UPDATE annual_initiatives
+            SET title = ?, updated_at = ?
+            WHERE annual_plan_element_id IN (
+                SELECT id FROM annual_plan_elements WHERE vision_element_id = ?
+            )
+            """,
+            (key_field, now, vision_element_id),
+        )
 
     def rename_vision_segment(self, segment_id: str, new_name: str) -> bool:
         new_value = (new_name or "").strip()
@@ -498,9 +516,28 @@ class VPSTaxonomyMixin:
 
         try:
             self.db.conn.execute("BEGIN")
+            now = datetime.now().isoformat()
             self.db.conn.execute(
                 "UPDATE vision_segments SET name = ?, updated_at = ? WHERE id = ?",
-                (new_value, datetime.now().isoformat(), segment_id),
+                (new_value, now, segment_id),
+            )
+            # RN-M3.A / RN-INV4 — the linked segment description carries the
+            # same name and is what Settings and every colour lookup read.
+            # rename_vision_segment updated ONE of the two tables, which is the
+            # whole of RN-F2: spec §2 shows vision_segments renamed and
+            # segment_descriptions still holding the old value.
+            #
+            # By id, not by the old name: the id is what RN-M1.C added, and
+            # matching on the old name is the pattern being removed.
+            self.db.conn.execute(
+                """
+                UPDATE segment_descriptions
+                SET name = ?, updated_at = ?
+                WHERE id = (
+                    SELECT segment_description_id FROM vision_segments WHERE id = ?
+                )
+                """,
+                (new_value, now, segment_id),
             )
             ve_rows = self.db.conn.execute(
                 "SELECT id FROM vision_elements WHERE segment_id = ?",

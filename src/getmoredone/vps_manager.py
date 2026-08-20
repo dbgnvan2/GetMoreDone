@@ -659,7 +659,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         annual_plan_id, segment_id = self._get_or_create_annual_plan_for_ape(
             ape, created_by_rollover=created_by_rollover
         )
-        return self.create_annual_initiative(
+        initiative_id = self.create_annual_initiative(
             annual_plan_id=annual_plan_id,
             segment_description_id=segment_id,
             year=int(ape["year"]),
@@ -668,6 +668,15 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             outcome_statement="",
             auto_create_chain=False,
         )
+        # RN-M2.A — stamp the link at create time. Without this the id is
+        # written only lazily, by the heal in _find_annual_initiative_for_ape,
+        # so a rename between creation and first lookup would find nothing to
+        # heal and RN-M3.A's title refresh would skip the row.
+        self.db.conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = ? WHERE id = ?",
+            (ape["id"], initiative_id),
+        )
+        return initiative_id
 
     def _get_or_create_annual_plan_for_ape(
         self, ape: Dict[str, Any], created_by_rollover: bool = False
