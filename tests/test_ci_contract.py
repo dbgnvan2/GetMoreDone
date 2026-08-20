@@ -107,6 +107,45 @@ def test_rm3a_tests_workflow_runs_on_ubuntu():
     assert "ubuntu-latest" in TESTS_WORKFLOW.read_text(encoding="utf-8")
 
 
+# pip options that take a VALUE as the following token, on a command line.
+#
+# Deliberately NOT the licensing module's REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING.
+# That set answers "does this requirements-file line declare a package?" and so
+# contains bare boolean flags (--pre, --no-index, --require-hashes,
+# --no-build-isolation). Reusing it here to mean "the previous token ate this
+# one" made every package after such a flag invisible:
+#
+#     pip install --pre pyinstaller          -> pyinstaller not seen
+#     pip install --no-index pyinstaller     -> pyinstaller not seen
+#
+# Two different questions. One shared set is what broke it (P5 cuts both ways:
+# unify enumerations of the SAME concept, never of two that merely overlap).
+PIP_OPTIONS_TAKING_A_VALUE = frozenset({
+    "-r", "--requirement",
+    "-c", "--constraint",
+    "-i", "--index-url",
+    "--extra-index-url",
+    "-f", "--find-links",
+    "--only-binary", "--no-binary",
+    "--hash",
+    "--trusted-host",
+    "--use-feature", "--use-deprecated",
+    "--global-option", "--config-settings",
+    "-t", "--target",
+    "--prefix",
+})
+
+
+def _consumes_the_next_token(previous: str) -> bool:
+    """Did this argument already take its value, or does it eat the next one?"""
+    if "=" in previous:
+        # `--index-url=URL` has already consumed its value; the next token is a
+        # package. The requirements-file parser strips at "=" for the opposite
+        # reason, which is why these cannot share one rule.
+        return False
+    return previous in PIP_OPTIONS_TAKING_A_VALUE
+
+
 def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
     """Installing an ad-hoc package list would defeat the point of the run.
 
@@ -135,15 +174,10 @@ def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
         args = match.group(1).split()
         if args == ["--upgrade", "pip"]:
             continue
-        # Reuses the licensing module's allowlist rather than keeping a second,
-        # shorter enumeration of the same concept beside it (P5).
-        from tests.test_release_licensing import (
-            REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING as VALUE_TAKING,
-        )
         named = [
             a for i, a in enumerate(args)
             if not a.startswith("-")
-            and (i == 0 or args[i - 1].split("=", 1)[0] not in VALUE_TAKING)
+            and (i == 0 or not _consumes_the_next_token(args[i - 1]))
         ]
         assert not named, (
             f"tests.yml installs {named} by name: {line!r}. Every dependency "
@@ -385,7 +419,11 @@ BUILD_ARTIFACTS = {
     "build-windows": "GetMoreDone-win64",
     "build-macos": "GetMoreDone-mac",
 }
-RELEASE_ARCHIVES = ("GetMoreDone-win64.zip", "GetMoreDone-mac.zip")
+RELEASE_ARCHIVES_BY_JOB = {
+    "build-windows": "GetMoreDone-win64.zip",
+    "build-macos": "GetMoreDone-mac.zip",
+}
+RELEASE_ARCHIVES = tuple(RELEASE_ARCHIVES_BY_JOB.values())
 
 
 def _job_blocks(text: str) -> dict[str, str]:
@@ -679,29 +717,25 @@ def test_no_workflow_disables_the_mapped_window_tests():
 def test_the_mapped_window_opt_out_is_off_by_default():
     """A default-on escape hatch is the same silent skip by another route.
 
-    Driven as a real subprocess rather than by matching strings in conftest.py.
-    The string form of this test passed with the condition INVERTED — the
-    substring it looked for, ``os.environ.get(NO_MAPPED_WINDOWS_ENV)``, is
-    still present in ``if not os.environ.get(...)`` — which would have skipped
-    the three geometry tests on every machine, CI included, leaving a skip
-    count as the only signal. That is the exact failure this test exists to
-    prevent, so it has to assert the behaviour.
-    """
-    # This test's OFF cases deliberately map a real window, so it must honour
-    # the opt-out it guards — otherwise setting the variable to work in peace
-    # still put two windows over the user's desktop on every full run, which is
-    # the whole point of the variable.
-    # CI coverage is unaffected: test_no_workflow_disables_the_mapped_window_tests
-    # guarantees no workflow ever sets it.
-    if os.environ.get("GETMOREDONE_NO_MAPPED_WINDOWS", "").strip().lower() \
-            not in ("", "0", "false", "no", "off", "n"):
-        pytest.skip(
-            "GETMOREDONE_NO_MAPPED_WINDOWS is set: this test maps real windows "
-            "in its OFF cases and would take keyboard focus. CI never sets it, "
-            "so this always runs there."
-        )
+    Driven as a real subprocess. The string form of this test passed with the
+    condition INVERTED — the substring it looked for is still present in
+    ``if not os.environ.get(...)`` — which would have skipped the three
+    geometry tests on every machine, CI included, leaving a skip count as the
+    only signal.
 
-    target = "tests/test_tk_offscreen.py::test_a_test_can_ask_for_a_mapped_window"
+    The nested target is a **probe file this test writes**, not the real
+    geometry test. It requests the ``mapped_windows`` fixture and asserts
+    nothing else, so the fixture's decision is exercised and no window is ever
+    mapped. An earlier version ran the real geometry test, which meant this
+    test took keyboard focus twice on every run — and it then had to skip
+    itself when the opt-out was set, so under the project's own documented
+    local command it did not run at all. A guard that is disabled by the thing
+    it guards is not a guard.
+
+    The probe lives under the repo root so root ``conftest.py`` applies to it.
+    """
+    probe_dir = REPO_ROOT / ".gmd-optout-probe"
+    probe = probe_dir / "test_probe.py"
 
     def _run(env_value):
         env = dict(os.environ)
@@ -709,11 +743,10 @@ def test_the_mapped_window_opt_out_is_off_by_default():
         if env_value is not None:
             env["GETMOREDONE_NO_MAPPED_WINDOWS"] = env_value
         # No -rs here on purpose: pytest.ini's addopts must be what produces
-        # the skip reason, so deleting that line fails this test rather than
-        # silently restoring a bare "3 skipped".
+        # the skip reason, so deleting that line fails this test.
         return subprocess.run(
-            [sys.executable, "-m", "pytest", target, "-q", "--no-header"],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300, env=env,
+            [sys.executable, "-m", "pytest", str(probe), "-q", "--no-header"],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120, env=env,
         )
 
     def _describe(result):
@@ -723,37 +756,64 @@ def test_the_mapped_window_opt_out_is_off_by_default():
             f"--- stderr ---\n{result.stderr[-1500:]}"
         )
 
-    # Success is the EXIT CODE, not a token in stdout — this file's own
-    # docstring forbids the latter (P24), and this repo's pytest_sessionfinish
-    # sets a non-zero status with no FAILURES section, so a nested run that
-    # trips the user-data guard prints "1 passed" and would have passed here.
-    unset = _run(None)
-    assert unset.returncode == 0, (
-        "with GETMOREDONE_NO_MAPPED_WINDOWS unset the geometry test must RUN "
-        f"and pass.\n{_describe(unset)}"
-    )
-    assert "1 passed" in unset.stdout, (
-        f"expected the geometry test to run, not skip.\n{_describe(unset)}"
-    )
+    probe_dir.mkdir(exist_ok=True)
+    try:
+        probe.write_text(
+            "def test_probe(mapped_windows):\n"
+            "    # Requests the fixture and builds nothing. The point is the\n"
+            "    # fixture's skip decision, not a window.\n"
+            "    assert True\n",
+            encoding="utf-8",
+        )
 
-    on = _run("1")
-    assert on.returncode == 0, (
-        f"a skipped test must still exit 0.\n{_describe(on)}"
-    )
-    assert "1 skipped" in on.stdout, (
-        f"GETMOREDONE_NO_MAPPED_WINDOWS=1 must skip it.\n{_describe(on)}"
-    )
-    assert "GETMOREDONE_NO_MAPPED_WINDOWS" in on.stdout, (
-        "the skip REASON must be printed, so a suppressed run cannot be "
-        "mistaken for a passing one. This depends on addopts = -rs in "
-        f"pytest.ini.\n{_describe(on)}"
-    )
+        # Success is the EXIT CODE, not a token in stdout — this file's own
+        # docstring forbids the latter (P24), and this repo's
+        # pytest_sessionfinish sets a non-zero status with no FAILURES section.
+        unset = _run(None)
+        assert unset.returncode == 0 and "1 passed" in unset.stdout, (
+            "with GETMOREDONE_NO_MAPPED_WINDOWS unset the fixture must let the "
+            f"test RUN.\n{_describe(unset)}"
+        )
 
-    off = _run("0")
-    assert off.returncode == 0 and "1 passed" in off.stdout, (
-        "GETMOREDONE_NO_MAPPED_WINDOWS=0 must mean OFF. A bare truthiness "
-        f"check makes '0' turn the opt-out ON.\n{_describe(off)}"
-    )
+        on = _run("1")
+        assert on.returncode == 0, f"a skipped test must still exit 0.\n{_describe(on)}"
+        assert "1 skipped" in on.stdout, (
+            f"GETMOREDONE_NO_MAPPED_WINDOWS=1 must skip it.\n{_describe(on)}"
+        )
+        assert "GETMOREDONE_NO_MAPPED_WINDOWS" in on.stdout, (
+            "the skip REASON must be printed, so a suppressed run cannot be "
+            "mistaken for a passing one. This depends on addopts = -rs in "
+            f"pytest.ini.\n{_describe(on)}"
+        )
+
+        for off_value in ("0", "false", "off", "no", " 0 "):
+            off = _run(off_value)
+            assert off.returncode == 0 and "1 passed" in off.stdout, (
+                f"GETMOREDONE_NO_MAPPED_WINDOWS={off_value!r} must mean OFF. A "
+                "bare truthiness check makes every one of these turn the "
+                f"opt-out ON.\n{_describe(off)}"
+            )
+    finally:
+        # rmtree, not rmdir: the nested pytest run leaves a __pycache__ behind.
+        import shutil
+
+        shutil.rmtree(probe_dir, ignore_errors=True)
+
+
+def test_the_opt_out_values_are_not_duplicated_across_modules():
+    """One enumeration, imported — not two that drift.
+
+    The guard test used to re-spell both the variable name and the whole falsy
+    tuple, in the same commit that argued against exactly that duplication.
+    """
+    import conftest
+
+    assert conftest.NO_MAPPED_WINDOWS_ENV == "GETMOREDONE_NO_MAPPED_WINDOWS"
+    for off_value in ("", "0", "false", "no", "off", "n"):
+        assert off_value in conftest.NO_MAPPED_WINDOWS_OFF_VALUES, (
+            f"{off_value!r} is no longer treated as 'off', so setting the "
+            "variable to it would silently turn the opt-out ON"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -864,17 +924,67 @@ def test_bi1_no_os_job_publishes_a_release():
         )
 
 
+def _job_level_if(job_body: str) -> str | None:
+    r"""The job's own ``if:`` value, including block-scalar continuation lines.
+
+    Job-level keys sit at a known indent (4 spaces inside ``jobs: <name>:``),
+    so the value is that line's remainder plus every following line indented
+    deeper, up to the next job-level key.
+
+    Neither looser form works. Anchoring on ``^\s*if:.*refs/tags/v`` misses a
+    block scalar (``if: >`` with the expression beneath). Searching the whole
+    body instead accepts the string appearing on a *step's* ``if:`` — so
+    deleting the job gate entirely and putting it on the checksum step passed,
+    leaving the publish step ungated and a workflow_dispatch with a blank
+    release_tag cutting a Release named after the branch.
+    """
+    lines = job_body.splitlines()
+    for i, line in enumerate(lines):
+        match = re.match(r"^(\s{4})if:(.*)$", line)
+        if not match:
+            continue
+        indent, value = len(match.group(1)), [match.group(2).strip()]
+        for following in lines[i + 1:]:
+            if not following.strip():
+                continue
+            if len(following) - len(following.lstrip()) <= indent:
+                break
+            value.append(following.strip())
+        return " ".join(v for v in value if v)
+    return None
+
+
 def test_bi1_publish_job_is_gated_on_a_tag():
     """Without the gate, every push to a branch would cut a Release."""
     body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
-    assert re.search(r"^\s*if:", body, re.MULTILINE), (
-        f"the {PUBLISH_JOB} job has no if: condition at all"
+    condition = _job_level_if(body)
+    assert condition, f"the {PUBLISH_JOB} job has no job-level if: condition"
+    assert "refs/tags/v" in condition, (
+        f"the {PUBLISH_JOB} job's own if: does not gate on a tag: {condition!r}. "
+        "A gate on one of its steps does not stop the release step running."
     )
-    # Not anchored to the `if:` line: a block scalar puts the expression on the
-    # lines beneath it.
-    assert "refs/tags/v" in body, (
-        f"the {PUBLISH_JOB} job has no tag condition"
+
+
+def test_bi1_job_level_if_parser_finds_block_scalars():
+    """Adversarial: a parser that returns None makes the two tests above pass
+    vacuously, and one that stops at the first line misses the case it exists
+    for."""
+    inline = "    if: startsWith(github.ref, 'refs/tags/v')\n    runs-on: ubuntu-latest\n"
+    assert _job_level_if(inline) == "if: startsWith(github.ref, 'refs/tags/v')".split("if:")[1].strip()
+
+    block = (
+        "    if: >\n"
+        "      always() &&\n"
+        "      startsWith(github.ref, 'refs/tags/v')\n"
+        "    runs-on: ubuntu-latest\n"
     )
+    captured = _job_level_if(block)
+    assert "always()" in captured, f"block scalar not captured: {captured!r}"
+    assert "refs/tags/v" in captured
+
+    # A step-level if: (6 spaces) is not the job's.
+    step_only = "    runs-on: ubuntu-latest\n    steps:\n      - if: startsWith(github.ref, 'refs/tags/v')\n"
+    assert _job_level_if(step_only) is None
 
 
 def test_bi1_selftest_still_gates_publication_through_needs():
@@ -914,8 +1024,17 @@ def test_bi1_download_path_matches_the_release_file_prefix():
     # Counted, not set-collapsed: two identical `path:` values collapse to one,
     # so deleting the path from ONE of the two download steps left len == 1 and
     # passed while that artifact landed in the workspace root instead.
+    # Only the download steps' path: inputs. actions/checkout takes a `path:`
+    # too, so counting every path: in the job would mis-report the moment one
+    # is added to the checkout.
     download_steps = len(re.findall(r"uses:\s*actions/download-artifact@", body))
-    declared = re.findall(r"^\s*path:\s*(\S+)\s*$", body, re.MULTILINE)
+    declared = [
+        m.group(1)
+        for block in re.split(r"(?=^\s*-\s)", body, flags=re.MULTILINE)
+        if "download-artifact@" in block
+        for m in [re.search(r"^\s*path:\s*(\S+)\s*$", block, re.MULTILINE)]
+        if m
+    ]
     assert len(declared) == download_steps, (
         f"{download_steps} download steps but {len(declared)} path: entries — "
         "a download with no path: lands in the workspace root, where the "
@@ -979,6 +1098,7 @@ def test_bi1_checksum_files_are_written_in_the_format_the_verifier_reads():
     verification was called.
     """
     jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    archives = dict(zip(BUILD_ARTIFACTS, RELEASE_ARCHIVES_BY_JOB.values()))
 
     windows = _code_only(jobs["build-windows"])
     assert "-NoNewline" in windows, (
@@ -989,16 +1109,28 @@ def test_bi1_checksum_files_are_written_in_the_format_the_verifier_reads():
         "the Windows checksum step must write ASCII; a UTF-16 or BOM-prefixed "
         "file is unreadable to sha256sum -c"
     )
-    assert '"$hash  GetMoreDone' in windows, (
-        "the Windows checksum step must use the two-space separator that "
-        "sha256sum -c and shasum both expect"
+    win_archive = RELEASE_ARCHIVES_BY_JOB["build-windows"]
+    assert f'"$hash  {win_archive}"' in windows, (
+        f'the Windows checksum step must write `"$hash  {win_archive}"` — the '
+        "two-space separator and the BARE filename. A path here makes "
+        "sha256sum -c look for it relative to release-assets/ and fail the job."
     )
 
     macos = _code_only(jobs["build-macos"])
-    assert "shasum -a 256" in macos, (
-        "the macOS checksum step must use shasum -a 256, whose output format "
-        "the publish job's sha256sum -c reads"
+    mac_archive = RELEASE_ARCHIVES_BY_JOB["build-macos"]
+    assert f"shasum -a 256 {mac_archive} >" in macos, (
+        f"the macOS checksum step must be `shasum -a 256 {mac_archive} >` — a "
+        "bare filename, not a path. `shasum -a 256 dist/GetMoreDone-mac.zip` "
+        "writes the path into the .sha256, and the publish job's sha256sum -c "
+        "then looks for release-assets/dist/... and fails on a real tag."
     )
+
+    # Both formats exist to be read by one consumer; assert that end too.
+    publish = _code_only(jobs[PUBLISH_JOB])
+    for archive in RELEASE_ARCHIVES:
+        assert f"sha256sum -c {archive}.sha256" in publish, (
+            f"nothing consumes {archive}.sha256, so its format is unconstrained"
+        )
 
 
 def test_bi1_publish_job_does_not_run_on_a_failed_build():
@@ -1012,10 +1144,10 @@ def test_bi1_publish_job_does_not_run_on_a_failed_build():
     # The whole job body, not just the remainder of the `if:` line. A block
     # scalar (`if: >` with `always() && ...` on the following line) put the
     # override outside a single-line capture and left this green.
-    condition = re.search(r"^\s*if:(.*)$", body, re.MULTILINE)
-    assert condition, "the publish job has no if: condition"
+    condition = _job_level_if(body)
+    assert condition, "the publish job has no job-level if: condition"
     for override in ("always(", "failure(", "cancelled("):
-        assert override not in body, (
+        assert override not in condition, (
             f"the publish job's if: uses {override}), which overrides the "
             "implicit success requirement of needs: and lets a failed build "
             "publish a Release"

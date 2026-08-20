@@ -34,3 +34,8 @@ data/
 /build/
 /dist/
 .pip-cache/
+
+# Scratch dir written and removed by
+# tests/test_ci_contract.py::test_the_mapped_window_opt_out_is_off_by_default.
+# Listed so a killed run cannot leave it in a commit.
+.gmd-optout-probe/

@@ -14,6 +14,33 @@ if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
 
 
+def missing_credentials_message() -> str:
+    """The text shown when Google credentials are absent.
+
+    Purpose: name the path that was actually checked, not a hardcoded one.
+    Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-3
+    Tests:   tests/test_google_calendar_paths.py::test_bi3_the_dialog_message_names_the_path_that_was_checked
+
+    A module-level function rather than an inline f-string so a test has
+    something to disagree with. Asserting on a string the test builds itself is
+    a tautology — it passes for every possible path.
+
+    This is the only surface a GUI user reaches: ``has_credentials()`` returns
+    first, so the ``FileNotFoundError`` from ``GoogleCalendarManager.__init__``,
+    which does interpolate the path, is unreachable from the dialog. README.md
+    and INSTALL.md both promise the user that this message names where the app
+    looked.
+    """
+    from .. import paths
+
+    expected = paths.google_auth_dir() / "credentials.json"
+    return (
+        "Google Calendar credentials not found.\n"
+        f"Expected: {expected}\n"
+        "See README for instructions."
+    )
+
+
 class CalendarEventDialog(ctk.CTkToplevel):
     """Dialog for creating a Google Calendar event."""
 
@@ -240,20 +267,7 @@ class CalendarEventDialog(ctk.CTkToplevel):
 
             # Check for credentials
             if not GoogleCalendarManager.has_credentials():
-                # Name the path this check actually used, rather than a
-                # hardcoded one. README.md and INSTALL.md both promise the
-                # message says where it looked, and this is the only surface a
-                # GUI user reaches: has_credentials() returns first, so the
-                # FileNotFoundError from __init__ (which does interpolate the
-                # path) is unreachable from here.
-                from .. import paths
-
-                expected = paths.google_auth_dir() / "credentials.json"
-                self.error_label.configure(
-                    text="Google Calendar credentials not found.\n"
-                         f"Expected: {expected}\n"
-                         "See README for instructions."
-                )
+                self.error_label.configure(text=missing_credentials_message())
                 return
 
             self.error_label.configure(text="Creating calendar event...")

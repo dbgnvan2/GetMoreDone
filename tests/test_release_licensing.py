@@ -387,10 +387,40 @@ def test_bi2_the_docs_sync_gate_knows_about_both_dependency_files():
     )
 
     # And the enumeration must actually be what main() consults.
-    source = (REPO_ROOT / "tools/agents/check_docs_sync.py").read_text(encoding="utf-8")
-    assert 'path == "requirements.txt"' not in source, (
-        "check_docs_sync.py still hardcodes a single dependency filename "
-        "alongside DEPENDENCY_FILES"
+    #
+    # AST, not a grep for `path == "requirements.txt"`: that literal is
+    # double-quoted, so switching main() to single quotes — or to
+    # `path in ("requirements.txt",)`, or `path.endswith(...)` — left
+    # DEPENDENCY_FILES in place, unused, with this test green. Verified.
+    import ast
+
+    tree = ast.parse(
+        (REPO_ROOT / "tools/agents/check_docs_sync.py").read_text(encoding="utf-8")
+    )
+    main = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.FunctionDef) and n.name == "main"),
+        None,
+    )
+    assert main is not None, "check_docs_sync.py has no main()"
+
+    reads_enumeration = any(
+        isinstance(n, ast.Name) and n.id == "DEPENDENCY_FILES"
+        for n in ast.walk(main)
+    )
+    assert reads_enumeration, (
+        "main() never reads DEPENDENCY_FILES, so the enumeration is decoration "
+        "and the gate still keys on something else"
+    )
+
+    hardcoded = sorted({
+        n.value for n in ast.walk(main)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        and n.value.endswith(".txt")
+    })
+    assert not hardcoded, (
+        f"main() hardcodes dependency filenames {hardcoded} alongside "
+        "DEPENDENCY_FILES. One enumeration, read in one place."
     )
 
 

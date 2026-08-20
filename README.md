@@ -386,12 +386,12 @@ importer in `tools/` and the diagnostic scripts read the same directory, which
 is why it is deliberately one fixed location rather than the app's own data
 folder.
 
-Create `~/.getmoredone` yourself and put `credentials.json` in it. The calendar
-integration never creates it — opening the calendar dialog, or checking whether
-credentials exist, has no side effect, and the "credentials not found" message
-names the exact path it checked. (The Gmail importer *does* create the
-directory when it runs, which is why the location is fixed rather than chosen
-per machine.)
+Create `~/.getmoredone` yourself and put `credentials.json` in it. Nothing in
+GetMoreDone creates it *before* a successful sign-in — opening the calendar
+dialog, or checking whether credentials exist, has no side effect, and the
+"credentials not found" message names the exact path it checked. After that,
+saving a token creates the directory if it is missing, and the Gmail importer
+creates it whenever it runs.
 
 **Setup (One-Time):**
 

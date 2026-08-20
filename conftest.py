@@ -256,6 +256,18 @@ _WINDOWS_MAY_BE_MAPPED = False
 # rot. tests/test_ci_contract.py asserts no workflow ever sets it.
 NO_MAPPED_WINDOWS_ENV = "GETMOREDONE_NO_MAPPED_WINDOWS"
 
+# Values that mean "off". Exported so tests/test_ci_contract.py can import it
+# rather than keeping a second copy that silently drifts from this one (P5).
+NO_MAPPED_WINDOWS_OFF_VALUES = ("", "0", "false", "no", "off", "n")
+
+
+def mapped_windows_suppressed() -> bool:
+    """Is the opt-out on? The single reader of the variable."""
+    return (
+        os.environ.get(NO_MAPPED_WINDOWS_ENV, "").strip().lower()
+        not in NO_MAPPED_WINDOWS_OFF_VALUES
+    )
+
 
 @pytest.fixture
 def mapped_windows():
@@ -274,8 +286,7 @@ def mapped_windows():
     # Not a bare truthiness check: os.environ.get() is true for "0" and
     # "false", so someone setting GETMOREDONE_NO_MAPPED_WINDOWS=0 to turn the
     # opt-out OFF would have turned it on.
-    _opt_out = os.environ.get(NO_MAPPED_WINDOWS_ENV, "").strip().lower()
-    if _opt_out not in ("", "0", "false", "no", "off", "n"):
+    if mapped_windows_suppressed():
         pytest.skip(
             f"{NO_MAPPED_WINDOWS_ENV} is set: this test needs a real on-screen "
             "window and would take keyboard focus. Unset it to run the "

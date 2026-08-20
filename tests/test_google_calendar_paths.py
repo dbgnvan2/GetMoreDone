@@ -247,29 +247,28 @@ def test_bi3_the_dialog_message_names_the_path_that_was_checked(redirected_home)
     The dialog used to print a hardcoded ``~/.getmoredone/``, so the promise in
     the docs was false wherever that was not the answer.
 
-    Asserted against the source of the message rather than by building the
-    dialog: constructing it needs a Tk root and a populated item, and this is
-    the string, not the widget.
+    The message is produced by ``missing_credentials_message()`` so this can
+    call it. An earlier version of this test built the string itself and
+    asserted the path was in it — true for every possible path, and therefore
+    an assertion about nothing. Extracting the producer gives the test
+    something that can disagree with it.
     """
-    source = (
-        Path(__file__).resolve().parents[1]
-        / "src/getmoredone/screens/calendar_dialog.py"
-    ).read_text(encoding="utf-8")
+    from src.getmoredone.screens.calendar_dialog import missing_credentials_message
 
-    block = source.split("Check for credentials", 1)[1][:900]
-    assert "google_auth_dir()" in block, (
-        "the dialog's credentials message does not use the resolver, so it "
-        "cannot name the path has_credentials() actually checked"
-    )
-    assert "~/.getmoredone/" not in block, (
-        "the dialog's credentials message hardcodes a path again"
+    home, _ = redirected_home
+    rendered = missing_credentials_message()
+
+    expected = home / ".getmoredone" / "credentials.json"
+    assert str(expected) in rendered, (
+        f"the message does not name the path that was checked.\n"
+        f"expected to find: {expected}\nmessage was:\n{rendered}"
     )
 
-    # And the interpolation produces the real path, not a repr or a coroutine.
-    expected = gmd_paths.google_auth_dir() / "credentials.json"
-    rendered = f"Expected: {expected}"
-    assert str(gmd_paths.google_auth_dir()) in rendered
-    assert rendered.endswith("credentials.json")
+    # And it is the REDIRECTED path, so the message tracks the resolver rather
+    # than repeating a literal that happens to match on this machine.
+    assert "~/.getmoredone" not in rendered, (
+        f"the message hardcodes a literal path:\n{rendered}"
+    )
 
 
 # --------------------------------------------------------------------------

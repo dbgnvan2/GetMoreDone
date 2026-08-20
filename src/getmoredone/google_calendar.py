@@ -25,6 +25,28 @@ except ImportError:
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 
+def _say(message: str) -> None:
+    """print() that cannot abort the caller.
+
+    Every status line in this module carries an emoji. On a Windows console
+    using cp1252 those raise UnicodeEncodeError, and a PyInstaller --noconsole
+    build has no stdout at all — so a print here could propagate out of
+    __init__ and abort construction *after* the token was written.
+
+    Guarding one print did not help: eight more run on the same path,
+    including the "service initialized successfully" line four statements
+    later. Fixed as a class, which is the only way a guard like this is worth
+    anything (P5).
+
+    Narrow exceptions on purpose — a bare ``except Exception`` would swallow a
+    real bug as readily as an encoding one.
+    """
+    try:
+        print(message)
+    except (UnicodeEncodeError, OSError, ValueError):
+        pass
+
+
 class GoogleCalendarManager:
     """Manages Google Calendar API interactions."""
 
@@ -56,7 +78,7 @@ class GoogleCalendarManager:
 
         # Force re-authentication if requested (deletes zombie tokens)
         if force_reauth and os.path.exists(self.token_file):
-            print(f"🗑️  Deleting old token (force re-authentication): {self.token_file}")
+            _say(f"🗑️  Deleting old token (force re-authentication): {self.token_file}")
             os.remove(self.token_file)
 
         self.service = None
@@ -121,10 +143,10 @@ class GoogleCalendarManager:
                         success_message='Authentication successful! You can close this window.',
                         prompt='consent'  # Force re-consent to avoid cached OAuth sessions
                     )
-                    print("\n✅ Authentication successful via browser!")
+                    _say("\n✅ Authentication successful via browser!")
 
                 except Exception as e:
-                    print(f"\n⚠️  Browser authentication failed: {e}")
+                    _say(f"\n⚠️  Browser authentication failed: {e}")
                     print("\nFalling back to manual authentication...")
                     print("\nPlease follow these steps:")
                     print("1. Visit the URL shown below in a browser")
@@ -144,7 +166,7 @@ class GoogleCalendarManager:
                         # Exchange code for credentials
                         flow.fetch_token(code=code)
                         creds = flow.credentials
-                        print("\n✅ Authentication successful via manual code entry!")
+                        _say("\n✅ Authentication successful via manual code entry!")
 
                     except KeyboardInterrupt:
                         raise RuntimeError("\nAuthentication cancelled by user.")
@@ -174,11 +196,11 @@ class GoogleCalendarManager:
             # save in the GUI is recorded in BACKLOG.md: a print() is invisible
             # in a double-clicked app.
             if not self._save_token(creds):
-                print("⚠️  Signed in, but the token was not saved — you will be "
+                _say("⚠️  Signed in, but the token was not saved — you will be "
                       "asked to sign in again next time.\n")
 
         self.service = build('calendar', 'v3', credentials=creds)
-        print("✅ Google Calendar service initialized successfully!")
+        _say("✅ Google Calendar service initialized successfully!")
 
     def _save_token(self, creds) -> bool:
         """Write the OAuth token to ``self.token_file``.
@@ -213,26 +235,19 @@ class GoogleCalendarManager:
             # in again") belongs to the caller, which knows the sign-in itself
             # succeeded — printing both here made a failed save emit three
             # warning lines saying the same thing.
-            print(f"⚠️  Warning: Failed to save token: {e}")
+            _say(f"⚠️  Warning: Failed to save token: {e}")
             return False
 
         try:
             os.chmod(self.token_file, 0o600)
         except Exception as e:
             # The token IS saved. Say so, and say what could not be tightened.
-            print(f"⚠️  Warning: saved the token but could not restrict its "
+            _say(f"⚠️  Warning: saved the token but could not restrict its "
                   f"permissions: {e}")
             print(f"   Anyone able to read {self.token_file} can use your "
                   "Google account. Fix the file's permissions by hand.\n")
 
-        # Guarded: this print is the last thing between a token that IS on
-        # disk and a True return. An emoji that cannot be encoded on a Windows
-        # console (cp1252) would otherwise propagate out of __init__ and abort
-        # construction after the write succeeded.
-        try:
-            print(f"✅ Token saved to: {self.token_file}\n")
-        except Exception:
-            pass
+        _say(f"✅ Token saved to: {self.token_file}\n")
         return True
 
     def _get_local_timezone(self) -> str:
@@ -248,7 +263,7 @@ class GoogleCalendarManager:
             return str(tz)
         except Exception:
             # Fallback to UTC if we can't detect local timezone
-            print("⚠️  Warning: Could not detect local timezone, using UTC")
+            _say("⚠️  Warning: Could not detect local timezone, using UTC")
             return 'UTC'
 
     def create_event(

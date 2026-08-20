@@ -173,10 +173,10 @@ To enable it you need your own Google Cloud OAuth credentials:
    - macOS/Linux: `~/.getmoredone/credentials.json`
    - Windows: `%USERPROFILE%\.getmoredone\credentials.json`
 
-   Create that folder if it does not exist — the calendar integration will not
-   create it for you, and it is the only place the app, the Gmail importer and
-   the diagnostic scripts all look. The "credentials not found" message names
-   the exact path it checked.
+   Create that folder if it does not exist — nothing creates it for you before
+   a successful sign-in, and it is the only place the app, the Gmail importer
+   and the diagnostic scripts all look. The "credentials not found" message
+   names the exact path it checked.
 
 The first calendar action opens a browser to authorise. If sign-in misbehaves,
 run `python3 tools/diagnose_google_auth.py` from a source checkout.
