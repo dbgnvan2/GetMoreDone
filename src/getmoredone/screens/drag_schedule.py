@@ -3,6 +3,7 @@ Scheduler screen - drag items onto date boxes to reschedule.
 """
 
 import calendar
+import logging
 import customtkinter as ctk
 from datetime import datetime, timedelta
 import tkinter as tk
@@ -423,7 +424,16 @@ class DragScheduleScreen(ctk.CTkFrame):
 
         if self.selected_project_id:
             if self.selected_project_id == "__none__":
+                # BP5 — the query is capped, so say what the cap left out
+                # rather than presenting a partial list as the whole one (P9).
                 unlinked = self.db_manager.get_unlinked_action_items(status_filter="open")
+                total = self.db_manager.count_unlinked_action_items(status_filter="open")
+                self.unlinked_shown, self.unlinked_total = len(unlinked), total
+                if total > len(unlinked):
+                    logging.getLogger(__name__).warning(
+                        "[scheduler] unlinked list capped: showing %s of %s items",
+                        len(unlinked), total,
+                    )
                 return [
                     item for item in unlinked
                     if (who_filter is None or (item.who and item.who.strip().lower() == who_filter.strip().lower()))
@@ -453,6 +463,19 @@ class DragScheduleScreen(ctk.CTkFrame):
                 items.append(item)
         return [item for item in items if self._item_matches_filters(item)]
 
+    def _unlinked_box_text(self, total: int) -> str:
+        """The "No Project" box's second line.
+
+        Purpose: BP5 — the unlinked query is capped, so a partial list must not
+                 be presented as the whole one (P9).
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp5
+        Tests:   tests/test_db_project_drag.py::test_bp5_the_box_says_showing_n_of_m_when_capped
+        """
+        shown = getattr(self, "unlinked_shown", None)
+        if shown is not None and shown < total:
+            return f"showing {shown} of {total} unlinked items"
+        return f"{total} unlinked items"
+
     def build_project_boxes(self):
         projects = self.db_manager.get_project_boards(show_pending=True)
         # Filter projects by current segment/subsegment filters if applicable
@@ -476,8 +499,9 @@ class DragScheduleScreen(ctk.CTkFrame):
         else: # Title
             filtered_projects.sort(key=lambda x: (x.get("title") or "").lower())
 
-        # "No Project" special filter box
-        unlinked_count = len(self.db_manager.get_unlinked_action_items(status_filter="open"))
+        # "No Project" special filter box. BP5 — a count query, not the length
+        # of every unlinked row in the database.
+        unlinked_count = self.db_manager.count_unlinked_action_items(status_filter="open")
         no_project_color = self.palette["surface_subtle"]
         no_project_text = pick_text_color(no_project_color)
         project_box_height = int(self.date_box_height * 1.5)
@@ -500,7 +524,7 @@ class DragScheduleScreen(ctk.CTkFrame):
 
         label_np_stats = ctk.CTkLabel(
             no_project_frame,
-            text=f"{unlinked_count} unlinked items",
+            text=self._unlinked_box_text(unlinked_count),
             font=ctk.CTkFont(size=12),
             text_color=no_project_text,
             anchor="w"

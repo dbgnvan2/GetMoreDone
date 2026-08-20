@@ -21,6 +21,7 @@ from ..date_utils import increment_date
 from ..paths import app_data_dir_path
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 from .item_editor_contacts import ItemEditorContactsMixin
+from .item_editor_form import ItemEditorFormMixin
 from .item_editor_notes import ItemEditorNotesMixin
 from .item_editor_dialogs import (
     CreateNoteDialog,
@@ -32,6 +33,7 @@ from .item_editor_dialogs import (
     ShowRelatedDialog,
 )
 from .item_editor_project_dialog import SetProjectDialog
+from .project_link_notice import describe_single_relink
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 # Still used by _canonical_weekly_tactic_title, which is about Weekly Tactic
 # titles, not the removed Context field.
@@ -55,7 +57,8 @@ def _get_weekly_debug_logger() -> logging.Logger:
     return logger
 
 
-class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkToplevel):
+class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
+                       ItemEditorNotesMixin, ctk.CTkToplevel):
     """Dialog for creating/editing action items."""
 
     def __init__(self, parent, db_manager: 'DatabaseManager', item_id: Optional[str] = None,
@@ -612,19 +615,12 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
         import tkinter.messagebox as messagebox
 
         count = self._loaded_extra_project_links + 1
+        target = None
         if board_id:
             board = self.db_manager.get_project_board(board_id)
             target = board.title if board else "the selected project"
-            question = (
-                f"This item is filed under {count} projects.\n\n"
-                f"Filing it under \u201c{target}\u201d removes it from the other "
-                f"{self._loaded_extra_project_links}. Continue?"
-            )
-        else:
-            question = (
-                f"This item is filed under {count} projects.\n\n"
-                "Clearing the project removes all of them. Continue?"
-            )
+        # BP1 — the Projects screen asks the same question in the same words.
+        question = describe_single_relink(count, target)
         return messagebox.askyesno("Change Project", question, parent=self)
 
     def _apply_project_link(self, item_id: str) -> bool:
@@ -1161,120 +1157,29 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorNotesMixin, ctk.CTkTop
     def save_item(self) -> bool:
         """Save the item. Returns True on success, False on validation/save error."""
         try:
-            # Create or update item
-            if self.item_id:
-                item = self.item
-            else:
-                item = ActionItem(who="", title="")
+            is_new = not self.item_id
+            item = self.build_item_from_form(None if is_new else self.item)
+            if is_new:
+                self.apply_new_item_fields(item)
 
-            # Set fields
-            item.who = self.who_var.get().strip()
-            item.contact_id = self.selected_contact_id
-            item.title = self.title_entry.get().strip()
-            if item.item_type == "week":
-                item.title = self._canonical_weekly_tactic_title(
-                    item.title,
-                    item.annual_plan_element_id,
-                    item.start_date,
-                )
-            item.description = self.description_text.get(
-                "1.0", "end").strip() or None
-            item.next_action = self.next_action_text.get(
-                "1.0", "end").strip() or None
-            item.start_date = self.start_date_entry.get().strip() or None
-            item.due_date = self.due_date_entry.get().strip() or None
-            item.is_meeting = self.is_meeting_var.get()
-
-            # Priority factors
-            item.importance = self.extract_factor_value(
-                self.importance_var.get())
-            item.urgency = self.extract_factor_value(self.urgency_var.get())
-            item.size = self.extract_factor_value(self.size_var.get())
-            item.value = self.extract_factor_value(self.value_var.get())
-
-            # Organization
-            item.group = self.group_var.get().strip() or None
-            item.category = self.category_var.get().strip() or None
-
-            # Planned minutes
-            planned_text = self.planned_minutes_entry.get().strip()
-            item.planned_minutes = int(planned_text) if planned_text else None
-
-            # VSP fields
-            # WT-M6.A.3 — the hand-edited original-week stamp (WT-D3). Blank
-            # clears it; anything unparseable is left as it was rather than
-            # writing a date the user did not mean.
-            stamp = self.weekly_tactic_start_var.get().strip()
-            if stamp:
-                try:
-                    date.fromisoformat(stamp)
-                    item.weekly_tactic_start_date = stamp
-                except ValueError:
-                    self.logger.warning(
-                        "[save] ignoring unparseable weekly_tactic_start_date %r", stamp
-                    )
-            else:
-                item.weekly_tactic_start_date = None
-
-            # week_action_id is the dead legacy FK (WT-F6): NULL on every row,
-            # pointing at an empty table. Left untouched rather than retired
-            # here — that is its own change (spec section 9).
-            if not self.item_id:
-                item.week_action_id = self.week_action_id
-                if getattr(self, "pending_weekly_tactic_id", None):
-                    item.weekly_tactic_id = self.pending_weekly_tactic_id
-                    self._follow_chosen_tactic = True
-
-            # Segment Description (from constructor for new items)
-            if not self.item_id:
-                item.segment_description_id = self.segment_description_id
-
-            # Validate dates: due date must be >= start date
-            if item.start_date and item.due_date:
-                try:
-                    start = datetime.strptime(
-                        item.start_date, "%Y-%m-%d").date()
-                    due = datetime.strptime(item.due_date, "%Y-%m-%d").date()
-                    if due < start:
-                        self.error_label.configure(
-                            text="Error: Due date cannot be before Start date")
-                        return False
-                except ValueError:
-                    # Let the validator handle invalid date formats
-                    pass
-
-            # Validate
-            errors = Validator.validate_action_item(item)
-            if errors:
-                self.error_label.configure(text=errors[0].message)
+            error = self.validate_item_for_save(item)
+            if error:
+                self.error_label.configure(text=error)
                 return False
 
-            # Save
-            if self.item_id:
+            if is_new:
+                self.insert_new_item(item)
+            else:
                 self.db_manager.update_action_item(item)
                 # WT-M6.B.5 — the main Save button is the ordinary way a start date
                 # changes, and completion re-filing is what triggers a year rollover.
                 notify_weekly_tactic_changes(self.db_manager, self)
-            else:
-                # follow_tactic: a Weekly Tactic picked before the item was ever
-                # saved is still an explicit choice, and was being discarded —
-                # the fix applied to the update path and not its sibling (P5).
-                self.db_manager.create_action_item(
-                    item, apply_defaults=True,
-                    follow_tactic=bool(getattr(self, "_follow_chosen_tactic", False)),
-                )
-                self._follow_chosen_tactic = False
-                self.item_id = item.id  # Update item_id after creating new item
-                self.item = item  # Store the item reference
-                notify_weekly_tactic_changes(self.db_manager, self)
-
-            # PL3/PL4 — the Project link, applied on both branches in the one
-            # place: a new item has no row to link until the insert above ran.
-            if self._apply_project_link(item.id):
-                # Linking writes the board's Annual Plan Element onto the row,
-                # so re-read rather than keep a stale in-memory copy.
-                self.item = self.db_manager.get_action_item(item.id) or item
-            self.refresh_project_display()
+                # PL3/PL4 — the Project link, applied on both branches.
+                if self._apply_project_link(item.id):
+                    # Linking writes the board's Annual Plan Element onto the
+                    # row, so re-read rather than keep a stale in-memory copy.
+                    self.item = self.db_manager.get_action_item(item.id) or item
+                self.refresh_project_display()
 
             # Clear error message on successful save
             self.error_label.configure(text="✓ Saved")

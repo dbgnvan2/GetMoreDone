@@ -673,35 +673,15 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
         return new_id
 
-    def complete_and_create(self, item_id: str) -> Optional[str]:
-        """
-        Complete item and create a new one seeded from it.
-
-        Returns:
-            ID of new item, or None if original not found
-        """
-        if not self.complete_action_item(item_id):
-            return None
-
-        new_id = self.duplicate_action_item(item_id)
-        if new_id:
-            self._inherit_weekly_lineage(item_id, new_id)
-            # PL12 — the sibling copy path, hardened to match
-            # create_followup_item. Note this function has no caller in src/
-            # today (tests only), so this is precautionary rather than live:
-            # do not read it as two shipping paths.
-            self.inherit_project_links(item_id, new_id)
-        return new_id
-
     def _inherit_weekly_lineage(self, source_id: str, new_id: str) -> None:
         """WT-M5.C.1 — carry the week lineage onto an item made from another.
 
-        Purpose: ``duplicate_action_item`` builds its copy through a constructor
+        Purpose: ``create_followup_item`` builds its copy through a constructor
                  that never mentions ``weekly_tactic_id``,
                  ``annual_plan_element_id`` or ``segment_description_id``, so a
                  follow-up silently lost its place in the plan.
         Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m5c
-        Tests:   tests/test_weekly_tactic_completion.py::test_wt_m5c1_followup_inherits_lineage_and_stays_in_range
+        Tests:   tests/test_weekly_tactic_completion.py::test_wt_m5c1_create_followup_item_also_inherits
 
         The copy is then re-filed for its own start date, so it satisfies
         WT-INV1/2 for whichever week it actually lands in.

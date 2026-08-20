@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import customtkinter as ctk
-from datetime import date, datetime
 
-from ..models import ActionItem, ItemLink
+from ..models import ItemLink
 from ..theme import button_style, status_text_color
-from ..validation import Validator
 from .item_editor_dialogs import CreateNoteDialog, LinkNoteDialog
-from .week_collision_notice import notify_weekly_tactic_changes
 
 
 class ItemEditorNotesMixin:
@@ -73,106 +70,26 @@ class ItemEditorNotesMixin:
         """
         Save the item if it's new (no item_id yet).
         Returns True if successful or already has ID, False if validation fails.
+
+        The second insert path for a new item: "Create Note", "Link Note" and
+        the calendar dialog all come through here rather than through Save.
+        Every field is assembled by the one shared builder (BP3) so the two
+        paths cannot store different rows for the same form.
         """
         if self.item_id:
             # Already has an ID, nothing to do
             return True
 
         try:
-            # Create new item
-            item = ActionItem(who="", title="")
+            item = self.build_item_from_form()
+            self.apply_new_item_fields(item)
 
-            # Set fields
-            item.who = self.who_var.get().strip()
-            item.contact_id = self.selected_contact_id
-            item.title = self.title_entry.get().strip()
-            if item.item_type == "week":
-                item.title = self._canonical_weekly_tactic_title(
-                    item.title,
-                    item.annual_plan_element_id,
-                    item.start_date,
-                )
-            item.description = self.description_text.get(
-                "1.0", "end").strip() or None
-            item.next_action = self.next_action_text.get(
-                "1.0", "end").strip() or None
-            item.start_date = self.start_date_entry.get().strip() or None
-            item.due_date = self.due_date_entry.get().strip() or None
-            item.is_meeting = self.is_meeting_var.get()
-
-            # Priority factors
-            item.importance = self.extract_factor_value(
-                self.importance_var.get())
-            item.urgency = self.extract_factor_value(self.urgency_var.get())
-            item.size = self.extract_factor_value(self.size_var.get())
-            item.value = self.extract_factor_value(self.value_var.get())
-
-            # Organization
-            item.group = self.group_var.get().strip() or None
-            item.category = self.category_var.get().strip() or None
-
-            # Planned minutes
-            planned_text = self.planned_minutes_entry.get().strip()
-            item.planned_minutes = int(planned_text) if planned_text else None
-
-            # Validate dates
-            if item.start_date and item.due_date:
-                try:
-                    start = datetime.strptime(
-                        item.start_date, "%Y-%m-%d").date()
-                    due = datetime.strptime(item.due_date, "%Y-%m-%d").date()
-                    if due < start:
-                        self.error_label.configure(
-                            text="Error: Due date cannot be before Start date")
-                        return False
-                except ValueError:
-                    pass
-
-            # Validate
-            errors = Validator.validate_action_item(item)
-            if errors:
-                self.error_label.configure(text=errors[0].message)
+            error = self.validate_item_for_save(item)
+            if error:
+                self.error_label.configure(text=error)
                 return False
 
-            # The other fields save_item sets on a brand-new item, applied
-            # before the insert rather than as extra updates afterwards.
-            # week_action_id is deliberately left out: it is the dead legacy FK
-            # (WT-F6), NULL on every row and pointing at an empty table.
-            item.segment_description_id = getattr(self, "segment_description_id", None)
-            stamp = self.weekly_tactic_start_var.get().strip()
-            if stamp:
-                try:
-                    date.fromisoformat(stamp)
-                    item.weekly_tactic_start_date = stamp
-                except ValueError:
-                    pass
-
-            # Save and get the ID
-            self.db_manager.create_action_item(item, apply_defaults=True)
-            self.item_id = item.id
-            self.item = item
-
-            # The second insert path for a new item. Everything chosen before
-            # the first save has to be applied here too, or clicking "Create
-            # Note" instead of "Save" silently drops it while the Action Plan
-            # block goes on displaying the choice (P5: the sibling call was not
-            # hardened; P6: a label with no row behind it).
-            #
-            # Order matters and must match save_item: the tactic re-file writes
-            # its own Annual Plan Element onto the item, so the project link
-            # goes LAST or the APE you get depends on which button you pressed.
-            if getattr(self, "pending_weekly_tactic_id", None):
-                self.item.weekly_tactic_id = self.pending_weekly_tactic_id
-                self.db_manager.update_action_item(self.item, follow_tactic=True)
-                self.pending_weekly_tactic_id = None
-                self.item = self.db_manager.get_action_item(item.id) or self.item
-                # WT-M6.B.5 — follow_tactic moves the item's dates, so whatever
-                # the cascade built has to be said out loud here too (P25).
-                notify_weekly_tactic_changes(self.db_manager, self)
-
-            if self._apply_project_link(item.id):
-                self.item = self.db_manager.get_action_item(item.id) or item
-            self.refresh_project_display()
+            self.insert_new_item(item)
 
             # Clear the notes frame and reload to show it's ready for notes
             for widget in self.notes_frame.winfo_children():

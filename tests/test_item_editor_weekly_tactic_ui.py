@@ -9,6 +9,7 @@ on every database, so it could never show anything (WT-F7).
 from pathlib import Path
 from types import SimpleNamespace
 
+from src.getmoredone.models import ActionItem
 from src.getmoredone.screens.item_editor import ItemEditorDialog
 from tests.weekly_tactic_fixtures import (
     make_daily_item,
@@ -20,6 +21,7 @@ from tests.weekly_tactic_fixtures import (
 EDITOR_SOURCE = (
     Path(__file__).resolve().parents[1] / "src" / "getmoredone" / "screens" / "item_editor.py"
 )
+NOTES_SOURCE = EDITOR_SOURCE.with_name("item_editor_notes.py")
 
 
 def _editor_stub(manager, item, vps=None):
@@ -157,14 +159,76 @@ def test_wt_m6a3_manual_stamp_edit_reaches_db_layer(tmp_path):
         vps.close()
 
 
-def test_wt_m6a3_the_save_path_reads_the_stamp_widget():
-    """And the editor's own save reads that widget, not something else."""
-    source = EDITOR_SOURCE.read_text(encoding="utf-8")
-    save_body = source.split("def save_item(")[1].split("\n    def ")[0]
-    assert "self.weekly_tactic_start_var.get()" in save_body, (
-        "the Org tab's stamp field is never read on save"
+def _stamp_stub(value):
+    """Enough of the editor for the shared form builder to run (BP3)."""
+    def entry(text=""):
+        return SimpleNamespace(get=lambda *a, **k: text)
+
+    warnings = []
+    stub = SimpleNamespace(
+        who_var=entry("Self"),
+        selected_contact_id=None,
+        title_entry=entry("Task"),
+        description_text=entry(""),
+        next_action_text=entry(""),
+        start_date_entry=entry("2026-02-25"),
+        due_date_entry=entry("2026-02-25"),
+        is_meeting_var=SimpleNamespace(get=lambda: False),
+        importance_var=entry(""),
+        urgency_var=entry(""),
+        size_var=entry(""),
+        value_var=entry(""),
+        group_var=entry(""),
+        category_var=entry(""),
+        planned_minutes_entry=entry(""),
+        weekly_tactic_start_var=entry(value),
+        logger=SimpleNamespace(
+            warning=lambda *a, **k: warnings.append(a),
+            info=lambda *a, **k: None),
     )
-    assert "item.weekly_tactic_start_date" in save_body
+    stub.extract_factor_value = lambda text: ItemEditorDialog.extract_factor_value(stub, text)
+    stub._canonical_weekly_tactic_title = lambda *a: a[0]
+    stub._warn = lambda *a, **k: ItemEditorDialog._warn(stub, *a, **k)
+    return stub, warnings
+
+
+def _stamped_item():
+    """An existing row whose stamp the form is about to edit."""
+    return ActionItem(who="Self", title="Task", weekly_tactic_start_date="2026-01-05")
+
+
+def test_wt_m6a3_the_save_path_reads_the_stamp_widget():
+    """And the editor's own save reads that widget, not something else.
+
+    Behavioural, not a grep of ``save_item``'s source: BP3 moved the read into
+    the shared builder both save paths use, and a source-text assertion would
+    have called that a regression while the behaviour was intact.
+    """
+    stub, _ = _stamp_stub("2026-01-05")
+    assert ItemEditorDialog.build_item_from_form(stub).weekly_tactic_start_date == "2026-01-05"
+
+    # Blank clears the stamp; an unparseable value is refused and reported
+    # rather than written (WT-M6.A.3).
+    blank, _ = _stamp_stub("")
+    assert ItemEditorDialog.build_item_from_form(
+        blank, _stamped_item()).weekly_tactic_start_date is None
+
+    junk, warnings = _stamp_stub("not-a-date")
+    assert ItemEditorDialog.build_item_from_form(
+        junk, _stamped_item()).weekly_tactic_start_date == "2026-01-05"
+    assert warnings, "an unparseable stamp was dropped without a word"
+
+
+def test_wt_m6a3_both_save_paths_go_through_the_shared_builder():
+    """The stamp read is only worth anything if every save path reaches it."""
+    for source, method in (
+        (EDITOR_SOURCE.read_text(encoding="utf-8"), "save_item"),
+        (NOTES_SOURCE.read_text(encoding="utf-8"), "save_item_if_needed"),
+    ):
+        body = source.split(f"def {method}(")[1].split("\n    def ")[0]
+        assert "build_item_from_form" in body, (
+            f"{method} assembles its own fields again — the two paths can drift"
+        )
 
 
 def test_wt_m6a4_picker_can_reach_any_week(tmp_path):

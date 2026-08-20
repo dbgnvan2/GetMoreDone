@@ -32,13 +32,13 @@ from tests.weekly_tactic_fixtures import (
 # WT-F12: the surfaces that move a start date.
 DATE_SURFACES = (
     "today", "upcoming", "all_items", "drag_schedule",
-    "reschedule_dialog", "project_boards", "item_editor", "timer_window",
+    "project_boards", "item_editor", "timer_window",
 )
 
 # WT-F12: the surfaces that complete an item.
 COMPLETION_SURFACES = (
     "today", "upcoming", "all_items", "project_boards", "completed",
-    "hierarchical", "timer_window", "item_editor", "complete_and_create",
+    "hierarchical", "timer_window", "item_editor",
 )
 
 
@@ -122,33 +122,6 @@ def test_wt_m6b1_drag_schedule_refiles(tmp_path):
         with patch("src.getmoredone.screens.drag_schedule.notify_weekly_tactic_changes",
                    lambda *a, **k: False):
             DragScheduleScreen.on_drag_release(stub, SimpleNamespace())
-
-        _assert_refiled(manager, item.id, "2026-03-02")
-    finally:
-        vps.close()
-
-
-def test_wt_m6b1_reschedule_dialog_refiles(tmp_path):
-    """The Reschedule dialog's Save reaches the hook."""
-    from src.getmoredone.screens.reschedule_dialog import RescheduleDialog
-
-    vps = make_vps(tmp_path)
-    try:
-        manager = vps.db_manager
-        ape_id, tactic, item = _filed(vps)
-
-        stub = SimpleNamespace(
-            db_manager=manager,
-            item_id=item.id,
-            new_start="2026-03-04",
-            new_due="2026-03-04",
-            reason_text=SimpleNamespace(get=lambda *a: "moved"),
-            error_label=SimpleNamespace(configure=lambda **kw: None),
-            destroy=lambda: None,
-        )
-        with patch("src.getmoredone.screens.reschedule_dialog.notify_weekly_tactic_changes",
-                   lambda *a, **k: False):
-            RescheduleDialog.save(stub)
 
         _assert_refiled(manager, item.id, "2026-03-02")
     finally:
@@ -374,7 +347,6 @@ COMPLETION_CALLS = {
     "timer_window": lambda m, i: m.complete_action_item(i),
     "item_editor": lambda m, i: m.complete_action_item(i),
     "completed": lambda m, i: (m.complete_action_item(i), m.uncomplete_action_item(i))[0],
-    "complete_and_create": lambda m, i: bool(m.complete_and_create(i)),
 }
 
 
@@ -398,22 +370,17 @@ def test_wt_m6b4_completion_refiles(tmp_path, surface):
 
         _assert_refiled(manager, item.id, "2026-03-09")
 
-        # ...and the screen really does make that call. complete_and_create is
-        # a DatabaseManager method, not a screen, and is named as such rather
-        # than skipped on a missing file — a quiet skip is how a renamed screen
-        # drops out of coverage.
-        if surface == "complete_and_create":
-            assert hasattr(manager, "complete_and_create")
-        else:
-            path = (Path(__file__).resolve().parents[1] / "src" / "getmoredone"
-                    / "screens" / f"{surface}.py")
-            assert path.exists(), f"{surface}.py is in COMPLETION_SURFACES but missing"
-            text = path.read_text(encoding="utf-8")
-            assert any(name in text for name in
-                       ("complete_action_item", "complete_and_create",
-                        "uncomplete_action_item")), (
-                f"{surface}.py does not call a hooked completion method"
-            )
+        # ...and the screen really does make that call. Every entry is a real
+        # screen file, asserted present rather than skipped on a missing file —
+        # a quiet skip is how a renamed screen drops out of coverage.
+        path = (Path(__file__).resolve().parents[1] / "src" / "getmoredone"
+                / "screens" / f"{surface}.py")
+        assert path.exists(), f"{surface}.py is in COMPLETION_SURFACES but missing"
+        text = path.read_text(encoding="utf-8")
+        assert any(name in text for name in
+                   ("complete_action_item", "uncomplete_action_item")), (
+            f"{surface}.py does not call a hooked completion method"
+        )
     finally:
         vps.close()
 
@@ -439,7 +406,7 @@ def test_wt_m6b4_every_completion_surface_uses_the_hooked_call(tmp_path):
         ))
         uses_hook = any(
             name in text for name in
-            ("complete_action_item", "complete_and_create", "uncomplete_action_item")
+            ("complete_action_item", "uncomplete_action_item")
         )
         if writes_status and not uses_hook:
             offenders.append(surface)
@@ -567,7 +534,7 @@ def test_wt_m6b5_every_report_producing_surface_reads_it():
     screens = Path(__file__).resolve().parents[1] / "src" / "getmoredone" / "screens"
     producers = ("update_action_item", "reschedule_item",
                  "bulk_update_action_items", "complete_action_item",
-                 "complete_and_create", "uncomplete_action_item")
+                 "uncomplete_action_item")
     missing = []
     for path in sorted(screens.glob("*.py")):
         text = path.read_text(encoding="utf-8")

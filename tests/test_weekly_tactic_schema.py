@@ -385,8 +385,6 @@ def test_wt_m1c5_collision_notice_reaches_the_user(tmp_path):
         assert "notify_weekly_tactic_changes(self.db_manager, self)" in text, (
             f"{name} moves dates but never reports a refused week"
         )
-    dialog = (screens / "reschedule_dialog.py").read_text(encoding="utf-8")
-    assert "describe_week_collision" in dialog
 
 
 def test_wt_m1c3_both_creation_paths_report_collisions(tmp_path):

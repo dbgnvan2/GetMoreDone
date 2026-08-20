@@ -32,6 +32,7 @@ def mock_db():
     db.get_project_board.return_value = ProjectBoard(id="test-board", title="Test Board", status="active")
     db.get_project_board_items.return_value = []
     db.get_project_board_links.return_value = []
+    db.count_items_on_multiple_project_boards.return_value = 0
     return db
 
 def test_item_editor_ui_elements_presence(mock_app, mock_db):

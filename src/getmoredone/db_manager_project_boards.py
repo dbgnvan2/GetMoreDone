@@ -285,23 +285,107 @@ class DBManagerProjectBoardsMixin:
         ).fetchall()
         return [row["project_board_id"] for row in rows]
 
-    def get_unlinked_action_items(self, status_filter: str = "open") -> List[ActionItem]:
-        """Return action items that are NOT linked to any project board."""
-        query = """
-            SELECT ai.*
+    def get_items_on_multiple_project_boards(self) -> List[dict]:
+        """Action items filed under more than one Project, worst first.
+
+        Purpose: BP2 — filing became exclusive on every surface, but rows
+                 created before that can still sit on several boards. They are
+                 reported rather than cleaned up behind the user's back: an
+                 exclusive re-link deletes the extras, so a silent migration
+                 would destroy data nobody was asked about (P2).
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp2
+        Tests:   tests/test_project_multi_link.py
+
+        Returns one dict per item: ``id``, ``title`` and ``board_count``.
+        """
+        rows = self.db.conn.execute("""
+            SELECT ai.id AS id,
+                   ai.title AS title,
+                   COUNT(pbi.project_board_id) AS board_count
+            FROM action_items ai
+            JOIN project_board_items pbi ON pbi.item_id = ai.id
+            GROUP BY ai.id
+            HAVING COUNT(pbi.project_board_id) > 1
+            ORDER BY board_count DESC, ai.title COLLATE NOCASE ASC
+        """).fetchall()
+        return [
+            {"id": row["id"], "title": row["title"], "board_count": row["board_count"]}
+            for row in rows
+        ]
+
+    def count_items_on_multiple_project_boards(self) -> int:
+        """How many action items are still filed under more than one Project.
+
+        A count query rather than ``len(...)`` of the full list, so the caller
+        that only wants the number does not load every row (P9).
+        """
+        row = self.db.conn.execute("""
+            SELECT COUNT(*) AS n FROM (
+                SELECT item_id
+                FROM project_board_items
+                GROUP BY item_id
+                HAVING COUNT(project_board_id) > 1
+            )
+        """).fetchone()
+        return int(row["n"]) if row else 0
+
+    # BP5 — the Scheduler's "Unlinked (No Project)" list. A default cap rather
+    # than none: the box shows a handful of rows, and the query behind it used
+    # to load every open unlinked item in the database to fill it.
+    UNLINKED_ITEMS_DEFAULT_LIMIT = 500
+
+    _UNLINKED_FROM = """
             FROM action_items ai
             LEFT JOIN project_board_items pbi ON pbi.item_id = ai.id
             WHERE pbi.project_board_id IS NULL
+    """
+
+    def get_unlinked_action_items(
+        self,
+        status_filter: str = "open",
+        limit: Optional[int] = UNLINKED_ITEMS_DEFAULT_LIMIT,
+    ) -> List[ActionItem]:
+        """Return action items that are NOT linked to any project board.
+
+        Purpose: BP5 — capped, because the Scheduler renders a fixed number of
+                 rows from this list and the uncapped query loaded the whole
+                 table to build them.
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp5
+        Tests:   tests/test_db_project_drag.py::test_bp5_unlinked_items_are_capped_and_the_drop_is_countable
+
+        ``limit=None`` restores the uncapped behaviour. What the cap dropped is
+        not silent: :meth:`count_unlinked_action_items` returns the true total,
+        and the Scheduler labels the box "showing N of M" (P9).
         """
-        params = []
+        query = "SELECT ai.*" + self._UNLINKED_FROM
+        params: List[object] = []
         if status_filter:
             query += " AND ai.status = ?"
             params.append(status_filter)
-            
+
         query += " ORDER BY ai.priority_score DESC, ai.title COLLATE NOCASE ASC"
-        
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(int(limit))
+
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._row_to_action_item(row) for row in rows]
+
+    def count_unlinked_action_items(self, status_filter: str = "open") -> int:
+        """How many action items are not linked to any project board.
+
+        Purpose: BP5 — the Scheduler wanted the number, not the rows, and was
+                 calling ``len(get_unlinked_action_items(...))`` to get it.
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp5
+        Tests:   tests/test_db_project_drag.py::test_bp5_count_matches_the_uncapped_list
+        """
+        query = "SELECT COUNT(*) AS n" + self._UNLINKED_FROM
+        params: List[object] = []
+        if status_filter:
+            query += " AND ai.status = ?"
+            params.append(status_filter)
+        row = self.db.conn.execute(query, params).fetchone()
+        return int(row["n"]) if row else 0
 
     def add_project_board_link(self, link: ProjectBoardLink):
         """Add a link to a project board.

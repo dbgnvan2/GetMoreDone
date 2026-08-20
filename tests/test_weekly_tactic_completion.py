@@ -192,39 +192,14 @@ def test_wt_m5b1_reopen_keeps_completion_week_tactic(tmp_path):
         vps.close()
 
 
-def test_wt_m5c1_followup_inherits_lineage_and_stays_in_range(tmp_path):
-    """complete_and_create's copy must not lose its place in the plan."""
-    vps = make_vps(tmp_path)
-    try:
-        manager = vps.db_manager
-        ape_id, tactic, item = _filed_item(vps)
-
-        new_id = None
-        frozen = type("Frozen", (_FrozenDatetime,), {"frozen": datetime(2026, 3, 12, 9, 0)})
-        with patch.object(db_manager_module, "datetime", frozen):
-            new_id = manager.complete_and_create(item.id)
-        assert new_id
-
-        follow_up = manager.get_action_item(new_id)
-        assert follow_up.weekly_tactic_id, "the follow-up lost its Weekly Tactic"
-        assert follow_up.annual_plan_element_id
-        assert follow_up.segment_description_id
-
-        week = manager.get_action_item(follow_up.weekly_tactic_id)
-        assert week.start_date <= follow_up.start_date <= week.due_date, "WT-INV1"
-        assert week.start_date <= follow_up.due_date <= week.due_date, "WT-INV2"
-        assert follow_up.annual_plan_element_id == week.annual_plan_element_id
-
-        # The stamp belongs to the original's history, not the copy's.
-        original = manager.get_action_item(item.id)
-        assert original.weekly_tactic_start_date == "2026-02-23"
-        assert follow_up.weekly_tactic_start_date == week.start_date
-    finally:
-        vps.close()
-
-
 def test_wt_m5c1_create_followup_item_also_inherits(tmp_path):
-    """The other copy path (create_followup_item) must not lose it either."""
+    """The copy path must not lose the item's place in the plan.
+
+    ``create_followup_item`` is now the only copy path: BP4 deleted
+    ``complete_and_create``, which had no caller in ``src/``. Its assertions
+    live here rather than being deleted with it, so what WT-M5.C.1 actually
+    guarantees is still pinned.
+    """
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
@@ -234,10 +209,14 @@ def test_wt_m5c1_create_followup_item_also_inherits(tmp_path):
         assert new_id
 
         follow_up = manager.get_action_item(new_id)
-        assert follow_up.weekly_tactic_id
+        assert follow_up.weekly_tactic_id, "the follow-up lost its Weekly Tactic"
+        assert follow_up.annual_plan_element_id
+        assert follow_up.segment_description_id
         assert follow_up.parent_id == item.id, "it is still a follow-up of the original"
 
         week = manager.get_action_item(follow_up.weekly_tactic_id)
-        assert week.start_date <= follow_up.start_date <= week.due_date
+        assert week.start_date <= follow_up.start_date <= week.due_date, "WT-INV1"
+        assert week.start_date <= follow_up.due_date <= week.due_date, "WT-INV2"
+        assert follow_up.annual_plan_element_id == week.annual_plan_element_id
     finally:
         vps.close()

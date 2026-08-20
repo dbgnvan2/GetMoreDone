@@ -111,3 +111,172 @@ def test_clear_item_project_links(db_manager):
     assert len(db_mgr.get_project_board_ids_for_item(item_id)) == 0
     updated_item = db_mgr.get_action_item(item_id)
     assert updated_item.annual_plan_element_id is None
+
+
+# ----------------------------------------------------------------- BP5
+
+
+def _seed_unlinked(db_mgr, count: int, prefix: str = "Unlinked") -> list[str]:
+    """Real-scale fixture: enough open unlinked items that the cap bites (P9)."""
+    ids = []
+    for i in range(count):
+        item = ActionItem(who="Test", title=f"{prefix} {i:04d}")
+        ids.append(db_mgr.create_action_item(item, apply_defaults=False))
+    return ids
+
+
+def test_bp5_unlinked_items_are_capped_and_the_drop_is_countable(db_manager):
+    """The Scheduler's list is capped; the count query still sees everything.
+
+    Spec: docs/implementation_plan_2026-08-19_backlog_clearance.md#bp5
+
+    Real-scale: the default cap is 500, so the fixture has to exceed it or the
+    cap never fires and the test proves nothing (P9).
+    """
+    db_mgr, _vps_mgr = db_manager
+    total = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT + 25
+    _seed_unlinked(db_mgr, total)
+
+    capped = db_mgr.get_unlinked_action_items(status_filter="open")
+    assert len(capped) == DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+
+    counted = db_mgr.count_unlinked_action_items(status_filter="open")
+    assert counted == total, "the count must see what the cap dropped"
+    assert counted > len(capped), "the cap did not bite — this test proves nothing"
+
+
+def test_bp5_count_matches_the_uncapped_list(db_manager):
+    """The count and the list must agree about what "unlinked" means.
+
+    Two queries with two WHERE clauses is exactly how a count and a list drift,
+    so they share one FROM/WHERE fragment and this pins the result.
+    """
+    db_mgr, vps_mgr = db_manager
+    seg_name = vps_mgr.get_all_segments(active_only=False)[0]["name"]
+    ape_id = _seed_ape(vps_mgr, seg_name, "Sub 1", "Cat 1")
+    board_id = db_mgr.ensure_project_board_for_ape(ape_id)
+
+    unlinked_ids = _seed_unlinked(db_mgr, 7)
+    linked_ids = _seed_unlinked(db_mgr, 3, prefix="Linked")
+    for item_id in linked_ids:
+        db_mgr.link_item_to_project_exclusive(board_id, item_id)
+
+    # A completed item is not "unlinked open work" either.
+    done_id = _seed_unlinked(db_mgr, 1, prefix="Done")[0]
+    db_mgr.complete_action_item(done_id)
+
+    listed = db_mgr.get_unlinked_action_items(status_filter="open", limit=None)
+    assert db_mgr.count_unlinked_action_items(status_filter="open") == len(listed)
+    assert sorted(it.id for it in listed) == sorted(unlinked_ids)
+
+    # And with no status filter at all, both still agree.
+    all_listed = db_mgr.get_unlinked_action_items(status_filter="", limit=None)
+    assert db_mgr.count_unlinked_action_items(status_filter="") == len(all_listed)
+    assert done_id in {it.id for it in all_listed}
+
+
+def test_bp5_limit_none_restores_the_whole_list(db_manager):
+    """The cap is a default, not a ceiling — a caller can still ask for all."""
+    db_mgr, _vps_mgr = db_manager
+    total = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT + 10
+    _seed_unlinked(db_mgr, total)
+
+    assert len(db_mgr.get_unlinked_action_items(limit=None)) == total
+
+
+def test_bp5_the_scheduler_asks_for_a_count_not_a_list(db_manager):
+    """The "No Project" box wanted a number and was loading every row for it.
+
+    Drives the real ``load_items`` through a stub and intercepts the boundary
+    calls, so a rewrite that goes back to ``len(get_unlinked_action_items(...))``
+    fails here rather than merely reading differently (P25).
+    """
+    from types import SimpleNamespace
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    db_mgr, _vps_mgr = db_manager
+    total = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT + 5
+    _seed_unlinked(db_mgr, total)
+
+    calls = {"list": 0, "count": 0, "rows_loaded": 0}
+    real_list = db_mgr.get_unlinked_action_items
+    real_count = db_mgr.count_unlinked_action_items
+
+    def spy_list(*args, **kwargs):
+        calls["list"] += 1
+        rows = real_list(*args, **kwargs)
+        calls["rows_loaded"] += len(rows)
+        return rows
+
+    def spy_count(*args, **kwargs):
+        calls["count"] += 1
+        return real_count(*args, **kwargs)
+
+    db_mgr.get_unlinked_action_items = spy_list
+    db_mgr.count_unlinked_action_items = spy_count
+    try:
+        stub = SimpleNamespace(
+            db_manager=db_mgr,
+            days_var=SimpleNamespace(get=lambda: "7"),
+            who_var=SimpleNamespace(get=lambda: "All"),
+            selected_date_filter=None,
+            selected_project_id="__none__",
+        )
+        stub._item_matches_filters = lambda item: True
+        items = DragScheduleScreen.load_items(stub)
+    finally:
+        db_mgr.get_unlinked_action_items = real_list
+        db_mgr.count_unlinked_action_items = real_count
+
+    assert calls["count"] == 1, "the total came from somewhere other than the count query"
+    assert len(items) == DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+    assert calls["rows_loaded"] == DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT, (
+        "every unlinked row was loaded despite the cap")
+    assert stub.unlinked_shown == DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+    assert stub.unlinked_total == total
+
+
+def test_bp5_the_box_says_showing_n_of_m_when_capped(db_manager):
+    """A truncated list must say so; an untruncated one must not."""
+    from types import SimpleNamespace
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    capped = SimpleNamespace(unlinked_shown=500)
+    assert DragScheduleScreen._unlinked_box_text(capped, 525) == (
+        "showing 500 of 525 unlinked items")
+
+    whole = SimpleNamespace(unlinked_shown=12)
+    assert DragScheduleScreen._unlinked_box_text(whole, 12) == "12 unlinked items"
+
+    # Before the list has ever been loaded there is nothing to qualify.
+    fresh = SimpleNamespace()
+    assert DragScheduleScreen._unlinked_box_text(fresh, 12) == "12 unlinked items"
+
+
+def test_bp5_the_cap_is_announced_in_the_log(db_manager, caplog):
+    """Dropping 25 items silently is the failure this cap could have created."""
+    import logging
+    from types import SimpleNamespace
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    db_mgr, _vps_mgr = db_manager
+    total = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT + 25
+    _seed_unlinked(db_mgr, total)
+
+    stub = SimpleNamespace(
+        db_manager=db_mgr,
+        days_var=SimpleNamespace(get=lambda: "7"),
+        who_var=SimpleNamespace(get=lambda: "All"),
+        selected_date_filter=None,
+        selected_project_id="__none__",
+    )
+    stub._item_matches_filters = lambda item: True
+
+    with caplog.at_level(logging.WARNING, logger="src.getmoredone.screens.drag_schedule"):
+        DragScheduleScreen.load_items(stub)
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("capped" in message for message in messages), (
+        f"the cap dropped {total - DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT} "
+        f"items without a word; log said {messages}")
+    assert any("500 of 525" in message for message in messages), messages

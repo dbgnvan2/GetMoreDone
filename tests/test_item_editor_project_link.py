@@ -87,10 +87,29 @@ def _save_stub(manager, monkeypatch, item=None, project_choice=..., texts=None):
     stub.logger = SimpleNamespace(warning=lambda *a, **k: None, info=lambda *a, **k: None)
     stub.extract_factor_value = lambda text: ItemEditorDialog.extract_factor_value(stub, text)
     stub._canonical_weekly_tactic_title = lambda *a: a[0]
+    _bind_form_builder(stub)
 
     if project_choice is not ...:
         stub.apply_project_selection(project_choice)
     return stub
+
+
+def _bind_form_builder(stub):
+    """Bind the shared new-item builder (BP3) onto a stub.
+
+    ``save_item`` and ``save_item_if_needed`` both delegate their field
+    assembly to ``ItemEditorFormMixin``; a stub that lacks those methods makes
+    every save raise inside the try block and report a validation failure.
+    """
+    for name in ("build_item_from_form", "apply_new_item_fields",
+                 "validate_item_for_save", "insert_new_item", "_warn"):
+        setattr(stub, name, _bound(stub, name))
+    return stub
+
+
+def _bound(stub, name):
+    method = getattr(ItemEditorDialog, name)
+    return lambda *a, **kw: method(stub, *a, **kw)
 
 
 def _seed_board(manager, title, ape_id=None, status=ProjectBoardStatus.ACTIVE):
@@ -509,24 +528,6 @@ def test_pl12_followup_inherits_project_link(tmp_path):
         assert new_id
         assert manager.get_project_board_ids_for_item(new_id) == [board.id]
         assert manager.get_action_item(new_id).annual_plan_element_id == ape_id
-    finally:
-        vps.close()
-
-
-def test_pl12_1_complete_and_create_inherits_project_link(tmp_path):
-    """The sibling copy path carries it too (P5)."""
-    vps = make_vps(tmp_path)
-    try:
-        manager = vps.db_manager
-        ape_id = seed_ape(vps)
-        board = _seed_board(manager, "Ongoing", ape_id)
-        item = make_daily_item(vps, "Task")
-        manager.link_item_to_project_exclusive(board.id, item.id)
-
-        new_id = manager.complete_and_create(item.id)
-
-        assert new_id
-        assert manager.get_project_board_ids_for_item(new_id) == [board.id]
     finally:
         vps.close()
 

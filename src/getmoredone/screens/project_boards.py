@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from tkinter import messagebox
 from typing import TYPE_CHECKING, Optional
@@ -12,8 +13,13 @@ from PIL import Image
 from ..color_contrast import pick_text_color
 from ..models import ActionItem, PriorityFactors, ProjectBoard, ProjectBoardStatus
 from ..paths import project_root
+from .project_link_notice import (
+    describe_bulk_relink,
+    describe_outstanding_multi_links,
+    describe_single_relink,
+)
 from .week_collision_notice import notify_weekly_tactic_changes
-from ..theme import button_style, combo_box_style, semantic_colors
+from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -372,12 +378,57 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
             ).grid(row=0, column=2, rowspan=2, padx=8, pady=8)
 
     def _link(self, item_id: str):
-        self.db_manager.link_action_item_to_project_board(self.board_id, item_id)
+        """File one item under this board, exclusively (BP1).
+
+        Purpose: an Action Item belongs to exactly one Project. This dialog was
+                 the last additive surface; the Scheduler and the item editor
+                 already relink exclusively.
+        Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp1
+        Tests:   tests/test_project_multi_link.py::test_bp1_linking_moves_an_item_between_boards
+
+        An item that sits on other boards loses those links, so it is asked
+        about first — the same question the item editor asks (P2).
+        """
+        if not self._confirm_relink([item_id]):
+            return
+        self.db_manager.link_item_to_project_exclusive(self.board_id, item_id)
         if item_id in self.checked_items:
             self.checked_items.remove(item_id)
         if self.on_linked and callable(self.on_linked):
             self.on_linked()
         self.refresh_results()
+
+    def _items_losing_links(self, item_ids) -> list[str]:
+        """Which of these items are filed under a board other than this one."""
+        losing = []
+        for item_id in item_ids:
+            others = [
+                board_id
+                for board_id in self.db_manager.get_project_board_ids_for_item(item_id)
+                if board_id != self.board_id
+            ]
+            if others:
+                losing.append(item_id)
+        return losing
+
+    def _confirm_relink(self, item_ids) -> bool:
+        """Ask before an exclusive link unfiles items from other boards.
+
+        Returns True when nothing would be lost, so the ordinary case (an item
+        with no project yet) is not interrupted.
+        """
+        losing = self._items_losing_links(item_ids)
+        if not losing:
+            return True
+
+        board = self.db_manager.get_project_board(self.board_id)
+        title = board.title if board else None
+        if len(item_ids) == 1:
+            count = len(self.db_manager.get_project_board_ids_for_item(losing[0]))
+            question = describe_single_relink(count, title)
+        else:
+            question = describe_bulk_relink(len(losing), title)
+        return messagebox.askyesno("Change Project", question, parent=self)
 
     def _on_item_checkbox_toggled(self, item_id: str):
         if item_id in self.checked_items:
@@ -419,11 +470,22 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
                 btn.configure(fg_color=palette["surface"], hover_color=palette["surface_hover"])
 
     def _link_selected_items(self):
+        """File every checked item under this board, exclusively (BP1).
+
+        Tests: tests/test_project_multi_link.py::test_bp1_bulk_link_asks_once_before_dropping_links
+
+        One question for the whole batch rather than one per item, but the same
+        rule: nothing is unfiled without consent (P2).
+        """
         if not self.checked_items:
             return
 
-        for item_id in list(self.checked_items):
-            self.db_manager.link_action_item_to_project_board(self.board_id, item_id)
+        selected = list(self.checked_items)
+        if not self._confirm_relink(selected):
+            return
+
+        for item_id in selected:
+            self.db_manager.link_item_to_project_exclusive(self.board_id, item_id)
             self.checked_items.discard(item_id)
 
         if self.on_linked and callable(self.on_linked):
@@ -761,6 +823,18 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             text_color=semantic_colors()["muted_text"],
         ).grid(row=0, column=9, padx=8, pady=8, sticky="e")
 
+        # BP2 — rows that predate exclusive filing. Reported where the user can
+        # act on them, not only in a start-up log line nobody reads (P25).
+        self.multi_link_label = ctk.CTkLabel(
+            header,
+            text="",
+            anchor="w",
+            justify="left",
+            text_color=status_text_color("warning"),
+        )
+        self.multi_link_label.grid(row=2, column=0, columnspan=10, padx=8,
+                                   pady=(0, 8), sticky="w")
+
         # Search row
         self.search_entry = ctk.CTkEntry(
             header,
@@ -905,6 +979,26 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             self.selected_board_id = self.board_rows[0]["id"]
         self._render_cards()
         self._render_detail()
+        self._refresh_multi_link_notice()
+
+    def _refresh_multi_link_notice(self):
+        """Show how many items still sit on more than one board (BP2).
+
+        Tests: tests/test_project_multi_link.py::test_bp2_the_projects_screen_reports_the_outstanding_count
+        """
+        label = getattr(self, "multi_link_label", None)
+        if label is None:
+            return
+        try:
+            count = int(self.db_manager.count_items_on_multiple_project_boards())
+        except Exception as exc:
+            # A cosmetic banner must not take the whole Projects screen down,
+            # but the failure is said out loud rather than shown as "none" (P2).
+            logging.getLogger(__name__).warning(
+                "[projects] could not count multi-project items: %s", exc)
+            label.configure(text="")
+            return
+        label.configure(text=describe_outstanding_multi_links(count))
 
     def _schedule_card_render(self, _event=None):
         if self._render_after_id:

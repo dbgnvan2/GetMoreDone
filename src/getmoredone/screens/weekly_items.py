@@ -412,21 +412,23 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             return
 
         from ..models import ActionItem
-        from .title_format import build_action_item_title, split_action_item_title
 
         dialog = ctk.CTkInputDialog(text="Immediate Step:", title="New Related Action")
         title = (dialog.get_input() or "").strip()
         if not title:
             return
 
+        # BP6 — the title is what the user typed, not "<tactic context> - <it>".
+        # No screen has offered a Context field since PL-era; the prefix was a
+        # third-choice lineage fallback that ``lineage_for_item`` never reaches
+        # for these rows, because they carry both an Annual Plan Element and a
+        # parent. It only ever fired for a legacy-shaped tactic title.
+        # Spec:  docs/implementation_plan_2026-08-19_backlog_clearance.md#bp6
+        # Tests: tests/test_weekly_items_title.py
         weekly = self.selected_weekly_item
-        weekly_title = self.vps_manager.normalize_week_token((weekly.get("title") or "").strip())
-        weekly_title_short = self.vps_manager.shorten_pipe_prefix(weekly_title)
-        parsed = split_action_item_title(weekly_title_short)
-        full_title = build_action_item_title(parsed.context, title)
         item = ActionItem(
             who=weekly.get("who") or "",
-            title=full_title,
+            title=title,
             description=f"Related to weekly item: {weekly.get('title') or ''}",
             parent_id=weekly["id"],
             start_date=weekly.get("start_date"),

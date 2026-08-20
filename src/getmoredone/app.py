@@ -11,6 +11,7 @@ from typing import Optional
 from .app_settings import AppSettings
 from .db_manager import DatabaseManager
 from .paths import app_data_dir_path
+from .screens.project_link_notice import describe_outstanding_multi_links
 from .theme import apply_theme_settings, button_style
 from .utils.app_icon import set_app_icon
 from .vps_manager import VPSManager
@@ -60,6 +61,22 @@ class GetMoreDoneApp(ctk.CTk):
                 print(f"[DATA] Normalized title/who fields on {normalized} action item(s).")
         except Exception as exc:
             print(f"[WARN] Unable to normalize title/who fields: {exc}")
+
+        # BP2 — filing an Action Item under a Project is exclusive on every
+        # surface now, but rows created before that can still sit on several
+        # boards. Report the count; never resolve it here, because resolving
+        # means deleting links the user was never asked about (P2). The
+        # Projects screen shows the same count, and each item is resolved when
+        # it is next re-filed.
+        self.multi_linked_item_count = 0
+        try:
+            self.multi_linked_item_count = (
+                self.db_manager.count_items_on_multiple_project_boards())
+            notice = describe_outstanding_multi_links(self.multi_linked_item_count)
+            if notice:
+                print(f"[DATA] {notice}")
+        except Exception as exc:
+            print(f"[WARN] Unable to count multi-project action items: {exc}")
 
         # Configure grid
         self.grid_columnconfigure(1, weight=1)
