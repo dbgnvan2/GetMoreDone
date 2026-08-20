@@ -98,8 +98,9 @@ will keep producing this question.
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 ./venv/bin/python -m pytest -q`
-- Result after the review fixes: **1098 passed, 5 skipped, exit code 0.**
-  (1090 before them.)
+- Result after both review rounds: **1099 passed, 6 skipped, exit code 0.**
+  (1090 after the original work, 1098 after round one.) The window-mapping
+  tests were additionally run unsuppressed: 14 passed, exit 0.
   Baseline was 1062 passed / 2 skipped. The three extra skips are the geometry
   tests suppressed by the variable above; a run without it is required before
   this is called green, and is recorded in the status report.
@@ -178,6 +179,33 @@ archives it downloaded; nothing tied the download `path:` to the release
 job's `if:` — which would restore the exact defect BI1 removed;
 `GETMOREDONE_NO_MAPPED_WINDOWS=0` turned the opt-out *on*; the docs-sync gate
 did not know `requirements-dev.txt` exists, in the commit that created it.
+
+### Round two — the fix commit swept as its own range
+
+P26's corollary says the fix commit is the least-reviewed code in a change.
+Two more passes over it found **two more of my own tests that could not fail**:
+
+* `test_bi1_download_path_matches_the_release_file_prefix` used a substring
+  test, and `release-assets/GetMoreDone-mac.zip` **is a substring of**
+  `release-assets/GetMoreDone-mac.zip.sha256`. Reproduced: delete both plain
+  `.zip` lines from `files:`, leaving only the checksums, and it passes.
+  `fail_on_unmatched_files: true` is satisfied, so that publishes a public,
+  permanent Release with correct notes, two `.sha256` files and **no
+  downloadable archives** — the exact BI1 failure, through the guard written to
+  prevent it.
+* `test_bi2_the_docs_sync_gate_knows_about_both_dependency_files` asserted a
+  string that also appears in the **comment the same commit added**, so the
+  gate could be fully reverted and the test stayed green.
+
+Both are the same shape as the `_shell_code_only` miss in round one: a text
+match that hits the explanation rather than the code. Three instances in one
+batch is a pattern, not three accidents — recorded in `LEARNINGS.md`.
+
+The pip guard was also found to have become **narrower** than the regex it
+replaced (blind to `python3 -m pip install X`, `pip3 install X`,
+`sudo pip install X`), and the subprocess test written to replace a
+string-matching one was itself scraping stdout for `"1 passed"` — the practice
+its own file's docstring forbids (P24).
 
 ## Risks / Known gaps
 

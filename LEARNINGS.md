@@ -51,6 +51,24 @@ Referenced by ID from the global catalogue; listed here because they recur.
 
 ## Open risks (found by review, not yet bitten)
 
+- **2026-08-20 — a guard that matches TEXT will match the comment explaining
+  it.** Three instances in one batch, each in a test written to close a
+  regression, each passing against the exact defect it named:
+  1. `_shell_code_only()` truncated at the first `#`; the `start.sh` grep it
+     guarded has a `#` *inside its quoted regex*, so the word `pytest` was gone
+     before the search ran.
+  2. `"requirements-dev.txt" in gate_source` matched the comment added in the
+     same commit as the fix, so the gate could be reverted entirely.
+  3. `"release-assets/GetMoreDone-mac.zip" in attached` is satisfied by
+     `...zip.sha256`, so a `files:` block of checksums only passed.
+  *Ask:* does this assertion match code, or could it match prose? Is the
+  needle a prefix of something else in the haystack?
+  *Rule:* assert on **parsed structure** (AST, an imported constant, a line
+  anchor) rather than substring presence. And **mutate with the verbatim
+  original**, never a reconstruction — a paraphrased mutation is what let (1)
+  through a mutation check that was reported as passing.
+
+
 - **`with self.db.conn:` rolls back the whole connection, not just its block.**
   `_DeferredCommitConnection.__exit__` calls `self._conn.rollback()` on the raw
   connection, which discards everything uncommitted — including an enclosing
