@@ -559,7 +559,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         """Show the Project the item is filed under, or an explicit "(none)".
 
         Spec:  docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl2
-        Tests: tests/test_item_editor_project_link.py::test_pl2_1_unlinked_shows_none
+        Tests: tests/test_item_editor_project_link.py::test_pl2_1_unlinked_item_shows_none
         """
         board_id = self._selected_project_id
         board = self.db_manager.get_project_board(board_id) if board_id else None
@@ -633,7 +633,12 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         """Ask before an exclusive re-link unfiles the item from other boards."""
         import tkinter.messagebox as messagebox
 
-        count = self._loaded_extra_project_links + 1
+        # The number of *other* projects, the same measure
+        # ``confirm_exclusive_relink`` uses — the target is excluded. Passing
+        # the total here made the editor and the other two surfaces describe
+        # the same write with different numbers (P5).
+        count = len([b for b in self.db_manager.get_project_board_ids_for_item(self.item_id)
+                     if b != board_id]) if self.item_id else self._loaded_extra_project_links
         target = None
         if board_id:
             board = self.db_manager.get_project_board(board_id)
@@ -1270,7 +1275,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
                  ``duplicate_action_item``, which this said until 2026-08-19
                  and which now has no caller in ``src/`` at all.)
         Spec:    docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl11
-        Tests:   tests/test_item_editor_layout.py::test_pl11_followup_saves_first
+        Tests:   tests/test_item_editor.py::test_pl11_followup_saves_first
 
         Saves first — that guard existed only on the old Duplicate path, so a
         follow-up used to be built from the stored row while the edits on

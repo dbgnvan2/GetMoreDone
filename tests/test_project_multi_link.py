@@ -337,9 +337,11 @@ def test_bp2_the_confirmation_names_what_is_being_lost(tmp_path, answers):
         _dialog_stub(manager, elsewhere.id)._link(item.id)
 
         message = answers["messages"][0]
-        assert "filed under 3 projects" in message, message
+        # Three other projects, three links removed — the number in the
+        # sentence is the number of links the write deletes.
+        assert "filed under 3 other projects" in message, message
         assert "Somewhere Else" in message
-        assert "the other 2 projects" in message, message
+        assert "removes those 3 links" in message, message
     finally:
         vps.close()
 
@@ -363,8 +365,10 @@ def test_p10_the_target_board_is_not_counted_as_a_link_being_lost(tmp_path, answ
         _dialog_stub(manager, boards[0].id)._link(item.id)
 
         message = answers["messages"][0]
-        assert "filed under 2 projects" in message, message
-        assert "the other 1 project" in message, message
+        # The target is one of the three, so two links go — and the sentence
+        # says two, not "the other 1".
+        assert "filed under 2 other projects" in message, message
+        assert "removes those 2 links" in message, message
 
         # And an item whose ONLY board is the target loses no link at all.
         answers["messages"].clear()
@@ -391,9 +395,9 @@ def test_p10_the_target_board_is_not_counted_as_a_link_being_lost(tmp_path, answ
 def test_bp1_every_surface_uses_the_same_sentence():
     """The editor and the Projects dialog must not word this differently."""
     single = describe_single_relink(3, "Website Rebuild")
-    assert "filed under 3 projects" in single
+    assert "filed under 3 other projects" in single
     assert "Website Rebuild" in single
-    assert "the other 2 projects" in single
+    assert "removes those 3 links" in single
 
     cleared = describe_single_relink(2, None)
     assert "unfiles it from all of them" in cleared
@@ -407,9 +411,9 @@ def test_bp1_every_surface_uses_the_same_sentence():
     assert "1 projects" not in one and "the other 0" not in one
     assert "unfiles it" in describe_single_relink(1, None)
 
-    # Two projects means one *other* project, not "1 projects".
+    # Two *other* projects means two links go.
     two = describe_single_relink(2, "Website Rebuild")
-    assert "the other 1 project." in two, two
+    assert "removes those 2 links" in two, two
 
     assert "1 of the selected item:" in describe_bulk_relink(
         1, "Website Rebuild", batch_size=1)
@@ -1661,5 +1665,92 @@ def test_p10_a_tactic_in_a_batch_is_not_counted_as_a_loss(tmp_path, answers):
         assert (with_links, ape_only) == ([], []), (
             "a Weekly Tactic was counted as losing something to a write that "
             "is refused")
+    finally:
+        vps.close()
+
+
+def test_p11_the_number_in_the_sentence_is_the_number_of_links_removed(tmp_path, monkeypatch):
+    """Count the rows the write actually deletes and compare with the sentence.
+
+    ``count`` was changed to exclude the target board while the sentence went
+    on saying "the other count - 1", so every multi-filed item was told one
+    fewer link would go than actually went (P19). Reading one message could not
+    show that; counting the deleted rows can.
+    """
+    import src.getmoredone.screens.project_link_notice as notice
+    from src.getmoredone.models import ProjectBoard
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        boards = []
+        for i in range(4):
+            board = ProjectBoard(title=f"Board {i}", annual_plan_element_id=ape_id)
+            manager.create_project_board(board)
+            boards.append(board)
+
+        said = []
+        monkeypatch.setattr(notice.messagebox, "askyesno",
+                            lambda title, message, **kw: said.append(message) or True)
+
+        for on, target_index in ((3, 0), (3, 3), (2, 0), (4, 1)):
+            item = make_daily_item(vps, f"Task {on}-{target_index}")
+            for board in boards[:on]:
+                manager.link_action_item_to_project_board(board.id, item.id)
+
+            before = set(manager.get_project_board_ids_for_item(item.id))
+            said.clear()
+            notice.confirm_exclusive_relink(None, manager, [item.id],
+                                            boards[target_index].id)
+            manager.link_item_to_project_exclusive(boards[target_index].id, item.id)
+            removed = len(before - set(manager.get_project_board_ids_for_item(item.id)))
+
+            message = said[0]
+            if removed == 1:
+                assert "removes that link" in message, (on, target_index, message)
+            else:
+                assert f"removes those {removed} links" in message, (
+                    on, target_index, removed, message)
+                assert f"filed under {removed} other projects" in message, (
+                    on, target_index, removed, message)
+    finally:
+        vps.close()
+
+
+def test_p11_all_three_surfaces_say_the_same_number(tmp_path, monkeypatch):
+    """The module exists so one write has one wording. It has to hold."""
+    import tkinter.messagebox as messagebox
+    import src.getmoredone.screens.drag_schedule as ds
+    import src.getmoredone.screens.project_link_notice as notice
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+
+    vps = make_vps(tmp_path)
+    try:
+        manager, item, boards = _three_linked(vps)
+        target = boards[0]
+
+        said = []
+        for module in (notice.messagebox, messagebox):
+            monkeypatch.setattr(module, "askyesno",
+                                lambda title, message, **kw: said.append(message) or False)
+
+        _dialog_stub(manager, target.id)._link(item.id)
+        dialog_message = said[-1]
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[item])
+        stub.refresh = lambda: None
+        ds.DragScheduleScreen._drop_onto_project(stub, target.id)
+        drag_message = said[-1]
+
+        editor = SimpleNamespace(db_manager=manager, item_id=item.id,
+                                 item=manager.get_action_item(item.id),
+                                 _loaded_extra_project_links=2)
+        ItemEditorDialog._confirm_dropping_extra_project_links(editor, target.id)
+        editor_message = said[-1]
+
+        assert dialog_message == drag_message, (dialog_message, drag_message)
+        assert dialog_message == editor_message, (dialog_message, editor_message)
+        assert "filed under 2 other projects" in dialog_message, dialog_message
     finally:
         vps.close()

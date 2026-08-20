@@ -102,14 +102,22 @@ def describe_single_relink(count: int, target_title: Optional[str],
             "Element is not affected. Continue?"
         )
 
-    others = count - 1
-    plural = "project" if others == 1 else "projects"
+    plural = "project" if count == 1 else "projects"
     if target_title:
+        # ``count`` is the number of *other* projects — the target is excluded
+        # by both this caller and ``classify_losses``. The sentence used to say
+        # "the other count - 1", which was right only while the count included
+        # the target, and understated the deletion by exactly one link on every
+        # multi-filed item once it stopped (P19: two halves of one decision
+        # measuring different things).
         return (
-            f"This item is filed under {count} projects.\n\n"
-            f"Filing it under {_name(target_title)} removes it from the other "
-            f"{others} {plural}{ape_clause}. Continue?"
+            f"This item is filed under {count} other {plural}.\n\n"
+            f"Filing it under {_name(target_title)} removes "
+            f"{'that link' if count == 1 else f'those {count} links'}"
+            f"{ape_clause}. Continue?"
         )
+    # Clearing: there is no target to exclude, so ``count`` is every project
+    # the item is on.
     return (
         f"This item is filed under {count} projects.\n\n"
         "Removing the project unfiles it from all of them. Its Annual Plan "
@@ -297,53 +305,6 @@ def _bulk_ape_outcome(db_manager, item_ids, target_ape: Optional[str]) -> Option
 def _ape_would_change(db_manager, item_id: str, target_ape: Optional[str]) -> bool:
     """Would this write replace or remove the item's Annual Plan Element?"""
     return _ape_outcome(db_manager, item_id, target_ape) is not APE_UNCHANGED
-
-
-def ape_outcome_for_change(db_manager, item_id: Optional[str],
-                           target_board_id: Optional[str]) -> Optional[str]:
-    """What filing under (or clearing) ``target_board_id`` does to the item's APE.
-
-    The single implementation of the rule, including the unreadable-board case:
-    ``link_item_to_project_exclusive`` guards its APE write with ``if board:``,
-    so a board row that cannot be read means the plan element is not touched
-    and the dialog must not say it is.
-    """
-    if not item_id:
-        return APE_UNCHANGED
-    target_ape = None
-    if target_board_id is not None:
-        board = db_manager.get_project_board(target_board_id)
-        if board is None:
-            return APE_UNCHANGED
-        target_ape = board.annual_plan_element_id
-    return _ape_outcome(db_manager, item_id, target_ape)
-
-
-def _ape_outcome(db_manager, item_id: str, target_ape: Optional[str]) -> Optional[str]:
-    """What this write does to the item's Annual Plan Element.
-
-    A Weekly Tactic keeps its plan element whatever happens (PL6, enforced in
-    ``db_manager_project_boards``): filing one is refused outright and clearing
-    leaves the APE alone. The writer learned that rule and the describer did
-    not, so dragging a tactic onto "No Project" showed "Removing the project
-    also clears it" over a write that changed nothing — an affirmative
-    confirmation in front of a silent no-op (P19: the two layers disagreed
-    about the same rule).
-    """
-    if _is_weekly_tactic(db_manager, item_id):
-        return APE_UNCHANGED
-    item = db_manager.get_action_item(item_id)
-    current = getattr(item, "annual_plan_element_id", None) if item else None
-    if not current or current == target_ape:
-        return APE_UNCHANGED
-    return APE_REPLACED if target_ape else APE_CLEARED
-
-
-def _is_weekly_tactic(db_manager, item_id: str) -> bool:
-    checker = getattr(db_manager, "is_weekly_tactic", None)
-    if checker is None:          # a stub without the predicate
-        return False
-    return bool(checker(item_id))
 
 
 def ape_outcome_for_change(db_manager, item_id: Optional[str],

@@ -911,8 +911,9 @@ def test_sweep3_the_confirmation_message_names_the_target_project(tmp_path, monk
 
         assert result is True
         assert "Website Rebuild" in asked["message"]
-        assert "3 projects" in asked["message"], asked["message"]
-        assert "2" in asked["message"]
+        # The editor measures the same thing the other two surfaces do: the
+        # number of *other* projects, which is the number of links removed.
+        assert "other projects" in asked["message"], asked["message"]
 
         asked.clear()
         ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)

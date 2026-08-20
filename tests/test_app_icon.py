@@ -20,16 +20,31 @@ def test_app_icon_asset_present():
     assert path.exists(), f"GMD app icon missing at {path}"
 
 
+_TK_AVAILABLE = None
+
+
 def _tk_available() -> bool:
-    """Whether a Tk display can be created in this environment."""
+    """Whether a Tk display can be created in this environment.
+
+    Withdrawn before it is destroyed, and cached. This runs while the module is
+    being *imported* — pytest evaluates the skipif decorators during collection,
+    before any fixture — so the session-wide window guard in conftest.py cannot
+    cover it, and a bare ``tk.Tk()`` here flashed a real window onto the user's
+    desktop twice per run.
+    """
+    global _TK_AVAILABLE
+    if _TK_AVAILABLE is not None:
+        return _TK_AVAILABLE
     try:
         import tkinter as tk
 
         root = tk.Tk()
+        root.withdraw()
         root.destroy()
-        return True
+        _TK_AVAILABLE = True
     except Exception:
-        return False
+        _TK_AVAILABLE = False
+    return _TK_AVAILABLE
 
 
 @pytest.mark.skipif(not _tk_available(), reason="no Tk display available")
