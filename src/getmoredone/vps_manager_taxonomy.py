@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
+from .link_integrity import resolve_segment_id_exact
 
 
 class VisionElementHasDependentsError(Exception):
@@ -201,11 +202,7 @@ class VPSTaxonomyMixin:
         # RN-M1.C: link to the segment description of the same name if there is
         # exactly one. None is correct when there is not — the row is reported
         # by the migration rather than guessed at (RN-INV5).
-        description = self.db.conn.execute(
-            "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
-            (norm,),
-        ).fetchall()
-        description_id = description[0]["id"] if len(description) == 1 else None
+        description_id = resolve_segment_id_exact(self.db.conn, norm)
         self.db.conn.execute(
             "INSERT INTO vision_segments "
             "(id, name, vision_text, segment_description_id, created_at, updated_at) "
@@ -377,11 +374,13 @@ class VPSTaxonomyMixin:
             raise ValueError("Segment, SubSegment, and Category are required")
 
         row = self.db.conn.execute(
-            "SELECT id FROM vision_elements WHERE id = ?",
+            "SELECT id, key_field FROM vision_elements WHERE id = ?",
             (vision_element_id,),
         ).fetchone()
         if not row:
             return False
+        # Captured before any write: the derived-title refresh needs it.
+        previous_key_field = row["key_field"]
 
         seg_id = self._create_or_get_vision_segment(segment_name)
         sub_id = self._resolve_vision_subsegment_id(seg_id, subsegment_name)
@@ -418,23 +417,48 @@ class VPSTaxonomyMixin:
         self.db.conn.execute(
             """
             UPDATE annual_vision_elements
-            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?, updated_at = ?
+            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?,
+                -- COALESCE: resolve_segment_id_exact returns None when the
+                -- name is ambiguous, and overwriting a GOOD id with NULL
+                -- because two descriptions differ only by case would be a
+                -- worse bug than the one this column fixes.
+                segment_description_id = COALESCE(?, segment_description_id),
+                updated_at = ?
             WHERE vision_element_id = ?
             """,
-            (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
+            (segment_name, subsegment_name, category_name, key_field,
+             resolve_segment_id_exact(self.db.conn, segment_name), now, vision_element_id),
         )
         self.db.conn.execute(
             """
             UPDATE annual_plan_elements
-            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?, updated_at = ?
+            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?,
+                -- COALESCE: resolve_segment_id_exact returns None when the
+                -- name is ambiguous, and overwriting a GOOD id with NULL
+                -- because two descriptions differ only by case would be a
+                -- worse bug than the one this column fixes.
+                segment_description_id = COALESCE(?, segment_description_id),
+                updated_at = ?
             WHERE vision_element_id = ?
             """,
-            (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
+            (segment_name, subsegment_name, category_name, key_field,
+             resolve_segment_id_exact(self.db.conn, segment_name), now, vision_element_id),
+        )
+        # RN-M3.A — refresh the derived Annual Initiative title here too.
+        # The refresh was added to _sync_vision_element_derived_fields only,
+        # and this is its near-identical sibling: renaming or re-pointing
+        # through THIS path left the initiative showing the old composite.
+        # Delegating rather than pasting a third copy — the duplication
+        # between these two functions is what produced the gap.
+        self._sync_vision_element_derived_fields(
+            vision_element_id, previous_key_field=previous_key_field
         )
         self.db.conn.commit()
         return True
 
-    def _sync_vision_element_derived_fields(self, vision_element_id: str):
+    def _sync_vision_element_derived_fields(
+        self, vision_element_id: str, previous_key_field: str = None
+    ):
         """Recompute key_field and annual mirror names for one vision element."""
         row = self.db.conn.execute(
             """
@@ -456,6 +480,18 @@ class VPSTaxonomyMixin:
         key_field = f"{segment_name}|{subsegment_name}|{category_name}"
         now = datetime.now().isoformat()
 
+        # What the composite WAS, so the refresh below can tell a derived title
+        # from a hand-edited one. Callers that have ALREADY rewritten
+        # vision_elements.key_field must pass it — update_vision_element does,
+        # and without that this read returns the NEW value, previous == current,
+        # and the refresh silently skips.
+        if previous_key_field is None:
+            previous = self.db.conn.execute(
+                "SELECT key_field FROM vision_elements WHERE id = ?",
+                (vision_element_id,),
+            ).fetchone()
+            previous_key_field = previous["key_field"] if previous else None
+
         self.db.conn.execute(
             "UPDATE vision_elements SET key_field = ?, updated_at = ? WHERE id = ?",
             (key_field, now, vision_element_id),
@@ -463,18 +499,32 @@ class VPSTaxonomyMixin:
         self.db.conn.execute(
             """
             UPDATE annual_vision_elements
-            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?, updated_at = ?
+            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?,
+                -- COALESCE: resolve_segment_id_exact returns None when the
+                -- name is ambiguous, and overwriting a GOOD id with NULL
+                -- because two descriptions differ only by case would be a
+                -- worse bug than the one this column fixes.
+                segment_description_id = COALESCE(?, segment_description_id),
+                updated_at = ?
             WHERE vision_element_id = ?
             """,
-            (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
+            (segment_name, subsegment_name, category_name, key_field,
+             resolve_segment_id_exact(self.db.conn, segment_name), now, vision_element_id),
         )
         self.db.conn.execute(
             """
             UPDATE annual_plan_elements
-            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?, updated_at = ?
+            SET segment_name = ?, subsegment_name = ?, category_name = ?, key_field = ?,
+                -- COALESCE: resolve_segment_id_exact returns None when the
+                -- name is ambiguous, and overwriting a GOOD id with NULL
+                -- because two descriptions differ only by case would be a
+                -- worse bug than the one this column fixes.
+                segment_description_id = COALESCE(?, segment_description_id),
+                updated_at = ?
             WHERE vision_element_id = ?
             """,
-            (segment_name, subsegment_name, category_name, key_field, now, vision_element_id),
+            (segment_name, subsegment_name, category_name, key_field,
+             resolve_segment_id_exact(self.db.conn, segment_name), now, vision_element_id),
         )
         # RN-M3.A / RN-D7 — an Annual Initiative's title is DERIVED from the
         # APE's key field, the same way a Weekly Tactic's is derived from its
@@ -484,16 +534,27 @@ class VPSTaxonomyMixin:
         # Joined through annual_plan_element_id, which RN-M1.B added. Matching
         # on the OLD title here would be the very bug this change removes: the
         # rename has already moved the key field by the time this runs.
-        self.db.conn.execute(
-            """
-            UPDATE annual_initiatives
-            SET title = ?, updated_at = ?
-            WHERE annual_plan_element_id IN (
-                SELECT id FROM annual_plan_elements WHERE vision_element_id = ?
+        # Only titles that are STILL the derived composite. A blanket update
+        # here silently discarded a hand-edited title: the Annual Initiative
+        # editor offers a Title field and update_annual_initiative persists it,
+        # so RN-D7's "the title is derived" is true of how a title STARTS, not
+        # of what the user may have made it.
+        #
+        # `previous_key_field` is what the composite was before this rename, so
+        # a title equal to it is one nobody has touched. Anything else is the
+        # user's and is left alone.
+        if previous_key_field and previous_key_field != key_field:
+            self.db.conn.execute(
+                """
+                UPDATE annual_initiatives
+                SET title = ?, updated_at = ?
+                WHERE annual_plan_element_id IN (
+                    SELECT id FROM annual_plan_elements WHERE vision_element_id = ?
+                )
+                  AND LOWER(title) = LOWER(?)
+                """,
+                (key_field, now, vision_element_id, previous_key_field),
             )
-            """,
-            (key_field, now, vision_element_id),
-        )
 
     def rename_vision_segment(self, segment_id: str, new_name: str) -> bool:
         new_value = (new_name or "").strip()
@@ -743,15 +804,28 @@ class VPSTaxonomyMixin:
                     "INSERT INTO vision_segments "
                     "(id, name, vision_text, segment_description_id, created_at, updated_at) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (f"vsg-{uuid4().hex[:8]}", name, "", row["id"], now, now),
+                    (f"vsg-{uuid4().hex[:8]}", name, "",
+                     resolve_segment_id_exact(self.db.conn, name), now, now),
                 )
             elif not existing["segment_description_id"]:
-                # Heal a legacy row while we are here and certain: this row was
-                # found BY the name that segment_descriptions row carries.
-                self.db.conn.execute(
-                    "UPDATE vision_segments SET segment_description_id = ? WHERE id = ?",
-                    (row["id"], existing["id"]),
-                )
+                # Heal a legacy row ONLY when the name resolves to exactly one
+                # segment description.
+                #
+                # "we are here and certain" was wrong: this loop iterates
+                # segment_descriptions, and two of them can differ only by case
+                # ('Health' and 'health' are both legal — the UNIQUE index is
+                # case-sensitive). Both iterations match the SAME vision_segments
+                # row by LOWER(name), so the first one silently won. This runs at
+                # every manager init, moments after the migration reported that
+                # exact row as ambiguous and left it NULL — so the report was
+                # false about the database it had just described.
+                certain = resolve_segment_id_exact(self.db.conn, name)
+                if certain is not None:
+                    self.db.conn.execute(
+                        "UPDATE vision_segments SET segment_description_id = ? "
+                        "WHERE id = ?",
+                        (certain, existing["id"]),
+                    )
         self.db.conn.commit()
 
     def default_subsegment_color_for_segment(self, segment_name: str) -> str:
@@ -888,9 +962,24 @@ class VPSTaxonomyMixin:
         ).fetchone()
         if not row:
             return False
-        if row["settings_id"]:
-            success, _counts = self.delete_segment(row["settings_id"])
+        settings_id = row["settings_id"]
+        if not settings_id:
+            # RN-M2.C moved this join from a name match to the id, so a row
+            # whose id is NULL — an unmatched or ambiguous row the migration
+            # deliberately left that way — now falls through here. Before the
+            # change the name join found the description and the protection
+            # ran; after it, the raw DELETE below skipped delete_segment
+            # entirely and raised FOREIGN KEY constraint failed.
+            #
+            # Fall back to the name so the protection still runs. Exact only:
+            # guessing between two descriptions is what RN-INV5 forbids.
+            settings_id = resolve_segment_id_exact(self.db.conn, row["name"])
+
+        if settings_id:
+            success, _counts = self.delete_segment(settings_id)
             return bool(success)
+
+        # Genuinely unlinked and unresolvable: the shadow row alone.
         cur = self.db.conn.execute("DELETE FROM vision_segments WHERE id = ?", (segment_id,))
         self.db.conn.commit()
         return cur.rowcount > 0

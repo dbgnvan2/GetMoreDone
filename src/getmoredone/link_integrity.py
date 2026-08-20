@@ -110,6 +110,41 @@ def add_initiative_ape_column(conn: sqlite3.Connection) -> bool:
 
 
 # --------------------------------------------------------------------------
+# The one resolver every LINK write uses
+# --------------------------------------------------------------------------
+
+def resolve_segment_id_exact(conn: sqlite3.Connection, name) -> "str | None":
+    """The segment description with this name, or None if that is not unique.
+
+    Purpose: never write a link the migration would have refused to write.
+    Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+    Tests:   tests/test_rename_safe_links.py::test_rn_ambiguous_name_is_never_resolved_to_a_link
+
+    ``segment_descriptions.name`` is UNIQUE but **case-sensitive**, so ``Health``
+    and ``health`` coexist legally. ``resolve_segment_id_by_name`` is a
+    ``fetchone()`` with no ambiguity check: it returns whichever row SQLite
+    hands back first.
+
+    That mattered because the backfill was careful and its callers were not.
+    The migration reported ``ambiguous: [...]`` and left the row NULL — and
+    then ``sync_vision_segments_with_settings``, which runs at EVERY manager
+    init moments later, wrote a guess into the same row. The logged report was
+    false about the database it had just described.
+
+    Returning None on ambiguity is the whole of RN-INV5: a missing link is
+    visible in the report, a wrong one is not.
+    """
+    text = (name or "").strip()
+    if not text:
+        return None
+    rows = conn.execute(
+        "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+        (text,),
+    ).fetchall()
+    return rows[0]["id"] if len(rows) == 1 else None
+
+
+# --------------------------------------------------------------------------
 # RN-M1.A.2 / RN-M1.C.1 — backfill the segment id, or report the row
 # --------------------------------------------------------------------------
 
@@ -152,10 +187,11 @@ def backfill_segment_ids(conn: sqlite3.Connection, table: str) -> Dict[str, Any]
             "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
             (name,),
         ).fetchall()
-        if len(matches) == 1:
+        resolved = resolve_segment_id_exact(conn, name)
+        if resolved is not None:
             conn.execute(
                 f"UPDATE {table} SET segment_description_id = ? WHERE id = ?",
-                (matches[0]["id"], row["id"]),
+                (resolved, row["id"]),
             )
             linked += 1
         elif not matches:
@@ -206,7 +242,6 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
 
     linked = 0
     ambiguous: List[Dict[str, Any]] = []
-    claimed: set[str] = set()
 
     for ape in apes:
         segment_id = ape["segment_description_id"]
@@ -236,7 +271,6 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
             "UPDATE annual_initiatives SET annual_plan_element_id = ? WHERE id = ?",
             (ape["id"], winner),
         )
-        claimed.add(winner)
         linked += 1
 
         if len(matches) > 1:
@@ -303,11 +337,19 @@ def report_existing_breakage(conn: sqlite3.Connection) -> Dict[str, Any]:
 
     if (_table_exists(conn, "annual_initiatives")
             and "annual_plan_element_id" in _columns(conn, "annual_initiatives")):
+        # Only initiatives whose title still LOOKS derived — the composite
+        # `Segment|Subsegment|Category`. An Annual Initiative can be created by
+        # hand from the editor with no APE, by design, and reporting every one
+        # of those as "orphaned by a rename" made _log_report emit a WARNING
+        # per launch forever. A report that cries wolf on normal data trains
+        # the reader to ignore it, and this is the log the spec's §10
+        # human-review step depends on.
         result["initiatives_without_ape"] = [
             {"id": r["id"], "title": r["title"], "year": r["year"]}
             for r in conn.execute(
                 "SELECT id, title, year FROM annual_initiatives "
-                "WHERE annual_plan_element_id IS NULL"
+                "WHERE annual_plan_element_id IS NULL "
+                "  AND title LIKE '%|%|%'"
             ).fetchall()
         ]
         result["duplicate_initiatives"] = [

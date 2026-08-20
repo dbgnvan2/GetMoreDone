@@ -14,6 +14,7 @@ from calendar import monthrange
 
 from .database import Database
 from .db_manager import DatabaseManager
+from .link_integrity import resolve_segment_id_exact
 from . import week_calendar
 from .weekly_tactic_logging import get_weekly_tactic_logger
 from . import weekly_tactic_titles
@@ -299,7 +300,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 # RN-M2.B: stamp the id at create time. Backfilling covers rows
                 # written before this change; without this, every NEW row would
                 # need the migration to catch up with it on the next launch.
-                self.resolve_segment_id_by_name(data["segment_name"]),
+                resolve_segment_id_exact(self.db.conn, data["segment_name"]),
                 now, now
             ))
 
@@ -319,7 +320,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 ape_id, year, vision_element_id, ave_id, data["segment_name"],
                 data["subsegment_name"], data["category_name"], data["key_field"],
                 # RN-M2.B — see the AVE insert above.
-                self.resolve_segment_id_by_name(data["segment_name"]),
+                resolve_segment_id_exact(self.db.conn, data["segment_name"]),
                 now, now
             ))
 
@@ -562,14 +563,41 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         if existing:
             return existing
 
-        healed = self.resolve_segment_id_by_name(_field("segment_name"))
+        # Exact, not first-match: writing an id here for a name that matches
+        # two segments is the guess the migration deliberately refused.
+        healed = resolve_segment_id_exact(self.db.conn, _field("segment_name"))
         if healed and _field("id"):
             self.db.conn.execute(
                 "UPDATE annual_plan_elements SET segment_description_id = ? "
                 "WHERE id = ? AND segment_description_id IS NULL",
                 (healed, ape["id"]),
             )
+            self._commit_heal()
         return healed
+
+    def _commit_heal(self) -> None:
+        """Persist a heal written during what callers treat as a read.
+
+        Purpose: a lookup must not leave an open write transaction behind.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+        Tests:   tests/test_rename_safe_links.py::test_rn_a_lookup_leaves_no_open_transaction
+
+        Both heals write an id inside a getter. Without this the write is
+        silently discarded when the connection closes, and in the meantime the
+        connection holds a RESERVED lock — `_find_annual_initiative_for_ape` is
+        used as a pure read from weekly_tactic's before-snapshot and from
+        unassign_ape_from_month, either of which can return without committing.
+
+        Inside a caller's transaction the shared connection defers the commit
+        (see _DeferredCommitConnection), so a cascade rollback still takes the
+        heal with it — which is the behaviour RN-M2.A's risk table wanted.
+        """
+        try:
+            self.db.conn.commit()
+        except Exception:
+            # A commit that cannot happen here is the caller's transaction to
+            # resolve. Never raise out of a lookup.
+            pass
 
     def _find_annual_initiative_for_ape(self, ape: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """The APE's Annual Initiative, resolved by id (RN-M2.A).
@@ -647,6 +675,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             (ape["id"], row["id"]),
         )
         row["annual_plan_element_id"] = ape["id"]
+        self._commit_heal()
         return row
 
     def _get_or_create_annual_initiative_for_ape(
@@ -1417,6 +1446,17 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             ('quarter_initiatives', 'Quarter Initiatives'),
             ('month_tactics', 'Month Tactics'),
             ('week_actions', 'Week Actions'),
+            # RN-M1 gave these two segment_description_id. They were NOT in
+            # this list, and the new column was declared ON DELETE SET NULL —
+            # so deleting a segment with plan elements under it reported "no
+            # child records", nulled their links, and the next re-filing
+            # cascade raised `ValueError: Segment '<name>' not found.`
+            #
+            # That is the exact failure this whole change exists to remove,
+            # reintroduced by the change itself. A refusal is the correct
+            # answer here: an Annual Plan Element under a segment IS a child.
+            ('annual_plan_elements', 'Annual Plan Elements'),
+            ('annual_vision_elements', 'Annual Vision Elements'),
         ]
 
         total = 0

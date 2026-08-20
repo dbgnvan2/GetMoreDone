@@ -11,6 +11,7 @@ import sqlite3
 import re
 
 from .database import Database
+from .link_integrity import resolve_segment_id_exact
 from .db_manager_project_boards import DBManagerProjectBoardsMixin
 from .weekly_tactic import tactic_of
 from .models import (
@@ -1570,22 +1571,33 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         return segment_id
 
     def _segment_from_annual_plan(self, annual_plan_element_id: Optional[str]) -> Optional[str]:
+        """The APE's segment, by id (RN-M2.B).
+
+        Spec:  docs/spec_2026-08-19_rename_safe_links.md#rn-m2b
+        Tests: tests/test_rename_safe_links.py::test_rn_item_segment_follows_the_ape_link_not_its_name
+
+        Runs on every create_action_item, via _derive_segment_id. Its sibling
+        _segment_from_week_action already read an id column; this one resolved
+        the segment by matching annual_plan_elements.segment_name against
+        segment_descriptions.name, so an APE carrying the CORRECT id and a
+        drifted name derived None — and the item was stamped with no segment.
+
+        The name is kept as a fallback for a row the migration could not
+        resolve, and it goes through resolve_segment_id_exact so it cannot
+        guess between two descriptions differing only by case.
+        """
         if not annual_plan_element_id:
             return None
         row = self.db.conn.execute(
-            "SELECT segment_name FROM annual_plan_elements WHERE id = ?",
+            "SELECT segment_name, segment_description_id "
+            "FROM annual_plan_elements WHERE id = ?",
             (annual_plan_element_id,),
         ).fetchone()
         if not row:
             return None
-        segment_name = (row["segment_name"] or "").strip()
-        if not segment_name:
-            return None
-        seg_row = self.db.conn.execute(
-            "SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
-            (segment_name,)
-        ).fetchone()
-        return seg_row["id"] if seg_row else None
+        if row["segment_description_id"]:
+            return row["segment_description_id"]
+        return resolve_segment_id_exact(self.db.conn, row["segment_name"])
 
     def _get_first_day_of_week(self) -> int:
         """The configured first day of the week, from the one calendar.
