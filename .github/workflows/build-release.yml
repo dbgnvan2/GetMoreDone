@@ -308,6 +308,23 @@ jobs:
           name: GetMoreDone-mac
           path: release-assets
 
+      - name: Verify the downloaded archives against their checksums
+        # Before BI1 the zip and its .sha256 were produced and attached in the
+        # same job, from the same directory, moments apart — the file uploaded
+        # WAS the file hashed. They now round-trip through the artifact store
+        # and are attached from a third job, so that guarantee has to be
+        # re-established rather than assumed (P6). Without this, a corrupted
+        # round-trip publishes an asset whose checksum file does not match it,
+        # and the job is green.
+        #
+        # Not an inline assertion in the R-M3.E sense: it verifies the artifacts
+        # this job downloaded, which no local test can do. sha256sum reads the
+        # two-space format both build jobs write.
+        working-directory: release-assets
+        run: |
+          sha256sum -c GetMoreDone-win64.zip.sha256
+          sha256sum -c GetMoreDone-mac.zip.sha256
+
       - name: Extract release notes from CHANGELOG (R-M4.C)
         # Generated once now, rather than once per OS job. The two copies were
         # built from the same script and the same tag, so they agreed — but

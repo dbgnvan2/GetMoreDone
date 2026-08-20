@@ -271,7 +271,10 @@ def mapped_windows():
     tests during local iteration; the skip names the variable so a run that
     disabled them cannot be mistaken for a run that passed them.
     """
-    if os.environ.get(NO_MAPPED_WINDOWS_ENV):
+    # Not a bare truthiness check: os.environ.get() is true for "0" and
+    # "false", so someone setting GETMOREDONE_NO_MAPPED_WINDOWS=0 to turn the
+    # opt-out OFF would have turned it on.
+    if os.environ.get(NO_MAPPED_WINDOWS_ENV, "") not in ("", "0", "false", "False", "no"):
         pytest.skip(
             f"{NO_MAPPED_WINDOWS_ENV} is set: this test needs a real on-screen "
             "window and would take keyboard focus. Unset it to run the "

@@ -240,9 +240,18 @@ class CalendarEventDialog(ctk.CTkToplevel):
 
             # Check for credentials
             if not GoogleCalendarManager.has_credentials():
+                # Name the path this check actually used, rather than a
+                # hardcoded one. README.md and INSTALL.md both promise the
+                # message says where it looked, and this is the only surface a
+                # GUI user reaches: has_credentials() returns first, so the
+                # FileNotFoundError from __init__ (which does interpolate the
+                # path) is unreachable from here.
+                from .. import paths
+
+                expected = paths.google_auth_dir() / "credentials.json"
                 self.error_label.configure(
                     text="Google Calendar credentials not found.\n"
-                         "Please set up credentials.json in ~/.getmoredone/\n"
+                         f"Expected: {expected}\n"
                          "See README for instructions."
                 )
                 return

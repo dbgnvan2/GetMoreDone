@@ -10,6 +10,12 @@ import sys
 from typing import List, Set
 
 CODE_PREFIXES = ("src/", "tools/", "tests/")
+
+# Every file that declares a dependency. requirements-dev.txt was added in the
+# same change that created it and this enumeration was missed, so a PR adding a
+# test dependency touched no src/ path and no requirements.txt and the gate
+# reported "no code/dependency changes detected".
+DEPENDENCY_FILES = ("requirements.txt", "requirements-dev.txt")
 DOC_PREFIXES = ("docs/",)
 DOC_FILES = {
     "README.md",
@@ -47,7 +53,7 @@ def main() -> int:
         return 0
 
     code_changed = any(
-        path.startswith(CODE_PREFIXES) or path == "requirements.txt" for path in files
+        path.startswith(CODE_PREFIXES) or path in DEPENDENCY_FILES for path in files
     )
     if not code_changed:
         print("docs-sync: no code/dependency changes detected")

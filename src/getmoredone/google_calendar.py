@@ -60,6 +60,9 @@ class GoogleCalendarManager:
             os.remove(self.token_file)
 
         self.service = None
+        # True once a token has been written this session; None when an
+        # existing token was reused and nothing needed saving.
+        self.token_persisted = None
         self._authenticate()
 
     def _authenticate(self):
@@ -162,8 +165,13 @@ class GoogleCalendarManager:
                             f"6. Check network/firewall settings"
                         )
 
-            # Save the credentials for next run
-            self._save_token(creds)
+            # Save the credentials for next run. Recorded rather than
+            # discarded so a caller can tell a persisted sign-in from one that
+            # will ask again next launch.
+            self.token_persisted = self._save_token(creds)
+            if not self.token_persisted:
+                print("⚠️  Signed in, but the token was not saved — you will be "
+                      "asked to sign in again next time.\n")
 
         self.service = build('calendar', 'v3', credentials=creds)
         print("✅ Google Calendar service initialized successfully!")
@@ -181,8 +189,14 @@ class GoogleCalendarManager:
         write is deliberately warn-only, so that case degraded to
         re-authenticating on every run behind a printed warning.
 
-        Returns True when the token reached disk, so a caller can tell a saved
-        token from a warned-about one rather than inferring it from stdout.
+        Returns True when the token reached disk. The write is deliberately
+        warn-only — losing the token must not fail a sign-in that succeeded —
+        so the caller uses this to say which of the two happened.
+
+        The chmod is in its own guard on purpose. It runs *after* a successful
+        write, so folding it into the same try made a failing chmod report
+        "failed to save" while a world-readable token sat on disk: the opposite
+        of both halves of that message.
         """
         try:
             parent = os.path.dirname(os.path.abspath(self.token_file))
@@ -190,14 +204,22 @@ class GoogleCalendarManager:
                 os.makedirs(parent, exist_ok=True)
             with open(self.token_file, 'wb') as token:
                 pickle.dump(creds, token)
-            # Set secure permissions
-            os.chmod(self.token_file, 0o600)
-            print(f"✅ Token saved to: {self.token_file}\n")
-            return True
         except Exception as e:
             print(f"⚠️  Warning: Failed to save token: {e}")
             print("You may need to re-authenticate next time.\n")
             return False
+
+        try:
+            os.chmod(self.token_file, 0o600)
+        except Exception as e:
+            # The token IS saved. Say so, and say what could not be tightened.
+            print(f"⚠️  Warning: saved the token but could not restrict its "
+                  f"permissions: {e}")
+            print(f"   Anyone able to read {self.token_file} can use your "
+                  "Google account. Fix the file's permissions by hand.\n")
+
+        print(f"✅ Token saved to: {self.token_file}\n")
+        return True
 
     def _get_local_timezone(self) -> str:
         """

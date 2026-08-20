@@ -173,10 +173,10 @@ To enable it you need your own Google Cloud OAuth credentials:
    - macOS/Linux: `~/.getmoredone/credentials.json`
    - Windows: `%USERPROFILE%\.getmoredone\credentials.json`
 
-   Create that folder if it does not exist — GetMoreDone uses it whenever it is
-   present. If you have never had one, the app looks in its own data directory
-   instead (see **Where your data lives** below), and the message it shows when
-   credentials are missing names the exact path it checked.
+   Create that folder if it does not exist — GetMoreDone does not create it for
+   you, and it is the only place the app, the Gmail importer and the diagnostic
+   scripts all look. The "credentials not found" message names the exact path
+   it checked.
 
 The first calendar action opens a browser to authorise. If sign-in misbehaves,
 run `python3 tools/diagnose_google_auth.py` from a source checkout.

@@ -4,6 +4,34 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 
 ## Deferred — found by review, deliberately not fixed
 
+### Google auth: adjacent items from the Batch 3 reviews (2026-08-20)
+
+Found by the three reviews of Batch 3, recorded rather than fixed because each
+is outside BI3 and none is a regression from it.
+
+- **`gmail_importer._load_creds` creates `~/.getmoredone` unconditionally**
+  (`src/getmoredone/gmail_importer.py:81`) before it checks anything, and
+  hardcodes `legacy_dot_dir()` rather than sharing `paths.google_auth_dir()`.
+  Harmless now that the auth directory is one fixed location, but it is the
+  side effect that made the removed fallback dangerous. Route it through the
+  resolver when that file is next touched.
+- **Five diagnostic scripts still hardcode `~/.getmoredone`**:
+  `tools/diagnostics/verify_auth.sh:69`, `fix_client_id_mismatch.sh:23`,
+  `fix_zombie_token.sh:16`, `debug_auth_loading.py:29`,
+  `diagnose_client_id.py:135,157`. Correct today; they would all be wrong
+  together if the location ever moves. `tools/diagnose_google_auth.py` — the one
+  README and INSTALL point users at — was fixed.
+- **`gmail_importer` writes `gmail_token.json` with no `chmod 600`**
+  (`:99`), next to a `token.pickle` that is `0600`. Verified world-readable on
+  this machine. Pre-existing, and a real credential-exposure item.
+- **`test_bi3_saving_a_token_sets_owner_only_permissions` is skipped on
+  Windows.** `os.chmod` there only toggles the read-only bit, so the token this
+  repo's Windows binary writes has no equivalent protection and nothing checks
+  it.
+- **`python-dotenv` is declared in `requirements.txt` and imported nowhere** in
+  `src/`. Either a real unused dependency or an undeclared runtime need.
+
+
 ### Release workflow: concurrent release creation — FIXED 2026-08-20 (BI1)
 
 `build-windows` and `build-macos` both called `softprops/action-gh-release` with

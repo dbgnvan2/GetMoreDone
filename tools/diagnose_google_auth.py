@@ -55,7 +55,12 @@ def main():
     print("=" * 60)
 
     # Check if credentials exist
-    config_dir = Path.home() / ".getmoredone"
+    # Share the app's resolver rather than hardcoding the path. README.md and
+    # INSTALL.md both send users here when sign-in misbehaves, so a tool that
+    # looks elsewhere reports a problem the app does not have.
+    from getmoredone.paths import google_auth_dir
+
+    config_dir = google_auth_dir()
     credentials_file = config_dir / "credentials.json"
     token_file = config_dir / "token.pickle"
 

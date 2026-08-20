@@ -13,7 +13,9 @@ REM Activate virtual environment
 echo 🔧 Activating virtual environment...
 call venv\Scripts\activate.bat
 
-REM Install/update requirements
+REM Install/update requirements. requirements.txt is the runtime set since the
+REM requirements-dev.txt split; contributors who want to run the test suite
+REM should install requirements-dev.txt instead, which includes this one.
 echo 📥 Installing requirements...
 pip install -q -r requirements.txt
 

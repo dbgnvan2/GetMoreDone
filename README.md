@@ -153,7 +153,8 @@ GetMoreDone/
 ├── data/                       # Database files (gitignored)
 ├── run.py                      # Run script
 ├── tools/create_demo_data.py         # Demo data generator
-└── requirements.txt            # Dependencies
+├── requirements.txt            # Runtime dependencies (what ships)
+└── requirements-dev.txt        # Test-only deps; includes requirements.txt
 ```
 
 ## Usage Guide
@@ -381,15 +382,14 @@ GetMoreDone stores credentials in your home directory:
 ```
 
 This keeps credentials secure and shared across all projects — the Gmail
-importer in `tools/` reads the same file.
+importer in `tools/` and the diagnostic scripts read the same directory, which
+is why it is deliberately one fixed location rather than the app's own data
+folder.
 
-`~/.getmoredone/` is used whenever it exists, so creating it and putting
-`credentials.json` there is always the right move. On a machine that has never
-had one, GetMoreDone looks in its own application data directory instead
-(`~/Library/Application Support/GetMoreDone/` on macOS,
-`%APPDATA%\GetMoreDone\` on Windows) rather than creating a dot-directory the
-app may never need. Neither directory is created just by opening the calendar
-dialog; the error message names the exact path it looked in.
+GetMoreDone does not create `~/.getmoredone` for you: create it yourself and
+put `credentials.json` in it. Nothing is created merely by opening the calendar
+dialog, and the "credentials not found" message names the exact path it
+checked.
 
 **Setup (One-Time):**
 

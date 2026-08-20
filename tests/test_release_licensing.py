@@ -31,6 +31,34 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = REPO_ROOT / "requirements.txt"
 DEV_REQUIREMENTS = REPO_ROOT / "requirements-dev.txt"
 
+# pip options that configure the install without naming a package. Anything
+# else starting with "-" is an error rather than a skip — notably "-e", which
+# DOES declare a dependency.
+REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING = frozenset({
+    "-r", "--requirement",
+    "-c", "--constraint",
+    "-i", "--index-url",
+    "--extra-index-url",
+    "--no-index",
+    "-f", "--find-links",
+    "--pre",
+    "--prefer-binary",
+    "--only-binary",
+    "--no-binary",
+    "--hash",
+    "--use-feature",
+})
+
+# Names that are test/lint/build tooling wherever they appear. Not a list of
+# *our* dev packages — that is requirements-dev.txt's job, and duplicating it
+# is the defect BI2 removed. This is a shape check: none of these belongs in a
+# file whose contents are asserted shippable inside the binary.
+TEST_TOOLING_PREFIXES = (
+    "pytest", "tox", "nox", "coverage", "hypothesis", "mock",
+    "flake8", "pylint", "ruff", "mypy", "black", "isort", "bandit",
+    "pyinstaller",
+)
+
 # Substrings that mean "Lesser/Library GPL" — permitted under one-folder linking.
 LGPL_MARKERS = (
     "library or lesser general public license",
@@ -43,15 +71,26 @@ GPL_MARKERS = ("gpl", "general public license")
 
 
 def _shell_code_only(text: str) -> str:
-    """Drop `#` comments from a shell script.
+    """Drop whole-line `#` comments from a shell script, and nothing else.
 
     start.sh carries a comment naming the grep this split removed, in order to
     explain why it is gone. Matching on the explanation would pressure the next
     person into deleting the reasoning to get back to green.
+
+    Only *whole-line* comments are dropped. An earlier version also truncated
+    each line at its first `#`, which silently disarmed the guard below: the
+    regression it exists to catch is
+
+        grep -v -E '^\\s*#|^\\s*$|^pytest\\b|^pytest-cov\\b' requirements.txt
+
+    whose `#` sits *inside a quoted regex*, so truncating there left
+    ``grep -v -E '^\\s*`` and the word ``pytest`` was gone before the search ran.
+    Restoring start.sh's real grep verbatim kept the test green. Stripping
+    trailing comments correctly needs shell-aware quote tracking, which is not
+    worth it here — no line in these scripts relies on it.
     """
     return "\n".join(
-        line.split("#", 1)[0]
-        for line in text.splitlines()
+        line for line in text.splitlines()
         if not line.strip().startswith("#")
     )
 
@@ -63,16 +102,32 @@ def _parse_requirements(path: Path) -> list[str]:
     wants the names *this* file declares. Following them would make
     requirements-dev.txt report the runtime set as its own and collapse the
     split this module exists to check.
+
+    Unrecognised options **raise**. An earlier version skipped anything
+    starting with ``-``, which silently dropped ``-e ./vendor/pkg`` and
+    ``-e git+https://...`` — real runtime dependencies — exempting them from
+    both the GPL check and the notices check with no signal. A guard's
+    unknown-input path must be red, never a ``continue``.
     """
     names = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
-        if line.startswith("-"):                      # -r / -c / -e and friends
+        if line.startswith("-"):
+            option = line.split(None, 1)[0]
+            if option not in REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING:
+                raise AssertionError(
+                    f"{path.name}:{lineno}: {line!r} uses the option {option!r}, "
+                    "which this parser does not know how to classify. If it "
+                    "declares a dependency (-e does), it must be classified, "
+                    "not skipped — skipping exempts it from the GPL and notices "
+                    "checks. Add it to REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING "
+                    "only if it genuinely declares no package."
+                )
             continue
         line = line.split(";", 1)[0].strip()          # environment marker
-        name = re.split(r"[<>=!~\[]", line, 1)[0].strip()
+        name = re.split(r"[<>=!~\[]", line, maxsplit=1)[0].strip()
         if name:
             names.append(name)
     return names
@@ -147,11 +202,15 @@ def test_bi2_dev_requirements_file_exists():
     )
 
 
-def test_bi2_test_only_packages_are_not_declared_as_runtime():
-    """The concrete regression: pytest must not ship inside the binary.
+def test_bi2_no_package_is_declared_in_both_files():
+    """A package belongs to exactly one file.
 
-    Stated as set disjointness rather than by naming pytest, so a third
-    test-only package cannot be added to the wrong file and pass.
+    This checks *only* that the two sets do not overlap. It deliberately no
+    longer claims to catch "a test-only package added to the wrong file" —
+    it cannot: a package added to requirements.txt **alone** leaves the sets
+    disjoint and passes here. That claim was wrong in this docstring, and
+    ``test_bi2_no_test_tooling_is_declared_as_a_runtime_dependency`` below is
+    the check that actually makes it.
     """
     runtime = {name.lower() for name in _declared_requirements()}
     dev = {name.lower() for name in _dev_requirements()}
@@ -160,6 +219,32 @@ def test_bi2_test_only_packages_are_not_declared_as_runtime():
         f"declared in BOTH requirements.txt and requirements-dev.txt: {overlap}. "
         "A package belongs in exactly one; the licensing and notices checks "
         "treat everything in requirements.txt as shipped."
+    )
+
+
+def test_bi2_no_test_tooling_is_declared_as_a_runtime_dependency():
+    """The regression the disjointness check cannot see.
+
+    A test-only package added to requirements.txt *only* keeps the two sets
+    disjoint. It does surface — at
+    ``test_rm2c_third_party_notices_covers_every_runtime_dep``, whose message is
+    "runtime dependencies with no entry in THIRD_PARTY_NOTICES.md". The path of
+    least resistance from that message is to add a notices entry, which asserts
+    the package shippable and then ships it: the BI2 defect restored through the
+    guard meant to close it.
+
+    Matching on tooling *shape* rather than on our own package list keeps this
+    from becoming the hardcoded copy BI2 deleted.
+    """
+    offenders = sorted(
+        name for name in _declared_requirements()
+        if name.lower().startswith(TEST_TOOLING_PREFIXES)
+    )
+    assert not offenders, (
+        f"test/build tooling declared in requirements.txt: {offenders}. "
+        "requirements.txt is the shipped set. Move these to "
+        "requirements-dev.txt; do not give them a THIRD_PARTY_NOTICES entry "
+        "to make this pass."
     )
 
 
@@ -238,6 +323,69 @@ def test_bi2_no_module_hardcodes_a_list_of_test_only_packages():
         f"a hardcoded test-only package list is back in: {offenders}. "
         "requirements-dev.txt is the list."
     )
+
+
+def test_bi2_dev_dependencies_have_a_notices_entry_too():
+    """The runtime set has this check; the dev set had none.
+
+    THIRD_PARTY_NOTICES.md carries a "Development-only dependencies" table
+    "listed for completeness". Nothing asserted it stayed complete, so the
+    split created a file whose contents no check reconciled against any doc.
+    """
+    notices = NOTICES_FILE.read_text(encoding="utf-8").lower()
+    missing = [name for name in _dev_requirements() if name.lower() not in notices]
+    assert not missing, (
+        f"development dependencies with no entry in THIRD_PARTY_NOTICES.md: "
+        f"{missing}"
+    )
+
+
+def test_bi2_the_docs_sync_gate_knows_about_both_dependency_files():
+    """CLAUDE.md makes "dependencies changed -> docs updated" a merge gate.
+
+    The gate keyed on the literal string "requirements.txt", so a PR adding a
+    test dependency changed only requirements-dev.txt, matched no code prefix,
+    and passed with "no code/dependency changes detected" — a new file the
+    checker's enumeration missed in the same commit that created it (P3/P25).
+    """
+    gate = (REPO_ROOT / "tools/agents/check_docs_sync.py").read_text(encoding="utf-8")
+    assert "requirements-dev.txt" in gate, (
+        "tools/agents/check_docs_sync.py does not treat requirements-dev.txt "
+        "as a dependency file, so adding a test dependency skips the docs gate"
+    )
+
+
+def test_bi2_requirements_parser_rejects_an_option_it_cannot_classify(tmp_path):
+    """Adversarial: `-e` declares a dependency, so skipping it hides one.
+
+    The earlier `if line.startswith("-"): continue` dropped an editable install
+    with no signal, exempting a real runtime dependency from both the GPL check
+    and the notices check.
+    """
+    editable = tmp_path / "requirements.txt"
+    editable.write_text("-e ./vendor/mypkg\ncustomtkinter>=5.2.0\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="-e"):
+        _parse_requirements(editable)
+
+    # The options that genuinely declare nothing still pass through.
+    benign = tmp_path / "benign.txt"
+    benign.write_text(
+        "-r requirements.txt\n"
+        "--index-url https://pypi.org/simple\n"
+        "--extra-index-url https://example.invalid/simple\n"
+        "customtkinter>=5.2.0\n",
+        encoding="utf-8",
+    )
+    assert _parse_requirements(benign) == ["customtkinter"]
+
+
+def test_bi2_the_real_requirements_files_parse(tmp_path):
+    """The strict parser must not reject the repo's own files.
+
+    A guard that raises on real input is a broken build, not a check.
+    """
+    assert _declared_requirements(), "requirements.txt parsed to nothing"
+    assert _dev_requirements(), "requirements-dev.txt parsed to nothing"
 
 
 def test_bi2_requirements_parser_does_not_follow_include_lines(tmp_path):

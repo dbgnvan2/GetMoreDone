@@ -122,10 +122,24 @@ def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
         "so a missing or wrong dependency declaration fails CI instead of "
         "passing on a warm machine."
     )
-    assert not re.search(r"pip install\s+(?!-r|--upgrade\s+pip)\S", text), (
-        "tests.yml installs a package by name. Every dependency must come from "
-        "a requirements file, or CI stops being the blank-machine check."
-    )
+    # Judge the code, not the comments; and allow pip's own flags before -r,
+    # so `pip install -q -r requirements.txt` is not read as a named package.
+    for line in _run_step_lines(_code_only(text)):
+        match = re.match(r"(?:python\s+-m\s+)?pip\s+install\s+(.*)$", line.strip())
+        if not match:
+            continue
+        args = match.group(1).split()
+        if args == ["--upgrade", "pip"]:
+            continue
+        named = [
+            a for i, a in enumerate(args)
+            if not a.startswith("-") and (i == 0 or args[i - 1] not in ("-r", "-c"))
+        ]
+        assert not named, (
+            f"tests.yml installs {named} by name: {line!r}. Every dependency "
+            "must come from a requirements file, or CI stops being the "
+            "blank-machine check."
+        )
 
 
 def test_rm3a_tests_workflow_invokes_pytest():
@@ -653,14 +667,47 @@ def test_no_workflow_disables_the_mapped_window_tests():
 
 
 def test_the_mapped_window_opt_out_is_off_by_default():
-    """A default-on escape hatch is the same silent skip by another route."""
-    conftest = (REPO_ROOT / "conftest.py").read_text(encoding="utf-8")
-    assert 'NO_MAPPED_WINDOWS_ENV = "GETMOREDONE_NO_MAPPED_WINDOWS"' in conftest, (
-        "conftest.py no longer names the opt-out variable this test guards"
+    """A default-on escape hatch is the same silent skip by another route.
+
+    Driven as a real subprocess rather than by matching strings in conftest.py.
+    The string form of this test passed with the condition INVERTED — the
+    substring it looked for, ``os.environ.get(NO_MAPPED_WINDOWS_ENV)``, is
+    still present in ``if not os.environ.get(...)`` — which would have skipped
+    the three geometry tests on every machine, CI included, leaving a skip
+    count as the only signal. That is the exact failure this test exists to
+    prevent, so it has to assert the behaviour.
+    """
+    target = "tests/test_tk_offscreen.py::test_a_test_can_ask_for_a_mapped_window"
+
+    def _run(env_value):
+        env = dict(os.environ)
+        env.pop("GETMOREDONE_NO_MAPPED_WINDOWS", None)
+        if env_value is not None:
+            env["GETMOREDONE_NO_MAPPED_WINDOWS"] = env_value
+        return subprocess.run(
+            [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-rs"],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300, env=env,
+        ).stdout
+
+    unset = _run(None)
+    assert "1 passed" in unset, (
+        "with GETMOREDONE_NO_MAPPED_WINDOWS unset the geometry test must RUN. "
+        f"Output: {unset[-500:]}"
     )
-    assert "os.environ.get(NO_MAPPED_WINDOWS_ENV)" in conftest, (
-        "the opt-out must be read from the environment, so it is off unless "
-        "someone sets it"
+
+    on = _run("1")
+    assert "1 skipped" in on, (
+        f"GETMOREDONE_NO_MAPPED_WINDOWS=1 must skip it. Output: {on[-500:]}"
+    )
+    assert "GETMOREDONE_NO_MAPPED_WINDOWS" in on, (
+        "the skip reason must name the variable, so a suppressed run cannot be "
+        f"mistaken for a passing one. Output: {on[-500:]}"
+    )
+
+    off = _run("0")
+    assert "1 passed" in off, (
+        "GETMOREDONE_NO_MAPPED_WINDOWS=0 must mean OFF. A bare truthiness "
+        f"check makes '0' turn the opt-out ON. Output: {off[-500:]}"
     )
 
 
@@ -795,6 +842,80 @@ def test_bi1_selftest_still_gates_publication_through_needs():
     assert needs and set(PACKAGED_EXECUTABLES) <= {
         n.strip() for n in needs.group(1).split(",") if n.strip()
     }, "publication no longer depends on the jobs that run the selftest"
+
+
+def test_bi1_download_path_matches_the_release_file_prefix():
+    """Tie the two halves together, or both can be individually "correct".
+
+    ``test_bi1_publish_job_downloads_every_build_artifact`` checks artifact
+    NAMES; ``test_bi1_every_built_archive_is_attached_to_the_release`` checks
+    archive BASENAMES. Change ``path: release-assets`` to anything else — or
+    delete it, so download-artifact defaults to the workspace root — and both
+    still pass while the release step matches nothing.
+    ``fail_on_unmatched_files: true`` makes that a red job rather than an empty
+    Release, so the outcome is a burned tag, not a bad Release. Still a hole in
+    "these tests are the only check before a real v* tag".
+    """
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+
+    paths = set(re.findall(r"^\s*path:\s*(\S+)\s*$", body, re.MULTILINE))
+    assert paths, "the publish job's download steps declare no path:"
+    assert len(paths) == 1, (
+        f"the downloads land in different directories {sorted(paths)}; the "
+        "release step can only carry one prefix"
+    )
+    download_dir = paths.pop().strip("\"'")
+
+    release_at = body.find("action-gh-release")
+    attached = body[release_at:]
+    for archive in RELEASE_ARCHIVES:
+        for suffix in ("", ".sha256"):
+            expected = f"{download_dir}/{archive}{suffix}"
+            assert expected in attached, (
+                f"the release step does not attach {expected!r}. The downloads "
+                f"land in {download_dir!r}, so every files: entry must start "
+                "with it."
+            )
+
+
+def test_bi1_downloaded_archives_are_checksum_verified_before_publishing():
+    """The guarantee that used to be free inside one job (P6).
+
+    The zip and its .sha256 were once produced and attached from the same
+    directory in the same job. They now round-trip through the artifact store
+    and are attached by a third job, so a corrupted round-trip would publish an
+    asset that does not match the checksum file beside it, green.
+    """
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    assert "sha256sum -c" in body, (
+        "the publish job attaches checksums it never verified against the "
+        "archives it downloaded"
+    )
+    assert body.index("sha256sum -c") < body.index("action-gh-release"), (
+        "the checksum verification runs after the Release is published"
+    )
+    for archive in RELEASE_ARCHIVES:
+        assert f"sha256sum -c {archive}.sha256" in body, (
+            f"{archive} is published without its checksum being verified"
+        )
+
+
+def test_bi1_publish_job_does_not_run_on_a_failed_build():
+    """`needs:` only implies success while no status function overrides it.
+
+    Adding `always() && ...` to the job's `if:` would restore the exact defect
+    BI1 removed — both builds could fail and the Release would still be cut —
+    and every other BI1 test would stay green.
+    """
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    condition = re.search(r"^\s*if:(.*)$", body, re.MULTILINE)
+    assert condition, "the publish job has no if: condition"
+    for override in ("always(", "failure(", "cancelled("):
+        assert override not in condition.group(1), (
+            f"the publish job's if: uses {override}), which overrides the "
+            "implicit success requirement of needs: and lets a failed build "
+            "publish a Release"
+        )
 
 
 def test_bi1_release_notes_are_generated_once():

@@ -63,9 +63,7 @@ def redirected_home(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "home", lambda: home)
     monkeypatch.setattr(gmd_paths, "legacy_dot_dir", lambda: home / ".getmoredone")
-    monkeypatch.setattr(
-        gmd_paths, "app_data_dir_path", lambda create=True: app_data
-    )
+    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda: app_data)
     return home, app_data
 
 
@@ -122,47 +120,68 @@ def test_bi3_constructing_with_default_paths_still_creates_nothing(redirected_ho
 # BI3 — the resolver's rule
 # --------------------------------------------------------------------------
 
-def test_bi3_auth_dir_prefers_the_legacy_directory_when_it_exists(redirected_home):
-    """An existing install keeps working.
+def test_bi3_auth_dir_is_the_legacy_dot_directory(redirected_home):
+    """One fixed location, whether or not it exists yet.
 
-    README.md and INSTALL.md both tell people to put ``credentials.json`` in
-    ``~/.getmoredone``, and ``tools/import_gmd_from_gmail.py`` reads it from
-    there. Moving the default would log those users out silently.
+    ``~/.getmoredone`` is shared by design: ``gmail_importer``,
+    ``tools/import_gmd_from_gmail.py`` (run from a launchd timer), six
+    diagnostic scripts, README.md, INSTALL.md and
+    docs/google-calendar-setup.md all name it.
     """
     home, _ = redirected_home
     legacy = home / ".getmoredone"
+
+    assert gmd_paths.google_auth_dir() == legacy, "the directory is not fixed"
+    assert not legacy.exists(), "resolving a path must not create it"
+
     legacy.mkdir()
+    assert gmd_paths.google_auth_dir() == legacy, (
+        "the answer changed once the directory existed"
+    )
 
-    assert gmd_paths.google_auth_dir() == legacy
 
+def test_bi3_auth_dir_does_not_change_when_the_directory_appears(redirected_home):
+    """The regression three reviews found, as a dirty-state test (P8).
 
-def test_bi3_auth_dir_falls_back_to_the_app_data_dir(redirected_home):
-    """A machine with no legacy directory uses the app data directory, like
-    every other user-writable file."""
+    ``google_auth_dir`` used to return the app data directory on a machine with
+    no ``~/.getmoredone``, and the legacy directory once one existed. Nothing
+    recorded which branch had been taken, and
+    ``gmail_importer._load_creds`` creates ``~/.getmoredone`` unconditionally
+    before it checks anything — reachable from Settings > Integrations and from
+    a launchd job. So a user who set the calendar up, then ran a Gmail import,
+    had the resolver flip: "credentials not found", a second trip through OAuth,
+    and a working token orphaned where nothing looked for it.
+
+    Asserting across the transition, not on each branch in isolation — testing
+    the branches separately is what let the flip through.
+    """
     home, app_data = redirected_home
-    assert not (home / ".getmoredone").exists()
+    legacy = home / ".getmoredone"
 
-    assert gmd_paths.google_auth_dir() == app_data
+    before = gmd_paths.google_auth_dir()
+
+    # Exactly what gmail_importer does, and a bare `mkdir ~/.getmoredone`.
+    legacy.mkdir(parents=True, exist_ok=True)
+    after_legacy_appears = gmd_paths.google_auth_dir()
+
+    app_data.mkdir(parents=True, exist_ok=True)
+    after_app_data_appears = gmd_paths.google_auth_dir()
+
+    assert before == after_legacy_appears == after_app_data_appears, (
+        "the Google auth directory changed as other code created directories: "
+        f"{before} -> {after_legacy_appears} -> {after_app_data_appears}"
+    )
 
 
-def test_bi3_auth_dir_does_not_create_anything_by_default(redirected_home):
-    """``create`` defaults to False: three of the four callers only need to
-    know where to look."""
+def test_bi3_auth_dir_never_creates_anything(redirected_home):
+    """Resolving where a file would live is a read-only act."""
     home, app_data = redirected_home
 
     resolved = gmd_paths.google_auth_dir()
 
     assert not resolved.exists()
     assert list(home.iterdir()) == []
-
-
-def test_bi3_auth_dir_creates_only_when_asked(redirected_home):
-    home, app_data = redirected_home
-
-    resolved = gmd_paths.google_auth_dir(create=True)
-
-    assert resolved.is_dir()
-    assert resolved == app_data
+    assert not app_data.exists()
 
 
 # --------------------------------------------------------------------------
@@ -177,17 +196,18 @@ def test_bi3_the_three_default_path_sites_resolve_to_one_directory(redirected_ho
     "no credentials found" for a file that is sitting right there.
     """
     _requires_google_libs()
-    home, app_data = redirected_home
-    app_data.mkdir(parents=True)
+    home, _ = redirected_home
+    auth_dir = gmd_paths.google_auth_dir()
+    auth_dir.mkdir(parents=True)
 
-    (app_data / "credentials.json").write_text("{}", encoding="utf-8")
+    (auth_dir / "credentials.json").write_text("{}", encoding="utf-8")
     assert GoogleCalendarManager.has_credentials() is True, (
         "has_credentials does not look where google_auth_dir points"
     )
 
     result = GoogleCalendarManager.check_token_validity()
     assert result["exists"] is False
-    (app_data / "token.pickle").write_bytes(pickle.dumps({"stub": True}))
+    (auth_dir / "token.pickle").write_bytes(pickle.dumps({"stub": True}))
     assert GoogleCalendarManager.check_token_validity()["exists"] is True, (
         "check_token_validity does not look where google_auth_dir points"
     )
@@ -199,8 +219,8 @@ def test_bi3_has_credentials_does_not_create_the_directory_it_checks(redirected_
     home, app_data = redirected_home
 
     assert GoogleCalendarManager.has_credentials() is False
-    assert not app_data.exists(), "has_credentials created the directory"
-    assert list(home.iterdir()) == []
+    assert not app_data.exists(), "has_credentials created the app data directory"
+    assert list(home.iterdir()) == [], "has_credentials created a directory in home"
 
 
 def test_bi3_explicit_argument_still_wins_over_the_default(redirected_home, tmp_path):
@@ -236,6 +256,13 @@ def test_bi3_saving_a_token_creates_its_parent_directory(redirected_home, tmp_pa
     assert pickle.loads(saved.read_bytes()) == {"stub": True}
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="POSIX mode bits: on Windows os.chmod only toggles the read-only "
+           "flag, so st_mode & 0o777 is 0o666/0o444 and this cannot hold. The "
+           "repo ships a Windows binary, so this is a real platform gap, not a "
+           "test defect — recorded in BACKLOG.md.",
+)
 def test_bi3_saving_a_token_sets_owner_only_permissions(redirected_home, tmp_path):
     """An OAuth token is a credential; it must not be world-readable."""
     _requires_google_libs()
@@ -245,6 +272,31 @@ def test_bi3_saving_a_token_sets_owner_only_permissions(redirected_home, tmp_pat
     assert manager._save_token({"stub": True}) is True
     mode = os.stat(manager.token_file).st_mode & 0o777
     assert mode == 0o600, f"token saved with mode {oct(mode)}"
+
+
+def test_bi3_a_token_that_reached_disk_is_reported_saved_even_if_chmod_fails(
+    redirected_home, tmp_path, monkeypatch
+):
+    """A failing chmod must not be reported as a failed save.
+
+    chmod runs *after* a successful write. Folding it into the same try made
+    the function print "Failed to save token / you may need to re-authenticate"
+    and return False while a world-readable token sat on disk — both halves of
+    that message untrue, and the security problem unmentioned.
+    """
+    _requires_google_libs()
+    manager = GoogleCalendarManager.__new__(GoogleCalendarManager)
+    manager.token_file = str(tmp_path / "chmodfail" / "token.pickle")
+
+    def _boom(*args, **kwargs):
+        raise PermissionError("no chmod on this filesystem")
+
+    monkeypatch.setattr(os, "chmod", _boom)
+
+    assert manager._save_token({"stub": True}) is True, (
+        "a token that reached disk was reported as not saved"
+    )
+    assert Path(manager.token_file).exists()
 
 
 def test_bi3_a_failed_token_save_reports_false_rather_than_raising(tmp_path):

@@ -53,17 +53,10 @@ def resource_root() -> Path:
     return project_root()
 
 
-def app_data_dir_path(create: bool = True) -> Path:
-    """Directory for user-writable app data (DB, settings, exports, etc.).
-
-    ``create=False`` computes the path without bringing it into existence, for
-    callers that are only *deciding* where something would live. Creating a
-    directory is a side effect, and a caller that is merely answering "does
-    this file exist?" must not have one.
-    """
+def app_data_dir_path() -> Path:
+    """Directory for user-writable app data (DB, settings, exports, etc.)."""
     p = Path(user_data_dir(APP_NAME, APP_AUTHOR)).expanduser().resolve()
-    if create:
-        p.mkdir(parents=True, exist_ok=True)
+    p.mkdir(parents=True, exist_ok=True)
     return p
 
 
@@ -167,28 +160,34 @@ def legacy_dot_dir() -> Path:
     return Path.home() / ".getmoredone"
 
 
-def google_auth_dir(create: bool = False) -> Path:
+def google_auth_dir() -> Path:
     """Directory holding the Google OAuth ``credentials.json`` and token.
 
-    Purpose: give the three default-path sites in ``google_calendar`` one rule,
+    Purpose: give every site that resolves a default Google-auth path one rule,
              so a check and the constructor can never look in different places.
     Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#batch-3
-    Tests:   tests/test_google_calendar_paths.py::test_bi3_auth_dir_prefers_the_legacy_directory_when_it_exists
+    Tests:   tests/test_google_calendar_paths.py::test_bi3_auth_dir_is_the_legacy_dot_directory
 
-    ``~/.getmoredone`` wins whenever it already exists. That is where README.md
-    and INSTALL.md tell people to put ``credentials.json``, it is what
-    ``tools/import_gmd_from_gmail.py`` reads, and an existing install already
-    has a token there — moving the default would silently log those users out.
-    A machine with no such directory uses the app data directory instead, like
-    every other user-writable file.
+    Always ``~/.getmoredone``. This is a *shared* location by design, not just
+    the app's: ``gmail_importer`` reads it, ``tools/import_gmd_from_gmail.py``
+    runs from a launchd timer against it, and six diagnostic scripts under
+    ``tools/`` name it, as do README.md, INSTALL.md and
+    docs/google-calendar-setup.md.
 
-    Defaults to ``create=False``: three of the four callers only need to know
-    *where* to look. Only the token write, which is about to put a file there,
-    asks for the directory to exist.
+    An earlier version of this function preferred the app data directory on a
+    machine that had never had ``~/.getmoredone``. That was wrong, and three
+    independent reviews found it: the choice was re-evaluated on every call and
+    keyed on a directory that other code creates as a side effect.
+    ``gmail_importer._load_creds`` does an unconditional
+    ``token_path.parent.mkdir()`` before it checks anything, and that runs from
+    Settings > Integrations and from the launchd job — so a user who set the
+    calendar up in the app data directory and then ran a Gmail import had the
+    resolver flip underneath them, was told "credentials not found", and was
+    sent through OAuth again with a working token orphaned in a directory
+    nothing looked at any more.
+
+    Resolving to one fixed location removes the flip, and keeps every existing
+    install, tool and document correct. It does not create the directory:
+    doing that before knowing a file is going there is the bug BI3 fixed.
     """
-    target = legacy_dot_dir()
-    if not target.is_dir():
-        target = app_data_dir_path(create=False)
-    if create:
-        target.mkdir(parents=True, exist_ok=True)
-    return target
+    return legacy_dot_dir()

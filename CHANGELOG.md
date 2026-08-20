@@ -74,10 +74,13 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   it with explicit `credentials_file` and `token_file` created `~/.getmoredone` anyway and then
   never used it. The default location is now resolved by `paths.google_auth_dir()`, shared by
   the constructor and the two static checks that previously each hardcoded the path — changing
-  only the constructor would have left `has_credentials()` looking somewhere else. `~/.getmoredone`
-  is still used whenever it exists; a machine that has never had one uses the application data
-  directory. The directory is created where the token is written, which also fixes an explicit
-  `token_file` in a non-existent directory failing behind a warning and re-authenticating every run.
+  only the constructor would have left `has_credentials()` looking somewhere else. The location is
+  unchanged — always `~/.getmoredone`, which the Gmail importer, the launchd import job and the
+  diagnostic scripts all share. The directory is created where the token is written, which also
+  fixes an explicit `token_file` in a non-existent directory failing behind a warning and
+  re-authenticating every run. `tools/diagnose_google_auth.py` now shares the same resolver instead
+  of hardcoding the path, and the calendar dialog's "credentials not found" message names the path
+  it actually checked rather than a hardcoded one.
 
 - **An Action Item belongs to exactly one Project, on every screen.** The Projects
   screen's "Link Action Items" dialog used to *add* a project to an item while the
