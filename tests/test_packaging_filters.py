@@ -25,6 +25,12 @@ from tools.packaging_filters import (
     should_bundle,
 )
 
+# This whole file asserts on the REPOSITORY — workflows, packaging, licences,
+# docs, traceability — not on application behaviour. Marked `meta` so
+# `pytest -m "not meta"` gives a fast app-only run. The default `pytest` run
+# still includes it: the marker is for speed, never for skipping.
+pytestmark = pytest.mark.meta
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCS = "googleapiclient/discovery_cache/documents"
 

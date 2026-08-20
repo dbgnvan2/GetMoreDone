@@ -34,6 +34,12 @@ from pathlib import Path
 
 import pytest
 
+# This whole file asserts on the REPOSITORY — workflows, packaging, licences,
+# docs, traceability — not on application behaviour. Marked `meta` so
+# `pytest -m "not meta"` gives a fast app-only run. The default `pytest` run
+# still includes it: the marker is for speed, never for skipping.
+pytestmark = pytest.mark.meta
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIR = REPO_ROOT / ".github/workflows"
 TESTS_WORKFLOW = WORKFLOW_DIR / "tests.yml"
@@ -237,6 +243,88 @@ def test_rm3a_tests_workflow_runs_on_push_and_pull_request():
         "tests.yml should run on both push and pull_request; a suite that only "
         "runs on one is a suite half the changes never meet."
     )
+
+
+# --------------------------------------------------------------------------
+# The `meta` marker — speed, never silent coverage loss
+# --------------------------------------------------------------------------
+
+META_TEST_FILES = {
+    "tests/test_ci_contract.py",
+    "tests/test_release_licensing.py",
+    "tests/test_packaging_filters.py",
+    "tests/test_packaging_resources.py",
+    "tests/test_release_docs.py",
+    "tests/test_repo_hygiene.py",
+    "tests/test_traceability_refs.py",
+}
+
+
+def _collected_files(marker_expression: str | None) -> set[str]:
+    """Files pytest actually collects, optionally under a -m filter.
+
+    Driven through a real collection rather than by reading source for
+    `pytestmark`: the marker's effect is what matters, and a source check would
+    pass on a file where the assignment is shadowed or conditional.
+    """
+    argv = [sys.executable, "-m", "pytest", "--collect-only", "-q"]
+    if marker_expression:
+        argv += ["-m", marker_expression]
+    result = subprocess.run(
+        argv, cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=600,
+    )
+    assert result.returncode == 0, f"collection failed:\n{result.stdout}\n{result.stderr}"
+    return {
+        line.split("::", 1)[0].strip()
+        for line in result.stdout.splitlines()
+        if "::" in line
+    }
+
+
+def test_meta_marker_covers_exactly_the_repo_assertion_files():
+    """A new test in one of these files must inherit the marker.
+
+    Module-level `pytestmark` gives that for free, which is why it is used —
+    but nothing said so, and a file added to the set later could easily be
+    marked per-function and miss one.
+    """
+    marked = _collected_files("meta")
+    assert marked == META_TEST_FILES, (
+        f"files carrying the `meta` marker: {sorted(marked)}\n"
+        f"expected: {sorted(META_TEST_FILES)}\n"
+        "Add the file to META_TEST_FILES, or give it "
+        "`pytestmark = pytest.mark.meta`."
+    )
+
+
+def test_the_default_run_still_includes_the_meta_tests():
+    """The marker is for speed. It must never become a silent skip.
+
+    `pytest` with no -m must collect everything; only an explicit
+    `-m "not meta"` narrows it. If addopts ever grew a default deselection,
+    this is what would catch it.
+    """
+    everything = _collected_files(None)
+    missing = sorted(META_TEST_FILES - everything)
+    assert not missing, (
+        f"the default pytest run does not collect {missing}. The `meta` marker "
+        "is a speed switch for local iteration, not a way to stop running "
+        "these — CI runs the default."
+    )
+
+
+def test_not_meta_is_actually_faster_by_deselecting_them():
+    """Adversarial: prove the switch does something.
+
+    If the two sets were equal the marker would be decoration, and the
+    documented `pytest -m "not meta"` invocation would be a lie.
+    """
+    app_only = _collected_files("not meta")
+    overlap = sorted(app_only & META_TEST_FILES)
+    assert not overlap, (
+        f"`-m 'not meta'` still collects {overlap}"
+    )
+    assert app_only, "`-m 'not meta'` collects nothing at all"
 
 
 # --------------------------------------------------------------------------

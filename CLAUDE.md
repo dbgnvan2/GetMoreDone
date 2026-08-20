@@ -14,9 +14,8 @@ python run.py
 
 # Tests
 pytest                                          # All tests
-pytest -m "not meta"                            # App behaviour only, no repo/infra tests
-                                                #   (PENDING — the `meta` marker lands with the
-                                                #    test-suite remediation batch)
+pytest -m "not meta"                            # App behaviour only (911 tests, ~27s)
+pytest -m meta                                  # Repo/infra assertions only (198 tests, ~25s)
 pytest -v                                       # Verbose
 pytest tests/test_vps_integration.py -v        # Single file
 pytest --cov=src/getmoredone                   # With coverage

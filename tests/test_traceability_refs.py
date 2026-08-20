@@ -14,6 +14,14 @@ it can fail at all (P24).
 import re
 from pathlib import Path
 
+import pytest
+
+# This whole file asserts on the REPOSITORY — workflows, packaging, licences,
+# docs, traceability — not on application behaviour. Marked `meta` so
+# `pytest -m "not meta"` gives a fast app-only run. The default `pytest` run
+# still includes it: the marker is for speed, never for skipping.
+pytestmark = pytest.mark.meta
+
 REPO = Path(__file__).resolve().parents[1]
 
 # Scanned in full rather than just src/: the first version of this guard looked
