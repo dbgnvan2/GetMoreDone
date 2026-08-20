@@ -73,7 +73,7 @@ def test_rm5a_google_features_report_unavailable_without_credentials(tmp_path, m
     fake_app_data = tmp_path / "appdata"
     monkeypatch.setattr(Path, "home", lambda: fake_home)
     monkeypatch.setattr(gmd_paths, "legacy_dot_dir", lambda: fake_home / ".getmoredone")
-    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda create=True: fake_app_data)
+    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda: fake_app_data)
 
     missing = tmp_path / "credentials.json"
     with pytest.raises((FileNotFoundError, RuntimeError)) as excinfo:
@@ -304,7 +304,7 @@ def test_rm5a_constructing_the_manager_does_not_touch_the_real_home(tmp_path, mo
     fake_app_data = tmp_path / "appdata"
     monkeypatch.setattr(Path, "home", lambda: fake_home)
     monkeypatch.setattr(gmd_paths, "legacy_dot_dir", lambda: fake_home / ".getmoredone")
-    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda create=True: fake_app_data)
+    monkeypatch.setattr(gmd_paths, "app_data_dir_path", lambda: fake_app_data)
 
     with pytest.raises((FileNotFoundError, RuntimeError)):
         GoogleCalendarManager(credentials_file=str(tmp_path / "nope.json"),

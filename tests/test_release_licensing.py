@@ -46,7 +46,13 @@ REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING = frozenset({
     "--only-binary",
     "--no-binary",
     "--hash",
+    "--require-hashes",
+    "--trusted-host",
     "--use-feature",
+    "--use-deprecated",
+    "--global-option",
+    "--config-settings",
+    "--no-build-isolation",
 })
 
 # Names that are test/lint/build tooling wherever they appear. Not a list of
@@ -115,9 +121,16 @@ def _parse_requirements(path: Path) -> list[str]:
         if not line:
             continue
         if line.startswith("-"):
-            option = line.split(None, 1)[0]
+            # Split on "=" too: `--index-url=https://x` and `--hash=sha256:...`
+            # are the standard spellings, and comparing the whole token made the
+            # parser raise on options that are in the allowlist.
+            option = line.split(None, 1)[0].split("=", 1)[0]
             if option not in REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING:
-                raise AssertionError(
+                # ValueError, not AssertionError: in a pytest summary an
+                # AssertionError from here is indistinguishable from a genuine
+                # policy violation ("this file declares GPL code"), when it
+                # actually means "the parser does not understand this syntax".
+                raise ValueError(
                     f"{path.name}:{lineno}: {line!r} uses the option {option!r}, "
                     "which this parser does not know how to classify. If it "
                     "declares a dependency (-e does), it must be classified, "
@@ -235,6 +248,12 @@ def test_bi2_no_test_tooling_is_declared_as_a_runtime_dependency():
 
     Matching on tooling *shape* rather than on our own package list keeps this
     from becoming the hardcoded copy BI2 deleted.
+
+    It is a prefix list, so it is not exhaustive: `freezegun`, `responses` or
+    `factory-boy` in requirements.txt would still reach
+    ``test_rm2c_third_party_notices_covers_every_runtime_dep`` rather than
+    failing here. It narrows the hole rather than closing it — recorded in
+    BACKLOG.md rather than overclaimed.
     """
     offenders = sorted(
         name for name in _declared_requirements()
@@ -348,10 +367,30 @@ def test_bi2_the_docs_sync_gate_knows_about_both_dependency_files():
     and passed with "no code/dependency changes detected" — a new file the
     checker's enumeration missed in the same commit that created it (P3/P25).
     """
-    gate = (REPO_ROOT / "tools/agents/check_docs_sync.py").read_text(encoding="utf-8")
-    assert "requirements-dev.txt" in gate, (
-        "tools/agents/check_docs_sync.py does not treat requirements-dev.txt "
-        "as a dependency file, so adding a test dependency skips the docs gate"
+    # Imported, not grepped. A text search matched the *comment* that explains
+    # the fix, so deleting DEPENDENCY_FILES and restoring the old
+    # `path == "requirements.txt"` left this test green with the gate fully
+    # reverted — the exact class this module already built an AST walk for.
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_gmd_check_docs_sync", REPO_ROOT / "tools/agents/check_docs_sync.py"
+    )
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+
+    declared = set(getattr(gate, "DEPENDENCY_FILES", ()))
+    assert {"requirements.txt", "requirements-dev.txt"} <= declared, (
+        "check_docs_sync.DEPENDENCY_FILES is "
+        f"{sorted(declared)}. Both dependency files must be there, or a PR "
+        "adding one of them skips the docs gate."
+    )
+
+    # And the enumeration must actually be what main() consults.
+    source = (REPO_ROOT / "tools/agents/check_docs_sync.py").read_text(encoding="utf-8")
+    assert 'path == "requirements.txt"' not in source, (
+        "check_docs_sync.py still hardcodes a single dependency filename "
+        "alongside DEPENDENCY_FILES"
     )
 
 
@@ -364,7 +403,7 @@ def test_bi2_requirements_parser_rejects_an_option_it_cannot_classify(tmp_path):
     """
     editable = tmp_path / "requirements.txt"
     editable.write_text("-e ./vendor/mypkg\ncustomtkinter>=5.2.0\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match="-e"):
+    with pytest.raises(ValueError, match="-e"):
         _parse_requirements(editable)
 
     # The options that genuinely declare nothing still pass through.
@@ -373,6 +412,14 @@ def test_bi2_requirements_parser_rejects_an_option_it_cannot_classify(tmp_path):
         "-r requirements.txt\n"
         "--index-url https://pypi.org/simple\n"
         "--extra-index-url https://example.invalid/simple\n"
+        # The `--opt=value` spelling: comparing the whole whitespace token made
+        # these raise even though the options are allowlisted.
+        "--index-url=https://pypi.org/simple\n"
+        "--hash=sha256:deadbeef\n"
+        "--requirement=other.txt\n"
+        # pip-compile --generate-hashes emits these together.
+        "--require-hashes\n"
+        "--trusted-host pypi.org\n"
         "customtkinter>=5.2.0\n",
         encoding="utf-8",
     )

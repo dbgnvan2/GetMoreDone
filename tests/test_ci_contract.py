@@ -124,16 +124,26 @@ def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
     )
     # Judge the code, not the comments; and allow pip's own flags before -r,
     # so `pip install -q -r requirements.txt` is not read as a named package.
+    # Searched anywhere in the line, and pip[0-9]*: anchoring on an optional
+    # "python -m " prefix made the guard blind to `python3 -m pip install X`,
+    # `pip3 install X` and `sudo pip install X` — three spellings it used to
+    # catch. A silent miss here is exactly what it exists to prevent.
     for line in _run_step_lines(_code_only(text)):
-        match = re.match(r"(?:python\s+-m\s+)?pip\s+install\s+(.*)$", line.strip())
+        match = re.search(r"\bpip[0-9]*\s+install\b(.*)$", line.strip())
         if not match:
             continue
         args = match.group(1).split()
         if args == ["--upgrade", "pip"]:
             continue
+        # Reuses the licensing module's allowlist rather than keeping a second,
+        # shorter enumeration of the same concept beside it (P5).
+        from tests.test_release_licensing import (
+            REQUIREMENT_OPTIONS_THAT_DECLARE_NOTHING as VALUE_TAKING,
+        )
         named = [
             a for i, a in enumerate(args)
-            if not a.startswith("-") and (i == 0 or args[i - 1] not in ("-r", "-c"))
+            if not a.startswith("-")
+            and (i == 0 or args[i - 1].split("=", 1)[0] not in VALUE_TAKING)
         ]
         assert not named, (
             f"tests.yml installs {named} by name: {line!r}. Every dependency "
@@ -677,6 +687,20 @@ def test_the_mapped_window_opt_out_is_off_by_default():
     count as the only signal. That is the exact failure this test exists to
     prevent, so it has to assert the behaviour.
     """
+    # This test's OFF cases deliberately map a real window, so it must honour
+    # the opt-out it guards — otherwise setting the variable to work in peace
+    # still put two windows over the user's desktop on every full run, which is
+    # the whole point of the variable.
+    # CI coverage is unaffected: test_no_workflow_disables_the_mapped_window_tests
+    # guarantees no workflow ever sets it.
+    if os.environ.get("GETMOREDONE_NO_MAPPED_WINDOWS", "").strip().lower() \
+            not in ("", "0", "false", "no", "off", "n"):
+        pytest.skip(
+            "GETMOREDONE_NO_MAPPED_WINDOWS is set: this test maps real windows "
+            "in its OFF cases and would take keyboard focus. CI never sets it, "
+            "so this always runs there."
+        )
+
     target = "tests/test_tk_offscreen.py::test_a_test_can_ask_for_a_mapped_window"
 
     def _run(env_value):
@@ -684,30 +708,51 @@ def test_the_mapped_window_opt_out_is_off_by_default():
         env.pop("GETMOREDONE_NO_MAPPED_WINDOWS", None)
         if env_value is not None:
             env["GETMOREDONE_NO_MAPPED_WINDOWS"] = env_value
+        # No -rs here on purpose: pytest.ini's addopts must be what produces
+        # the skip reason, so deleting that line fails this test rather than
+        # silently restoring a bare "3 skipped".
         return subprocess.run(
-            [sys.executable, "-m", "pytest", target, "-q", "--no-header", "-rs"],
+            [sys.executable, "-m", "pytest", target, "-q", "--no-header"],
             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300, env=env,
-        ).stdout
+        )
 
+    def _describe(result):
+        return (
+            f"exit={result.returncode}\n"
+            f"--- stdout ---\n{result.stdout[-1500:]}\n"
+            f"--- stderr ---\n{result.stderr[-1500:]}"
+        )
+
+    # Success is the EXIT CODE, not a token in stdout — this file's own
+    # docstring forbids the latter (P24), and this repo's pytest_sessionfinish
+    # sets a non-zero status with no FAILURES section, so a nested run that
+    # trips the user-data guard prints "1 passed" and would have passed here.
     unset = _run(None)
-    assert "1 passed" in unset, (
-        "with GETMOREDONE_NO_MAPPED_WINDOWS unset the geometry test must RUN. "
-        f"Output: {unset[-500:]}"
+    assert unset.returncode == 0, (
+        "with GETMOREDONE_NO_MAPPED_WINDOWS unset the geometry test must RUN "
+        f"and pass.\n{_describe(unset)}"
+    )
+    assert "1 passed" in unset.stdout, (
+        f"expected the geometry test to run, not skip.\n{_describe(unset)}"
     )
 
     on = _run("1")
-    assert "1 skipped" in on, (
-        f"GETMOREDONE_NO_MAPPED_WINDOWS=1 must skip it. Output: {on[-500:]}"
+    assert on.returncode == 0, (
+        f"a skipped test must still exit 0.\n{_describe(on)}"
     )
-    assert "GETMOREDONE_NO_MAPPED_WINDOWS" in on, (
-        "the skip reason must name the variable, so a suppressed run cannot be "
-        f"mistaken for a passing one. Output: {on[-500:]}"
+    assert "1 skipped" in on.stdout, (
+        f"GETMOREDONE_NO_MAPPED_WINDOWS=1 must skip it.\n{_describe(on)}"
+    )
+    assert "GETMOREDONE_NO_MAPPED_WINDOWS" in on.stdout, (
+        "the skip REASON must be printed, so a suppressed run cannot be "
+        "mistaken for a passing one. This depends on addopts = -rs in "
+        f"pytest.ini.\n{_describe(on)}"
     )
 
     off = _run("0")
-    assert "1 passed" in off, (
+    assert off.returncode == 0 and "1 passed" in off.stdout, (
         "GETMOREDONE_NO_MAPPED_WINDOWS=0 must mean OFF. A bare truthiness "
-        f"check makes '0' turn the opt-out ON. Output: {off[-500:]}"
+        f"check makes '0' turn the opt-out ON.\n{_describe(off)}"
     )
 
 
@@ -795,9 +840,12 @@ def test_bi1_every_built_archive_is_attached_to_the_release():
     release_at = body.find("action-gh-release")
     attached = body[release_at:]
     for archive in RELEASE_ARCHIVES:
-        assert archive in attached, (
-            f"{archive} is not attached to the Release. A run that publishes "
-            "one platform is the failure BI1 exists to prevent."
+        # Anchored on the archive ENDING the line: a bare `archive in attached`
+        # is satisfied by the ".sha256" entry alone.
+        assert re.search(rf"{re.escape(archive)}\s*$", attached, re.MULTILINE), (
+            f"{archive} is not attached to the Release (its .sha256 alone does "
+            "not count). A run that publishes one platform, or only checksums, "
+            "is the failure BI1 exists to prevent."
         )
 
 
@@ -819,7 +867,12 @@ def test_bi1_no_os_job_publishes_a_release():
 def test_bi1_publish_job_is_gated_on_a_tag():
     """Without the gate, every push to a branch would cut a Release."""
     body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
-    assert re.search(r"^\s*if:.*refs/tags/v", body, re.MULTILINE), (
+    assert re.search(r"^\s*if:", body, re.MULTILINE), (
+        f"the {PUBLISH_JOB} job has no if: condition at all"
+    )
+    # Not anchored to the `if:` line: a block scalar puts the expression on the
+    # lines beneath it.
+    assert "refs/tags/v" in body, (
         f"the {PUBLISH_JOB} job has no tag condition"
     )
 
@@ -858,23 +911,38 @@ def test_bi1_download_path_matches_the_release_file_prefix():
     """
     body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
 
-    paths = set(re.findall(r"^\s*path:\s*(\S+)\s*$", body, re.MULTILINE))
-    assert paths, "the publish job's download steps declare no path:"
-    assert len(paths) == 1, (
-        f"the downloads land in different directories {sorted(paths)}; the "
+    # Counted, not set-collapsed: two identical `path:` values collapse to one,
+    # so deleting the path from ONE of the two download steps left len == 1 and
+    # passed while that artifact landed in the workspace root instead.
+    download_steps = len(re.findall(r"uses:\s*actions/download-artifact@", body))
+    declared = re.findall(r"^\s*path:\s*(\S+)\s*$", body, re.MULTILINE)
+    assert len(declared) == download_steps, (
+        f"{download_steps} download steps but {len(declared)} path: entries — "
+        "a download with no path: lands in the workspace root, where the "
+        "release step's files: prefix will not match it"
+    )
+    unique = {p.strip("\"'") for p in declared}
+    assert len(unique) == 1, (
+        f"the downloads land in different directories {sorted(unique)}; the "
         "release step can only carry one prefix"
     )
-    download_dir = paths.pop().strip("\"'")
+    download_dir = unique.pop()
 
     release_at = body.find("action-gh-release")
     attached = body[release_at:]
     for archive in RELEASE_ARCHIVES:
         for suffix in ("", ".sha256"):
             expected = f"{download_dir}/{archive}{suffix}"
-            assert expected in attached, (
-                f"the release step does not attach {expected!r}. The downloads "
-                f"land in {download_dir!r}, so every files: entry must start "
-                "with it."
+            # Line-anchored, not a substring. "…/GetMoreDone-mac.zip" IS a
+            # substring of "…/GetMoreDone-mac.zip.sha256", so the substring
+            # form passed a files: block containing ONLY the two checksums —
+            # which satisfies fail_on_unmatched_files: true and publishes a
+            # public, permanent Release with correct notes and no downloadable
+            # archives. Verified by mutation.
+            assert re.search(rf"^\s*{re.escape(expected)}\s*$", attached, re.MULTILINE), (
+                f"the release step does not attach {expected!r} on a line of "
+                f"its own. The downloads land in {download_dir!r}, so every "
+                "files: entry must start with it."
             )
 
 
@@ -900,6 +968,39 @@ def test_bi1_downloaded_archives_are_checksum_verified_before_publishing():
         )
 
 
+def test_bi1_checksum_files_are_written_in_the_format_the_verifier_reads():
+    """Producer/consumer contract across three jobs and two platforms (P19).
+
+    The publish job runs GNU ``sha256sum -c`` on files written by PowerShell on
+    Windows and ``shasum`` on macOS. Drop ``-NoNewline`` from the Windows step
+    and PowerShell emits CRLF; ``sha256sum`` then parses the filename as
+    ``GetMoreDone-win64.zip\r`` and the publish job fails — on a real tag,
+    after both builds have run. Nothing asserted the format, only that the
+    verification was called.
+    """
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+
+    windows = _code_only(jobs["build-windows"])
+    assert "-NoNewline" in windows, (
+        "the Windows checksum step must write without a trailing newline; "
+        "PowerShell otherwise emits CRLF, which GNU sha256sum -c cannot parse"
+    )
+    assert "-Encoding ascii" in windows, (
+        "the Windows checksum step must write ASCII; a UTF-16 or BOM-prefixed "
+        "file is unreadable to sha256sum -c"
+    )
+    assert '"$hash  GetMoreDone' in windows, (
+        "the Windows checksum step must use the two-space separator that "
+        "sha256sum -c and shasum both expect"
+    )
+
+    macos = _code_only(jobs["build-macos"])
+    assert "shasum -a 256" in macos, (
+        "the macOS checksum step must use shasum -a 256, whose output format "
+        "the publish job's sha256sum -c reads"
+    )
+
+
 def test_bi1_publish_job_does_not_run_on_a_failed_build():
     """`needs:` only implies success while no status function overrides it.
 
@@ -908,10 +1009,13 @@ def test_bi1_publish_job_does_not_run_on_a_failed_build():
     and every other BI1 test would stay green.
     """
     body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    # The whole job body, not just the remainder of the `if:` line. A block
+    # scalar (`if: >` with `always() && ...` on the following line) put the
+    # override outside a single-line capture and left this green.
     condition = re.search(r"^\s*if:(.*)$", body, re.MULTILINE)
     assert condition, "the publish job has no if: condition"
     for override in ("always(", "failure(", "cancelled("):
-        assert override not in condition.group(1), (
+        assert override not in body, (
             f"the publish job's if: uses {override}), which overrides the "
             "implicit success requirement of needs: and lets a failed build "
             "publish a Release"

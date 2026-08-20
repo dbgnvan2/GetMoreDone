@@ -69,12 +69,17 @@ will keep producing this question.
   file and now also rejects installing any package by name.
 
 **BI3**
-- `src/getmoredone/paths.py` — `app_data_dir_path(create=True)` gains the
-  parameter; new `google_auth_dir(create=False)`.
+- `src/getmoredone/paths.py` — new `google_auth_dir()`, returning
+  `legacy_dot_dir()`. (An intermediate version took a `create` flag and fell
+  back to the app data directory; the reviews removed both — see below.)
 - `src/getmoredone/google_calendar.py` — all three default-path sites go through
   `paths.google_auth_dir()`; token save extracted to `_save_token()`, which
-  creates its parent directory and returns a bool.
-- `tests/test_google_calendar_paths.py` — new, 12 tests.
+  creates its parent directory and reports whether the token reached disk.
+- `src/getmoredone/screens/calendar_dialog.py` — the "credentials not found"
+  message names the path that was actually checked.
+- `tools/diagnose_google_auth.py` — shares the resolver instead of hardcoding
+  the path. It is the tool README and INSTALL point users at.
+- `tests/test_google_calendar_paths.py` — new, 13 tests.
 - `tests/test_first_run.py` — two tests that asserted the *old* behaviour
   (`assert (fake_home / ".getmoredone").exists()`) inverted.
 
@@ -93,7 +98,8 @@ will keep producing this question.
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 ./venv/bin/python -m pytest -q`
-- Result: **1090 passed, 5 skipped, exit code 0.**
+- Result after the review fixes: **1098 passed, 5 skipped, exit code 0.**
+  (1090 before them.)
   Baseline was 1062 passed / 2 skipped. The three extra skips are the geometry
   tests suppressed by the variable above; a run without it is required before
   this is called green, and is recorded in the status report.
@@ -123,6 +129,55 @@ The workflow YAML was also parsed with PyYAML to confirm the job graph, the
 `needs:` list, the four attached files and the absence of any release step in
 either OS job. PyYAML was then uninstalled — this repo deliberately has no
 PyYAML dependency, and the contract tests read the workflows as text.
+
+## What the reviews added
+
+**Three passes in parallel: `learning-qa`, a cold pass given only the diff, and
+a correctness/regression pass.** All three independently found the same top
+defect. That is the P26 signal — one reviewer agreeing with itself is close to
+no evidence; two orthogonal reviews converging is strong.
+
+**The defect was mine, introduced by BI3.** `google_auth_dir()` preferred the
+app data directory on a machine that had never had `~/.getmoredone`, and the
+legacy directory once one existed. The choice was re-evaluated on every call
+and keyed on a directory *other code creates as a side effect*:
+`gmail_importer._load_creds` does an unconditional `token_path.parent.mkdir()`
+before it checks anything, and that runs from Settings → Integrations and from
+a launchd timer. A user who set the calendar up in the app data directory and
+later ran a Gmail import had the resolver flip underneath them — "credentials
+not found", a second trip through OAuth, and a working token orphaned where
+nothing looked for it. The correctness pass reproduced it against the real
+modules.
+
+It is fixed by deleting the fallback rather than patching around it. Six of the
+reports' other findings were consequences of that one choice, and went with it.
+
+**Two of my own new guards could not fail.** Both found by the cold pass, and
+this is the more useful half of the result:
+
+* `_shell_code_only()` truncated each line at its first `#`. The `start.sh`
+  grep it exists to catch has a `#` *inside its quoted regex*, so the line was
+  cut to `grep -v -E '^\s*` and the word `pytest` was gone before the search
+  ran. **My own mutation check passed it** — because I mutated with a
+  simplified reconstruction of the grep instead of the verbatim original line.
+  That is the lesson worth keeping: a mutation test is only as good as the
+  fidelity of the mutation. Re-run with the original line, it now goes red.
+* `test_the_mapped_window_opt_out_is_off_by_default` matched substrings, so it
+  passed with the condition **inverted** — which would have skipped the three
+  geometry tests on every machine including CI, leaving a skip count as the
+  only signal. It now drives a real subprocess and asserts the outcome.
+
+**Also found and fixed:** the disjointness test's docstring claimed a check it
+could not make; `_parse_requirements` silently dropped `-e` editable
+dependencies from both the GPL and notices checks; `_save_token` reported
+"failed to save" while a world-readable token sat on disk if only the chmod
+failed; the calendar dialog's message hardcoded a path the docs promised it
+named; the publish job attached checksums it never verified against the
+archives it downloaded; nothing tied the download `path:` to the release
+`files:` prefix, and nothing stopped an `always()` being added to the publish
+job's `if:` — which would restore the exact defect BI1 removed;
+`GETMOREDONE_NO_MAPPED_WINDOWS=0` turned the opt-out *on*; the docs-sync gate
+did not know `requirements-dev.txt` exists, in the commit that created it.
 
 ## Risks / Known gaps
 

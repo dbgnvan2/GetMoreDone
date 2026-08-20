@@ -30,6 +30,22 @@ is outside BI3 and none is a regression from it.
   it.
 - **`python-dotenv` is declared in `requirements.txt` and imported nowhere** in
   `src/`. Either a real unused dependency or an undeclared runtime need.
+- **The docs-sync gate's `CODE_PREFIXES` is still incomplete.**
+  `tools/agents/check_docs_sync.py:12` covers `src/`, `tools/`, `tests/` plus
+  the two dependency files. A PR touching only `conftest.py`, `pytest.ini`,
+  `.github/` or `start.sh` reports "no code/dependency changes detected" — the
+  same P3 shape as the `requirements-dev.txt` miss that was just fixed. Not
+  changed here because widening a merge gate is a process decision, not a
+  defect fix: adding `.github/` would make every workflow tweak require a docs
+  update.
+- **`test_bi2_no_test_tooling_is_declared_as_a_runtime_dependency` is a prefix
+  list, so it is not exhaustive.** `freezegun`, `responses` or `factory-boy` in
+  `requirements.txt` would still reach the notices check rather than failing
+  there. It narrows the hole rather than closing it.
+- **A failed token save is only a `print()`.** In a double-clicked GUI build
+  stdout goes nowhere, so "signed in but the token was not saved" is invisible
+  and the user simply gets asked to sign in again every launch. Surfacing it in
+  the calendar dialog needs a UI decision.
 
 
 ### Release workflow: concurrent release creation — FIXED 2026-08-20 (BI1)

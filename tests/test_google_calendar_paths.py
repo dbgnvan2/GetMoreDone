@@ -235,6 +235,44 @@ def test_bi3_explicit_argument_still_wins_over_the_default(redirected_home, tmp_
 
 
 # --------------------------------------------------------------------------
+# BI3 — the message the user actually sees (P25: test the surface, not the lib)
+# --------------------------------------------------------------------------
+
+def test_bi3_the_dialog_message_names_the_path_that_was_checked(redirected_home):
+    """README.md and INSTALL.md both promise this to the user.
+
+    The calendar dialog is the only surface a GUI user reaches:
+    ``has_credentials()`` returns first, so the ``FileNotFoundError`` from
+    ``__init__`` — which does interpolate the path — is unreachable from there.
+    The dialog used to print a hardcoded ``~/.getmoredone/``, so the promise in
+    the docs was false wherever that was not the answer.
+
+    Asserted against the source of the message rather than by building the
+    dialog: constructing it needs a Tk root and a populated item, and this is
+    the string, not the widget.
+    """
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "src/getmoredone/screens/calendar_dialog.py"
+    ).read_text(encoding="utf-8")
+
+    block = source.split("Check for credentials", 1)[1][:900]
+    assert "google_auth_dir()" in block, (
+        "the dialog's credentials message does not use the resolver, so it "
+        "cannot name the path has_credentials() actually checked"
+    )
+    assert "~/.getmoredone/" not in block, (
+        "the dialog's credentials message hardcodes a path again"
+    )
+
+    # And the interpolation produces the real path, not a repr or a coroutine.
+    expected = gmd_paths.google_auth_dir() / "credentials.json"
+    rendered = f"Expected: {expected}"
+    assert str(gmd_paths.google_auth_dir()) in rendered
+    assert rendered.endswith("credentials.json")
+
+
+# --------------------------------------------------------------------------
 # BI3 — the directory is created where the file is written
 # --------------------------------------------------------------------------
 

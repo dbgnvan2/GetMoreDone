@@ -60,9 +60,6 @@ class GoogleCalendarManager:
             os.remove(self.token_file)
 
         self.service = None
-        # True once a token has been written this session; None when an
-        # existing token was reused and nothing needed saving.
-        self.token_persisted = None
         self._authenticate()
 
     def _authenticate(self):
@@ -165,11 +162,18 @@ class GoogleCalendarManager:
                             f"6. Check network/firewall settings"
                         )
 
-            # Save the credentials for next run. Recorded rather than
-            # discarded so a caller can tell a persisted sign-in from one that
-            # will ask again next launch.
-            self.token_persisted = self._save_token(creds)
-            if not self.token_persisted:
+            # Save the credentials for next run.
+            #
+            # An earlier version stored this on the instance as
+            # `token_persisted` "so a caller can tell". Nothing read it, and it
+            # was tri-state (None when an existing token was reused), so the
+            # natural `if not mgr.token_persisted:` would have read the healthy
+            # reuse case as a failure — a documented capability with no caller
+            # (P21), plus a trap for the first one. The bool is used here, where
+            # there is something to say, and nowhere else. Surfacing a failed
+            # save in the GUI is recorded in BACKLOG.md: a print() is invisible
+            # in a double-clicked app.
+            if not self._save_token(creds):
                 print("⚠️  Signed in, but the token was not saved — you will be "
                       "asked to sign in again next time.\n")
 
@@ -205,8 +209,11 @@ class GoogleCalendarManager:
             with open(self.token_file, 'wb') as token:
                 pickle.dump(creds, token)
         except Exception as e:
+            # The diagnosis only. The consequence ("you will be asked to sign
+            # in again") belongs to the caller, which knows the sign-in itself
+            # succeeded — printing both here made a failed save emit three
+            # warning lines saying the same thing.
             print(f"⚠️  Warning: Failed to save token: {e}")
-            print("You may need to re-authenticate next time.\n")
             return False
 
         try:
@@ -218,7 +225,14 @@ class GoogleCalendarManager:
             print(f"   Anyone able to read {self.token_file} can use your "
                   "Google account. Fix the file's permissions by hand.\n")
 
-        print(f"✅ Token saved to: {self.token_file}\n")
+        # Guarded: this print is the last thing between a token that IS on
+        # disk and a True return. An emoji that cannot be encoded on a Windows
+        # console (cp1252) would otherwise propagate out of __init__ and abort
+        # construction after the write succeeded.
+        try:
+            print(f"✅ Token saved to: {self.token_file}\n")
+        except Exception:
+            pass
         return True
 
     def _get_local_timezone(self) -> str:
