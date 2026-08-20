@@ -432,12 +432,26 @@ class VPSSchema:
         from datetime import datetime
         from uuid import uuid4
 
+        # RN-M1.C — the column has to exist before this can stamp it. The VSP
+        # schema's CREATE TABLE does not declare it; link_integrity adds it,
+        # and that runs AFTER initialize_vps_schema. Calling the adder here is
+        # not a second definition of the column — it is the same idempotent
+        # one, called earlier. run_link_integrity_migrations still calls it for
+        # every other table and finds this one already present.
+        from .link_integrity import add_segment_description_id_columns
+
+        add_segment_description_id_columns(conn)
+
         now = datetime.now().isoformat()
         legacy_rows = conn.execute(
             """
             SELECT
                 l.id AS legacy_id,
                 l.segment_id AS legacy_segment_id,
+                -- The description this row actually points AT, not a name to
+                -- look one up by. NULL exactly when the legacy segment_id is
+                -- dangling or absent, which is the 'Uncategorized' case below.
+                sd.id AS description_id,
                 COALESCE(sd.name, '') AS segment_name,
                 l.subsegment,
                 l.category,
@@ -473,12 +487,29 @@ class VPSSchema:
                     segment_id = segment_row["id"]
                 else:
                     segment_id = f"vsg-{uuid4().hex[:8]}"
+                    # RN-M1.C — the fourth and last INSERT INTO vision_segments
+                    # to stamp the id. Its three siblings resolve the id from
+                    # the name because that is all they have; this one is
+                    # handed the real id by the legacy row and used to throw it
+                    # away, insert by name, and let the backfill re-derive it.
+                    # With two descriptions differing only by case the name
+                    # resolves to neither, so a link the data already knew came
+                    # out NULL and was reported as needing a human.
+                    #
+                    # sd.id, NOT l.segment_id: the LEFT JOIN is what makes a
+                    # dangling legacy id come out NULL instead of being written
+                    # verbatim as a reference to a row that is not there. The
+                    # 'Uncategorized' fallback is the same case seen from the
+                    # name side, so it needs no separate branch.
                     conn.execute(
                         """
-                        INSERT INTO vision_segments (id, name, vision_text, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?)
+                        INSERT INTO vision_segments
+                            (id, name, vision_text, segment_description_id,
+                             created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
                         """,
-                        (segment_id, segment_name, "", created_at, updated_at),
+                        (segment_id, segment_name, "", row["description_id"],
+                         created_at, updated_at),
                     )
                 segment_cache[segment_key] = segment_id
 
