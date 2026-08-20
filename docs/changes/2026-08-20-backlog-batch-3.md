@@ -98,8 +98,8 @@ will keep producing this question.
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 ./venv/bin/python -m pytest -q`
-- Result after four review rounds: **1107 passed, 5 skipped, exit code 0.**
-  (1090 original, 1098 round one, 1099 round two, 1102 round three.) The
+- Result after five review rounds: **1108 passed, 5 skipped, exit code 0.**
+  (1090 original, then 1098, 1099, 1102, 1107 as each round landed.) The
   window-mapping tests were additionally run unsuppressed: 14 passed, exit 0.
   Baseline was 1062 passed / 2 skipped. The three extra skips are the geometry
   tests suppressed by the variable above; a run without it is required before
@@ -234,6 +234,31 @@ four found a **user-facing bug**.
 
 Both are in `LEARNINGS.md`. The count of my own tests that could not fail,
 across the batch, is **seven**.
+
+### The batch in numbers
+
+**Nine review passes across five rounds.** Findings fell — roughly 30, 23, 16,
+16, 7 — but the count is not the interesting figure.
+
+**Nine of my own tests could not fail when written.** Every round found at
+least one, including rounds written specifically to fix that class. They share
+one shape in seven of the nine cases: an assertion that matches *text* and
+therefore also matches the comment explaining it, or a needle that is a prefix
+of something else in the haystack.
+
+**Four defects reached shipped behaviour, all introduced by this batch:**
+
+| Found in round | Defect |
+|---|---|
+| 1 | The Google auth directory flipped when a Gmail import created `~/.getmoredone`, orphaning a working token and forcing re-auth |
+| 2 | `_save_token` reported "failed to save" while leaving a world-readable token on disk, if only the `chmod` failed |
+| 3 | The pip guard, "de-duplicated", went blind to `pip install --pre <package>` and five siblings |
+| 4 | A status `print` inside a credential `try` discarded a valid token on a failed stdout write |
+
+Each was found by a *cold* pass or a different failure family, never by the
+context that wrote it. That is P26 with a sample size, and it is the argument
+for the stopping rule used here: the final round sorted findings into "reaches
+a user" and "test quality", and only the first class blocked the push.
 
 ## Risks / Known gaps
 
