@@ -239,7 +239,7 @@ def test_bp2_the_count_finds_a_three_linked_item(tmp_path):
     try:
         manager, item, boards = _three_linked(vps)
 
-        assert manager.count_items_on_multiple_project_boards() == 1
+        assert len(manager.get_items_on_multiple_project_boards()) == 1
         reported = manager.get_items_on_multiple_project_boards()
         assert [(row["id"], row["board_count"]) for row in reported] == [(item.id, 3)]
 
@@ -261,7 +261,7 @@ def test_bp2_singly_filed_items_are_not_reported(tmp_path):
         make_daily_item(vps, "Unfiled")
         manager.link_item_to_project_exclusive(board.id, filed.id)
 
-        assert manager.count_items_on_multiple_project_boards() == 0
+        assert len(manager.get_items_on_multiple_project_boards()) == 0
         assert manager.get_items_on_multiple_project_boards() == []
         assert describe_outstanding_multi_links(0) == ""
     finally:
@@ -297,19 +297,19 @@ def test_bp2_the_editor_stays_the_visible_path_until_the_count_is_zero(tmp_path,
     vps = make_vps(tmp_path)
     try:
         manager, item, boards = _three_linked(vps)
-        assert manager.count_items_on_multiple_project_boards() == 1
+        assert len(manager.get_items_on_multiple_project_boards()) == 1
 
         # Declining leaves all three links in place.
         answers["reply"] = False
         _dialog_stub(manager, boards[0].id)._link(item.id)
-        assert manager.count_items_on_multiple_project_boards() == 1
+        assert len(manager.get_items_on_multiple_project_boards()) == 1
         assert len(manager.get_project_board_ids_for_item(item.id)) == 3
 
         # Accepting resolves this item, and only this item.
         answers["reply"] = True
         _dialog_stub(manager, boards[0].id)._link(item.id)
         assert manager.get_project_board_ids_for_item(item.id) == [boards[0].id]
-        assert manager.count_items_on_multiple_project_boards() == 0
+        assert len(manager.get_items_on_multiple_project_boards()) == 0
     finally:
         vps.close()
 
@@ -585,3 +585,137 @@ def test_f6_the_dead_title_builder_is_gone():
     from src.getmoredone.screens import title_format
 
     assert not hasattr(title_format, "build_action_item_title")
+
+
+# --------------------------------------------- sweep, second pass
+
+
+def test_s2_2_dropping_onto_no_project_asks_even_with_no_board_link(tmp_path, answers):
+    """The Annual Plan Element is destroyed whether or not a link exists.
+
+    Sweep pass 2. ``items_losing_links`` read only project links, so an item
+    with an APE set from the editor's Annual Plan field — and no board row —
+    had it nulled with nothing asked (P13: the guard measured the wrong thing).
+    """
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        item = make_daily_item(vps, "Task")
+        stored = manager.get_action_item(item.id)
+        stored.annual_plan_element_id = ape_id
+        manager.update_action_item(stored)
+        assert manager.get_project_board_ids_for_item(item.id) == []
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[item])
+        stub.refresh = lambda: None
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+        assert answers["messages"], "the Annual Plan Element went without a question"
+        assert "Annual Plan Element" in answers["messages"][0], answers["messages"][0]
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
+
+        answers["reply"] = True
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+        assert manager.get_action_item(item.id).annual_plan_element_id is None
+    finally:
+        vps.close()
+
+
+def test_s2_2_an_item_with_nothing_to_lose_is_still_not_interrupted(tmp_path, answers):
+    """No link, no Annual Plan Element — nothing at stake, so no dialog."""
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        seed_ape(vps)
+        item = make_daily_item(vps, "Task")
+        stored = manager.get_action_item(item.id)
+        assert stored.annual_plan_element_id is None
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=[item])
+        stub.refresh = lambda: None
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+
+        assert answers["messages"] == []
+    finally:
+        vps.close()
+
+
+def test_s2_6_a_dropped_inherited_link_is_logged(tmp_path, caplog):
+    """F2 drops N-1 links on a copy; a silent drop is the bug it was fixing."""
+    import logging
+
+    vps = make_vps(tmp_path)
+    try:
+        manager, item, boards = _three_linked(vps)
+
+        with caplog.at_level(logging.WARNING,
+                             logger="src.getmoredone.db_manager_project_boards"):
+            new_id = manager.create_followup_item(item.id)
+
+        assert len(manager.get_project_board_ids_for_item(new_id)) == 1
+        messages = [record.getMessage() for record in caplog.records]
+        assert any("inherits" in message for message in messages), (
+            f"two project links were dropped without a word; log said {messages}")
+    finally:
+        vps.close()
+
+
+def test_s2_6_a_single_inherited_link_is_not_logged(tmp_path, caplog):
+    """Nothing was dropped, so there is nothing to say — a log per copy is noise."""
+    import logging
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Only", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(board.id, item.id)
+
+        with caplog.at_level(logging.WARNING,
+                             logger="src.getmoredone.db_manager_project_boards"):
+            new_id = manager.create_followup_item(item.id)
+
+        assert manager.get_project_board_ids_for_item(new_id) == [board.id]
+        assert not [r for r in caplog.records if "inherits" in r.getMessage()]
+    finally:
+        vps.close()
+
+
+def test_s2_8_an_unreadable_board_is_still_a_filing_not_a_clear(tmp_path, monkeypatch,
+                                                               answers):
+    """The message branched on the board *title*, not on what is happening.
+
+    Sweep pass 2. A board row that cannot be read left ``title = None``, and
+    ``describe_single_relink`` then told the user their Annual Plan Element was
+    about to be cleared — which filing does not do (P14: an error state read as
+    content).
+    """
+    from src.getmoredone.screens.project_link_notice import confirm_exclusive_relink
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        old = _board(manager, "Old Project", ape_id)
+        new = _board(manager, "New Project", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(old.id, item.id)
+
+        monkeypatch.setattr(manager, "get_project_board", lambda board_id: None)
+        confirm_exclusive_relink(None, manager, [item.id], new.id)
+
+        message = answers["messages"][0]
+        assert "Annual Plan Element" not in message, message
+        assert "Clearing" not in message, message
+        assert "the selected project" in message, message
+    finally:
+        vps.close()

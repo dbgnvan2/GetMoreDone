@@ -26,7 +26,16 @@ def describe_single_relink(count: int, target_title: Optional[str]) -> str:
     more than one only happens on rows that predate exclusive filing.
     ``target_title`` is None when the project is being cleared instead.
     """
-    if count <= 1:
+    if count == 0:
+        # No link at all — the only thing at stake is the Annual Plan Element,
+        # which clear_item_project_links also nulls (S2-2). Saying "filed under
+        # another project" here would be simply untrue.
+        return (
+            "This item has an Annual Plan Element.\n\n"
+            "Removing the project also clears it. Continue?"
+        )
+
+    if count == 1:
         # "filed under 1 projects ... removes it from the other 0" is what the
         # plural form produces here, and it reads as though nothing is at stake.
         filed = "This item is already filed under another project."
@@ -87,13 +96,20 @@ def describe_bulk_clear(item_count: int) -> str:
 
 def items_losing_links(db_manager, item_ids: Iterable[str],
                        target_board_id: Optional[str]) -> List[str]:
-    """Which of ``item_ids`` are filed somewhere other than the target.
+    """Which of ``item_ids`` would lose something to this write.
 
     Purpose: sweep F1 — the Projects dialog asked before deleting links and the
              Scheduler's drag-drop did not, so the same destructive write was
              guarded on one surface and silent on the other (P5).
     Spec:    docs/implementation_plan_2026-08-19_backlog_clearance.md#bp1
     Tests:   tests/test_project_multi_link.py::test_f1_dragging_onto_a_project_asks_before_unfiling
+
+    Clearing (``target_board_id is None``) destroys more than the link:
+    ``clear_item_project_links`` also nulls the item's Annual Plan Element. An
+    item with an APE and no board row — routine, since the editor's Annual Plan
+    field sets one directly — therefore counts as losing something even though
+    it has no link to drop. Sweep pass 2 (S2-2): reading only the links meant
+    exactly that item had its APE deleted with no question asked.
     """
     losing = []
     for item_id in item_ids:
@@ -104,7 +120,14 @@ def items_losing_links(db_manager, item_ids: Iterable[str],
         ]
         if others:
             losing.append(item_id)
+        elif target_board_id is None and _has_annual_plan_element(db_manager, item_id):
+            losing.append(item_id)
     return losing
+
+
+def _has_annual_plan_element(db_manager, item_id: str) -> bool:
+    item = db_manager.get_action_item(item_id)
+    return bool(item and item.annual_plan_element_id)
 
 
 def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
@@ -119,18 +142,23 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     if not losing:
         return True
 
+    # Branch on whether this is a clear, not on whether the board title
+    # resolved: an unreadable board is still a filing, and falling through to
+    # the clearing wording told the user their Annual Plan Element was about to
+    # go when it was not (S2-8).
+    clearing = target_board_id is None
     title = None
-    if target_board_id:
+    if not clearing:
         board = db_manager.get_project_board(target_board_id)
-        title = board.title if board else None
+        title = board.title if board else "the selected project"
 
     if len(item_ids) == 1:
         count = len(db_manager.get_project_board_ids_for_item(losing[0]))
         question = describe_single_relink(count, title)
-    elif target_board_id:
-        question = describe_bulk_relink(len(losing), title)
-    else:
+    elif clearing:
         question = describe_bulk_clear(len(losing))
+    else:
+        question = describe_bulk_relink(len(losing), title)
     return messagebox.askyesno("Change Project", question, parent=parent)
 
 

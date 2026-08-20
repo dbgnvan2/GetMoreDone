@@ -983,8 +983,12 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         if label is None:
             return
         try:
+            # One query. A separate count query justified itself as "so the
+            # caller that only wants the number does not load every row", and
+            # after F4 no caller only wants the number — two queries were just
+            # a second way for the banner and its names to disagree (P19).
             items = self.db_manager.get_items_on_multiple_project_boards()
-            count = int(self.db_manager.count_items_on_multiple_project_boards())
+            count = len(items)
         except Exception as exc:
             # A cosmetic banner must not take the whole Projects screen down,
             # but the failure is said out loud rather than shown as "none" (P2).

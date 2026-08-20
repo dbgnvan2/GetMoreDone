@@ -29,12 +29,15 @@ from .title_format import split_action_item_title, format_column_text
 from .column_resize import ColumnResizer, ColumnSpec
 
 if TYPE_CHECKING:
-    from ..db_manager import DatabaseManager
     from ..app import GetMoreDoneApp
 
 
 class DragScheduleScreen(ctk.CTkFrame):
     """Screen with drag-and-drop scheduling onto date boxes."""
+
+    # BP5/S2-4 — a lineage-filtered "No Project" view cannot filter in SQL, so
+    # it fetches wider than it shows. Wider, not unbounded.
+    UNLINKED_FILTERED_LIMIT = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT * 10
 
     DATE_BOX_DAY_MIN_WIDTH = 104
     DATE_BOX_DATE_MIN_WIDTH = 84
@@ -411,6 +414,10 @@ class DragScheduleScreen(ctk.CTkFrame):
     def load_items(self):
         n_days = int(self.days_var.get())
         who_filter = None if self.who_var.get() == "All" else self.who_var.get()
+        # Only the "No Project" branch writes these; a stale pair left the box
+        # reading "showing 4 of 525" after the user clicked a project box and
+        # nothing was capped at all (P8 — a value that persists between loads).
+        self.unlinked_shown = self.unlinked_total = None
 
         if self.selected_date_filter:
             all_open = self.db_manager.get_all_items(
@@ -461,9 +468,16 @@ class DragScheduleScreen(ctk.CTkFrame):
         Tests:   tests/test_db_project_drag.py::test_bp5_the_box_says_showing_n_of_m_when_capped
         """
         shown = getattr(self, "unlinked_shown", None)
-        if shown is not None and shown < total:
-            return f"showing {shown} of {total} unlinked items"
-        return f"{total} unlinked items"
+        if shown is None:
+            return f"{total} unlinked items"
+        if getattr(self, "unlinked_total", None) is None:
+            # A lineage filter searched a capped slice, so the population
+            # behind these rows is genuinely unknown. Saying "N of M" with the
+            # unfiltered M would be a number about a different set (S2-3).
+            return f"showing {shown} (filtered, not all items searched)"
+        if shown < self.unlinked_total:
+            return f"showing {shown} of {self.unlinked_total} unlinked items"
+        return f"{self.unlinked_total} unlinked items"
 
     def _load_unlinked_items(self, who_filter):
         """The "No Project" list, capped, with the cap described honestly.
@@ -486,19 +500,40 @@ class DragScheduleScreen(ctk.CTkFrame):
             (self.segment_filter_var.get() or "All").strip() != "All"
             or (self.subsegment_filter_var.get() or "All").strip() != "All"
         )
-        limit = None if segment_filtered else DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
-        unlinked = self.db_manager.get_unlinked_action_items(
+        # A lineage filter cannot go into SQL, so the query has to fetch more
+        # than it will show — but not *everything*, which is the unbounded load
+        # BP5 exists to remove (S2-4). A ten-times ceiling instead of no
+        # ceiling, and it still announces what it dropped.
+        limit = (self.UNLINKED_FILTERED_LIMIT if segment_filtered
+                 else DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT)
+        fetched = self.db_manager.get_unlinked_action_items(
             status_filter="open", who_filter=who_filter, limit=limit)
-        total = self.db_manager.count_unlinked_action_items(
+        fetched_total = self.db_manager.count_unlinked_action_items(
             status_filter="open", who_filter=who_filter)
 
-        self.unlinked_shown, self.unlinked_total = len(unlinked), total
-        if total > len(unlinked):
+        items = [item for item in fetched if self._item_matches_filters(item)]
+
+        # The label describes what is on screen. Counting before the lineage
+        # filter ran left it announcing 30 beside three rows (S2-3): the Who
+        # dimension agreed and the segment dimension — the one deliberately not
+        # pushed into SQL — did not.
+        if segment_filtered:
+            shown, total = len(items), len(items)
+            if fetched_total > len(fetched):
+                # The ceiling bit, so the filter searched a slice: the true
+                # total is unknown and must not be presented as if it were.
+                total = None
+        else:
+            shown, total = len(items), fetched_total
+
+        self.unlinked_shown, self.unlinked_total = shown, total
+        if fetched_total > len(fetched):
             logging.getLogger(__name__).warning(
-                "[scheduler] unlinked list capped: showing %s of %s items",
-                len(unlinked), total,
+                "[scheduler] unlinked list capped: searched %s of %s items%s",
+                len(fetched), fetched_total,
+                " before the segment filter" if segment_filtered else "",
             )
-        return [item for item in unlinked if self._item_matches_filters(item)]
+        return items
 
     def build_project_boxes(self):
         projects = self.db_manager.get_project_boards(show_pending=True)

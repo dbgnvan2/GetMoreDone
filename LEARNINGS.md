@@ -54,13 +54,21 @@ Referenced by ID from the global catalogue; listed here because they recur.
 - **`with self.db.conn:` rolls back the whole connection, not just its block.**
   `_DeferredCommitConnection.__exit__` calls `self._conn.rollback()` on the raw
   connection, which discards everything uncommitted — including an enclosing
-  `transaction()`'s work. Harmless today: the two functions that use it
-  (`link_item_to_project_exclusive`, `inherit_project_links`) have no caller
-  inside `transaction()`, and `transaction()` re-raises anyway. It becomes a
-  real bug the day either is called inside a transaction whose exception is
-  *caught* — the outer writes would already be gone, silently.
+  `transaction()`'s work.
+  **Half-realised on 2026-08-19 (Batch 2).** This entry used to read "no caller
+  inside `transaction()`". `link_item_to_project_exclusive` now has two, both
+  added by the Batch 2 sweep fixes and both wrapping the call in
+  `try/except Exception`: `LinkProjectActionItemsDialog._link_selected_items`
+  and `DragScheduleScreen._drop_onto_project`. Still safe, and only because
+  both are top-level Tk callbacks — `transaction()` rolls back and re-raises
+  before the `except` runs, so there is no outer transaction to lose. It
+  becomes a real bug the day either is reached from inside another
+  `transaction()`: the re-entrant path yields without deferring, the inner
+  `with self.db.conn:` rolls back the raw connection, and the caught exception
+  hides the loss of the outer transaction's writes.
   *Ask:* is this `with conn:` nested inside a `transaction()` whose exception
-  the caller swallows?
+  the caller swallows? For the two call sites above: is either now reachable
+  from another `transaction()`?
 
 - **2026-08-18 — `build-windows` and `build-macos` call `action-gh-release` concurrently
   with the same `tag_name`.** Check-then-create race on the first tagged run. A red job

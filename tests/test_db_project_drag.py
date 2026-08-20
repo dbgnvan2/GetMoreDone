@@ -223,6 +223,7 @@ def test_bp5_the_scheduler_asks_for_a_count_not_a_list(db_manager):
             selected_project_id="__none__",
             segment_filter_var=SimpleNamespace(get=lambda: "All"),
             subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
+            UNLINKED_FILTERED_LIMIT=DragScheduleScreen.UNLINKED_FILTERED_LIMIT,
         )
         stub._item_matches_filters = lambda item: True
         stub._load_unlinked_items = lambda who: DragScheduleScreen._load_unlinked_items(stub, who)
@@ -244,16 +245,25 @@ def test_bp5_the_box_says_showing_n_of_m_when_capped(db_manager):
     from types import SimpleNamespace
     from src.getmoredone.screens.drag_schedule import DragScheduleScreen
 
-    capped = SimpleNamespace(unlinked_shown=500)
+    capped = SimpleNamespace(unlinked_shown=500, unlinked_total=525)
     assert DragScheduleScreen._unlinked_box_text(capped, 525) == (
         "showing 500 of 525 unlinked items")
 
-    whole = SimpleNamespace(unlinked_shown=12)
+    whole = SimpleNamespace(unlinked_shown=12, unlinked_total=12)
     assert DragScheduleScreen._unlinked_box_text(whole, 12) == "12 unlinked items"
 
-    # Before the list has ever been loaded there is nothing to qualify.
-    fresh = SimpleNamespace()
+    # Before this load wrote anything (another project box is selected) there
+    # is nothing to qualify — and the stale pair must not leak through (S2-5).
+    fresh = SimpleNamespace(unlinked_shown=None, unlinked_total=None)
     assert DragScheduleScreen._unlinked_box_text(fresh, 12) == "12 unlinked items"
+    assert DragScheduleScreen._unlinked_box_text(SimpleNamespace(), 12) == (
+        "12 unlinked items")
+
+    # A lineage filter that searched a capped slice does not know its own
+    # total, and must not borrow the unfiltered one (S2-3).
+    unknown = SimpleNamespace(unlinked_shown=3, unlinked_total=None)
+    assert DragScheduleScreen._unlinked_box_text(unknown, 5000) == (
+        "showing 3 (filtered, not all items searched)")
 
 
 def test_bp5_the_cap_is_announced_in_the_log(db_manager, caplog):
@@ -274,6 +284,7 @@ def test_bp5_the_cap_is_announced_in_the_log(db_manager, caplog):
         selected_project_id="__none__",
         segment_filter_var=SimpleNamespace(get=lambda: "All"),
         subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
+        UNLINKED_FILTERED_LIMIT=DragScheduleScreen.UNLINKED_FILTERED_LIMIT,
     )
     stub._item_matches_filters = lambda item: True
     stub._load_unlinked_items = lambda who: DragScheduleScreen._load_unlinked_items(stub, who)
@@ -303,6 +314,7 @@ def _unlinked_stub(db_mgr, who="All", segment="All"):
         selected_project_id="__none__",
         segment_filter_var=SimpleNamespace(get=lambda: segment),
         subsegment_filter_var=SimpleNamespace(get=lambda: "All"),
+        UNLINKED_FILTERED_LIMIT=DragScheduleScreen.UNLINKED_FILTERED_LIMIT,
     )
     stub._item_matches_filters = lambda item: True
     stub._load_unlinked_items = lambda w: DragScheduleScreen._load_unlinked_items(stub, w)
@@ -366,12 +378,14 @@ def test_f3_the_announced_total_describes_the_same_population_as_the_list(db_man
         f"the box would announce {stub.unlinked_total} for a list of {len(items)}")
 
 
-def test_f3_a_segment_filtered_view_is_not_capped(db_manager):
-    """The lineage filters cannot be pushed into SQL, so the cap steps aside.
+def test_f3_a_segment_filtered_view_searches_past_the_default_cap(db_manager):
+    """A lineage filter cannot go into SQL, so the query fetches wider.
 
-    Otherwise a segment filter searches only the top 500 and reports nothing
-    about the rest.
+    Wider, not unbounded: the first fix used ``limit=None`` and reinstated the
+    whole-table load BP5 exists to remove (S2-4).
     """
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
     db_mgr, _vps_mgr = db_manager
     cap = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
     for i in range(cap + 15):
@@ -386,9 +400,70 @@ def test_f3_a_segment_filtered_view_is_not_capped(db_manager):
     plain = _unlinked_stub(db_mgr)
     assert len(plain.load_items()) == cap
 
+    # The filtered path has a ceiling of its own, ten times the default.
+    assert DragScheduleScreen.UNLINKED_FILTERED_LIMIT == cap * 10
 
-def test_f7_the_multi_link_count_and_list_agree(db_manager):
-    """The banner's number and the list that would explain it share a FROM."""
+
+def test_s2_3_a_filtered_box_counts_the_rows_it_shows(db_manager):
+    """"N unlinked items" must be the N on screen, not an unfiltered total.
+
+    Sweep pass 2. ``unlinked_shown`` was recorded before ``_item_matches_filters``
+    ran, so a segment filter showing three rows announced thirty (P19).
+    """
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    db_mgr, _vps_mgr = db_manager
+    for i in range(30):
+        db_mgr.create_action_item(
+            ActionItem(who="Bob", title=f"Bob {i}"), apply_defaults=False)
+
+    stub = _unlinked_stub(db_mgr, segment="Personal")
+    kept = {f"Bob {i}" for i in range(3)}
+    stub._item_matches_filters = lambda item: item.title in kept
+
+    items = stub.load_items()
+    assert len(items) == 3
+    assert stub.unlinked_shown == 3, (
+        f"the box would announce {stub.unlinked_shown} beside 3 rows")
+    assert DragScheduleScreen._unlinked_box_text(stub, 30) == "3 unlinked items"
+
+
+def test_s2_5_a_stale_shown_count_does_not_survive_into_another_view(db_manager):
+    """Selecting a project box must not leave the No-Project label mid-sentence."""
+    from src.getmoredone.screens.drag_schedule import DragScheduleScreen
+
+    db_mgr, vps_mgr = db_manager
+    cap = DatabaseManager.UNLINKED_ITEMS_DEFAULT_LIMIT
+    for i in range(cap + 5):
+        db_mgr.create_action_item(
+            ActionItem(who="Bob", title=f"Bob {i:04d}"), apply_defaults=False)
+
+    stub = _unlinked_stub(db_mgr)
+    stub.load_items()
+    assert stub.unlinked_shown == cap
+
+    # Now the user clicks a real project box: load_items takes the other branch
+    # and must clear what the No-Project branch left behind.
+    seg_name = vps_mgr.get_all_segments(active_only=False)[0]["name"]
+    ape_id = _seed_ape(vps_mgr, seg_name, "Sub 1", "Cat 1")
+    stub.selected_project_id = db_mgr.ensure_project_board_for_ape(ape_id)
+    stub.load_items()
+
+    assert stub.unlinked_shown is None
+    assert DragScheduleScreen._unlinked_box_text(stub, cap + 5) == (
+        f"{cap + 5} unlinked items")
+
+
+def test_f7_the_multi_link_report_ignores_orphaned_link_rows(db_manager):
+    """One query answers both "how many" and "which", so they cannot disagree.
+
+    Sweep F7 gave a separate count query the same JOIN as its list sibling;
+    sweep pass 2 (S2-7) then removed the count query altogether, because after
+    F4 every caller loads the rows anyway and two queries were only a second
+    way for the banner and its names to disagree (P19). What remains to pin is
+    that the surviving query does not count a link row whose item is gone —
+    the banner would otherwise name a number nothing could show.
+    """
     db_mgr, vps_mgr = db_manager
     seg_name = vps_mgr.get_all_segments(active_only=False)[0]["name"]
     ape_id = _seed_ape(vps_mgr, seg_name, "Sub 1", "Cat 1")
@@ -401,16 +476,51 @@ def test_f7_the_multi_link_count_and_list_agree(db_manager):
     db_mgr.link_action_item_to_project_board(board_a, item_id)
     db_mgr.link_action_item_to_project_board(board_b, item_id)
 
-    assert db_mgr.count_items_on_multiple_project_boards() == 1
-    assert len(db_mgr.get_items_on_multiple_project_boards()) == 1
+    reported = db_mgr.get_items_on_multiple_project_boards()
+    assert [(row["title"], row["board_count"]) for row in reported] == [("Two boards", 2)]
 
-    # A link row whose item is gone must not be counted by one and missed by
-    # the other — the banner would name a number nothing could show.
+    # Orphan the link rows. Cascade delete makes this unreachable through the
+    # app; the point is that the query answers from action_items, so it cannot
+    # report an item that is not there.
     db_mgr.db.conn.execute("PRAGMA foreign_keys = OFF")
     try:
         db_mgr.db.conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,))
         db_mgr.db.conn.commit()
-        assert db_mgr.count_items_on_multiple_project_boards() == len(
-            db_mgr.get_items_on_multiple_project_boards()) == 0
+        orphans = db_mgr.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM project_board_items WHERE item_id = ?",
+            (item_id,)).fetchone()["n"]
+        assert orphans == 2, "the delete cascaded, so this test proves nothing"
+        assert db_mgr.get_items_on_multiple_project_boards() == []
     finally:
         db_mgr.db.conn.execute("PRAGMA foreign_keys = ON")
+
+
+def test_s2_1_the_who_filter_matches_non_ascii_and_odd_whitespace(db_manager):
+    """The SQL filter must keep every row the Python predicate it replaced kept.
+
+    Sweep pass 2 (S2-1). ``LOWER(TRIM(ai.who)) = ?`` lowered the left side in
+    SQLite (ASCII-only) and the right side in Python (full Unicode), so a
+    stored "JOSÉ" stopped matching a filter of "JOSÉ" and the whole "No
+    Project" box read zero with no log line (P2).
+    """
+    db_mgr, _vps_mgr = db_manager
+    db_mgr.create_action_item(
+        ActionItem(who="JOSÉ", title="Accented"), apply_defaults=False)
+    db_mgr.create_action_item(
+        ActionItem(who="Ana\t", title="Trailing tab"), apply_defaults=False)
+    db_mgr.create_action_item(
+        ActionItem(who="Bob", title="Plain"), apply_defaults=False)
+
+    for who, expected in (("JOSÉ", "Accented"), ("josé", "Accented"),
+                          ("Ana", "Trailing tab"), ("Bob", "Plain")):
+        rows = db_mgr.get_unlinked_action_items(status_filter="open", who_filter=who)
+        assert [r.title for r in rows] == [expected], (
+            f"who_filter={who!r} returned {[r.title for r in rows]}")
+        assert db_mgr.count_unlinked_action_items(
+            status_filter="open", who_filter=who) == 1, (
+            f"the count disagrees with the list for who_filter={who!r}")
+
+    # A row with no owner at all must not be swept in by COALESCE.
+    db_mgr.create_action_item(ActionItem(who="", title="Nobody"), apply_defaults=False)
+    assert db_mgr.count_unlinked_action_items(
+        status_filter="open", who_filter="Bob") == 1

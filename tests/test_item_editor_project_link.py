@@ -298,6 +298,9 @@ def test_pl4_edit_item_relinks_exclusively(tmp_path, monkeypatch):
 
 
 def test_pl4_1_clearing_the_project_removes_the_link(tmp_path, monkeypatch):
+    """And says first that the Annual Plan Element goes with it (S2-2)."""
+    import src.getmoredone.screens.project_link_notice as notice
+
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
@@ -306,6 +309,11 @@ def test_pl4_1_clearing_the_project_removes_the_link(tmp_path, monkeypatch):
         item = make_daily_item(vps, "Task")
         manager.link_item_to_project_exclusive(board.id, item.id)
 
+        asked = []
+        monkeypatch.setattr(
+            notice.messagebox, "askyesno",
+            lambda title, message, **kw: asked.append(message) or True)
+
         stub = _save_stub(
             manager, monkeypatch,
             item=manager.get_action_item(item.id), project_choice=None,
@@ -313,6 +321,41 @@ def test_pl4_1_clearing_the_project_removes_the_link(tmp_path, monkeypatch):
         assert ItemEditorDialog.save_item(stub) is True
 
         assert manager.get_project_board_ids_for_item(item.id) == []
+        assert asked, "the Annual Plan Element was cleared without a word"
+        assert "Annual Plan Element" in asked[0], asked[0]
+    finally:
+        vps.close()
+
+
+def test_s2_2_declining_the_clear_keeps_the_annual_plan_element(tmp_path, monkeypatch):
+    """"No" must leave the item's place in the plan alone.
+
+    Sweep pass 2. The editor's guard only fired when the item had *extra*
+    project links, so a singly-filed item — or one with an Annual Plan Element
+    and no project row at all — lost its APE with no question asked (P13: the
+    guard was scoped to the wrong thing).
+    """
+    import src.getmoredone.screens.project_link_notice as notice
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _seed_board(manager, "Old Project", ape_id)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(board.id, item.id)
+
+        monkeypatch.setattr(notice.messagebox, "askyesno",
+                            lambda title, message, **kw: False)
+
+        stub = _save_stub(
+            manager, monkeypatch,
+            item=manager.get_action_item(item.id), project_choice=None,
+        )
+        assert ItemEditorDialog.save_item(stub) is True
+
+        assert manager.get_project_board_ids_for_item(item.id) == [board.id]
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
     finally:
         vps.close()
 
@@ -564,13 +607,13 @@ def test_pl12_3_a_copy_of_a_multi_linked_item_lands_on_one_board(tmp_path):
         item = make_daily_item(vps, "Task")
         manager.link_action_item_to_project_board(first.id, item.id)
         manager.link_action_item_to_project_board(second.id, item.id)
-        assert manager.count_items_on_multiple_project_boards() == 1
+        assert len(manager.get_items_on_multiple_project_boards()) == 1
 
         new_id = manager.create_followup_item(item.id)
 
         assert manager.get_project_board_ids_for_item(new_id) == [first.id], (
             "the copy inherited every link and is itself multi-filed")
-        assert manager.count_items_on_multiple_project_boards() == 1, (
+        assert len(manager.get_items_on_multiple_project_boards()) == 1, (
             "copying an item raised the number of items filed under several projects")
     finally:
         vps.close()

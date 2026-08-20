@@ -33,7 +33,7 @@ from .item_editor_dialogs import (
     ShowRelatedDialog,
 )
 from .item_editor_project_dialog import SetProjectDialog
-from .project_link_notice import describe_single_relink
+from .project_link_notice import confirm_exclusive_relink, describe_single_relink
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 # Still used by _canonical_weekly_tactic_title, which is about Weekly Tactic
 # titles, not the removed Context field.
@@ -598,6 +598,19 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         if (self._loaded_extra_project_links
                 and board_id != self._loaded_project_id
                 and not self._confirm_dropping_extra_project_links(board_id)):
+            return
+
+        # Clearing the project also nulls the item's Annual Plan Element
+        # (clear_item_project_links), which the picker does not say and the
+        # guard above did not cover: a singly-filed item has no *extra* links,
+        # so it cleared its place in the plan without a word. Sweep pass 2
+        # (S2-2) — the same class F1 closed on the other two surfaces (P5).
+        if (board_id is None
+                and board_id != self._loaded_project_id
+                and not self._loaded_extra_project_links
+                and self.item_id
+                and not confirm_exclusive_relink(
+                    self, self.db_manager, [self.item_id], None)):
             return
 
         self._selected_project_id = board_id

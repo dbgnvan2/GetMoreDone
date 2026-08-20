@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -252,6 +253,11 @@ class DBManagerProjectBoardsMixin:
         if not board_ids:
             return 0
 
+        if len(board_ids) > 1:
+            logging.getLogger(__name__).warning(
+                "[project] %s was filed under %d projects; its copy %s inherits "
+                "only %s", source_id, len(board_ids), new_id, board_ids[0],
+            )
         board_ids = board_ids[:1]
         now = datetime.now().isoformat()
         with self.db.conn:
@@ -318,28 +324,6 @@ class DBManagerProjectBoardsMixin:
             for row in rows
         ]
 
-    def count_items_on_multiple_project_boards(self) -> int:
-        """How many action items are still filed under more than one Project.
-
-        A count query rather than ``len(...)`` of the full list, so the caller
-        that only wants the number does not load every row (P9).
-        """
-        # The same FROM as get_items_on_multiple_project_boards, deliberately:
-        # a count over project_board_items alone would include a row whose item
-        # no longer exists, so the banner could name a number the list cannot
-        # show (P19). Cascade delete makes that unreachable today; the two
-        # queries agreeing by construction is what keeps it that way.
-        row = self.db.conn.execute("""
-            SELECT COUNT(*) AS n FROM (
-                SELECT pbi.item_id
-                FROM action_items ai
-                JOIN project_board_items pbi ON pbi.item_id = ai.id
-                GROUP BY pbi.item_id
-                HAVING COUNT(pbi.project_board_id) > 1
-            )
-        """).fetchone()
-        return int(row["n"]) if row else 0
-
     # BP5 — the Scheduler's "Unlinked (No Project)" list. A default cap rather
     # than none: the box shows a handful of rows, and the query behind it used
     # to load every open unlinked item in the database to fill it.
@@ -386,8 +370,7 @@ class DBManagerProjectBoardsMixin:
         rows = self.db.conn.execute(query, params).fetchall()
         return [self._row_to_action_item(row) for row in rows]
 
-    @staticmethod
-    def _apply_unlinked_filters(query, params, status_filter, who_filter):
+    def _apply_unlinked_filters(self, query, params, status_filter, who_filter):
         """The WHERE clauses the list and the count must share.
 
         Two queries with two hand-written filter blocks is exactly how a count
@@ -397,12 +380,38 @@ class DBManagerProjectBoardsMixin:
             query += " AND ai.status = ?"
             params.append(status_filter)
         if who_filter:
-            # Matched the way the Scheduler matched it in Python: trimmed and
-            # case-insensitive, so pushing it into SQL does not change which
-            # rows come back.
-            query += " AND LOWER(TRIM(ai.who)) = ?"
-            params.append(who_filter.strip().lower())
+            # The owner is resolved in Python and matched by exact value,
+            # rather than compared with SQL string functions.
+            #
+            # ``LOWER(TRIM(ai.who)) = ?`` looked equivalent to the Python
+            # predicate this replaced and was not: SQLite's LOWER is ASCII-only
+            # and its TRIM strips only U+0020, so a stored "JOSÉ" or a trailing
+            # tab stopped matching and the "No Project" box read zero with no
+            # signal (P2). Doing it symmetrically in SQL fixes the asymmetry but
+            # still cannot fold "JOSÉ" onto "josé" — the comparison has to
+            # happen where Python's casing rules apply.
+            matches = self._who_values_matching(who_filter)
+            if not matches:
+                query += " AND 0"
+            else:
+                query += " AND ai.who IN (%s)" % ",".join("?" for _ in matches)
+                params.extend(matches)
         return query, params
+
+    def _who_values_matching(self, who_filter: str) -> List[str]:
+        """Stored ``who`` values equal to ``who_filter`` ignoring case and space.
+
+        ``.strip().lower()`` on both sides — exactly the predicate the Scheduler
+        applied in Python before the filter moved into the query, so moving it
+        changed *when* rows are dropped (before the cap, not after) and not
+        *which* ones.
+        """
+        target = who_filter.strip().lower()
+        rows = self.db.conn.execute(
+            "SELECT DISTINCT who FROM action_items WHERE who IS NOT NULL"
+        ).fetchall()
+        return [row["who"] for row in rows
+                if (row["who"] or "").strip().lower() == target]
 
     def count_unlinked_action_items(
         self,
