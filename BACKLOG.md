@@ -61,12 +61,33 @@ took each decision and closed it. Kept here as the record of what was decided.
   its copy independently. It is a public DB API with three tests of its own, so
   removing it was outside the decision taken. Either wire it or retire it, the
   same call BP4 made.
-- **`ProjectBoardsScreen.create_action_item_from_board` still uses the additive
-  `link_action_item_to_project_board`.** Provably identical there — the item is
-  brand new and has no links to drop — so BP1 left it, but it is the last
-  caller of the additive function outside tests.
+- ~~**`ProjectBoardsScreen.create_action_item_from_board` still uses the
+  additive `link_action_item_to_project_board`.**~~ **Fixed** — it is exclusive
+  now. Verified the switch is a genuine no-op there: `_apply_defaults` never
+  touches `annual_plan_element_id`, so the item's plan element is the board's
+  either way.
+- **A project's Annual Plan Element is synced onto its items only at link
+  time.** `update_project_board` changes a board's plan element and touches
+  none of its items; `delete_project_board` removes the board and leaves every
+  ex-member carrying the dead board's. So editing a project's plan element
+  reproduces exactly the stale state that filing was fixed to prevent. Not
+  fixed here — it is a resync question about a different writer, with its own
+  blast radius.
+- **The raw APE `UPDATE` in `link_item_to_project_exclusive` bypasses
+  `_stamp_segment_from_relationships`**, so `segment_description_id` stays
+  derived from the previous plan element until the next `update_action_item`.
+  Reasoned from the code, not reproduced.
 - **`LinkProjectActionItemsDialog` renders up to 200 rows eagerly** on open,
-  each with four widgets. On a real database this takes long enough to notice.
+  each with four widgets, and does it again on every keystroke in Search. On a
+  real database this takes long enough to notice.
+- **The Projects screen's "Unlink" button and every other unfiling path
+  disagree.** Unlink removes the project link and leaves
+  `annual_plan_element_id` set; "Clear Project" and dragging onto No Project
+  null it. Measured: after Unlink the item still shows the segment, subsegment
+  and category of the project it just left, in every list view. This is a
+  decision, not an oversight — either Unlink should clear the plan element too,
+  or the other two should not — and it is the one part of the "exactly one
+  Project" model that is still inconsistent. **Needs a call.**
 - **`build_item_from_form` canonicalises a Weekly Tactic title from the item's
   *stored* start date**, before the form's start date is written onto it. That
   is the order `save_item` used before BP3 and was preserved deliberately; it

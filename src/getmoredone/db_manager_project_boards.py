@@ -207,7 +207,7 @@ class DBManagerProjectBoardsMixin:
             # this write would change the item's APE.
             # Tests: tests/test_project_multi_link.py::test_c3_a_board_with_no_plan_element_clears_the_items
             board = self.get_project_board(board_id)
-            if board:
+            if board and self._may_set_ape(item_id, board.annual_plan_element_id):
                 self.db.conn.execute(
                     "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
                     (board.annual_plan_element_id, now, item_id)
@@ -235,11 +235,38 @@ class DBManagerProjectBoardsMixin:
         """Remove all project links and clear APE for an action item."""
         now = datetime.now().isoformat()
         self.db.conn.execute("DELETE FROM project_board_items WHERE item_id = ?", (item_id,))
-        self.db.conn.execute(
-            "UPDATE action_items SET annual_plan_element_id = NULL, updated_at = ? WHERE id = ?",
-            (now, item_id)
-        )
+        if self._may_set_ape(item_id, None):
+            self.db.conn.execute(
+                "UPDATE action_items SET annual_plan_element_id = NULL, updated_at = ? WHERE id = ?",
+                (now, item_id)
+            )
         self.db.conn.commit()
+
+    def _may_set_ape(self, item_id: str, new_ape: Optional[str]) -> bool:
+        """Refuse an Annual Plan Element write that would invalidate the row.
+
+        Purpose: a Weekly Tactic must belong to an Annual Plan Element —
+                 ``update_action_item`` raises ValueError without one (WT-M1).
+                 These two methods write the APE with raw SQL, which bypasses
+                 that validation, so nulling it produced a ``item_type='week'``
+                 row the application's own writer then refused to save: a value
+                 no supported code path can create, written by a supported code
+                 path (P2 — the write reported success and left the row
+                 unusable).
+        Spec:    docs/spec_2026-08-18_weekly_tactic_scheduling.md#wt-m1
+        Tests:   tests/test_project_multi_link.py::test_f2_filing_never_strips_a_weekly_tactics_plan_element
+
+        A Weekly Tactic should not be filed under a project at all (PL6, which
+        the item editor enforces); this is the backstop for the surfaces that
+        do not, and it protects the link write without silently dropping it —
+        the link itself is still made, only the invalidating APE write is not.
+        """
+        if new_ape:
+            return True
+        row = self.db.conn.execute(
+            "SELECT item_type FROM action_items WHERE id = ?", (item_id,)
+        ).fetchone()
+        return not (row and row["item_type"] == "week")
 
     def inherit_project_links(self, source_id: str, new_id: str) -> int:
         """Copy an item's project links onto an item derived from it.

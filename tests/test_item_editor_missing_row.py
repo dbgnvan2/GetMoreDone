@@ -130,3 +130,27 @@ def test_an_ordinary_edit_still_saves(deleted_item, tmp_path):
 
     assert stub.save_item() is True, texts
     assert manager.get_action_item(live.id).title == "Edited title"
+
+
+def test_the_calendar_path_refuses_too(deleted_item, monkeypatch):
+    """F7 — the guard was scoped out of the third caller of the same class.
+
+    ``create_calendar_event`` only called ``save_item_if_needed`` for a *new*
+    item, so a saved editor whose row had been deleted skipped the guard and
+    reached ``self.item.is_meeting`` on a None — an AttributeError inside a Tk
+    callback, which this app has nowhere to show.
+    """
+    manager, gone_id = deleted_item
+    texts = []
+    stub = _stub(manager, gone_id, None, texts)
+    opened = []
+    stub.create_calendar_event = lambda: ItemEditorDialog.create_calendar_event(stub)
+
+    import src.getmoredone.screens.item_editor as ie
+    monkeypatch.setattr(ie, "CalendarEventDialog",
+                        lambda *a, **k: opened.append(a), raising=False)
+
+    stub.create_calendar_event()
+
+    assert opened == [], "the calendar dialog opened on an item that does not exist"
+    assert texts and "no longer exists" in texts[0], texts

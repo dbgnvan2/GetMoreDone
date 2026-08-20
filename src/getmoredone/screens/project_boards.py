@@ -325,6 +325,16 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
         # Apply filters with AND logic
         filtered = []
         for item in items:
+            # PL6 — a Weekly Tactic's title and Annual Plan Element are derived
+            # from the plan, so it cannot be filed under a project. The item
+            # editor disables its Set Project button for one; this dialog was
+            # listing them with a working Link button, which is how a tactic
+            # could be filed under a project with no plan element and have its
+            # own stripped (P5 — one surface enforced the rule, the other did
+            # not).
+            # Tests: tests/test_project_multi_link.py::test_f2_the_link_dialog_does_not_offer_weekly_tactics
+            if item.item_type == "week":
+                continue
             is_linked = item.id in linked_ids
             is_completed = item.status == "completed"
 

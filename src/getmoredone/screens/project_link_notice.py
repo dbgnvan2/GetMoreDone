@@ -52,8 +52,17 @@ def describe_single_relink(count: int, target_title: Optional[str],
     else:
         ape_clause = ", and clears the item's Annual Plan Element"
     if count == 0:
-        # No link at all — the only thing at stake is the Annual Plan Element.
-        # Saying "filed under another project" here would be simply untrue.
+        # No link at all — the only thing at stake is the Annual Plan Element,
+        # so if this write will not move it there is nothing to ask about.
+        # The branch used to assert the loss unconditionally, which defeated
+        # the caller's ``ape_known`` guard and told the user their plan element
+        # was going when the write would not touch it (sweep pass 8).
+        if ape_outcome == APE_UNCHANGED:
+            # Unreachable through ``confirm_exclusive_relink``, which no longer
+            # classifies an item as losing a plan element it will keep. Kept
+            # truthful rather than removed, because "no caller produces this"
+            # is what the next caller changes.
+            return "This item is about to be re-filed.\n\nContinue?"
         if target_title:
             # Filing replaces it with the board's — unless the board has none,
             # in which case it clears it, and "replaces" is a false promise
@@ -98,18 +107,42 @@ def describe_single_relink(count: int, target_title: Optional[str],
 
 def describe_bulk_relink(item_count: int, target_title: Optional[str],
                          verb: str = "selected",
-                         ape_outcome: Optional[str] = APE_UNCHANGED) -> str:
+                         ape_outcome: Optional[str] = APE_UNCHANGED,
+                         ape_only_count: int = 0) -> str:
     """What a batch link is about to unfile.
 
-    ``item_count`` counts only the items that would actually lose a link, so
-    the number the user reads is the number of items affected — not the size
-    of the batch. ``verb`` is how the user produced that batch: the Projects
-    dialog has a selection, the Scheduler has a drag, and telling someone who
-    just dragged three items about "3 selected items" describes an action they
-    did not take.
+    ``item_count`` counts the items that would lose a *link*;
+    ``ape_only_count`` those whose only loss is their Annual Plan Element. Both
+    are needed, because a batch can consist entirely of the second kind — three
+    loose items each carrying their own plan element, filed under a project
+    with a different one. Counting only the first produced "**0** selected
+    items are already filed under another project" while three plan elements
+    were replaced, with no mention of them: both halves of the sentence false
+    at once, and the same defect the single-item path had fixed one commit
+    earlier (P5).
+
+    ``verb`` is how the user produced the batch: the Projects dialog has a
+    selection, the Scheduler has a drag, and telling someone who just dragged
+    three items about "3 selected items" describes an action they did not take.
     """
-    noun = "item is" if item_count == 1 else "items are"
+    total = item_count + ape_only_count
+    if not total:
+        # Nothing at stake produces no sentence, the way describe_bulk_clear
+        # already behaves — rather than "0 selected items are …".
+        return ""
+
+    noun = "item is" if total == 1 else "items are"
     target = f"“{target_title}”" if target_title else "this project"
+
+    if not item_count:
+        # Nothing is unfiled — the whole batch is here for its plan elements.
+        verb_phrase = ("replaces each item's Annual Plan Element with the "
+                       "project's" if ape_outcome == APE_REPLACED and target_title
+                       else "clears each item's Annual Plan Element")
+        return (
+            f"{total} {verb} {noun} carrying an Annual Plan Element of their "
+            f"own.\n\nFiling under {target} {verb_phrase}. Continue?"
+        )
     if ape_outcome == APE_UNCHANGED:
         ape_clause = ""
     elif target_title and ape_outcome == APE_REPLACED:
@@ -117,7 +150,7 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str],
     else:
         ape_clause = " and clears each item's Annual Plan Element"
     return (
-        f"{item_count} {verb} {noun} already filed under another project.\n\n"
+        f"{total} {verb} {noun} already filed under another project.\n\n"
         f"An Action Item belongs to exactly one Project, so filing under "
         f"{target} removes the existing links{ape_clause}. Continue?"
     )
@@ -192,7 +225,7 @@ def items_losing_links(db_manager, item_ids: Iterable[str],
 
 
 def classify_losses(db_manager, item_ids: Iterable[str],
-                    target_board_id: Optional[str]):
+                    target_board_id: Optional[str], ape_known: bool = True):
     """Split the affected items by *what* they would lose.
 
     Returns ``(with_links, ape_only)``. The two are counted separately because
@@ -222,7 +255,7 @@ def classify_losses(db_manager, item_ids: Iterable[str],
         ]
         if others:
             with_links.append(item_id)
-        elif _ape_would_change(db_manager, item_id, target_ape):
+        elif ape_known and _ape_would_change(db_manager, item_id, target_ape):
             ape_only.append(item_id)
     return with_links, ape_only
 
@@ -240,6 +273,26 @@ def _bulk_ape_outcome(db_manager, item_ids, target_ape: Optional[str]) -> Option
 def _ape_would_change(db_manager, item_id: str, target_ape: Optional[str]) -> bool:
     """Would this write replace or remove the item's Annual Plan Element?"""
     return _ape_outcome(db_manager, item_id, target_ape) is not APE_UNCHANGED
+
+
+def ape_outcome_for_change(db_manager, item_id: Optional[str],
+                           target_board_id: Optional[str]) -> Optional[str]:
+    """What filing under (or clearing) ``target_board_id`` does to the item's APE.
+
+    The single implementation of the rule, including the unreadable-board case:
+    ``link_item_to_project_exclusive`` guards its APE write with ``if board:``,
+    so a board row that cannot be read means the plan element is not touched
+    and the dialog must not say it is.
+    """
+    if not item_id:
+        return APE_UNCHANGED
+    target_ape = None
+    if target_board_id is not None:
+        board = db_manager.get_project_board(target_board_id)
+        if board is None:
+            return APE_UNCHANGED
+        target_ape = board.annual_plan_element_id
+    return _ape_outcome(db_manager, item_id, target_ape)
 
 
 def _ape_outcome(db_manager, item_id: str, target_ape: Optional[str]) -> Optional[str]:
@@ -268,9 +321,6 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     with no project yet — is never interrupted. One question per batch.
     """
     item_ids = list(item_ids)
-    with_links, ape_only = classify_losses(db_manager, item_ids, target_board_id)
-    if not with_links and not ape_only:
-        return True
 
     # Branch on whether this is a clear, not on whether the board title
     # resolved: an unreadable board is still a filing, and falling through to
@@ -281,13 +331,20 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     target_ape = None
     # An unreadable board row means the write will not touch the item's Annual
     # Plan Element at all — ``link_item_to_project_exclusive`` guards that step
-    # with ``if board:`` — so the dialog must not claim it does.
+    # with ``if board:``. That has to be decided *before* the items are
+    # classified, or an item whose only "loss" is a plan element the write will
+    # not touch still triggers a dialog, with nothing true left to say in it.
     ape_known = clearing
     if not clearing:
         board = db_manager.get_project_board(target_board_id)
         title = board.title if board else "the selected project"
         target_ape = board.annual_plan_element_id if board else None
         ape_known = board is not None
+
+    with_links, ape_only = classify_losses(
+        db_manager, item_ids, target_board_id, ape_known=ape_known)
+    if not with_links and not ape_only:
+        return True
 
     if len(item_ids) == 1:
         only = (with_links + ape_only)[0]
@@ -306,8 +363,10 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     else:
         question = describe_bulk_relink(
             len(with_links), title, verb=verb,
-            ape_outcome=(_bulk_ape_outcome(db_manager, with_links, target_ape)
-                         if ape_known else APE_UNCHANGED))
+            ape_only_count=len(ape_only),
+            ape_outcome=(_bulk_ape_outcome(
+                db_manager, with_links + ape_only, target_ape)
+                if ape_known else APE_UNCHANGED))
     return messagebox.askyesno("Change Project", question, parent=parent)
 
 

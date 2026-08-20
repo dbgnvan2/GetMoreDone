@@ -1212,12 +1212,43 @@ def test_c5_a_failed_banner_check_says_so_rather_than_showing_nothing(tmp_path):
     assert texts[0] != "", "a failed check was shown as an empty banner"
 
 
-def test_c6_creating_an_item_from_a_board_files_it_exclusively(tmp_path):
-    """The last additive writer on the run path is gone."""
-    source = (pathlib.Path(__file__).resolve().parents[1] / "src" / "getmoredone"
-              / "screens" / "project_boards.py").read_text(encoding="utf-8")
-    assert "link_action_item_to_project_board" not in source, (
-        "the Projects screen still has an additive link call")
+def test_c6_creating_an_item_from_a_board_files_it_exclusively(tmp_path, monkeypatch):
+    """The item a board creates is filed under that board, exclusively.
+
+    This asserted the *absence of a string* in the source, which passes just as
+    happily when the link call is deleted outright — a guard that cannot fail
+    for the thing it names (P24). It drives the real method now.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+
+        # An error here would be swallowed by the method's own try/except and
+        # reported as a messagebox, so make that loud instead of silent.
+        errors = []
+        monkeypatch.setattr(pb.messagebox, "showerror",
+                            lambda *a, **k: errors.append(a))
+
+        opened = []
+        stub = SimpleNamespace(
+            db_manager=manager,
+            board_rows=[{"id": board.id, "segment_name": "Health"}],
+            selected_board_id=None,
+            refresh=lambda: None,
+            edit_item=lambda item_id: opened.append(item_id),
+        )
+        pb.ProjectBoardsScreen.create_action_item(stub, board.id)
+        assert not errors, errors
+
+        assert opened, "no item was created"
+        new_id = opened[0]
+        assert manager.get_project_board_ids_for_item(new_id) == [board.id], (
+            "an item created from a board was not filed under it")
+        assert manager.get_action_item(new_id).annual_plan_element_id == ape_id
+    finally:
+        vps.close()
 
 
 def test_c2_2_no_combination_of_arguments_produces_a_false_sentence():
@@ -1243,15 +1274,180 @@ def test_c2_2_no_combination_of_arguments_produces_a_false_sentence():
                 else:
                     # Nothing to take a plan element from, so nothing to replace.
                     assert "replaces" not in text, text
-                if outcome is APE_UNCHANGED:
-                    assert "Annual Plan Element" not in text or count == 0, text
+                if outcome is APE_UNCHANGED and count:
+                    assert "Annual Plan Element" not in text, text
 
-    for affected in (1, 2, 5):
+    # affected == 0 is what a batch of loose items each carrying their own
+    # plan element actually produces, and the walk that "covered everything"
+    # started at 1 — so it never saw the case the live caller hits (P24).
+    for affected in (0, 1, 2, 5):
         for title in ("Website Rebuild", None):
             for outcome in outcomes:
-                text = describe_bulk_relink(affected, title, ape_outcome=outcome)
-                assert text.endswith("Continue?")
-                if not title:
-                    assert "replaces" not in text, text
-                if outcome is APE_UNCHANGED:
-                    assert "Annual Plan Element" not in text, text
+                for ape_only in (0, 1, 3):
+                    text = describe_bulk_relink(
+                        affected, title, ape_outcome=outcome,
+                        ape_only_count=ape_only)
+                    if affected + ape_only == 0:
+                        assert text == "", text
+                        continue
+                    assert text.endswith("Continue?")
+                    if not title:
+                        assert "replaces" not in text, text
+                    if outcome is APE_UNCHANGED and not ape_only:
+                        assert "Annual Plan Element" not in text, text
+                    # The number must be the whole batch, never one bucket.
+                    assert f"{affected + ape_only} " in text, (affected, ape_only, text)
+
+
+# ------------------------------------------------- eighth pass (cold)
+
+
+def test_f1_a_batch_that_only_loses_plan_elements_is_counted_and_named(tmp_path, answers):
+    """"0 selected items … removes the existing links" while three APEs went.
+
+    ``classify_losses`` returns two buckets; the bulk *filing* sentence used
+    only the first. A batch of loose items each carrying their own Annual Plan
+    Element put every one of them in the second bucket, so the message counted
+    zero and dropped the plan-element clause as well — both halves false, and
+    the same defect the single-item path had fixed one commit earlier.
+    """
+    from tests.weekly_tactic_fixtures import seed_second_ape
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        own_ape = seed_ape(vps)
+        board_ape = seed_second_ape(vps)
+        board = _board(manager, "Website Rebuild", board_ape)
+
+        items = []
+        for i in range(3):
+            item = make_daily_item(vps, f"Loose {i}")
+            stored = manager.get_action_item(item.id)
+            stored.annual_plan_element_id = own_ape
+            manager.update_action_item(stored)
+            items.append(item)
+
+        answers["reply"] = False
+        stub = _dialog_stub(manager, board.id, checked=[i.id for i in items])
+        stub._link_selected_items()
+
+        message = answers["messages"][0]
+        assert "0 " not in message, message
+        assert "3 selected items" in message, message
+        assert "Annual Plan Element" in message, message
+        for item in items:
+            assert manager.get_action_item(item.id).annual_plan_element_id == own_ape
+    finally:
+        vps.close()
+
+
+def test_f2_filing_never_strips_a_weekly_tactics_plan_element(tmp_path):
+    """A Weekly Tactic with no Annual Plan Element is a row the app cannot save.
+
+    The APE sync writes raw SQL, so it bypasses ``update_action_item``'s
+    validation. Making it unconditional meant filing a tactic under a project
+    with no plan element produced an ``item_type='week'`` row whose own writer
+    then raised ValueError on it — a value no supported path can create,
+    written by a supported path.
+    """
+    import pytest as _pytest
+    from tests.weekly_tactic_fixtures import make_week_item
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        tactic = make_week_item(vps, ape_id)
+        bare = _board(manager, "No plan element", None)
+
+        manager.link_item_to_project_exclusive(bare.id, tactic.id)
+
+        after = manager.get_action_item(tactic.id)
+        assert after.annual_plan_element_id == ape_id, (
+            "the Weekly Tactic lost the plan element it is required to have")
+        # ...and the row is still saveable through the ordinary path.
+        manager.update_action_item(after)
+
+        # The same applies to clearing.
+        manager.clear_item_project_links(tactic.id)
+        assert manager.get_action_item(tactic.id).annual_plan_element_id == ape_id
+
+        # An ordinary daily item is unaffected by the guard.
+        daily = make_daily_item(vps, "Daily")
+        manager.link_item_to_project_exclusive(_board(manager, "Has one", ape_id).id, daily.id)
+        assert manager.get_action_item(daily.id).annual_plan_element_id == ape_id
+        manager.link_item_to_project_exclusive(bare.id, daily.id)
+        assert manager.get_action_item(daily.id).annual_plan_element_id is None
+    finally:
+        vps.close()
+
+
+def test_f2_the_link_dialog_does_not_offer_weekly_tactics(tmp_path, monkeypatch):
+    """PL6 — a Weekly Tactic cannot be filed under a project, on any surface.
+
+    The item editor disables its Set Project button for one; this dialog was
+    listing tactics with a working Link button.
+    """
+    import customtkinter as ctk
+    from tests.weekly_tactic_fixtures import make_week_item
+
+    monkeypatch.setattr(LinkProjectActionItemsDialog, "grab_set", lambda self: None)
+
+    vps = make_vps(tmp_path)
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        make_week_item(vps, ape_id)
+        daily = make_daily_item(vps, "An ordinary task")
+
+        dialog = LinkProjectActionItemsDialog(root, manager, board.id, on_linked=lambda: None)
+        try:
+            listed = {item.id for item in manager.get_all_items()}
+            assert any(manager.get_action_item(i).item_type == "week" for i in listed), (
+                "the fixture has no Weekly Tactic, so this proves nothing")
+            # One row rendered: the daily item, not the tactic.
+            assert len(dialog.results.winfo_children()) == 1
+            dialog._link(daily.id)
+        finally:
+            dialog.destroy()
+        assert manager.get_project_board_ids_for_item(daily.id) == [board.id]
+    finally:
+        root.destroy()
+        vps.close()
+
+
+def test_f5_one_implementation_of_what_happens_to_the_plan_element(tmp_path):
+    """The editor had a third copy that lacked the unreadable-board guard."""
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+    from src.getmoredone.screens.project_link_notice import (
+        ape_outcome_for_change, APE_CLEARED, APE_REPLACED, APE_UNCHANGED)
+    from tests.weekly_tactic_fixtures import seed_second_ape
+
+    assert not hasattr(ItemEditorDialog, "_project_change_moves_the_ape"), (
+        "the editor-local copy of the rule is back")
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_a = seed_ape(vps)
+        ape_b = seed_second_ape(vps)
+        with_a = _board(manager, "Has A", ape_a)
+        with_b = _board(manager, "Has B", ape_b)
+        bare = _board(manager, "Has none", None)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(with_a.id, item.id)
+
+        assert ape_outcome_for_change(manager, item.id, with_a.id) is APE_UNCHANGED
+        assert ape_outcome_for_change(manager, item.id, with_b.id) == APE_REPLACED
+        assert ape_outcome_for_change(manager, item.id, bare.id) == APE_CLEARED
+        assert ape_outcome_for_change(manager, item.id, None) == APE_CLEARED
+        assert ape_outcome_for_change(manager, None, with_b.id) is APE_UNCHANGED
+        # An unreadable board: the write skips the APE, so the answer is
+        # "unchanged", not "cleared".
+        assert ape_outcome_for_change(manager, item.id, "no-such-board") is APE_UNCHANGED
+    finally:
+        vps.close()

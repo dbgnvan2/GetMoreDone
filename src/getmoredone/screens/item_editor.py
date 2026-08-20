@@ -33,7 +33,11 @@ from .item_editor_dialogs import (
     ShowRelatedDialog,
 )
 from .item_editor_project_dialog import SetProjectDialog
-from .project_link_notice import confirm_exclusive_relink, describe_single_relink
+from .project_link_notice import (
+    ape_outcome_for_change,
+    confirm_exclusive_relink,
+    describe_single_relink,
+)
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 # Still used by _canonical_weekly_tactic_title, which is about Weekly Tactic
 # titles, not the removed Context field.
@@ -641,31 +645,16 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         # the Annual Plan Element warning from the one path that shows it
         # (sweep pass 4, P22 — a new parameter with a default that silently
         # changes an existing call site).
+        # One implementation of "what happens to the Annual Plan Element",
+        # shared with the other two surfaces. The editor had a third copy that
+        # read ``self.item`` (loaded at open, so stale if the row changed
+        # elsewhere) and lacked the unreadable-board guard, so it re-opened
+        # S2-8 in the one dialog a multi-filed item ever gets (P5/P19).
         question = describe_single_relink(
-            count, target, ape_outcome=self._project_change_moves_the_ape(board_id))
+            count, target,
+            ape_outcome=ape_outcome_for_change(
+                self.db_manager, self.item_id, board_id))
         return messagebox.askyesno("Change Project", question, parent=self)
-
-    def _project_change_moves_the_ape(self, board_id: Optional[str]):
-        """What filing under (or clearing) ``board_id`` does to this item's APE.
-
-        Clearing nulls it; filing replaces it with the board's — or clears it,
-        when the board has none. Either way the item's place in the plan
-        changes, and the dialog has to say which.
-        """
-        from .project_link_notice import APE_CLEARED, APE_REPLACED, APE_UNCHANGED
-
-        if not self.item_id:
-            return APE_UNCHANGED
-        current = getattr(self.item, "annual_plan_element_id", None)
-        if not current:
-            return APE_UNCHANGED
-        target_ape = None
-        if board_id is not None:
-            board = self.db_manager.get_project_board(board_id)
-            target_ape = board.annual_plan_element_id if board else None
-        if current == target_ape:
-            return APE_UNCHANGED
-        return APE_REPLACED if target_ape else APE_CLEARED
 
     def _apply_project_link(self, item_id: str) -> bool:
         """Write the Project link, but only when the user changed it (PL4.2).
@@ -1735,10 +1724,13 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
 
     def create_calendar_event(self):
         """Create a Google Calendar event linked to this item."""
-        if not self.item_id:
-            # Save the item first if it's new
-            if not self.save_item_if_needed():
-                return
+        # ``save_item_if_needed`` carries the deleted-row guard, but calling it
+        # only for a *new* item scoped that guard out of the case it exists
+        # for: a saved editor whose row has since been deleted reaches
+        # ``self.item.is_meeting`` below on a None and raises inside a Tk
+        # callback, where this app has nowhere to show it (P13/P5).
+        if not self.save_item_if_needed():
+            return
 
         # Open calendar dialog
         from .calendar_dialog import CalendarEventDialog
