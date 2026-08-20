@@ -929,8 +929,91 @@ def test_rn_m1b1_backfill_prefers_the_candidate_whose_plan_year_agrees(tmp_path)
             f"the APE was linked to {[r['id'] for r in linked]}, not its own "
             f"initiative; the twin is {twin}"
         )
-        assert result["ambiguous"] == [], (
-            f"the real initiative was reported as the loser: {result['ambiguous']}"
+        # NOT `ambiguous == []`. The tie-break is a heuristic, not evidence,
+        # and asserting silence here would pin it: a later change that surfaces
+        # the demoted candidate — the RN-INV5-conformant outcome — would turn
+        # this test red for doing the right thing. What must hold is that the
+        # APE got its own initiative AND that the twin is visible to a human.
+        assert result["ambiguous"], "the twin was demoted silently"
+        assert result["ambiguous"][0]["left_null"] == [twin], (
+            f"expected the twin surfaced as the loser: {result['ambiguous']}"
+        )
+        assert result["ambiguous"][0]["linked"] == chain["annual_initiative_id"]
+    finally:
+        vps.close()
+
+
+def test_rn_m1b1_backfill_surfaces_the_candidate_the_tie_break_demoted(tmp_path):
+    """The mirror case: the APE's OWN initiative is the drifted one (RN-INV5).
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    Preferring candidates whose annual plan agrees about the year is a
+    heuristic and both orientations are reachable. Here the APE's own
+    initiative sits on the drifted plan and a stale twin sits on an agreeing
+    one, so the tie-break prefers the **twin** — and nothing in the data can
+    tell them apart.
+
+    That is not new and this change does not fix it: the batch's base commit
+    picked the same twin. What was wrong is that it picked *silently*. A choice
+    this code is not entitled to make must reach the report, so a human can see
+    that a second candidate existed and which one was taken.
+    """
+    vps = make_vps(tmp_path, name="m1b1d.db")
+    try:
+        chain = _build_full_chain(vps)
+        conn = vps.db.conn
+        real = conn.execute(
+            "SELECT * FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+        # The APE's own plan drifts; the twin's agrees. The reverse of
+        # _add_twin_initiative_on_a_drifted_plan.
+        conn.execute(
+            "UPDATE annual_plans SET year = year + 1 WHERE id = ?",
+            (real["annual_plan_id"],),
+        )
+        conn.execute(
+            """
+            INSERT INTO annual_plans
+                (id, annual_vision_id, segment_description_id, year, theme, objective,
+                 description, status, is_active, created_at, updated_at, created_by_rollover)
+            SELECT 'ap-agrees', annual_vision_id, segment_description_id, ?, theme,
+                   objective, description, status, is_active, created_at, updated_at, 0
+            FROM annual_plans WHERE id = ?
+            """,
+            (real["year"], real["annual_plan_id"]),
+        )
+        conn.execute(
+            """
+            INSERT INTO annual_initiatives
+                (id, annual_plan_id, segment_description_id, year, title, description,
+                 outcome_statement, status, progress_pct, is_active, created_at,
+                 updated_at, annual_plan_element_id)
+            VALUES ('ai-stale', 'ap-agrees', ?, ?, ?, '', '', 'not_started', 0, 1,
+                    '2099-01-01T00:00:00', '2099-01-01T00:00:00', NULL)
+            """,
+            (real["segment_description_id"], real["year"], real["title"]),
+        )
+        conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = NULL WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        )
+        conn.commit()
+
+        result = backfill_initiative_ape_links(conn)
+
+        assert result["ambiguous"], (
+            "two initiatives matched one plan element and one was chosen "
+            "without saying so"
+        )
+        entry = result["ambiguous"][0]
+        assert entry["linked"] == "ai-stale", (
+            f"the tie-break's pick changed to {entry['linked']!r}; if that is "
+            "deliberate, this test should assert the new rule"
+        )
+        assert entry["left_null"] == [chain["annual_initiative_id"]], (
+            "the demoted candidate must be named, since it may be the right one"
         )
     finally:
         vps.close()
@@ -1382,14 +1465,15 @@ PERMITTED_NAME_LOOKUPS = {
 
 # Allowlisted, BY NAME, each with the reason inline (RN-M4.A).
 NAME_LOOKUP_ALLOWLIST = {
-    "vps_manager.py::_heal_annual_initiative_link":
-        "RN-M2.A.1. The one-time heal for a row whose id is still NULL. It "
-        "writes the id when it fires, so it never fires again for that row, "
-        "and it refuses when two initiatives match rather than choosing.",
-    "link_integrity.py::backfill_initiative_ape_links":
-        "RN-M1.B.1. The migration. This is the ONE place the title match is "
-        "allowed to establish the link — RN-D2 says migrate by matching the "
-        "current name once, then never by name again.",
+    "link_integrity.py::find_initiative_candidates_by_title":
+        "RN-M1.B.1 / RN-M2.A.1. The ONE title match left in src/, shared by "
+        "the migration's backfill and the runtime heal so the two cannot "
+        "drift — vps_manager.py held a second copy until it was collapsed "
+        "into this. RN-D2 says migrate by matching the current name once, "
+        "then never by name again, and both callers only reach it for a row "
+        "whose id is still NULL. It returns both the plan-year-preferred "
+        "candidates and all of them: the preference is a heuristic, so a "
+        "caller with a report channel must surface what it demoted.",
     "link_integrity.py::backfill_segment_ids":
         "RN-M1.A.1 / RN-M1.C.1. Same migration, same reason.",
     "db_manager_project_boards.py::category colour lineage":
