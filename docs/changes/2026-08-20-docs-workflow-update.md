@@ -43,7 +43,7 @@ Two corrections to the prompt's assumptions:
 
 - `CLAUDE.md` — `Multi-agent workflow` → `Working agreements`; new
   `Review sweeps` and `Test rules` sections; Commands block documents
-  `pytest -m "not meta"` (marked PENDING) and
+  `pytest -m "not meta"`, `pytest -m meta` and
   `GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest`.
 - `AGENTS.md` — the workflow half replaced. **Not** reduced to a pointer: the
   second half is the live UI Theme System spec, which `CLAUDE.md` references,
@@ -65,26 +65,26 @@ Two corrections to the prompt's assumptions:
 
 ## Risks / Known gaps
 
-- **I disagree with the two-pass sweep cap, and implemented it anyway.** It is
-  written in `CLAUDE.md` as specified. The counter-evidence, from the batch
-  that finished immediately before this one:
+- **The sweep cap was revised after review — RESOLVED 2026-08-20.** The rule
+  originally landed as "maximum 2 sweep passes per batch", per the audit. I
+  implemented it as specified and recorded a disagreement: the batch finishing
+  immediately before it had rounds 3 and 4 each find a defect, one of them
+  user-facing (a status `print` inside a credential `try` that discarded a
+  valid token). A flat two-pass cap ships that.
 
-  | Round | Found |
-  |---|---|
-  | 3 | The pip guard, "de-duplicated", went blind to `pip install --pre <pkg>` and five siblings |
-  | 4 | A status `print` inside a credential `try` discarded a valid token on a failed stdout write — user-facing, every launch |
+  The user resolved it by adjusting the count and making the distinction
+  structural rather than a trailing caveat. `CLAUDE.md`'s **Review sweeps** now
+  reads:
 
-  A two-pass cap ships round four's bug. The audit's evidence is equally real
-  (Batch 2's passes 11 and 12 found only meta-defects), and the two datasets
-  disagree. The variable that separates them is not the pass *count* but the
-  pass *kind*: Batch 3's later rounds were **cold** — given the diff and none
-  of the history — and each covered a different failure family. Batch 2's were
-  warm repeats of one reviewer.
+  - at most **2 warm** passes;
+  - at least **1 cold** pass, always — the requirement, not the optional extra;
+  - a further pass only after a high-severity finding, and make it cold too.
 
-  So the rule as written is followed by a paragraph making the distinction
-  explicit: *cap warm self-review at two, require one cold pass regardless.*
-  If that reads as hedging the instruction, delete the paragraph — but the
-  measurement behind it is in `LEARNINGS.md` and P26.
+  Both datasets are cited under it, because they genuinely point different
+  ways: twelve warm passes yielded only meta-findings by the end, while two
+  cold passes found user-facing defects. The variable that separates them is
+  the pass *kind*, not the count, and the rule now says so in its structure
+  instead of in a footnote.
 
 - **The retirement is not complete.** Four files still describe the dead
   workflow and were left alone, because rewriting them is not this task:
@@ -93,10 +93,10 @@ Two corrections to the prompt's assumptions:
   `tools/agents/check_docs_sync.py` is live and correct and stays.
   Recorded in `BACKLOG.md`.
 
-- **`pytest -m "not meta"` is documented but does not work yet.** Marked
-  PENDING in the Commands block; it lands with the test-suite remediation
-  batch. Documenting an invocation before it exists is a small P21 risk —
-  the PENDING marker is what stops it reading as available.
+- **`pytest -m "not meta"` was documented before it existed** — marked PENDING
+  at the time, because documenting an invocation that does not work is a small
+  P21 risk. It landed later the same day with the test-suite remediation batch
+  (198 tests marked, 27.4s vs 55.9s), and the PENDING marker is gone.
 
 ## Next agent actions
 

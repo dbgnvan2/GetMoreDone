@@ -93,20 +93,41 @@ A sweep is a review pass over a batch before it is pushed. The rules exist
 because passes are not free: every fix is new unreviewed surface, and a fix
 pass has been measured introducing defects at roughly the rate it removes them.
 
-- **Maximum 2 sweep passes per batch.** A third only if the previous pass
-  produced a **high-severity** finding.
+**The pass that matters is a cold one, not an extra warm one.** A warm pass is
+run by the context that wrote the code and inherits its blind spots — it runs
+out of new assumptions to question long before it runs out of defects. A cold
+pass gets the diff and the range and none of the narrative.
+
+The budget:
+
+- **At most 2 warm passes per batch.** Beyond two they converge on the
+  reviewer's blind spots, not on correctness, and the falling finding count
+  reads as progress while it is measuring exhaustion.
+- **At least 1 cold pass, always** — not as a third warm pass, and not only
+  when a batch "feels risky". This is the requirement, not the optional extra.
+- **A further pass only if the previous one produced a high-severity finding.**
+  Make it cold too, and prefer a *different failure family* (correctness, UI
+  contract, test quality) over repeating the same sweep.
 - **Stop when a pass yields no finding of medium or higher severity.**
 - **Every finding gets a severity before any fix is written.** Below-medium
-  findings go to `BACKLOG.md`; they are not fixed in-loop.
-- **Every in-loop fix is itself in scope for the next pass.** That is why the
-  cap exists — the fix commit is the least-reviewed code in any change.
+  findings go to `BACKLOG.md`; they are not fixed in-loop, because a cosmetic
+  fix buys none of the safety it costs.
+- **Every in-loop fix is itself in scope for the next pass.** The fix commit is
+  the least-reviewed code in any change — written last, fastest, and in the
+  most anchored state.
 
-**One cold pass is worth more than three warm ones.** A warm pass is run by the
-context that wrote the code and inherits its blind spots; a cold pass gets the
-diff and the range and none of the narrative. Where a batch justifies a second
-pass at all, make it a cold one, and prefer covering a *different failure
-family* (correctness, UI contract, test quality) over repeating the same sweep.
-Evidence in `~/.claude/standards/learnings.md` P26.
+Evidence for the shape of this, both directions, in
+`~/.claude/standards/learnings.md` P26:
+
+- One batch ran to **twelve** warm passes. Passes 11 and 12 still produced four
+  findings each, but they were meta — guard tests, docstring wording, message
+  phrasing. Pass 10's own fix caused a high-severity regression (`2383cbd`).
+- A later batch capped warm passes and ran cold ones instead. Round 3 found a
+  guard that had been made *worse* by a previous fix; round 4 found a status
+  `print` inside a credential `try` that discarded a valid token on a failed
+  stdout write — user-facing, every launch. Both were found cold. Neither would
+  have been caught by more warm passes, and a warm-only budget of two would
+  have shipped the second.
 
 ## Test rules
 
