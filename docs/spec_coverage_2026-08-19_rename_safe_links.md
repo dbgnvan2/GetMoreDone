@@ -1,12 +1,10 @@
 # Spec coverage — Renaming must never break a link
 
-Generated 2026-08-20 by cross-checking every
-`::test_...` reference in `docs/spec_2026-08-19_rename_safe_links.md`
-against a real `pytest --collect-only` run. Not hand-written: a hand-written
-coverage table is a claim, and this repo has shipped a doc asserting a
-component was "integrated" when nothing called it (LEARNINGS.md P21).
+Generated 2026-08-20 by cross-checking every `::test_...`
+reference in `docs/spec_2026-08-19_rename_safe_links.md` against a real
+`pytest --collect-only` run. Not hand-written.
 
-**17 spec criteria, 17 tests, 0 missing. 13 further tests beyond the spec.**
+**17 spec criteria, 0 missing, 14 further tests.**
 
 | Criterion | Test | Collected |
 |---|---|---|
@@ -30,13 +28,13 @@ component was "integrated" when nothing called it (LEARNINGS.md P21).
 
 ## Beyond the spec
 
-Every one exists because the implementation or a review exposed something
-the spec did not anticipate. Seven were added after two independent
-reviews found defects — three of them regressions this change introduced.
+Each exists because the implementation or one of three review rounds exposed
+something the spec did not anticipate. Ten were added after reviews found
+defects — five of them regressions this change introduced.
 
 | Test |
 |---|
-| `test_rn_a_hand_created_initiative_is_not_reported_as_breakage` |
+| `test_rn_a_hand_created_initiative_is_not_warned_about` |
 | `test_rn_a_hand_edited_initiative_title_survives_a_rename` |
 | `test_rn_a_lookup_leaves_no_open_transaction` |
 | `test_rn_ambiguous_name_is_never_resolved_to_a_link` |
@@ -49,4 +47,5 @@ reviews found defects — three of them regressions this change introduced.
 | `test_rn_no_duplicate_initiative_after_rename` |
 | `test_rn_project_and_tactic_links_are_id_based` |
 | `test_rn_repointing_a_vision_element_moves_its_segment_link` |
+| `test_rn_the_cascade_resolver_reads_the_id_not_the_name` |
 

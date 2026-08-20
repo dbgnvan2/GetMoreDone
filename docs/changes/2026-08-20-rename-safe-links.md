@@ -17,8 +17,8 @@ current name and never matched by name again.
 ## Verification
 
 - `nice -n 19 GETMOREDONE_NO_MAPPED_WINDOWS=1 ./venv/bin/python -m pytest -q`
-- **1172 passed, 6 skipped, exit 0.** Baseline before this batch: 1163.
-- `tests/test_rename_safe_links.py` alone: **35 passed**, as the plan requires.
+- **1173 passed, 6 skipped, exit 0.** Baseline before this batch: 1163.
+- `tests/test_rename_safe_links.py` alone: **36 passed**, as the plan requires.
 - Success read from the exit code throughout.
 - Spec coverage generated mechanically by cross-checking the spec's `::test_`
   references against `pytest --collect-only`:
@@ -118,8 +118,17 @@ not a finding.
   `BACKLOG.md`.
 - **Eight low-severity findings** from the reviews are in `BACKLOG.md`, not
   fixed in-loop, per the sweep rules.
-- The final cold pass over the fix commits had not reported when this note was
-  written; its findings are recorded separately if any.
+- **Three review rounds, and every one found a defect in its predecessor's
+  fix.** Round three found two more highs, both created by the round-two fixes:
+  my "never guess" change made *new* data fail hard (an ambiguous segment name
+  meant every new plan element got a NULL link and the cascade then raised the
+  spec §2 error), and `COALESCE` kept a stale id on the re-point path. Two of
+  my own written claims were also false — `_commit_heal`'s docstring about
+  transaction deferral, and a report filter that contradicted the
+  hand-edited-title fix in the same commit.
+- **Fourteen low-severity findings** are in `BACKLOG.md`, including the root
+  cause of every ambiguity this batch had to handle: `create_segment` permits
+  two life segments whose names differ only by case.
 
 ## Next agent actions
 
