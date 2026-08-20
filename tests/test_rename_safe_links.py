@@ -27,6 +27,7 @@ import pytest
 
 from src.getmoredone.link_integrity import (
     SEGMENT_ID_TABLES,
+    backfill_initiative_ape_links,
     report_existing_breakage,
     run_link_integrity_migrations,
 )
@@ -641,6 +642,175 @@ def test_rn_m2a1_legacy_row_heals_on_first_lookup(tmp_path):
             "the heal resolved the row but did not write the id, so it will "
             "resolve by name again next time"
         )
+    finally:
+        vps.close()
+
+
+def _drift_annual_plan_year(vps, ape_id: str) -> int:
+    """Move the APE's annual plan to a different year, leaving every id intact.
+
+    The rows stay correctly linked — only ``annual_plans.year`` disagrees with
+    ``annual_plan_elements.year``. Nothing in the schema stops this: the year
+    is stored on annual_plans, annual_plan_elements and annual_initiatives
+    independently, so any path that writes one without the others drifts them.
+    """
+    row = vps.db.conn.execute(
+        """
+        SELECT ai.annual_plan_id AS plan_id, ape.year AS ape_year
+        FROM annual_initiatives ai
+        JOIN annual_plan_elements ape ON ape.id = ai.annual_plan_element_id
+        WHERE ai.annual_plan_element_id = ?
+        """,
+        (ape_id,),
+    ).fetchone()
+    assert row is not None, "fixture built no linked initiative to drift"
+    drifted = int(row["ape_year"]) + 1
+    vps.db.conn.execute(
+        "UPDATE annual_plans SET year = ? WHERE id = ?", (drifted, row["plan_id"])
+    )
+    vps.db.conn.commit()
+    return drifted
+
+
+def test_rn_m2a2_initiative_survives_an_annual_plan_year_drift(tmp_path):
+    """RN-M2.A — the id is the link, so no other column may veto it.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+
+    ``_find_annual_initiative_for_ape`` resolved by ``annual_plan_element_id``
+    — correct — and then filtered ``AND ap.year = ?`` against the APE's year.
+    An APE id belongs to exactly one APE and an APE to exactly one year, so
+    that predicate can never select a *different* row; it can only hide the
+    right one. When ``annual_plans.year`` drifts, the correctly-linked
+    initiative goes invisible and the next assignment builds a second one —
+    RN-F4, in the function written to close RN-F4.
+    """
+    vps = make_vps(tmp_path, name="m2a2.db")
+    try:
+        chain = _build_full_chain(vps)
+        _drift_annual_plan_year(vps, chain["ape_id"])
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        found = vps._find_annual_initiative_for_ape(ape)
+
+        assert found is not None, (
+            "a correctly-linked initiative was hidden by its annual plan's year"
+        )
+        assert found["id"] == chain["annual_initiative_id"]
+    finally:
+        vps.close()
+
+
+def test_rn_m2a2_year_drift_does_not_duplicate_the_initiative(tmp_path):
+    """The consequence of the hidden row: a second initiative for one APE.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-f4
+
+    The lookup returning None is invisible on its own. What a user sees is two
+    Annual Initiatives under one plan element, which is the duplicate RN-M5
+    reports and asks a human to resolve.
+    """
+    vps = make_vps(tmp_path, name="m2a2b.db")
+    try:
+        chain = _build_full_chain(vps)
+        _drift_annual_plan_year(vps, chain["ape_id"])
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        resolved = vps._get_or_create_annual_initiative_for_ape(ape)
+
+        assert resolved == chain["annual_initiative_id"], (
+            "a SECOND initiative was created for an APE that already had one"
+        )
+        count = vps.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM annual_initiatives "
+            "WHERE annual_plan_element_id = ?",
+            (chain["ape_id"],),
+        ).fetchone()["n"]
+        assert count == 1, f"{count} initiatives for one APE"
+    finally:
+        vps.close()
+
+
+def test_rn_m2a1_heal_survives_an_annual_plan_year_drift(tmp_path):
+    """The heal's identifying comparison is ``ai.year``, not the plan's.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+
+    The title match already compares the initiative's OWN year to the APE's.
+    ``ap.year`` is a third copy of the same fact and adds no identifying
+    power — it can only drop a candidate that was going to heal correctly,
+    and a heal that finds nothing produces the duplicate instead.
+    """
+    vps = make_vps(tmp_path, name="m2a1c.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.db.conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = NULL WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        )
+        vps.db.conn.commit()
+        plan_id = vps.db.conn.execute(
+            "SELECT annual_plan_id AS p FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["p"]
+        vps.db.conn.execute(
+            "UPDATE annual_plans SET year = ? WHERE id = ?",
+            (chain["year"] + 1, plan_id),
+        )
+        vps.db.conn.commit()
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        healed = vps._find_annual_initiative_for_ape(ape)
+
+        assert healed is not None, "the heal was vetoed by the annual plan's year"
+        assert healed["id"] == chain["annual_initiative_id"]
+        stored = vps.db.conn.execute(
+            "SELECT annual_plan_element_id AS ape FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["ape"]
+        assert stored == chain["ape_id"], "the heal did not write the id"
+    finally:
+        vps.close()
+
+
+def test_rn_m1b1_backfill_survives_an_annual_plan_year_drift(tmp_path):
+    """The migration's title match carries the same veto, so it moves too.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m1b1
+
+    ``backfill_initiative_ape_links`` is documented as reproducing exactly what
+    the lookup does. Leaving ``ap.year`` here while removing it from the lookup
+    would make that claim false and leave the migration unable to link a row
+    the running app can.
+    """
+    vps = make_vps(tmp_path, name="m1b1b.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.db.conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = NULL WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        )
+        plan_id = vps.db.conn.execute(
+            "SELECT annual_plan_id AS p FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["p"]
+        vps.db.conn.execute(
+            "UPDATE annual_plans SET year = ? WHERE id = ?",
+            (chain["year"] + 1, plan_id),
+        )
+        vps.db.conn.commit()
+
+        result = backfill_initiative_ape_links(vps.db.conn)
+
+        assert result["linked"] == 1, (
+            f"backfill linked {result['linked']} row(s); the annual plan's "
+            "year hid a row it should have linked"
+        )
+        stored = vps.db.conn.execute(
+            "SELECT annual_plan_element_id AS ape FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["ape"]
+        assert stored == chain["ape_id"]
     finally:
         vps.close()
 
