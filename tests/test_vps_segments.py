@@ -21,6 +21,8 @@ import inspect
 
 import pytest
 
+from tests.source_asserts import calls_attribute, iterates_mapping
+
 from src.getmoredone.screens.settings import SettingsScreen
 from src.getmoredone.screens.vps_segment_editor import VPSSegmentEditorDialog
 from src.getmoredone.vps_manager import VPSManager
@@ -79,8 +81,8 @@ def test_bc3_the_colour_picker_is_wired_to_a_real_chooser():
     assert hasattr(vps_segment_editor, "colorchooser"), (
         "colorchooser is not imported — the colour picker cannot open")
     assert callable(getattr(vps_segment_editor.colorchooser, "askcolor", None))
-    assert "askcolor" in inspect.getsource(VPSSegmentEditorDialog.pick_color), (
-        "pick_color no longer calls askcolor")
+    assert calls_attribute(VPSSegmentEditorDialog.pick_color, "colorchooser", "askcolor"), (
+        "pick_color no longer calls colorchooser.askcolor")
 
 
 def test_bc3_the_editor_seeds_its_colour_from_the_segment(vps):
@@ -217,12 +219,10 @@ def test_bc3_settings_consumes_the_counts_as_a_mapping(vps):
     CTkToplevel for typed confirmation — so this asserts the two expressions
     that would break if the return shape changed again.
     """
-    source = inspect.getsource(SettingsScreen.delete_segment)
-
-    assert "counts.items()" in source, (
+    assert iterates_mapping(SettingsScreen.delete_segment, "counts"), (
         "the Settings screen no longer iterates the counts mapping — if "
         "delete_segment went back to returning a scalar, this is what breaks")
-    assert "sum(counts.values())" in source, (
+    assert calls_attribute(SettingsScreen.delete_segment, "counts", "values"), (
         "the total shown to the user is no longer derived from the counts")
 
 
