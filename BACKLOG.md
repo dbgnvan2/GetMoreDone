@@ -76,12 +76,18 @@ took each decision and closed it. Kept here as the record of what was decided.
   (`DragScheduleScreen._matches_who` / `_who_values_matching`): a blank filter
   matches nothing. Its date-filter and default branches go through
   `get_all_items` / `get_upcoming_items`, whose
-  `LOWER(TRIM(COALESCE(who,''))) = LOWER(TRIM(?))` matches an owner-*less* row
-  for a blank filter — so the same blank selection lists rows on one branch and
-  none on another. Not fixed here because those two methods are shared with
-  other screens; changing them is its own change with its own blast radius.
-  Reachable because `get_distinct_who_values` returns blank owners verbatim
-  into the dropdown.
+  gate on `if who_filter:`, so the two blank forms behave differently *there*
+  as well. Measured, because a first draft of this entry got it wrong:
+
+  | filter | project / unlinked branches | `get_all_items` / `get_upcoming_items` |
+  |---|---|---|
+  | `"   "` | matches nothing | matches owner-*less* rows |
+  | `""` | matches nothing | filter dropped — returns **everything** |
+
+  So one blank selection produces three different answers on one screen. Not
+  fixed here because those two methods are shared with other screens; changing
+  them is its own change with its own blast radius. Reachable because
+  `get_distinct_who_values` returns blank owners verbatim into the dropdown.
 - **`get_distinct_who_values` has no `WHERE who IS NOT NULL`**, unlike its
   `group` and `category` siblings, and `who` is nullable — so a `None` can
   reach `CTkComboBox(values=...)`. Pre-existing; same family as the entry

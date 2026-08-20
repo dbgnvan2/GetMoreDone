@@ -869,24 +869,51 @@ def test_s4_1_the_editor_still_warns_a_multi_filed_item_about_its_plan_element(
 
 def test_s4_2_the_bulk_clear_sentence_only_names_losses_that_apply():
     """The per-item clause was made conditional; the closing sentence was not."""
-    filed_only = describe_bulk_clear(3, 0)
+    filed_only = describe_bulk_clear(3, 0, ape_total=0)
     assert "Annual Plan Element" not in filed_only, filed_only
     assert "clears the project link." in filed_only, filed_only
 
-    ape_only = describe_bulk_clear(0, 2)
+    ape_only = describe_bulk_clear(0, 2, ape_total=2)
     assert "project link" not in ape_only, ape_only
     assert "clears the Annual Plan Element." in ape_only, ape_only
 
-    both = describe_bulk_clear(1, 1)
+    both = describe_bulk_clear(1, 1, ape_total=2)
     assert "the project link and the Annual Plan Element" in both, both
+
+    # ape_total is what the write actually does, and is NOT the ape-only
+    # bucket: filed items carry an Annual Plan Element too (sweep pass 5).
+    filed_with_ape = describe_bulk_clear(3, 0, ape_total=3)
+    assert "the project link and the Annual Plan Element" in filed_with_ape
 
 
 def test_s4_4_the_bulk_clear_plural_reads_as_english():
     """"3 with an Annual Plan Elements" — the article goes with the plural."""
-    assert "3 with Annual Plan Elements" in describe_bulk_clear(1, 3)
-    assert "1 with an Annual Plan Element" in describe_bulk_clear(1, 1)
+    assert "3 with Annual Plan Elements" in describe_bulk_clear(1, 3, ape_total=4)
+    assert "1 with an Annual Plan Element" in describe_bulk_clear(1, 1, ape_total=2)
     # Nothing at stake produces no sentence, rather than "0 items: ."
-    assert describe_bulk_clear(0, 0) == ""
+    assert describe_bulk_clear(0, 0, ape_total=0) == ""
+
+
+def test_p6_the_batch_noun_is_pluralised_from_the_batch_not_the_affected_count():
+    """"1 of the dragged item" — two dragged, one affected (sweep pass 6)."""
+    one_of_two = describe_bulk_clear(1, 0, ape_total=0, batch_size=2)
+    assert "1 of the dragged items:" in one_of_two, one_of_two
+    assert "dragged item:" not in one_of_two, one_of_two
+
+    # A genuinely single-item batch still reads as one.
+    one_of_one = describe_bulk_clear(1, 0, ape_total=0, batch_size=1)
+    assert "1 of the dragged item:" in one_of_one, one_of_one
+
+
+def test_p6_each_surface_names_the_action_the_user_took():
+    """A drag is not a selection, and the Projects dialog has no drag."""
+    dragged = describe_bulk_relink(2, "Alpha", verb="dragged")
+    assert "2 dragged items are" in dragged, dragged
+    selected = describe_bulk_relink(2, "Alpha")
+    assert "2 selected items are" in selected, selected
+
+    assert "of the selected items" in describe_bulk_clear(
+        2, 0, ape_total=0, batch_size=2, verb="selected")
 
 
 def test_s4_6_both_who_branches_read_a_blank_filter_the_same_way(tmp_path):

@@ -470,12 +470,19 @@ class DragScheduleScreen(ctk.CTkFrame):
         disagreeing meant this screen listed those rows under a project box and
         reported zero under "No Project" (sweep pass 4/5, P5).
 
-        This covers the two project-scoped branches only. The date-filter and
-        default branches go through ``get_all_items`` / ``get_upcoming_items``,
-        whose SQL ``LOWER(TRIM(COALESCE(who,''))) = LOWER(TRIM(?))`` matches an
-        owner-*less* row for a blank filter. Those are shared with other
-        screens, so they are recorded in BACKLOG.md rather than changed here —
-        do not read this docstring as claiming screen-wide parity.
+        This covers the two project-scoped branches only, and a blank Who has
+        **three** different meanings across this screen — measured, because an
+        earlier version of this docstring got it wrong:
+
+        * here and on the unlinked branch: matches nothing;
+        * ``get_all_items`` / ``get_upcoming_items`` with ``"   "``: the SQL
+          ``LOWER(TRIM(COALESCE(who,'')))`` runs and matches owner-*less* rows;
+        * ``get_all_items`` / ``get_upcoming_items`` with ``""``: falsy, so
+          ``if who_filter:`` drops the filter and **every** item is returned.
+
+        Those two methods are shared with other screens, so they are recorded
+        in BACKLOG.md rather than changed here — do not read this docstring as
+        claiming screen-wide parity.
         """
         if who_filter is None:
             return True
@@ -1415,7 +1422,8 @@ class DragScheduleScreen(ctk.CTkFrame):
         """
         board_id = None if target_project_id == "__none__" else target_project_id
         item_ids = [item.id for item in self.drag_items]
-        if not confirm_exclusive_relink(self, self.db_manager, item_ids, board_id):
+        if not confirm_exclusive_relink(self, self.db_manager, item_ids, board_id,
+                                        verb="dragged"):
             return
 
         try:

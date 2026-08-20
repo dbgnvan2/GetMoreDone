@@ -418,11 +418,13 @@ class DBManagerProjectBoardsMixin:
         same rule on the project-board branch so those two branches cannot
         disagree (sweep pass 4/5).
 
-        Parity is with that branch, not with the whole screen:
-        ``get_all_items`` and ``get_upcoming_items`` compare with
-        ``LOWER(TRIM(COALESCE(who,'')))``, which matches an owner-less row for
-        a blank filter. They are shared with other screens and are recorded in
-        BACKLOG.md rather than changed from here.
+        Parity is with that branch, not with the whole screen, and the two
+        blank forms do not even agree with each other elsewhere:
+        ``get_all_items`` / ``get_upcoming_items`` gate on ``if who_filter:``,
+        so ``"   "`` reaches their ``LOWER(TRIM(COALESCE(who,'')))`` and
+        matches owner-less rows, while ``""`` is falsy and drops the filter
+        entirely, returning everything. They are shared with other screens and
+        are recorded in BACKLOG.md rather than changed from here.
         """
         target = who_filter.strip().lower()
         if not target:

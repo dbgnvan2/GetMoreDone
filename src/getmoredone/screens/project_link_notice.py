@@ -67,24 +67,29 @@ def describe_single_relink(count: int, target_title: Optional[str],
     )
 
 
-def describe_bulk_relink(item_count: int, target_title: Optional[str]) -> str:
+def describe_bulk_relink(item_count: int, target_title: Optional[str],
+                         verb: str = "selected") -> str:
     """What a batch link is about to unfile.
 
     ``item_count`` counts only the items that would actually lose a link, so
     the number the user reads is the number of items affected — not the size
-    of the selection.
+    of the batch. ``verb`` is how the user produced that batch: the Projects
+    dialog has a selection, the Scheduler has a drag, and telling someone who
+    just dragged three items about "3 selected items" describes an action they
+    did not take.
     """
     noun = "item is" if item_count == 1 else "items are"
     target = f"“{target_title}”" if target_title else "this project"
     return (
-        f"{item_count} selected {noun} already filed under another project.\n\n"
+        f"{item_count} {verb} {noun} already filed under another project.\n\n"
         f"An Action Item belongs to exactly one Project, so filing under "
         f"{target} removes the existing links. Continue?"
     )
 
 
-def describe_bulk_clear(filed_count: int, ape_only_count: int = 0,
-                        ape_total: Optional[int] = None) -> str:
+def describe_bulk_clear(filed_count: int, ape_only_count: int, ape_total: int,
+                        batch_size: Optional[int] = None,
+                        verb: str = "dragged") -> str:
     """What dropping a batch onto "No Project" destroys.
 
     Two different losses, counted separately. The sentence used to say "N
@@ -97,18 +102,18 @@ def describe_bulk_clear(filed_count: int, ape_only_count: int = 0,
     if not total:
         return ""
 
-    # How many of the affected items lose an Annual Plan Element. Defaults to
-    # the ape-only bucket for callers that do not know, but the two are not the
-    # same number: ``clear_item_project_links`` nulls the APE of *every* item
-    # it touches, and an item filed under an APE-bearing board has one. Reading
-    # it from the ape-only bucket alone made this sentence promise less than
-    # the write performs — an under-warning before a destructive action, and it
-    # disagreed with the single-item sentence about the identical write
-    # (sweep pass 5, P2/P5).
-    if ape_total is None:
-        ape_total = ape_only_count
-
-    noun = "item" if total == 1 else "items"
+    # ``ape_total`` is how many of the affected items lose an Annual Plan
+    # Element, and it is required rather than defaulted: it is NOT the same
+    # number as ``ape_only_count``. ``clear_item_project_links`` nulls the APE
+    # of every item it touches, and an item filed under an APE-bearing board
+    # has one. Defaulting it to the ape-only bucket made this sentence promise
+    # less than the write performs — an under-warning before a destructive
+    # action (sweep pass 5, P2/P5) — so there is no default to fall into.
+    #
+    # The noun is pluralised from the size of the *batch*, not from the number
+    # affected: "1 of the dragged item" is what the affected count produces
+    # when two items are dragged and one of them has something to lose.
+    noun = "item" if (batch_size or total) == 1 else "items"
     parts = []
     losses = []
     if filed_count:
@@ -124,7 +129,7 @@ def describe_bulk_clear(filed_count: int, ape_only_count: int = 0,
     # "of the dragged items", not "dragged items": this is the number that
     # loses something, not the size of the drag (sweep pass 4).
     return (
-        f"{total} of the dragged {noun}: " + ", ".join(parts) + ".\n\n"
+        f"{total} of the {verb} {noun}: " + ", ".join(parts) + ".\n\n"
         f"Removing the project clears {' and '.join(losses)}. Continue?"
     )
 
@@ -182,7 +187,8 @@ def has_annual_plan_element(db_manager, item_id: Optional[str]) -> bool:
 
 
 def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
-                             target_board_id: Optional[str]) -> bool:
+                             target_board_id: Optional[str],
+                             verb: str = "selected") -> bool:
     """Ask before an exclusive link (or a clear) deletes links.
 
     Returns True when nothing would be lost, so the ordinary case — an item
@@ -214,9 +220,10 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
             len(with_links), len(ape_only),
             ape_total=sum(1 for item_id in with_links + ape_only
                           if has_annual_plan_element(db_manager, item_id)),
+            batch_size=len(item_ids), verb=verb,
         )
     else:
-        question = describe_bulk_relink(len(with_links), title)
+        question = describe_bulk_relink(len(with_links), title, verb=verb)
     return messagebox.askyesno("Change Project", question, parent=parent)
 
 
