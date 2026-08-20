@@ -25,7 +25,7 @@ except ImportError:
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 
-def _say(message: str) -> None:
+def _say(*parts) -> None:
     """print() that cannot abort the caller.
 
     Every status line in this module carries an emoji. On a Windows console
@@ -42,7 +42,7 @@ def _say(message: str) -> None:
     real bug as readily as an encoding one.
     """
     try:
-        print(message)
+        print(*parts)
     except (UnicodeEncodeError, OSError, ValueError):
         pass
 
@@ -93,23 +93,33 @@ class GoogleCalendarManager:
             try:
                 with open(self.token_file, 'rb') as token:
                     creds = pickle.load(token)
-                print("Loaded existing token from:", self.token_file)
             except Exception as e:
-                print(f"Warning: Failed to load token file: {e}")
-                print("Will re-authenticate...")
+                _say(f"Warning: Failed to load token file: {e}")
+                _say("Will re-authenticate...")
                 creds = None
+            else:
+                # Outside the try on purpose: this used to sit inside it, so a
+                # print that raised — a cp1252 console, a closed pipe — ran the
+                # `except` and discarded a token that had loaded perfectly.
+                # A status line must never be able to invalidate a credential
+                # (P1: a transient console problem became a permanent
+                # "credentials not found" on every launch).
+                _say("Loaded existing token from:", self.token_file)
 
         # If no valid credentials, let user log in
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                _say("Refreshing expired credentials...")
                 try:
-                    print("Refreshing expired credentials...")
                     creds.refresh(Request())
-                    print("Successfully refreshed credentials!")
                 except Exception as e:
-                    print(f"Failed to refresh credentials: {e}")
-                    print("Will need to re-authenticate...")
+                    _say(f"Failed to refresh credentials: {e}")
+                    _say("Will need to re-authenticate...")
                     creds = None
+                else:
+                    # Same reason as above: a print must not undo a refresh
+                    # that succeeded.
+                    _say("Successfully refreshed credentials!")
 
             if not creds:
                 if not os.path.exists(self.credentials_file):
@@ -124,11 +134,11 @@ class GoogleCalendarManager:
                         f"6. Place at: {self.credentials_file}"
                     )
 
-                print("\n" + "="*60)
-                print("GOOGLE CALENDAR AUTHENTICATION REQUIRED")
-                print("="*60)
-                print("\nAttempting to open browser for authentication...")
-                print("If browser doesn't open, you'll see a URL to visit manually.\n")
+                _say("\n" + "="*60)
+                _say("GOOGLE CALENDAR AUTHENTICATION REQUIRED")
+                _say("="*60)
+                _say("\nAttempting to open browser for authentication...")
+                _say("If browser doesn't open, you'll see a URL to visit manually.\n")
 
                 flow = InstalledAppFlow.from_client_secrets_file(
                     self.credentials_file, SCOPES)
@@ -147,18 +157,18 @@ class GoogleCalendarManager:
 
                 except Exception as e:
                     _say(f"\n⚠️  Browser authentication failed: {e}")
-                    print("\nFalling back to manual authentication...")
-                    print("\nPlease follow these steps:")
-                    print("1. Visit the URL shown below in a browser")
-                    print("2. Sign in with your Google account")
-                    print("3. Click 'Allow' to grant calendar access")
-                    print("4. Copy the authorization code shown")
-                    print("5. Paste the code below when prompted\n")
+                    _say("\nFalling back to manual authentication...")
+                    _say("\nPlease follow these steps:")
+                    _say("1. Visit the URL shown below in a browser")
+                    _say("2. Sign in with your Google account")
+                    _say("3. Click 'Allow' to grant calendar access")
+                    _say("4. Copy the authorization code shown")
+                    _say("5. Paste the code below when prompted\n")
 
                     try:
                         # Get the authorization URL
                         auth_url, _ = flow.authorization_url(prompt='consent')
-                        print(f"Visit this URL:\n{auth_url}\n")
+                        _say(f"Visit this URL:\n{auth_url}\n")
 
                         # Prompt for code
                         code = input("Enter the authorization code: ").strip()
@@ -244,7 +254,7 @@ class GoogleCalendarManager:
             # The token IS saved. Say so, and say what could not be tightened.
             _say(f"⚠️  Warning: saved the token but could not restrict its "
                   f"permissions: {e}")
-            print(f"   Anyone able to read {self.token_file} can use your "
+            _say(f"   Anyone able to read {self.token_file} can use your "
                   "Google account. Fix the file's permissions by hand.\n")
 
         _say(f"✅ Token saved to: {self.token_file}\n")

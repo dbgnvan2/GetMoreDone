@@ -30,8 +30,12 @@ Two rules govern every test here:
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import pickle
+import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -235,10 +239,201 @@ def test_bi3_explicit_argument_still_wins_over_the_default(redirected_home, tmp_
 
 
 # --------------------------------------------------------------------------
+# BI3 — a status line must never be able to invalidate a credential
+# --------------------------------------------------------------------------
+
+class _BrokenStdout(io.TextIOBase):
+    """A stdout whose every write fails, the way a closed pipe does.
+
+    Needed alongside the cp1252 console because the two status lines that
+    discarded a credential are pure ASCII — ``"Loaded existing token from:"``
+    encodes fine on cp1252, so an encoding-only fixture cannot reach that bug.
+    An earlier version of the test below used only cp1252 and therefore passed
+    against the defect it named.
+    """
+
+    def write(self, _text):
+        raise OSError(32, "Broken pipe")
+
+    def writable(self):
+        return True
+
+
+@contextlib.contextmanager
+def _stdout_that_fails_every_write():
+    original = sys.stdout
+    sys.stdout = _BrokenStdout()
+    try:
+        yield
+    finally:
+        sys.stdout = original
+
+
+@contextlib.contextmanager
+def _console_that_rejects_emoji():
+    """A real cp1252 stdout — what a Windows console gives you.
+
+    Not a mock: `print("✅")` genuinely raises UnicodeEncodeError here, which
+    is the whole point. Restored in a finally so it cannot leak into the next
+    test.
+    """
+    original = sys.stdout
+    sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    try:
+        yield
+    finally:
+        sys.stdout = original
+
+
+def test_bi3_the_hostile_stdout_fixtures_really_do_raise():
+    """Adversarial: if these pass, every test below is testing nothing."""
+    with _console_that_rejects_emoji():
+        try:
+            print("✅ emoji")
+            emoji_raised = False
+        except UnicodeEncodeError:
+            emoji_raised = True
+    assert emoji_raised, "the cp1252 fixture no longer reproduces that console"
+
+    with _stdout_that_fails_every_write():
+        try:
+            print("plain ascii")
+            ascii_raised = False
+        except OSError:
+            ascii_raised = True
+    assert ascii_raised, (
+        "the broken-pipe fixture no longer fails on an ASCII write, so the "
+        "credential-discard test below cannot reach the bug it names"
+    )
+
+
+def test_bi3_a_failed_status_print_does_not_discard_a_valid_token(
+    redirected_home, tmp_path, monkeypatch
+):
+    """The regression a fourth review round found.
+
+    ``print("Loaded existing token from:", ...)`` sat INSIDE the try whose
+    ``except Exception`` sets ``creds = None``. On a cp1252 console the print
+    raised, the handler ran, and a token that had loaded perfectly was thrown
+    away — turning a transient console problem into "credentials not found" on
+    every launch (P1).
+    """
+    _requires_google_libs()
+
+    token = tmp_path / "token.pickle"
+    token.write_bytes(pickle.dumps({"stub": "a valid-looking token"}))
+
+    loaded = {}
+
+    def _capture(path, *args, **kwargs):
+        with open(path, "rb") as handle:
+            loaded["creds"] = pickle.load(handle)
+        return loaded["creds"]
+
+    manager = GoogleCalendarManager.__new__(GoogleCalendarManager)
+    manager.token_file = str(token)
+    manager.credentials_file = str(tmp_path / "absent.json")
+    manager.service = None
+
+    # A stdout that fails EVERY write, not just an emoji one: the status line
+    # in question is pure ASCII. With no credentials file present, a discarded
+    # token falls through to FileNotFoundError; a surviving one fails later and
+    # differently (the stub has no `.valid`), which is what we assert.
+    with _stdout_that_fails_every_write():
+        try:
+            manager._authenticate()
+            error = None
+        except Exception as exc:
+            error = exc
+
+    assert not isinstance(error, FileNotFoundError), (
+        "a status print that failed to encode discarded a valid token and the "
+        "run fell through to 'credentials not found'"
+    )
+    assert not isinstance(error, UnicodeEncodeError), (
+        "a status print propagated out of _authenticate"
+    )
+
+
+def test_bi3_saving_a_token_survives_a_console_that_rejects_emoji(
+    redirected_home, tmp_path
+):
+    """The token reaches disk and the caller is told so, on a cp1252 console.
+
+    ``_save_token`` prints in three places — success, write failure and chmod
+    failure. Guarding only the success one left the except-handler print able
+    to propagate out of the function on the path where degrading gracefully
+    matters most.
+    """
+    _requires_google_libs()
+    manager = GoogleCalendarManager.__new__(GoogleCalendarManager)
+    manager.token_file = str(tmp_path / "deep" / "token.pickle")
+
+    with _console_that_rejects_emoji():
+        result = manager._save_token({"stub": True})
+
+    assert result is True
+    assert Path(manager.token_file).exists()
+
+
+def test_bi3_a_failed_save_on_such_a_console_still_returns_false(tmp_path):
+    """The write-failure branch prints too, and its print must not escape."""
+    _requires_google_libs()
+    manager = GoogleCalendarManager.__new__(GoogleCalendarManager)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("I am a file, not a directory", encoding="utf-8")
+    manager.token_file = str(blocker / "token.pickle")
+
+    with _console_that_rejects_emoji():
+        result = manager._save_token({"stub": True})
+
+    assert result is False
+
+
+def test_bi3_no_bare_print_remains_in_the_module():
+    """Fix the class, not the site (P5).
+
+    Nine of twenty-two prints were routed through ``_say`` and the commit
+    message called it class-wide. The thirteen left included one in the exact
+    position the guard had occupied, and two inside credential-handling try
+    blocks.
+    """
+    import ast
+
+    source = (
+        Path(__file__).resolve().parents[1] / "src/getmoredone/google_calendar.py"
+    ).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    offenders = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if node.func.id != "print":
+            continue
+        # The one inside _say itself is the implementation.
+        enclosing = [
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == "_say"
+            and node.lineno >= n.lineno and node.lineno <= (n.end_lineno or n.lineno)
+        ]
+        if not enclosing:
+            offenders.append(node.lineno)
+
+    assert not offenders, (
+        f"bare print() at lines {offenders} in google_calendar.py. Every status "
+        "line goes through _say(), or the guard covers whichever call site "
+        "someone happened to report."
+    )
+
+
+# --------------------------------------------------------------------------
 # BI3 — the message the user actually sees (P25: test the surface, not the lib)
 # --------------------------------------------------------------------------
 
-def test_bi3_the_dialog_message_names_the_path_that_was_checked(redirected_home):
+def test_bi3_the_dialog_message_names_the_path_that_was_checked(
+    redirected_home, monkeypatch
+):
     """README.md and INSTALL.md both promise this to the user.
 
     The calendar dialog is the only surface a GUI user reaches:
@@ -256,18 +451,35 @@ def test_bi3_the_dialog_message_names_the_path_that_was_checked(redirected_home)
     from src.getmoredone.screens.calendar_dialog import missing_credentials_message
 
     home, _ = redirected_home
+
+    # A DISTINCTIVE directory, deliberately not under the redirected home.
+    # The fixture points legacy_dot_dir() and Path.home() at the same place, so
+    # `google_auth_dir()` and a hand-rolled `Path.home() / ".getmoredone"` are
+    # indistinguishable under it — an earlier version of this test passed with
+    # the resolver replaced by exactly that literal. Patching the resolver
+    # itself is what separates them.
+    sentinel = Path(tempfile.mkdtemp()) / "sentinel-auth-dir"
+    monkeypatch.setattr(gmd_paths, "google_auth_dir", lambda: sentinel)
+
     rendered = missing_credentials_message()
 
-    expected = home / ".getmoredone" / "credentials.json"
-    assert str(expected) in rendered, (
-        f"the message does not name the path that was checked.\n"
-        f"expected to find: {expected}\nmessage was:\n{rendered}"
+    assert str(sentinel / "credentials.json") in rendered, (
+        "the message does not name the path the RESOLVER returns — it is "
+        f"reading somewhere else.\nexpected: {sentinel / 'credentials.json'}\n"
+        f"message was:\n{rendered}"
+    )
+    assert str(home) not in rendered, (
+        f"the message names the home directory rather than the resolver's "
+        f"answer:\n{rendered}"
     )
 
-    # And it is the REDIRECTED path, so the message tracks the resolver rather
-    # than repeating a literal that happens to match on this machine.
-    assert "~/.getmoredone" not in rendered, (
-        f"the message hardcodes a literal path:\n{rendered}"
+    # And the same resolver is what has_credentials() consults, which is the
+    # promise README.md and INSTALL.md actually make to the user.
+    sentinel.mkdir(parents=True)
+    assert GoogleCalendarManager.has_credentials() is False
+    (sentinel / "credentials.json").write_text("{}", encoding="utf-8")
+    assert GoogleCalendarManager.has_credentials() is True, (
+        "the message names a path that has_credentials() does not consult"
     )
 
 

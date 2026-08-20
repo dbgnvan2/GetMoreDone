@@ -314,7 +314,13 @@ def test_rm3d_all_test_files_are_collected():
     on_disk = {
         p.relative_to(REPO_ROOT).as_posix()
         for p in REPO_ROOT.rglob("test_*.py")
-        if not any(part in {"venv", ".venv", "dist", "build", ".git", "__pycache__"}
+        # .gmd-optout-probe is written and removed inside
+        # test_the_mapped_window_opt_out_is_off_by_default. pytest's default
+        # norecursedirs skips dot-directories, so it is never collected — this
+        # glob would otherwise report it as an uncollected file if a run were
+        # killed mid-test.
+        if not any(part in {"venv", ".venv", "dist", "build", ".git",
+                            "__pycache__", ".gmd-optout-probe"}
                    for part in p.parts)
     }
     assert on_disk, "no test files found at all — the glob is wrong"
@@ -786,7 +792,13 @@ def test_the_mapped_window_opt_out_is_off_by_default():
             f"pytest.ini.\n{_describe(on)}"
         )
 
-        for off_value in ("0", "false", "off", "no", " 0 "):
+        # Imported, not re-spelled: a second copy here would drift from the
+        # one conftest actually uses, which is the duplication this commit's
+        # own sibling fix argued against.
+        import conftest
+
+        off_values = [v for v in conftest.NO_MAPPED_WINDOWS_OFF_VALUES if v] + [" 0 "]
+        for off_value in off_values:
             off = _run(off_value)
             assert off.returncode == 0 and "1 passed" in off.stdout, (
                 f"GETMOREDONE_NO_MAPPED_WINDOWS={off_value!r} must mean OFF. A "
@@ -795,9 +807,18 @@ def test_the_mapped_window_opt_out_is_off_by_default():
             )
     finally:
         # rmtree, not rmdir: the nested pytest run leaves a __pycache__ behind.
+        # NOT ignore_errors: a cleanup that silently fails leaves
+        # .gmd-optout-probe/test_probe.py on disk, and the next run fails in
+        # test_rm3d_all_test_files_are_collected with a message pointing at
+        # the wrong problem (P2 — a silent drop whose consequence surfaces
+        # somewhere else).
         import shutil
 
-        shutil.rmtree(probe_dir, ignore_errors=True)
+        shutil.rmtree(probe_dir)
+        assert not probe_dir.exists(), (
+            f"could not remove {probe_dir}; a leftover probe file makes "
+            "test_rm3d_all_test_files_are_collected fail on the next run"
+        )
 
 
 def test_the_opt_out_values_are_not_duplicated_across_modules():
@@ -1098,7 +1119,6 @@ def test_bi1_checksum_files_are_written_in_the_format_the_verifier_reads():
     verification was called.
     """
     jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    archives = dict(zip(BUILD_ARTIFACTS, RELEASE_ARCHIVES_BY_JOB.values()))
 
     windows = _code_only(jobs["build-windows"])
     assert "-NoNewline" in windows, (
