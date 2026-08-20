@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from .weekly_tactic_logging import LOGGER_NAME
 
@@ -216,7 +216,7 @@ def find_initiative_candidates_by_title(
     year: int,
     segment_id: str,
     key_field: str,
-) -> List[sqlite3.Row]:
+) -> Tuple[List[sqlite3.Row], List[sqlite3.Row]]:
     """Unlinked initiatives whose title still reads as this APE's key field.
 
     Purpose: one candidate query for the two places that establish the link by
@@ -225,42 +225,43 @@ def find_initiative_candidates_by_title(
     Tests:   tests/test_rename_safe_links.py::test_rn_m1b1_backfill_prefers_the_candidate_whose_plan_year_agrees
              tests/test_rename_safe_links.py::test_rn_m2a1_heal_prefers_the_candidate_whose_plan_year_agrees
 
-    **The annual plan's year is a tie-break, not a veto.** Candidates whose
-    plan agrees with the APE's year are returned when there are any; the wider
-    set is used only when that narrower one is empty.
+    Returns ``(preferred, all_candidates)``. ``all_candidates`` is every
+    match; ``preferred`` is the sub-set whose annual plan agrees with the APE's
+    year, falling back to all of them when none agrees.
 
-    Requiring the plan year outright made a correctly-titled initiative on a
-    drifted-year plan invisible, so neither caller could link it. Dropping it
-    outright was worse in the other direction: a twin on a drifted plan joined
-    the candidate set, and being older it won the backfill's ``created_at``
-    order and took the link, while the heal — whose contract is "exactly one
-    match or refuse" — saw two, refused, and let its caller build a THIRD
-    initiative for one plan element.
+    **The annual plan's year is a tie-break, not a veto — and not evidence.**
+    Requiring it outright made a correctly-titled initiative on a drifted-year
+    plan invisible, so neither caller could link it. Dropping it outright was
+    worse in the other direction: a twin on a drifted plan joined the set, and
+    being older it won the backfill's ``created_at`` order and took the link,
+    while the heal — whose contract is "exactly one match or refuse" — saw two,
+    refused, and let its caller build a THIRD initiative for one plan element.
 
-    Ordering both tiers by ``created_at ASC, id ASC`` keeps the caller's choice
-    of ``matches[0]`` deterministic.
+    But agreeing about the year does **not** mean being the right one. Both
+    orientations are reachable: the APE's own initiative may be the drifted
+    one, and then the tie-break prefers a stale twin. Nothing in the data
+    distinguishes them, so this returns the second list as well — a caller with
+    a report channel must surface every candidate it did not pick, or it hides
+    a choice it was not entitled to make silently (RN-INV5).
+
+    Ordering both tiers by ``created_at ASC, id ASC`` keeps a caller's choice
+    of ``preferred[0]`` deterministic.
     """
-    def _matches(require_plan_year: bool) -> List[sqlite3.Row]:
-        plan_year = "AND ap.year = ?" if require_plan_year else ""
-        params: List[Any] = [int(year), segment_id, key_field]
-        if require_plan_year:
-            params.append(int(year))
-        return conn.execute(
-            f"""
-            SELECT ai.*
-            FROM annual_initiatives ai
-            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
-            WHERE ai.year = ?
-              AND ai.segment_description_id = ?
-              AND LOWER(ai.title) = LOWER(?)
-              AND ai.annual_plan_element_id IS NULL
-              {plan_year}
-            ORDER BY ai.created_at ASC, ai.id ASC
-            """,
-            params,
-        ).fetchall()
-
-    return _matches(True) or _matches(False)
+    all_candidates = conn.execute(
+        """
+        SELECT ai.*, ap.year AS annual_plan_year
+        FROM annual_initiatives ai
+        JOIN annual_plans ap ON ap.id = ai.annual_plan_id
+        WHERE ai.year = ?
+          AND ai.segment_description_id = ?
+          AND LOWER(ai.title) = LOWER(?)
+          AND ai.annual_plan_element_id IS NULL
+        ORDER BY ai.created_at ASC, ai.id ASC
+        """,
+        (int(year), segment_id, key_field),
+    ).fetchall()
+    agreeing = [row for row in all_candidates if row["annual_plan_year"] == int(year)]
+    return (agreeing or all_candidates), all_candidates
 
 
 def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
@@ -278,7 +279,9 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
     works before the migration links the same way after it. Both call
     ``find_initiative_candidates_by_title``, so the candidate set cannot drift
     between them; what they do with it still differs, and deliberately — the
-    heal refuses on more than one, this links the oldest and reports the rest.
+    heal refuses on more than one, this links the preferred one and reports
+    every other candidate — including the ones the plan-year tie-break
+    demoted, which the heal cannot report at all.
 
     RN-M1.B.2: a user who has already renamed may have TWO initiatives matching
     one APE (that is RN-F4's duplicate). The oldest by ``created_at`` is
@@ -306,26 +309,32 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
             # No resolvable segment: the title match alone is not specific
             # enough, since two segments can hold the same key field.
             continue
-        matches = find_initiative_candidates_by_title(
+        preferred, all_candidates = find_initiative_candidates_by_title(
             conn, ape["year"], segment_id, ape["key_field"]
         )
-        if not matches:
+        if not preferred:
             continue
 
-        winner = matches[0]["id"]
+        winner = preferred[0]["id"]
         conn.execute(
             "UPDATE annual_initiatives SET annual_plan_element_id = ? WHERE id = ?",
             (ape["id"], winner),
         )
         linked += 1
 
-        if len(matches) > 1:
+        # Every candidate that was NOT picked, including the ones the plan-year
+        # tie-break demoted. Reporting only the losers within the winning tier
+        # made the tie-break invisible — and it is a heuristic, not evidence:
+        # the APE's own initiative can be the drifted one, in which case the
+        # row surfaced here is the right answer and the linked one is not.
+        losers = [row["id"] for row in all_candidates if row["id"] != winner]
+        if losers:
             ambiguous.append({
                 "annual_plan_element_id": ape["id"],
                 "key_field": ape["key_field"],
                 "year": ape["year"],
                 "linked": winner,
-                "left_null": [m["id"] for m in matches[1:]],
+                "left_null": losers,
             })
 
     unmatched = [

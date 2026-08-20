@@ -469,12 +469,17 @@ class VPSSchema:
         #
         # segment_cache below is keyed by LOWERED name, so two legacy rows
         # pointing at two descriptions whose names differ only by case collapse
-        # into ONE new vision_segments row. Stamping the first row's id onto it
-        # asserts a link that is false for the other row's work — its
-        # sub-segment and category would sit under a life segment they never
-        # belonged to, and the backfill's ambiguity report, which used to name
-        # both candidates, would come back clean. A wrong link is worse than a
-        # missing one precisely because the missing one is visible.
+        # into ONE new vision_segments row. That collapse is older than this
+        # code and withholding the stamp does NOT undo it: both sub-segments
+        # still hang off the one row, and the second one's key_field still
+        # spells the segment the other way. What the stamp changes is whether
+        # the row *asserts* a life segment it is only half entitled to, and
+        # whether the backfill's ambiguity report — which names both
+        # candidates — comes back clean. A wrong link is worse than a missing
+        # one precisely because the missing one is visible.
+        #
+        # The residual mis-filing is recorded in BACKLOG.md; fixing it means
+        # not collapsing by name, which is a bigger change than this.
         descriptions_by_segment_name: dict = {}
         for legacy in legacy_rows:
             key = ((legacy["segment_name"] or "").strip() or "Uncategorized").lower()
@@ -484,7 +489,14 @@ class VPSSchema:
                 )
 
         def _agreed_description_id(name: str):
-            """The one description every legacy row under this name meant."""
+            """The one description the resolvable legacy rows here agree on.
+
+            Rows whose ``segment_id`` resolves to nothing contribute no opinion
+            rather than blocking one — they are unresolvable, not dissenting,
+            and they all land under the 'Uncategorized' fallback anyway. So a
+            bucket holding one resolvable row and any number of dangling ones
+            is stamped with that row's description.
+            """
             candidates = descriptions_by_segment_name.get(name.lower(), set())
             return next(iter(candidates)) if len(candidates) == 1 else None
 

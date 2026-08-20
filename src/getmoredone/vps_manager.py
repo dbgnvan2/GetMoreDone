@@ -695,10 +695,16 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                tests/test_rename_safe_links.py::test_rn_m2a1_heal_survives_an_annual_plan_year_drift
                tests/test_rename_safe_links.py::test_rn_m2a1_heal_prefers_the_candidate_whose_plan_year_agrees
 
-        Deliberately narrow. It fires only when the id is NULL and EXACTLY ONE
-        initiative matches: two matches is the RN-F4 duplicate, and choosing
-        between them here would silently pick one of a user's two plans
-        (RN-INV5). Those are left for the report.
+        Deliberately narrow. It fires only when the id is NULL and exactly one
+        candidate survives the preferred tier: two is the RN-F4 duplicate, and
+        choosing between them here would silently pick one of a user's two
+        plans (RN-INV5). Those are left for the report.
+
+        "Exactly one **candidate**", not "exactly one initiative that matches"
+        — the tier itself is a choice, and this path cannot report making it.
+        Where two initiatives match and the plan year separates them, this
+        heals to the preferred one silently. The migration's backfill sees the
+        same pair and names both, which is where a human finds out.
 
         ``ai.year`` is the identifying comparison — the initiative's own year
         against the APE's. The annual plan's year is a **tie-break**, applied
@@ -717,7 +723,10 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         segment_id = self._segment_id_for_ape(ape)
         if not segment_id:
             return None
-        matches = find_initiative_candidates_by_title(
+        # Only the preferred tier decides. The full list is for callers with a
+        # report channel; this one has none, and refusing here is not safe —
+        # _get_or_create_annual_initiative_for_ape then builds another.
+        matches, _all_candidates = find_initiative_candidates_by_title(
             self.db.conn, ape["year"], segment_id, ape["key_field"]
         )
         if len(matches) != 1:
