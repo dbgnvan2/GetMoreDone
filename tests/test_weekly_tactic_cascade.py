@@ -614,9 +614,16 @@ def test_wt_m4d2_failure_at_last_row_rolls_back_everything(tmp_path):
 def test_wt_m4d3_missing_segment_rolls_back(tmp_path):
     """The real mid-chain raise site, not a synthetic exception.
 
-    ``resolve_segment_id_by_name`` returning None raises ValueError inside
-    ``assign_ape_to_quarter`` / ``assign_ape_to_month`` (vps_manager.py:359,
-    :421) — a genuine failure part-way through the chain.
+    A segment that cannot be resolved raises ValueError inside
+    ``assign_ape_to_quarter`` / ``assign_ape_to_month`` — a genuine failure
+    part-way through the chain, and this asserts the whole cascade rolls back.
+
+    It used to induce that by patching ``resolve_segment_id_by_name``. RN-M2.B
+    moved every link caller onto ``_segment_id_for_ape``, which reads the APE's
+    stored ``segment_description_id`` — so the old patch no longer causes a
+    failure at all. That is the point of the rename-safe-links change, not a
+    regression: the rollback contract here is unchanged, only the way to
+    produce a missing segment moved.
     """
     vps = make_vps(tmp_path)
     try:
@@ -624,7 +631,7 @@ def test_wt_m4d3_missing_segment_rolls_back(tmp_path):
         ape_id, tactic, item = _filed_item(vps)
         before = _counts(manager.db.conn, year=2027)
 
-        with patch.object(vps, "resolve_segment_id_by_name", return_value=None):
+        with patch.object(vps, "_segment_id_for_ape", return_value=None):
             with pytest.raises(ValueError, match="not found"):
                 _move(manager, item.id, "2027-03-03")
 

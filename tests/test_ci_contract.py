@@ -1830,3 +1830,30 @@ def test_documented_secrets_match_the_ones_the_workflow_reads():
     assert used <= documented, (
         f"the workflow reads secrets the doc never explains: {sorted(used - documented)}"
     )
+
+
+def test_the_opt_out_parsing_handles_whitespace_and_case(monkeypatch):
+    """In-process, so it costs no subprocess.
+
+    Narrowing the subprocess loop to one off-value removed the only case
+    exercising `.strip()` — `" 0 "` — and the comment justifying that claimed
+    the parsing was covered by the membership test above. It is not: that test
+    never calls the function. Mutation-verified — removing `.strip()` left both
+    tests green.
+    """
+    import conftest
+
+    for value in (" 0 ", "FALSE", "OFF", "No", "  false  ", "n"):
+        monkeypatch.setenv(conftest.NO_MAPPED_WINDOWS_ENV, value)
+        assert conftest.mapped_windows_suppressed() is False, (
+            f"{value!r} turned the opt-out ON; it means off"
+        )
+
+    for value in ("1", "yes", "true", " 1 "):
+        monkeypatch.setenv(conftest.NO_MAPPED_WINDOWS_ENV, value)
+        assert conftest.mapped_windows_suppressed() is True, (
+            f"{value!r} did not turn the opt-out on"
+        )
+
+    monkeypatch.delenv(conftest.NO_MAPPED_WINDOWS_ENV, raising=False)
+    assert conftest.mapped_windows_suppressed() is False

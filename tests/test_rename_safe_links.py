@@ -112,6 +112,52 @@ def _build_full_chain(vps, year: int = 2026):
 # The links, each resolved the way the app resolves it
 # --------------------------------------------------------------------------
 
+
+RENAMED_TO = {
+    "segment": "Health Renamed",
+    "subsegment": "Living Systems Renamed",
+    "category": "Blog Renamed",
+    "vision_element_key_field": "Blog Renamed Key",
+    "project": "Renamed Project",
+    "weekly_tactic": "Weekly Tactic Renamed",
+}
+
+
+def _assert_the_rename_happened(vps, chain, level):
+    """Post-condition: the new name is actually stored.
+
+    Without this the matrix passes trivially when the rename did nothing —
+    before == after because neither moved. Verified by mutation: making
+    rename_vision_segment / _subsegment / _category and update_vision_element
+    into no-ops left ALL SIX parametrisations green.
+
+    "The links survived" is only meaningful if something was renamed.
+    """
+    expected = RENAMED_TO[level]
+    queries = {
+        "segment": ("SELECT name AS v FROM vision_segments WHERE id = ?",
+                    chain["vision_segment_id"]),
+        "subsegment": ("SELECT name AS v FROM vision_subsegments WHERE id = ?",
+                       chain["subsegment_id"]),
+        "category": ("SELECT name AS v FROM vision_categories WHERE id = ?",
+                     chain["category_id"]),
+        "vision_element_key_field": (
+            "SELECT key_field AS v FROM annual_plan_elements WHERE id = ?",
+            chain["ape_id"]),
+        "project": ("SELECT title AS v FROM project_boards WHERE id = ?",
+                    chain["project_board_id"]),
+        "weekly_tactic": ("SELECT title AS v FROM action_items WHERE id = ?",
+                          chain["weekly_tactic_id"]),
+    }
+    sql, key = queries[level]
+    value = vps.db.conn.execute(sql, (key,)).fetchone()["v"]
+    assert expected in (value or ""), (
+        f"the {level} rename did not happen: stored value is {value!r}, "
+        f"expected it to contain {expected!r}. The link comparison below would "
+        "pass trivially."
+    )
+
+
 def _resolve_links(vps, chain):
     """Every link in the chain, resolved now, as ids.
 
@@ -141,7 +187,13 @@ def _resolve_links(vps, chain):
         # raise ValueError("Segment '<new name>' not found.") after a rename.
         # resolve_segment_id_by_name survives for genuine NAME lookups (user
         # input, import) and is no longer a link path.
-        "ape_to_segment": ape["segment_description_id"] if ape else None,
+        # Through _segment_id_for_ape, the function the cascade calls — NOT by
+        # reading the column. Reading the column directly meant a mutation that
+        # made _segment_id_for_ape ignore the id and always resolve by name
+        # left all 27 tests green, because RN-M3.A now renames
+        # segment_descriptions too, so the name lookup succeeds again. Nothing
+        # proved the id column was load-bearing for this link.
+        "ape_to_segment": vps._segment_id_for_ape(ape) if ape else None,
         # APE -> annual initiative (RN-F4): a title string match today.
         "ape_to_annual_initiative": initiative["id"] if initiative else None,
         # vision_segments -> segment_descriptions (RN-F2).
@@ -261,6 +313,7 @@ def test_rn_m2d_no_rename_breaks_any_link(tmp_path, level):
         )
 
         _rename(vps, chain, level)
+        _assert_the_rename_happened(vps, chain, level)
 
         after = _resolve_links(vps, chain)
 
@@ -874,7 +927,11 @@ def test_rn_m5a_existing_breakage_is_reported(tmp_path):
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             ("ai-orphan", original["annual_plan_id"],
              original["segment_description_id"], original["year"],
-             "Orphan", "2099-01-01T00:00:00", "2099-01-01T00:00:00", None),
+             # A composite title, so it looks derived — a hand-created
+             # initiative with a plain title is NOT breakage (see the
+             # LIKE filter in report_existing_breakage).
+             "Health|Living Systems|Orphaned", "2099-01-01T00:00:00",
+             "2099-01-01T00:00:00", None),
         )
         vps.db.conn.execute(
             "INSERT INTO annual_initiatives "
@@ -972,22 +1029,50 @@ NAME_LINK_PATTERNS = {
         r"LOWER\(\s*sd\.name\s*\)\s*=\s*LOWER\(\s*vs\.name\s*\)",
     "initiative_by_title":
         r"LOWER\(\s*ai\.title\s*\)\s*=\s*LOWER",
-    "segment_by_name_on_a_link_path":
-        r"resolve_segment_id_by_name\(\s*ape\[",
-    "segment_by_name_via_vps":
-        r"vps\.resolve_segment_id_by_name\(",
+    # Unqualified on purpose. Anchoring on `ape[` missed the VERBATIM line this
+    # change deleted from _get_or_create_annual_plan_for_ape:
+    #     segment_name = ape["segment_name"]
+    #     segment_id = self.resolve_segment_id_by_name(segment_name)
+    # — a local variable, not a subscript. Restoring it exactly left all 27
+    # tests green, guard included, because RN-M4.A.1's offender sample used the
+    # `ape[` spelling rather than the code actually removed. That is the P27
+    # corollary: mutate with the verbatim original, never a reconstruction.
+    "segment_by_name_any_caller":
+        r"resolve_segment_id_by_name\(",
+    # Not just sd/vs: any alias pair joining two entity tables on LOWER(name).
+    "entity_join_by_name":
+        r"LOWER\(\s*\w+\.name\s*\)\s*=\s*LOWER\(\s*\w+\.\w*name\s*\)",
+    # An APE name column resolved against segment_descriptions in raw SQL —
+    # the shape of db_manager._segment_from_annual_plan, which no pattern saw.
+    "segment_descriptions_by_name":
+        r"FROM\s+segment_descriptions\s+WHERE\s+LOWER\(\s*name\s*\)\s*=\s*LOWER",
 }
 
 # The exact name-based lookups that remain, per file and pattern. Every one is
 # explained in NAME_LOOKUP_ALLOWLIST below.
 #
-# The three patterns absent from this map — segment_join_by_name,
-# segment_by_name_on_a_link_path, segment_by_name_via_vps — are gone from src/
-# entirely, which is what RN-M2.A/B/C did. Their absence is asserted by this
-# dict being exact.
+# segment_join_by_name is absent: the three `LOWER(sd.name) = LOWER(vs.name)`
+# joins RN-M2.C removed are gone from src/ entirely, and this dict being exact
+# is what asserts that.
+#
+# The counts matter more than the file list. An earlier version allowlisted by
+# FILE, which let a reintroduced name-join hide inside an allowlisted file
+# (P29 — a permissive bound where an exact count belonged).
 PERMITTED_NAME_LOOKUPS = {
+    # The display colour lineage: two queries, three name joins each.
+    ("db_manager_project_boards.py", "entity_join_by_name"): 6,
+    # The migration's one-time title match (RN-M1.B.1).
     ("link_integrity.py", "initiative_by_title"): 1,
+    # resolve_segment_id_exact, and the backfill's own candidate query.
+    ("link_integrity.py", "segment_descriptions_by_name"): 2,
+    # The one-time heal (RN-M2.A.1).
     ("vps_manager.py", "initiative_by_title"): 1,
+    # resolve_segment_id_by_name's DEFINITION and body. RN-M2.B keeps it for
+    # genuine name lookups — user input and import. Neither is a caller.
+    ("vps_manager.py", "segment_by_name_any_caller"): 1,
+    ("vps_manager.py", "segment_descriptions_by_name"): 1,
+    # The canonical-name lookup in the taxonomy.
+    ("vps_manager_taxonomy.py", "segment_descriptions_by_name"): 1,
 }
 
 # Allowlisted, BY NAME, each with the reason inline (RN-M4.A).
@@ -1113,15 +1198,19 @@ def test_rn_m4a1_the_scan_can_actually_fire(tmp_path):
     this repo's guard tests generally, so each pattern is driven against a
     synthetic file containing the exact code this change deleted.
     """
+    # Each sample is the VERBATIM code this change deleted, not a paraphrase.
     offenders = {
         "segment_join_by_name":
             "LEFT JOIN segment_descriptions sd ON LOWER(sd.name) = LOWER(vs.name)",
         "initiative_by_title":
             "WHERE LOWER(ai.title) = LOWER(?)",
-        "segment_by_name_on_a_link_path":
-            'segment_id = self.resolve_segment_id_by_name(ape["segment_name"])',
-        "segment_by_name_via_vps":
-            'x = self.vps.resolve_segment_id_by_name(ape["segment_name"])',
+        "segment_by_name_any_caller":
+            # The line the previous pattern could not see.
+            "segment_id = self.resolve_segment_id_by_name(segment_name)",
+        "entity_join_by_name":
+            "WHERE LOWER(ss.name) = LOWER(ape.subsegment_name)",
+        "segment_descriptions_by_name":
+            'SELECT id FROM segment_descriptions WHERE LOWER(name) = LOWER(?)',
     }
     assert set(offenders) == set(NAME_LINK_PATTERNS), (
         "a pattern was added or removed without a matching offender sample, "
@@ -1164,6 +1253,314 @@ def test_rn_m4a_comment_stripper_keeps_hashes_inside_strings(tmp_path):
         encoding="utf-8",
     )
     hits = _scan_for_name_links([sample])
-    assert len(hits) == 1, (
-        f"expected exactly one hit — the string, not the comment — got {hits}"
+    # Exactly one: the quoted string. The comment must not count, and the
+    # string must not be truncated at the `#` inside it. Two patterns can match
+    # this line (entity_join_by_name is the general form), so compare on the
+    # set of LINES hit rather than the number of matches.
+    assert {h[2] for h in hits} == {2}, (
+        f"expected hits on line 2 only — the string, not the comment — got {hits}"
     )
+
+
+def test_rn_deleting_a_segment_with_plan_elements_is_refused(tmp_path):
+    """A segment with Annual Plan Elements under it must not be deletable.
+
+    Found by the sweep, and it was introduced BY this change. RN-M1 gave
+    annual_plan_elements a segment_description_id declared ON DELETE SET NULL —
+    chosen so delete_segment would stop raising FOREIGN KEY constraint failed
+    on the auto-created vision_segments shadow row. That signal was real; it
+    just pointed at the wrong table.
+
+    The result: deleting a segment reported "no child records", silently nulled
+    every APE's link, and the next cascade raised
+    `ValueError: Segment '<name>' not found.` — the exact spec §2 failure this
+    change exists to remove, reintroduced by the change.
+    """
+    vps = make_vps(tmp_path, name="delseg.db")
+    try:
+        chain = _build_full_chain(vps)
+
+        ok, counts = vps.delete_segment(chain["segment_description_id"])
+
+        assert ok is False, (
+            "a segment with an Annual Plan Element under it was deleted"
+        )
+        assert "Annual Plan Elements" in counts, (
+            f"the refusal does not name the plan elements blocking it: {counts}"
+        )
+
+        # And the link survives, so the cascade still works.
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert ape["segment_description_id"] == chain["segment_description_id"]
+        assert vps.assign_ape_to_month(chain["ape_id"], quarter=4, month=11) is True, (
+            "the refused delete still broke the re-filing cascade"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_ambiguous_name_is_never_resolved_to_a_link(tmp_path):
+    """RN-INV5 across the migration AND every other write site.
+
+    Found by the sweep. `segment_descriptions.name` is UNIQUE but
+    case-sensitive, so 'Health' and 'health' coexist legally. The backfill was
+    careful — it reported the row as ambiguous and left it NULL — and then
+    `sync_vision_segments_with_settings`, which runs at EVERY manager init
+    moments later, wrote a guess into the same row.
+
+    The report was false about the database it had just described. A missing
+    link is visible in the report; a wrong one is not.
+    """
+    vps = make_vps(tmp_path, name="ambig.db")
+    try:
+        chain = _build_full_chain(vps)
+        original = vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?",
+            (chain["segment_description_id"],),
+        ).fetchone()["name"]
+
+        # A second description whose name differs only by case.
+        vps.db.conn.execute(
+            "INSERT INTO segment_descriptions "
+            "(id, name, color_hex, order_index, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("sd-twin", original.lower() if original != original.lower()
+             else original.upper(), "#123456", 99,
+             "2099-01-01T00:00:00", "2099-01-01T00:00:00"),
+        )
+        vps.db.conn.execute("UPDATE vision_segments SET segment_description_id = NULL")
+        vps.db.conn.execute(
+            "UPDATE annual_plan_elements SET segment_description_id = NULL"
+        )
+        vps.db.conn.commit()
+
+        report = run_link_integrity_migrations(vps.db.conn)
+        assert report["backfill_vision_segments"]["ambiguous"], (
+            "the migration did not report the ambiguity"
+        )
+
+        # The thing that used to undo it: a fresh manager init on the same file.
+        vps.sync_vision_segments_with_settings()
+
+        still_null = vps.db.conn.execute(
+            "SELECT segment_description_id FROM vision_segments WHERE id = ?",
+            (chain["vision_segment_id"],),
+        ).fetchone()["segment_description_id"]
+        assert still_null is None, (
+            f"a write site guessed {still_null!r} for a name matching two "
+            "segment descriptions, after the migration refused to"
+        )
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert vps._segment_id_for_ape(ape) is None, (
+            "the heal guessed a segment for an ambiguous name"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_item_segment_follows_the_ape_link_not_its_name(tmp_path):
+    """An Action Item's segment comes from the APE's id, not its name column.
+
+    Found by the sweep: `_segment_from_annual_plan` runs on every
+    create_action_item and resolved the segment by matching the APE's
+    segment_name against segment_descriptions.name — while its sibling
+    `_segment_from_week_action` already read an id column.
+
+    So an APE carrying the CORRECT id and a drifted name — exactly the state
+    RN-M5 exists to report — derived None, and the item was stamped with no
+    segment at all.
+    """
+    vps = make_vps(tmp_path, name="derive.db")
+    try:
+        chain = _build_full_chain(vps)
+        # The id is right; the name has drifted. Nothing else changes.
+        vps.db.conn.execute(
+            "UPDATE annual_plan_elements SET segment_name = 'Drifted Name' WHERE id = ?",
+            (chain["ape_id"],),
+        )
+        vps.db.conn.commit()
+
+        derived = vps.db_manager._segment_from_annual_plan(chain["ape_id"])
+        assert derived == chain["segment_description_id"], (
+            f"the item's segment was derived as {derived!r}; the APE's link "
+            f"says {chain['segment_description_id']!r}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_a_hand_edited_initiative_title_survives_a_rename(tmp_path):
+    """RN-D7 says the title is derived — of how it STARTS, not of what the
+    user may have made it.
+
+    Found by the sweep. The Annual Initiative editor offers a Title field and
+    update_annual_initiative persists it, so a blanket
+    `UPDATE annual_initiatives SET title = <key_field>` on any taxonomy rename
+    discarded the user's text silently.
+
+    An untouched title still follows the rename — that is RN-M3.A, asserted in
+    test_rn_m3a_rename_refreshes_every_display_copy.
+    """
+    vps = make_vps(tmp_path, name="handedit.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.update_annual_initiative(
+            chain["annual_initiative_id"], title="Grow the blog to 10k readers"
+        )
+
+        vps.rename_vision_subsegment(chain["subsegment_id"], "Publishing")
+
+        title = vps.db.conn.execute(
+            "SELECT title FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["title"]
+        assert title == "Grow the blog to 10k readers", (
+            f"the rename overwrote a hand-edited title with {title!r}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_repointing_a_vision_element_moves_its_segment_link(tmp_path):
+    """Re-pointing a vision element to a DIFFERENT segment must move the link.
+
+    Found by the cold review, and it was a regression introduced BY this
+    change. `update_vision_element` updates the APE's segment_name but did not
+    update segment_description_id, and `_segment_id_for_ape` returns the stored
+    id whenever it is non-NULL — so the heal never ran and the APE kept
+    pointing at the OLD segment.
+
+    The old name-based code got this right. Worse than a stale display: the
+    annual plan, initiative and tactics stay filed under the old segment, whose
+    id columns are ON DELETE CASCADE, so deleting it destroys work the UI shows
+    under the new one.
+    """
+    vps = make_vps(tmp_path, name="repoint.db")
+    try:
+        chain = _build_full_chain(vps)
+        segments = vps.get_all_segments(active_only=False)
+        other = next(s for s in segments if s["id"] != chain["segment_description_id"])
+
+        vps.create_vision_subsegment(other["name"], "Other Sub")
+        vps.update_vision_element(
+            chain["vision_element_id"],
+            segment_name=other["name"],
+            subsegment_name="Other Sub",
+            category_name="Blog",
+        )
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert ape["segment_name"] == other["name"], "the fixture did not re-point"
+        assert vps._segment_id_for_ape(ape) == other["id"], (
+            f"the APE still resolves to {vps._segment_id_for_ape(ape)!r}; it was "
+            f"re-pointed to {other['id']!r} ({other['name']!r})"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_a_hand_created_initiative_is_not_reported_as_breakage(tmp_path):
+    """The report must not cry wolf on normal data.
+
+    Found by the sweep. An Annual Initiative can be created from the editor
+    with no APE, by design. Reporting every one as "orphaned by a rename" put
+    a WARNING in the audit log at every launch, forever — and that log is what
+    the spec's §10 human-review step depends on.
+    """
+    vps = make_vps(tmp_path, name="notbreakage.db")
+    try:
+        chain = _build_full_chain(vps)
+        original = vps.db.conn.execute(
+            "SELECT * FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+        vps.db.conn.execute(
+            "INSERT INTO annual_initiatives "
+            "(id, annual_plan_id, segment_description_id, year, title, "
+            " created_at, updated_at, annual_plan_element_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("ai-byhand", original["annual_plan_id"],
+             original["segment_description_id"], original["year"],
+             "Grow the blog to 10k readers",
+             "2099-01-01T00:00:00", "2099-01-01T00:00:00", None),
+        )
+        vps.db.conn.commit()
+
+        breakage = report_existing_breakage(vps.db.conn)
+        ids = [r["id"] for r in breakage["initiatives_without_ape"]]
+        assert "ai-byhand" not in ids, (
+            "a hand-created initiative with a plain title was reported as "
+            f"breakage: {breakage['initiatives_without_ape']}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_a_lookup_leaves_no_open_transaction(tmp_path):
+    """The heals write inside getters; they must not leave a write open.
+
+    Found by the sweep. `_find_annual_initiative_for_ape` is used as a pure
+    read — weekly_tactic's before-snapshot, and unassign_ape_from_month, either
+    of which can return without committing. The heal's UPDATE was then
+    discarded at close (so the heal silently did not happen) while the
+    connection held a RESERVED lock in the meantime.
+    """
+    vps = make_vps(tmp_path, name="txn.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.db.conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = NULL WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        )
+        vps.db.conn.commit()
+        assert vps.db.conn.in_transaction is False, "the fixture left one open"
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        found = vps._find_annual_initiative_for_ape(ape)
+
+        assert found is not None, "the heal did not fire"
+        assert vps.db.conn.in_transaction is False, (
+            "a lookup left an open write transaction on the shared connection"
+        )
+        # And the heal actually persisted, rather than being rolled back.
+        stored = vps.db.conn.execute(
+            "SELECT annual_plan_element_id FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["annual_plan_element_id"]
+        assert stored == chain["ape_id"], "the heal was written but not committed"
+    finally:
+        vps.close()
+
+
+def test_rn_m3a_title_refreshes_on_the_update_vision_element_path_too(tmp_path):
+    """RN-M3.A must hold on BOTH rename paths, not just one.
+
+    Found by the sweep. The title refresh went into
+    _sync_vision_element_derived_fields; `update_vision_element` is its
+    near-identical sibling and did the same mirror updates itself, so renaming
+    through it left the initiative showing the old composite.
+
+    test_rn_m3a drives rename_vision_segment (the fixed function) and
+    test_rn_m3b drives update_vision_element but only checks the APE and the
+    tactic — so the two jointly missed it.
+    """
+    vps = make_vps(tmp_path, name="m3a2.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.update_vision_element(
+            chain["vision_element_id"],
+            segment_name=chain["segment_name"],
+            subsegment_name="Living Systems",
+            category_name="Renamed Cat",
+        )
+
+        title = vps.db.conn.execute(
+            "SELECT title FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()["title"]
+        assert "Renamed Cat" in title, (
+            f"the initiative title is stale after update_vision_element: {title!r}"
+        )
+    finally:
+        vps.close()
