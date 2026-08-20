@@ -195,9 +195,19 @@ class DBManagerProjectBoardsMixin:
                 VALUES (?, ?, ?)
             """, (board_id, item_id, now))
 
-            # 3. Fetch board's APE ID to sync
+            # 3. The board decides the item's Annual Plan Element — including
+            # when the board has none. The guard used to be
+            # `if board and board.annual_plan_element_id:` with no else, so
+            # moving an item onto a board with no APE left the *previous*
+            # board's APE on the row: the item claimed a place in the plan
+            # belonging to a project it was no longer on, and every reader
+            # downstream (the lineage columns, the Scheduler's segment filter,
+            # `inherit_project_links`) took that as ground truth. One rule, no
+            # stale halves — and `confirm_exclusive_relink` asks first whenever
+            # this write would change the item's APE.
+            # Tests: tests/test_project_multi_link.py::test_c3_a_board_with_no_plan_element_clears_the_items
             board = self.get_project_board(board_id)
-            if board and board.annual_plan_element_id:
+            if board:
                 self.db.conn.execute(
                     "UPDATE action_items SET annual_plan_element_id = ?, updated_at = ? WHERE id = ?",
                     (board.annual_plan_element_id, now, item_id)

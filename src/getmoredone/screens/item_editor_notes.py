@@ -77,7 +77,13 @@ class ItemEditorNotesMixin:
         paths cannot store different rows for the same form.
         """
         if self.item_id:
-            # Already has an ID, nothing to do
+            # Already has an ID, nothing to do — unless the row behind it is
+            # gone, in which case the caller is about to attach a note to an
+            # item that does not exist (P6: a status with no artifact).
+            if self.item is None:
+                self.error_label.configure(
+                    text="Error: this item no longer exists — it was deleted elsewhere")
+                return False
             return True
 
         try:

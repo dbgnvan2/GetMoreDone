@@ -88,6 +88,8 @@ def _save_stub(manager, monkeypatch, item=None, project_choice=..., texts=None):
     stub.extract_factor_value = lambda text: ItemEditorDialog.extract_factor_value(stub, text)
     stub._canonical_weekly_tactic_title = lambda *a: a[0]
     _bind_form_builder(stub)
+    stub._project_change_moves_the_ape = (
+        lambda bid: ItemEditorDialog._project_change_moves_the_ape(stub, bid))
 
     if project_choice is not ...:
         stub.apply_project_selection(project_choice)
@@ -276,6 +278,19 @@ def test_pl3_new_item_saves_and_links(tmp_path, monkeypatch):
 # ------------------------------------------------------------------- PL4
 
 
+def _accept_confirmations(monkeypatch):
+    """Answer yes to the shared relink confirmation.
+
+    The editor asks through ``project_link_notice.confirm_exclusive_relink``
+    now, the same helper the Projects dialog and the Scheduler use.
+    """
+    import src.getmoredone.screens.project_link_notice as notice
+    asked = []
+    monkeypatch.setattr(notice.messagebox, "askyesno",
+                        lambda title, message, **kw: asked.append(message) or True)
+    return asked
+
+
 def test_pl4_edit_item_relinks_exclusively(tmp_path, monkeypatch):
     vps = make_vps(tmp_path)
     try:
@@ -286,6 +301,7 @@ def test_pl4_edit_item_relinks_exclusively(tmp_path, monkeypatch):
         item = make_daily_item(vps, "Task")
         manager.link_item_to_project_exclusive(old.id, item.id)
 
+        _accept_confirmations(monkeypatch)
         stub = _save_stub(
             manager, monkeypatch,
             item=manager.get_action_item(item.id), project_choice=new.id,
@@ -888,7 +904,9 @@ def test_sweep3_the_confirmation_message_names_the_target_project(tmp_path, monk
                 title=title, message=message) or True)
 
         stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=2,
-                               item_id=None)
+                               item_id=None, item=None)
+        stub._project_change_moves_the_ape = (
+            lambda bid: ItemEditorDialog._project_change_moves_the_ape(stub, bid))
         result = ItemEditorDialog._confirm_dropping_extra_project_links(stub, board.id)
 
         assert result is True
@@ -899,5 +917,59 @@ def test_sweep3_the_confirmation_message_names_the_target_project(tmp_path, monk
         asked.clear()
         ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
         assert "Clearing the project" in asked["message"]
+    finally:
+        vps.close()
+
+
+def test_c2_1_the_editor_asks_before_swapping_a_plan_element(tmp_path, monkeypatch):
+    """Moving a singly-filed item between boards changes its plan element.
+
+    The editor's two guards covered "the item has extra links" and "the target
+    is None", and between them a singly-filed item could be moved to another
+    board — silently trading its Annual Plan Element for that board's — while
+    the Projects dialog and the Scheduler both asked about exactly that (P5).
+    """
+    from tests.weekly_tactic_fixtures import seed_second_ape
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_a = seed_ape(vps)
+        ape_b = seed_second_ape(vps)
+        old = _seed_board(manager, "Old Project", ape_a)
+        new = _seed_board(manager, "New Project", ape_b)
+        item = make_daily_item(vps, "Task")
+        manager.link_item_to_project_exclusive(old.id, item.id)
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_a
+
+        asked = _accept_confirmations(monkeypatch)
+        stub = _save_stub(manager, monkeypatch,
+                          item=manager.get_action_item(item.id), project_choice=new.id)
+        assert ItemEditorDialog.save_item(stub) is True
+
+        assert asked, "the plan element was swapped without a word"
+        assert "Annual Plan Element" in asked[0], asked[0]
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_b
+    finally:
+        vps.close()
+
+
+def test_c2_1_filing_an_unfiled_item_is_still_never_interrupted(tmp_path, monkeypatch):
+    """The common case — pick a project for a loose task — asks nothing."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _seed_board(manager, "Website Rebuild", ape_id)
+        item = make_daily_item(vps, "Task")
+        assert manager.get_action_item(item.id).annual_plan_element_id is None
+
+        asked = _accept_confirmations(monkeypatch)
+        stub = _save_stub(manager, monkeypatch,
+                          item=manager.get_action_item(item.id), project_choice=board.id)
+        assert ItemEditorDialog.save_item(stub) is True
+
+        assert asked == [], f"an unfiled item was interrupted: {asked}"
+        assert manager.get_project_board_ids_for_item(item.id) == [board.id]
     finally:
         vps.close()

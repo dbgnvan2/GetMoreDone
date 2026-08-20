@@ -12,6 +12,7 @@ DatabaseManager, the pattern used by tests/test_item_editor_project_link.py, so
 a control that renders but never reaches the database fails here (P25).
 """
 
+import pathlib
 from types import SimpleNamespace
 
 import pytest
@@ -41,6 +42,19 @@ def _dialog_stub(manager, board_id, checked=()):
     for name in ("_link", "_link_selected_items", "_confirm_relink"):
         method = getattr(LinkProjectActionItemsDialog, name)
         setattr(stub, name, (lambda m: lambda *a, **kw: m(stub, *a, **kw))(method))
+    return stub
+
+
+def _banner_stub(manager, texts):
+    """Enough of the Projects screen to drive the multi-link banner."""
+    label = SimpleNamespace(
+        configure=lambda **kw: texts.append(kw.get("text")),
+        grid=lambda *a, **k: None,
+        grid_remove=lambda *a, **k: None,
+    )
+    stub = SimpleNamespace(db_manager=manager, multi_link_label=label)
+    stub._show_multi_link_text = lambda text: pb.ProjectBoardsScreen._show_multi_link_text(
+        stub, text)
     return stub
 
 
@@ -276,11 +290,7 @@ def test_bp2_the_projects_screen_reports_the_outstanding_count(tmp_path):
         manager, item, _ = _three_linked(vps)
 
         texts = []
-        stub = SimpleNamespace(
-            db_manager=manager,
-            multi_link_label=SimpleNamespace(
-                configure=lambda **kw: texts.append(kw.get("text"))),
-        )
+        stub = _banner_stub(manager, texts)
         pb.ProjectBoardsScreen._refresh_multi_link_notice(stub)
 
         assert texts and "1 action item is" in texts[0], texts
@@ -512,11 +522,7 @@ def test_f4_the_banner_names_the_items_not_only_the_count(tmp_path):
         manager, item, _ = _three_linked(vps)
 
         texts = []
-        stub = SimpleNamespace(
-            db_manager=manager,
-            multi_link_label=SimpleNamespace(
-                configure=lambda **kw: texts.append(kw.get("text"))),
-        )
+        stub = _banner_stub(manager, texts)
         pb.ProjectBoardsScreen._refresh_multi_link_notice(stub)
 
         assert "Legacy multi-filed task" in texts[0], texts[0]
@@ -715,8 +721,10 @@ def test_s2_8_an_unreadable_board_is_still_a_filing_not_a_clear(tmp_path, monkey
         confirm_exclusive_relink(None, manager, [item.id], new.id)
 
         message = answers["messages"][0]
-        assert "Annual Plan Element" not in message, message
+        # A filing, not a clear: the plan element is *replaced* by the board's,
+        # never "cleared", and the fallback target names a project.
         assert "Clearing" not in message, message
+        assert "clears the item's Annual Plan Element" not in message, message
         assert "the selected project" in message, message
     finally:
         vps.close()
@@ -845,7 +853,9 @@ def test_s4_1_the_editor_still_warns_a_multi_filed_item_about_its_plan_element(
                             lambda title, message, **kw: asked.append(message) or True)
 
         stub = SimpleNamespace(db_manager=manager, _loaded_extra_project_links=1,
-                               item_id=item.id)
+                               item_id=item.id, item=manager.get_action_item(item.id))
+        stub._project_change_moves_the_ape = (
+            lambda bid: ItemEditorDialog._project_change_moves_the_ape(stub, bid))
         ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
 
         assert "Annual Plan Element" in asked[0], asked[0]
@@ -861,6 +871,7 @@ def test_s4_1_the_editor_still_warns_a_multi_filed_item_about_its_plan_element(
 
         asked.clear()
         stub.item_id = bare.id
+        stub.item = manager.get_action_item(bare.id)
         ItemEditorDialog._confirm_dropping_extra_project_links(stub, None)
         assert "Annual Plan Element" not in asked[0], asked[0]
     finally:
@@ -1021,3 +1032,226 @@ def test_s5_1_a_batch_with_no_plan_element_is_not_warned_about_one(tmp_path, ans
         assert "clears the project link." in message, message
     finally:
         vps.close()
+
+
+# ------------------------------- cold sweep (no prior context) findings
+
+
+def test_c1_a_search_cannot_leave_invisible_items_selected(tmp_path, monkeypatch, answers):
+    """Ticks must match the rows on screen, because Link Selected now deletes.
+
+    The result list is rebuilt on every keystroke in Search and on every filter
+    toggle, with the checkboxes recreated blank while ``checked_items`` kept
+    its contents. Ticking three rows, typing one character and pressing "Link
+    Selected" re-filed three items the user could no longer see — survivable
+    while linking was additive, destructive once BP1 made it exclusive.
+    """
+    import customtkinter as ctk
+    from src.getmoredone.models import ActionItem
+
+    monkeypatch.setattr(LinkProjectActionItemsDialog, "grab_set", lambda self: None)
+
+    vps = make_vps(tmp_path)
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        old = _board(manager, "Old Project", ape_id)
+        new = _board(manager, "New Project", ape_id)
+        hidden = ActionItem(who="Self", title="Zebra report")
+        manager.create_action_item(hidden, apply_defaults=False)
+        manager.link_item_to_project_exclusive(old.id, hidden.id)
+        shown = ActionItem(who="Self", title="Alpha report")
+        manager.create_action_item(shown, apply_defaults=False)
+
+        dialog = LinkProjectActionItemsDialog(root, manager, new.id, on_linked=lambda: None)
+        try:
+            dialog._on_item_checkbox_toggled(hidden.id)
+            assert dialog.checked_items == {hidden.id}
+
+            # The user types, and "Zebra report" leaves the list.
+            dialog.search_var.set("Alpha")
+            assert hidden.id not in dialog.checked_items, (
+                "an item the user can no longer see is still selected")
+
+            dialog._link_selected_items()
+        finally:
+            dialog.destroy()
+
+        assert manager.get_project_board_ids_for_item(hidden.id) == [old.id], (
+            "an invisible item was re-filed, losing its project link")
+    finally:
+        root.destroy()
+        vps.close()
+
+
+def test_c1_a_row_that_survives_the_rebuild_keeps_its_tick(tmp_path, monkeypatch, answers):
+    """...and the fix must not silently drop a selection the user can still see."""
+    import customtkinter as ctk
+    from src.getmoredone.models import ActionItem
+
+    monkeypatch.setattr(LinkProjectActionItemsDialog, "grab_set", lambda self: None)
+
+    vps = make_vps(tmp_path)
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        keeper = ActionItem(who="Self", title="Alpha report")
+        manager.create_action_item(keeper, apply_defaults=False)
+
+        dialog = LinkProjectActionItemsDialog(root, manager, board.id, on_linked=lambda: None)
+        try:
+            dialog._on_item_checkbox_toggled(keeper.id)
+            dialog.search_var.set("Alpha")          # still matches
+            assert dialog.checked_items == {keeper.id}
+            dialog._link_selected_items()
+        finally:
+            dialog.destroy()
+
+        assert manager.get_project_board_ids_for_item(keeper.id) == [board.id]
+    finally:
+        root.destroy()
+        vps.close()
+
+
+def test_c2_filing_asks_before_replacing_an_items_own_plan_element(tmp_path, answers):
+    """Filing overwrites the item's Annual Plan Element; that is a loss too.
+
+    ``classify_losses`` counted an APE as at stake only when clearing, so an
+    item carrying its own plan element and no board row was classified as
+    losing nothing and had it destroyed with no dialog (P5 — the class closed
+    for clearing and left open for filing).
+    """
+    from tests.weekly_tactic_fixtures import seed_second_ape
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        own_ape = seed_ape(vps)
+        board_ape = seed_second_ape(vps)
+        board = _board(manager, "Website Rebuild", board_ape)
+        item = make_daily_item(vps, "Task")
+        stored = manager.get_action_item(item.id)
+        stored.annual_plan_element_id = own_ape
+        manager.update_action_item(stored)
+
+        answers["reply"] = False
+        _dialog_stub(manager, board.id)._link(item.id)
+
+        assert answers["messages"], "the item's plan element went without a word"
+        assert "Annual Plan Element" in answers["messages"][0], answers["messages"][0]
+        assert manager.get_action_item(item.id).annual_plan_element_id == own_ape
+
+        answers["reply"] = True
+        _dialog_stub(manager, board.id)._link(item.id)
+        assert manager.get_action_item(item.id).annual_plan_element_id == board_ape
+    finally:
+        vps.close()
+
+
+def test_c2_filing_an_item_with_no_plan_element_asks_nothing(tmp_path, answers):
+    """The ordinary case stays uninterrupted."""
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        item = make_daily_item(vps, "Task")
+        assert manager.get_action_item(item.id).annual_plan_element_id is None
+
+        _dialog_stub(manager, board.id)._link(item.id)
+
+        assert answers["messages"] == []
+        assert manager.get_project_board_ids_for_item(item.id) == [board.id]
+    finally:
+        vps.close()
+
+
+def test_c3_a_board_with_no_plan_element_clears_the_items(tmp_path):
+    """Moving to a board with none must not leave the previous board's behind.
+
+    The APE sync was `if board and board.annual_plan_element_id:` with no else,
+    so the row went on claiming a plan element belonging to a project it was no
+    longer on — and every reader downstream took that as ground truth.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        with_ape = _board(manager, "Has a plan element", ape_id)
+        without = _board(manager, "No plan element", None)
+        item = make_daily_item(vps, "Task")
+
+        manager.link_item_to_project_exclusive(with_ape.id, item.id)
+        assert manager.get_action_item(item.id).annual_plan_element_id == ape_id
+
+        manager.link_item_to_project_exclusive(without.id, item.id)
+        assert manager.get_project_board_ids_for_item(item.id) == [without.id]
+        assert manager.get_action_item(item.id).annual_plan_element_id is None, (
+            "the item still claims the previous board's plan element")
+    finally:
+        vps.close()
+
+
+def test_c5_a_failed_banner_check_says_so_rather_than_showing_nothing(tmp_path):
+    """"The check failed" must not look identical to "nothing to report"."""
+    class Exploding:
+        def get_items_on_multiple_project_boards(self):
+            raise RuntimeError("simulated query failure")
+
+    texts = []
+    stub = _banner_stub(Exploding(), texts)
+    pb.ProjectBoardsScreen._refresh_multi_link_notice(stub)
+
+    assert texts, "the banner was never configured at all"
+    assert "Could not check" in texts[0], texts
+    assert texts[0] != "", "a failed check was shown as an empty banner"
+
+
+def test_c6_creating_an_item_from_a_board_files_it_exclusively(tmp_path):
+    """The last additive writer on the run path is gone."""
+    source = (pathlib.Path(__file__).resolve().parents[1] / "src" / "getmoredone"
+              / "screens" / "project_boards.py").read_text(encoding="utf-8")
+    assert "link_action_item_to_project_board" not in source, (
+        "the Projects screen still has an additive link call")
+
+
+def test_c2_2_no_combination_of_arguments_produces_a_false_sentence():
+    """Walk every branch of the two relink sentences, not just the live ones.
+
+    The Annual Plan Element clause went wrong three times in a row — promised
+    unconditionally, then only for clearing, then "replaces" for a board with
+    nothing to replace it with. Each was found by reading one live message. An
+    exhaustive walk finds the combinations no caller produces *today*, which is
+    what the next caller turns into a live one.
+    """
+    from src.getmoredone.screens.project_link_notice import (
+        APE_CLEARED, APE_REPLACED, APE_UNCHANGED)
+
+    outcomes = (APE_UNCHANGED, APE_CLEARED, APE_REPLACED)
+    for count in (0, 1, 2, 5):
+        for title in ("Website Rebuild", None):
+            for outcome in outcomes:
+                text = describe_single_relink(count, title, ape_outcome=outcome)
+                assert text and text.endswith("Continue?"), (count, title, outcome)
+                if title:
+                    assert "Clearing the project" not in text, text
+                else:
+                    # Nothing to take a plan element from, so nothing to replace.
+                    assert "replaces" not in text, text
+                if outcome is APE_UNCHANGED:
+                    assert "Annual Plan Element" not in text or count == 0, text
+
+    for affected in (1, 2, 5):
+        for title in ("Website Rebuild", None):
+            for outcome in outcomes:
+                text = describe_bulk_relink(affected, title, ape_outcome=outcome)
+                assert text.endswith("Continue?")
+                if not title:
+                    assert "replaces" not in text, text
+                if outcome is APE_UNCHANGED:
+                    assert "Annual Plan Element" not in text, text

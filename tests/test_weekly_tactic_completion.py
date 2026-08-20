@@ -218,5 +218,17 @@ def test_wt_m5c1_create_followup_item_also_inherits(tmp_path):
         assert week.start_date <= follow_up.start_date <= week.due_date, "WT-INV1"
         assert week.start_date <= follow_up.due_date <= week.due_date, "WT-INV2"
         assert follow_up.annual_plan_element_id == week.annual_plan_element_id
+
+        # The stamp. ``_inherit_weekly_lineage`` sets the copy's to None and
+        # the re-file then stamps it with the copy's *own* original week — the
+        # original item's history stays the original's. This pair was in the
+        # deleted complete_and_create test and the note replacing it claimed to
+        # have carried its assertions over; these two were not, leaving
+        # ``copy.weekly_tactic_start_date = None`` with no test anywhere.
+        original = manager.get_action_item(item.id)
+        assert original.weekly_tactic_start_date == "2026-02-23", (
+            "the copy's re-file rewrote the original's history")
+        assert follow_up.weekly_tactic_start_date == week.start_date, (
+            "the copy's stamp is not its own week")
     finally:
         vps.close()

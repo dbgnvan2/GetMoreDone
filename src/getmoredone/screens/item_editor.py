@@ -33,11 +33,7 @@ from .item_editor_dialogs import (
     ShowRelatedDialog,
 )
 from .item_editor_project_dialog import SetProjectDialog
-from .project_link_notice import (
-    confirm_exclusive_relink,
-    describe_single_relink,
-    has_annual_plan_element,
-)
+from .project_link_notice import confirm_exclusive_relink, describe_single_relink
 from .segment_color_utils import load_latest_lineage_color_maps, resolve_lineage_colors
 # Still used by _canonical_weekly_tactic_title, which is about Weekly Tactic
 # titles, not the removed Context field.
@@ -594,28 +590,30 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         Deferring the write keeps one save path for both a brand-new item (no
         row to link yet) and an existing one, and means Cancel really cancels.
         """
-        # Filing is exclusive: choosing a different project removes this item
-        # from every other board it sits on. Rare (only the Projects screen's
-        # additive "link existing items" dialog can produce that state) but
-        # destructive, so it is said out loud rather than previewed only by the
-        # "(+N more)" suffix quietly disappearing (P2).
-        if (self._loaded_extra_project_links
-                and board_id != self._loaded_project_id
-                and not self._confirm_dropping_extra_project_links(board_id)):
-            return
-
-        # Clearing the project also nulls the item's Annual Plan Element
-        # (clear_item_project_links), which the picker does not say and the
-        # guard above did not cover: a singly-filed item has no *extra* links,
-        # so it cleared its place in the plan without a word. Sweep pass 2
-        # (S2-2) — the same class F1 closed on the other two surfaces (P5).
-        if (board_id is None
-                and board_id != self._loaded_project_id
-                and not self._loaded_extra_project_links
-                and self.item_id
-                and not confirm_exclusive_relink(
-                    self, self.db_manager, [self.item_id], None)):
-            return
+        if board_id != self._loaded_project_id:
+            # One rule, one question, three surfaces. Filing is exclusive, so
+            # changing the project removes every other board this item sits on
+            # AND replaces its Annual Plan Element with the new board's;
+            # clearing removes the lot and nulls the plan element outright.
+            #
+            # This used to be two narrow guards — one for "the item has *extra*
+            # links", one for "the target is None" — and between them a
+            # singly-filed item could be moved to another board, silently
+            # trading its Annual Plan Element for that board's, while the
+            # Projects dialog and the Scheduler both asked about exactly that
+            # (P5, P13: the guards were scoped to two symptoms rather than to
+            # the write). ``confirm_exclusive_relink`` returns True when
+            # nothing would be lost, so picking a project for an unfiled item
+            # with no plan element is still never interrupted.
+            # Tests: tests/test_item_editor_project_link.py::test_c2_1_the_editor_asks_before_swapping_a_plan_element
+            if self._loaded_extra_project_links:
+                # More than one link to drop: that count is the thing worth
+                # naming, and this dialog names it.
+                if not self._confirm_dropping_extra_project_links(board_id):
+                    return
+            elif self.item_id and not confirm_exclusive_relink(
+                    self, self.db_manager, [self.item_id], board_id):
+                return
 
         self._selected_project_id = board_id
         self._project_choice_made = True
@@ -644,11 +642,30 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         # (sweep pass 4, P22 — a new parameter with a default that silently
         # changes an existing call site).
         question = describe_single_relink(
-            count, target,
-            clears_ape=(board_id is None
-                        and has_annual_plan_element(self.db_manager, self.item_id)),
-        )
+            count, target, ape_outcome=self._project_change_moves_the_ape(board_id))
         return messagebox.askyesno("Change Project", question, parent=self)
+
+    def _project_change_moves_the_ape(self, board_id: Optional[str]):
+        """What filing under (or clearing) ``board_id`` does to this item's APE.
+
+        Clearing nulls it; filing replaces it with the board's — or clears it,
+        when the board has none. Either way the item's place in the plan
+        changes, and the dialog has to say which.
+        """
+        from .project_link_notice import APE_CLEARED, APE_REPLACED, APE_UNCHANGED
+
+        if not self.item_id:
+            return APE_UNCHANGED
+        current = getattr(self.item, "annual_plan_element_id", None)
+        if not current:
+            return APE_UNCHANGED
+        target_ape = None
+        if board_id is not None:
+            board = self.db_manager.get_project_board(board_id)
+            target_ape = board.annual_plan_element_id if board else None
+        if current == target_ape:
+            return APE_UNCHANGED
+        return APE_REPLACED if target_ape else APE_CLEARED
 
     def _apply_project_link(self, item_id: str) -> bool:
         """Write the Project link, but only when the user changed it (PL4.2).
@@ -1185,6 +1202,20 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         """Save the item. Returns True on success, False on validation/save error."""
         try:
             is_new = not self.item_id
+            if not is_new and self.item is None:
+                # The row this editor was opened on no longer exists — deleted
+                # from a list, or from a second editor window. Before BP3 this
+                # raised AttributeError and showed the exception; afterwards
+                # ``build_item_from_form(None)`` fabricated a brand-new
+                # ActionItem with a fresh id, the save took the *update* branch,
+                # and ``update_action_item`` reports True for a row it did not
+                # match — so the editor said "Saved" and discarded every edit
+                # (P2: a failure that reports success; P12: the refactor turned
+                # a loud failure into a silent one).
+                # Tests: tests/test_item_editor_missing_row.py
+                self.error_label.configure(
+                    text="Error: this item no longer exists — it was deleted elsewhere")
+                return False
             item = self.build_item_from_form(None if is_new else self.item)
             if is_new:
                 self.apply_new_item_fields(item)
@@ -1239,9 +1270,11 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
 
         Purpose: PL11 — the one "make another item from this one" path. The
                  separate Duplicate button is gone; ``create_followup_item``
-                 already builds its copy through ``duplicate_action_item`` and
+                 builds its copy through the ``ActionItem`` constructor and
                  then carries the weekly lineage (WT-M5.C.1) and the project
-                 link, which a bare duplicate dropped.
+                 link, which the constructor drops. (It has never gone through
+                 ``duplicate_action_item``, which this said until 2026-08-19
+                 and which now has no caller in ``src/`` at all.)
         Spec:    docs/implementation_plan_2026-08-19_item_editor_project_link.md#pl11
         Tests:   tests/test_item_editor_layout.py::test_pl11_followup_saves_first
 

@@ -18,8 +18,14 @@ from tkinter import messagebox
 from typing import Iterable, List, Optional
 
 
+# What happens to the item's Annual Plan Element. "replaced" only when the
+# target board actually has one to put there — filing under a project with no
+# plan element clears it, and saying "replaces" there is simply false.
+APE_UNCHANGED, APE_CLEARED, APE_REPLACED = None, "cleared", "replaced"
+
+
 def describe_single_relink(count: int, target_title: Optional[str],
-                           clears_ape: bool = False) -> str:
+                           ape_outcome: Optional[str] = APE_UNCHANGED) -> str:
     """What the user is about to lose by filing one item under one project.
 
     ``count`` is how many projects the item currently sits on. One is the
@@ -27,16 +33,38 @@ def describe_single_relink(count: int, target_title: Optional[str],
     more than one only happens on rows that predate exclusive filing.
     ``target_title`` is None when the project is being cleared instead.
 
-    ``clears_ape`` says whether this item actually has an Annual Plan Element
-    to lose. The sentence used to promise it unconditionally, so an item with
-    no APE was warned about losing one (sweep pass 3).
+    ``ape_outcome`` says what this write does to the item's Annual Plan
+    Element: nothing, clears it, or replaces it with the board's. The sentence
+    used to promise a loss unconditionally, so an item with no plan element was
+    warned about losing one (sweep pass 3); it then covered only the clearing
+    direction, so filing swapped one with no mention at all (cold sweep); and a
+    single boolean then called filing under a plan-element-less project a
+    "replace" when it is a clear.
     """
-    ape_clause = (", and also clears the item's Annual Plan Element"
-                  if clears_ape else "")
+    # Clearing the project can only ever clear the plan element — there is no
+    # board to take one from. Deriving the clause from the direction as well as
+    # the outcome means a caller cannot produce "clearing … replaces it", which
+    # an exhaustive walk of these branches showed the outcome flag alone could.
+    if ape_outcome == APE_UNCHANGED:
+        ape_clause = ""
+    elif target_title and ape_outcome == APE_REPLACED:
+        ape_clause = ", and replaces its Annual Plan Element with the project's"
+    else:
+        ape_clause = ", and clears the item's Annual Plan Element"
     if count == 0:
-        # No link at all — the only thing at stake is the Annual Plan Element,
-        # which clear_item_project_links also nulls (S2-2). Saying "filed under
-        # another project" here would be simply untrue.
+        # No link at all — the only thing at stake is the Annual Plan Element.
+        # Saying "filed under another project" here would be simply untrue.
+        if target_title:
+            # Filing replaces it with the board's — unless the board has none,
+            # in which case it clears it, and "replaces" is a false promise
+            # about the one thing this dialog exists to disclose.
+            outcome = ("replaces that with the project's"
+                       if ape_outcome == APE_REPLACED else "clears it")
+            # (target_title is set here, so APE_REPLACED really is a replace.)
+            return (
+                "This item has its own Annual Plan Element.\n\n"
+                f"Filing it under “{target_title}” {outcome}. Continue?"
+            )
         return (
             "This item has an Annual Plan Element.\n\n"
             "Removing the project also clears it. Continue?"
@@ -49,7 +77,8 @@ def describe_single_relink(count: int, target_title: Optional[str],
         if target_title:
             return (
                 f"{filed}\n\n"
-                f"Filing it under “{target_title}” removes that link. Continue?"
+                f"Filing it under “{target_title}” removes that link"
+                f"{ape_clause}. Continue?"
             )
         return f"{filed}\n\nClearing the project removes that link{ape_clause}. Continue?"
 
@@ -59,7 +88,7 @@ def describe_single_relink(count: int, target_title: Optional[str],
         return (
             f"This item is filed under {count} projects.\n\n"
             f"Filing it under “{target_title}” removes it from the other "
-            f"{others} {plural}. Continue?"
+            f"{others} {plural}{ape_clause}. Continue?"
         )
     return (
         f"This item is filed under {count} projects.\n\n"
@@ -68,7 +97,8 @@ def describe_single_relink(count: int, target_title: Optional[str],
 
 
 def describe_bulk_relink(item_count: int, target_title: Optional[str],
-                         verb: str = "selected") -> str:
+                         verb: str = "selected",
+                         ape_outcome: Optional[str] = APE_UNCHANGED) -> str:
     """What a batch link is about to unfile.
 
     ``item_count`` counts only the items that would actually lose a link, so
@@ -80,10 +110,16 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str],
     """
     noun = "item is" if item_count == 1 else "items are"
     target = f"“{target_title}”" if target_title else "this project"
+    if ape_outcome == APE_UNCHANGED:
+        ape_clause = ""
+    elif target_title and ape_outcome == APE_REPLACED:
+        ape_clause = " and replaces each item's Annual Plan Element with the project's"
+    else:
+        ape_clause = " and clears each item's Annual Plan Element"
     return (
         f"{item_count} {verb} {noun} already filed under another project.\n\n"
         f"An Action Item belongs to exactly one Project, so filing under "
-        f"{target} removes the existing links. Continue?"
+        f"{target} removes the existing links{ape_clause}. Continue?"
     )
 
 
@@ -163,8 +199,21 @@ def classify_losses(db_manager, item_ids: Iterable[str],
     the sentence shown to the user names them separately — collapsing them into
     one number made the bulk-clear dialog claim items were "filed under a
     project" when their only loss was an Annual Plan Element (sweep pass 3).
+
+    "Losing something" covers both directions, not just clearing. Filing an
+    item under a project *overwrites* its Annual Plan Element with the board's
+    (``link_item_to_project_exclusive`` step 3), so an item carrying its own
+    APE — routine, the editor's Annual Plan field sets one directly — has that
+    replaced. Reading only the links meant exactly that item was classified as
+    losing nothing and its plan element was destroyed with no dialog: the same
+    class this module closed for clearing and left open for filing (P5).
     """
     with_links, ape_only = [], []
+    target_ape = None
+    if target_board_id is not None:
+        board = db_manager.get_project_board(target_board_id)
+        target_ape = board.annual_plan_element_id if board else None
+
     for item_id in item_ids:
         others = [
             board_id
@@ -173,9 +222,33 @@ def classify_losses(db_manager, item_ids: Iterable[str],
         ]
         if others:
             with_links.append(item_id)
-        elif target_board_id is None and has_annual_plan_element(db_manager, item_id):
+        elif _ape_would_change(db_manager, item_id, target_ape):
             ape_only.append(item_id)
     return with_links, ape_only
+
+
+def _bulk_ape_outcome(db_manager, item_ids, target_ape: Optional[str]) -> Optional[str]:
+    """The outcome shared by a batch, or nothing if no item's APE moves."""
+    outcomes = {_ape_outcome(db_manager, i, target_ape) for i in item_ids}
+    outcomes.discard(APE_UNCHANGED)
+    if not outcomes:
+        return APE_UNCHANGED
+    # A mixed batch is described by the destructive half.
+    return APE_CLEARED if APE_CLEARED in outcomes else APE_REPLACED
+
+
+def _ape_would_change(db_manager, item_id: str, target_ape: Optional[str]) -> bool:
+    """Would this write replace or remove the item's Annual Plan Element?"""
+    return _ape_outcome(db_manager, item_id, target_ape) is not APE_UNCHANGED
+
+
+def _ape_outcome(db_manager, item_id: str, target_ape: Optional[str]) -> Optional[str]:
+    """What this write does to the item's Annual Plan Element."""
+    item = db_manager.get_action_item(item_id)
+    current = getattr(item, "annual_plan_element_id", None) if item else None
+    if not current or current == target_ape:
+        return APE_UNCHANGED
+    return APE_REPLACED if target_ape else APE_CLEARED
 
 
 def has_annual_plan_element(db_manager, item_id: Optional[str]) -> bool:
@@ -205,16 +278,24 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
     # go when it was not (S2-8).
     clearing = target_board_id is None
     title = None
+    target_ape = None
+    # An unreadable board row means the write will not touch the item's Annual
+    # Plan Element at all — ``link_item_to_project_exclusive`` guards that step
+    # with ``if board:`` — so the dialog must not claim it does.
+    ape_known = clearing
     if not clearing:
         board = db_manager.get_project_board(target_board_id)
         title = board.title if board else "the selected project"
+        target_ape = board.annual_plan_element_id if board else None
+        ape_known = board is not None
 
     if len(item_ids) == 1:
         only = (with_links + ape_only)[0]
         count = len(db_manager.get_project_board_ids_for_item(only))
         question = describe_single_relink(
             count, title,
-            clears_ape=clearing and has_annual_plan_element(db_manager, only))
+            ape_outcome=(_ape_outcome(db_manager, only, target_ape)
+                         if ape_known else APE_UNCHANGED))
     elif clearing:
         question = describe_bulk_clear(
             len(with_links), len(ape_only),
@@ -223,7 +304,10 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
             batch_size=len(item_ids), verb=verb,
         )
     else:
-        question = describe_bulk_relink(len(with_links), title, verb=verb)
+        question = describe_bulk_relink(
+            len(with_links), title, verb=verb,
+            ape_outcome=(_bulk_ape_outcome(db_manager, with_links, target_ape)
+                         if ape_known else APE_UNCHANGED))
     return messagebox.askyesno("Change Project", question, parent=parent)
 
 

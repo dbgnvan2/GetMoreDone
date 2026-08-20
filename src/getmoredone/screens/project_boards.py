@@ -340,13 +340,25 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
 
             filtered.append(item)
 
+        # The tick state has to match what is on screen. This list is rebuilt
+        # on every keystroke in Search and on every filter toggle, and the
+        # checkboxes were recreated blank while ``checked_items`` kept its
+        # contents — so a user who ticked three rows, typed one character and
+        # pressed "Link Selected" re-filed three items they could no longer
+        # see. That was survivable while linking was additive; BP1 made it
+        # delete the items' existing links (P13 — the state outlived the guard
+        # that made it meaningful).
+        # Tests: tests/test_project_multi_link.py::test_c1_a_search_cannot_leave_invisible_items_selected
+        shown = filtered[:200]
+        self.checked_items &= {item.id for item in shown}
+
         if not filtered:
             ctk.CTkLabel(self.results, text="No action items match the selected filters.", text_color=semantic_colors()["muted_text"]).grid(
                 row=0, column=0, padx=10, pady=12, sticky="w"
             )
             return
 
-        for idx, item in enumerate(filtered[:200]):
+        for idx, item in enumerate(shown):
             row = ctk.CTkFrame(self.results)
             row.grid(row=idx, column=0, sticky="ew", padx=4, pady=3)
             row.grid_columnconfigure(1, weight=1)
@@ -358,6 +370,11 @@ class LinkProjectActionItemsDialog(ctk.CTkToplevel):
                 width=30,
                 command=lambda item_id=item.id: self._on_item_checkbox_toggled(item_id)
             )
+            # A row that survived the rebuild keeps its tick, so a search that
+            # narrows the list does not silently drop a selection the user can
+            # still see.
+            if item.id in self.checked_items:
+                checkbox.select()
             checkbox.grid(row=0, column=0, rowspan=2, sticky="w", padx=(8, 4), pady=8)
 
             title = item.title
@@ -990,13 +1007,32 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             items = self.db_manager.get_items_on_multiple_project_boards()
             count = len(items)
         except Exception as exc:
-            # A cosmetic banner must not take the whole Projects screen down,
-            # but the failure is said out loud rather than shown as "none" (P2).
+            # A cosmetic banner must not take the whole Projects screen down.
+            # The failure goes in the banner as well as the log: blanking the
+            # label made "the check failed" look exactly like "nothing to
+            # report", and the log line goes to a stderr a double-clicked app
+            # has nowhere to send — the comment here used to claim the failure
+            # was said out loud while the code said nothing (P2).
             logging.getLogger(__name__).warning(
-                "[projects] could not count multi-project items: %s", exc)
-            label.configure(text="")
+                "[projects] could not check for multi-project items: %s", exc)
+            self._show_multi_link_text(
+                "Could not check whether any items are filed under more than "
+                "one project.")
             return
-        label.configure(text=describe_outstanding_multi_links(count, items))
+        self._show_multi_link_text(describe_outstanding_multi_links(count, items))
+
+    def _show_multi_link_text(self, text: str):
+        """Show the banner, or take its row back when there is nothing to say.
+
+        An empty label still occupies its grid row — about 36px of header for
+        the state that becomes normal once every item has been re-filed.
+        """
+        label = self.multi_link_label
+        label.configure(text=text)
+        if text:
+            label.grid()
+        else:
+            label.grid_remove()
 
     def _schedule_card_render(self, _event=None):
         if self._render_after_id:
@@ -1571,7 +1607,12 @@ class ProjectBoardsScreen(ctk.CTkFrame):
             )
             item.update_priority_score()
             item_id = self.db_manager.create_action_item(item, apply_defaults=True)
-            self.db_manager.link_action_item_to_project_board(board_id, item_id)
+            # Exclusive, like every other filing surface. The item was created
+            # one line above so it has nothing to drop and the two calls are
+            # equivalent here — but "equivalent by accident of argument" is how
+            # the additive path survived everywhere else, and the notice this
+            # screen shows tells the user filing *is* exclusive (P5).
+            self.db_manager.link_item_to_project_exclusive(board_id, item_id)
             self.selected_board_id = board_id
             
             # We refresh FIRST to update the list, then open the editor
