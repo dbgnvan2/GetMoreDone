@@ -248,6 +248,10 @@ def _isolate_weekly_tactic_log(tmp_path_factory):
 # ``mapped_windows`` fixture). Everything else is withdrawn on creation.
 _WINDOWS_MAY_BE_MAPPED = False
 
+# Set alongside it: a mapped window is made fully transparent so the tests that
+# need real geometry do not put anything on screen or take keyboard focus.
+_MAPPED_WINDOWS_INVISIBLE = False
+
 
 # Setting this makes ``mapped_windows`` skip instead of mapping, for running
 # the suite on a machine someone is working on. It is deliberately an opt-IN
@@ -293,12 +297,18 @@ def mapped_windows():
             "geometry tests."
         )
 
-    global _WINDOWS_MAY_BE_MAPPED
+    global _WINDOWS_MAY_BE_MAPPED, _MAPPED_WINDOWS_INVISIBLE
     _WINDOWS_MAY_BE_MAPPED = True
+    # Mapped but fully transparent. Tk still lays the window out, so
+    # winfo_width()/winfo_x() return real numbers and event_generate works —
+    # but nothing is drawn over the user's screen. Moving it off-screen does
+    # not work here (macOS clamps it back onto the display); alpha does.
+    _MAPPED_WINDOWS_INVISIBLE = True
     try:
         yield
     finally:
         _WINDOWS_MAY_BE_MAPPED = False
+        _MAPPED_WINDOWS_INVISIBLE = False
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -335,6 +345,12 @@ def _keep_tk_windows_off_screen():
         def _init(self, *args, __original=original_init, **kwargs):
             __original(self, *args, **kwargs)
             if _WINDOWS_MAY_BE_MAPPED:
+                if _MAPPED_WINDOWS_INVISIBLE:
+                    # Transparent, not withdrawn: geometry still resolves.
+                    try:
+                        self.attributes("-alpha", 0.0)
+                    except Exception:
+                        pass
                 return
             try:
                 self.withdraw()

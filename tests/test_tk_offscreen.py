@@ -100,3 +100,39 @@ def test_every_test_that_needs_a_mapped_window_asks_for_one():
         "these files drive real Tk events but no test in them requests the "
         f"mapped_windows fixture, so the suite will hang: {offenders}"
     )
+
+
+def test_a_mapped_window_is_invisible_but_still_measurable(mapped_windows):
+    """The three tests that need real geometry must not put anything on screen.
+
+    Withdrawing a window makes ``winfo_width()`` return 1, so the geometry
+    contracts cannot be checked without mapping it — and a mapped window on
+    macOS appears and takes keyboard focus, interrupting whoever is using the
+    machine. Moving it off-screen does not help: macOS clamps it back onto the
+    display.
+
+    Full transparency does. Tk lays the window out normally, so geometry and
+    real events work, and nothing is drawn. This asserts both halves, because
+    each without the other is useless: alpha 0 on a withdrawn window measures
+    nothing, and a measurable window at alpha 1 is the problem.
+    """
+    import customtkinter as ctk
+
+    window = ctk.CTk()
+    try:
+        window.geometry("400x300")
+        window.update_idletasks()
+        alpha = float(window.attributes("-alpha"))
+        width = window.winfo_width()
+    finally:
+        window.destroy()
+
+    assert alpha == 0.0, (
+        f"a mapped window is visible (alpha={alpha}). It will appear over the "
+        "user's work and take their keyboard."
+    )
+    assert width > 1, (
+        f"geometry is unusable (winfo_width={width}). Transparency must not be "
+        "implemented by withdrawing the window, or the tests that need real "
+        "measurements silently start asserting on 1."
+    )
