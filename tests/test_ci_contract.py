@@ -108,11 +108,23 @@ def test_rm3a_tests_workflow_runs_on_ubuntu():
 
 
 def test_rm3a_tests_workflow_installs_from_the_real_dependency_file():
-    """Installing an ad-hoc package list would defeat the point of the run."""
+    """Installing an ad-hoc package list would defeat the point of the run.
+
+    requirements-dev.txt is accepted because it starts with
+    ``-r requirements.txt`` — asserted by
+    ``tests/test_release_licensing.py::test_bi2_dev_requirements_pulls_in_the_runtime_set``,
+    so the runtime set is still what CI installs.
+    """
     text = TESTS_WORKFLOW.read_text(encoding="utf-8")
-    assert "-r requirements.txt" in text, (
-        "tests.yml must install from requirements.txt, so a missing or wrong "
-        "dependency declaration fails CI instead of passing on a warm machine."
+    installs = re.findall(r"-r\s+(requirements(?:-dev)?\.txt)", text)
+    assert installs, (
+        "tests.yml must install from requirements.txt or requirements-dev.txt, "
+        "so a missing or wrong dependency declaration fails CI instead of "
+        "passing on a warm machine."
+    )
+    assert not re.search(r"pip install\s+(?!-r|--upgrade\s+pip)\S", text), (
+        "tests.yml installs a package by name. Every dependency must come from "
+        "a requirements file, or CI stops being the blank-machine check."
     )
 
 
@@ -341,6 +353,16 @@ PACKAGED_EXECUTABLES = {
     "build-windows": "GetMoreDone.exe",
 }
 
+# BI1 — the single job that creates the public GitHub Release.
+PUBLISH_JOB = "publish"
+
+# The artifact each OS job uploads, and the archive inside it.
+BUILD_ARTIFACTS = {
+    "build-windows": "GetMoreDone-win64",
+    "build-macos": "GetMoreDone-mac",
+}
+RELEASE_ARCHIVES = ("GetMoreDone-win64.zip", "GetMoreDone-mac.zip")
+
 
 def _job_blocks(text: str) -> dict[str, str]:
     """Split a workflow into {job_name: job_text}."""
@@ -506,14 +528,19 @@ def test_rm4b_checksum_files_are_uploaded_as_artifacts():
 
 
 def test_rm4b_checksums_reach_the_github_release():
-    """A checksum only in the Actions artifact does not help a downloader."""
-    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in PACKAGED_EXECUTABLES:
-        body = jobs[job]
-        release_at = body.find("action-gh-release")
-        assert release_at != -1, f"{job} has no release step"
-        assert ".sha256" in body[release_at:], (
-            f"{job} does not attach its .sha256 file to the GitHub Release"
+    """A checksum only in the Actions artifact does not help a downloader.
+
+    Since BI1 there is one release step, in the publish job, so this asserts
+    every platform's .sha256 is attached by it — the per-job form of this check
+    would now pass while the publish job attached only one platform's.
+    """
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    release_at = body.find("action-gh-release")
+    assert release_at != -1, "the publish job has no release step"
+    attached = body[release_at:]
+    for archive in RELEASE_ARCHIVES:
+        assert f"{archive}.sha256" in attached, (
+            f"{archive}.sha256 is not attached to the GitHub Release"
         )
 
 
@@ -521,13 +548,11 @@ def test_rm4b_checksums_reach_the_github_release():
 
 def test_rm4c_release_body_sourced_from_changelog():
     """Typed-by-hand release notes drift from the repo; generated ones cannot."""
-    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in PACKAGED_EXECUTABLES:
-        body = _code_only(jobs[job])
-        assert "body_path" in body, f"{job} publishes a release with no notes"
-        assert "extract_release_notes" in body, (
-            f"{job} does not generate its notes from CHANGELOG.md"
-        )
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    assert "body_path" in body, "the publish job publishes a release with no notes"
+    assert "extract_release_notes" in body, (
+        "the publish job does not generate its notes from CHANGELOG.md"
+    )
 
 
 def test_rm4c_extractor_script_exists_and_is_not_inline_yaml():
@@ -542,12 +567,12 @@ def test_rm4c_extractor_script_exists_and_is_not_inline_yaml():
 
 
 def test_rm4c_notes_are_generated_before_the_release_step():
-    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
-    for job in PACKAGED_EXECUTABLES:
-        body = jobs[job]
-        assert body.index("extract_release_notes") < body.index("action-gh-release"), (
-            f"{job} generates its release notes after publishing the release"
-        )
+    # _code_only: the job's comment explains the two-release defect by name,
+    # and matching the explanation would order the prose, not the steps.
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    assert body.index("extract_release_notes") < body.index("action-gh-release"), (
+        "the publish job generates its release notes after publishing the release"
+    )
 
 
 # R-M4.D — LICENSE and notices travel inside the archive
@@ -606,6 +631,180 @@ def test_rm4d_required_archive_files_exist_in_the_repo():
     """The workflow copies these by name; a rename would fail the job."""
     missing = [f for f in REQUIRED_ARCHIVE_FILES if not (REPO_ROOT / f).exists()]
     assert not missing, f"the release workflow copies files that do not exist: {missing}"
+
+
+def test_no_workflow_disables_the_mapped_window_tests():
+    """The local focus-stealing opt-out must never become a CI default.
+
+    ``GETMOREDONE_NO_MAPPED_WINDOWS`` makes the three tests that read real
+    Tk geometry skip, so the suite can run on a machine someone is working on.
+    Set in CI it would turn the only coverage of the sash-drag and pin-drag
+    contracts into a permanent silent skip.
+    """
+    offenders = [
+        wf.name for wf in _workflows()
+        if "GETMOREDONE_NO_MAPPED_WINDOWS" in wf.read_text(encoding="utf-8")
+    ]
+    assert not offenders, (
+        f"{offenders} set GETMOREDONE_NO_MAPPED_WINDOWS. That variable is a "
+        "local convenience for not stealing focus; in CI it silently skips the "
+        "geometry tests."
+    )
+
+
+def test_the_mapped_window_opt_out_is_off_by_default():
+    """A default-on escape hatch is the same silent skip by another route."""
+    conftest = (REPO_ROOT / "conftest.py").read_text(encoding="utf-8")
+    assert 'NO_MAPPED_WINDOWS_ENV = "GETMOREDONE_NO_MAPPED_WINDOWS"' in conftest, (
+        "conftest.py no longer names the opt-out variable this test guards"
+    )
+    assert "os.environ.get(NO_MAPPED_WINDOWS_ENV)" in conftest, (
+        "the opt-out must be read from the environment, so it is off unless "
+        "someone sets it"
+    )
+
+
+# --------------------------------------------------------------------------
+# BI1 (D1) — one release call, gated on every build succeeding
+# --------------------------------------------------------------------------
+#
+# A GitHub Release is public and permanent the moment it is created, and a
+# later job failing does not un-publish it. Two release calls therefore had a
+# failure mode with no rollback: the first job to finish created the Release,
+# the second failed, and the download page kept serving one platform's assets
+# under a version number claiming both.
+#
+# None of this can be tested by running it. These assertions over the YAML are
+# the only check that exists before a real tagged run.
+
+def test_bi1_exactly_one_job_publishes_the_release():
+    """The whole of BI1. Two calls is the defect; one is the fix."""
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    publishers = sorted(
+        name for name, body in jobs.items()
+        if "action-gh-release" in _code_only(body)
+    )
+    assert publishers == [PUBLISH_JOB], (
+        f"expected only {PUBLISH_JOB!r} to call action-gh-release, found "
+        f"{publishers}. Two publishing jobs can leave a public Release "
+        "carrying one platform's assets when the other build fails."
+    )
+
+
+def test_bi1_publish_job_waits_for_every_build_job():
+    """`needs:` is what makes a half-succeeded run publish nothing.
+
+    Derived from the job list rather than a written-out pair, so a third OS
+    job added later fails this until it is added to `needs:` too.
+    """
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    body = _code_only(jobs[PUBLISH_JOB])
+    match = re.search(r"needs:\s*\[([^\]]*)\]", body)
+    assert match, f"the {PUBLISH_JOB} job declares no needs: [...]"
+    declared = {n.strip() for n in match.group(1).split(",") if n.strip()}
+
+    build_jobs = set(PACKAGED_EXECUTABLES)
+    missing = sorted(build_jobs - declared)
+    assert not missing, (
+        f"the {PUBLISH_JOB} job does not wait for {missing}. Without it that "
+        "build can fail while the Release is published anyway."
+    )
+
+
+def test_bi1_publish_job_downloads_every_build_artifact():
+    """A release call that names a file no step produced publishes nothing.
+
+    ``fail_on_unmatched_files: true`` turns that into a failed job rather than
+    an empty Release, but only after the tag exists. This catches it here.
+    """
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    assert "download-artifact" in body, (
+        "the publish job never downloads the builds it is publishing"
+    )
+    for job, artifact in BUILD_ARTIFACTS.items():
+        assert f"name: {artifact}" in body, (
+            f"the publish job does not download {artifact}, uploaded by {job}"
+        )
+
+
+def test_bi1_uploaded_artifact_names_match_what_publish_downloads():
+    """Producer/consumer contract (P19).
+
+    The upload name and the download name are one contract across two jobs.
+    A rename on either side yields "artifact not found" at release time — after
+    both builds have run, on a tag that already exists.
+    """
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job, artifact in BUILD_ARTIFACTS.items():
+        assert f"name: {artifact}" in _code_only(jobs[job]), (
+            f"{job} does not upload an artifact named {artifact}, which the "
+            "publish job downloads by that name"
+        )
+
+
+def test_bi1_every_built_archive_is_attached_to_the_release():
+    """Both platforms, one Release. The point of the change."""
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    release_at = body.find("action-gh-release")
+    attached = body[release_at:]
+    for archive in RELEASE_ARCHIVES:
+        assert archive in attached, (
+            f"{archive} is not attached to the Release. A run that publishes "
+            "one platform is the failure BI1 exists to prevent."
+        )
+
+
+def test_bi1_no_os_job_publishes_a_release():
+    """State it from the other side too.
+
+    ``test_bi1_exactly_one_job_publishes_the_release`` is the general rule;
+    this names the specific regression, so a diff that reintroduces a release
+    step inside build-windows gets a message that says so.
+    """
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        assert "action-gh-release" not in _code_only(jobs[job]), (
+            f"{job} publishes a GitHub Release. Publishing belongs in the "
+            f"{PUBLISH_JOB} job, which runs only after every build succeeded."
+        )
+
+
+def test_bi1_publish_job_is_gated_on_a_tag():
+    """Without the gate, every push to a branch would cut a Release."""
+    body = _code_only(_job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))[PUBLISH_JOB])
+    assert re.search(r"^\s*if:.*refs/tags/v", body, re.MULTILINE), (
+        f"the {PUBLISH_JOB} job has no tag condition"
+    )
+
+
+def test_bi1_selftest_still_gates_publication_through_needs():
+    """The guarantee moved from step order to job order — check it still holds.
+
+    Each OS job asserts its selftest runs before its upload
+    (``test_rm4a_selftest_runs_before_anything_is_published``). With the release
+    step now in another job, `needs:` is the only thing carrying that guarantee
+    forward to publication, so both halves have to be true at once.
+    """
+    jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    for job in PACKAGED_EXECUTABLES:
+        body = jobs[job]
+        assert body.index("--selftest") < body.index("upload-artifact"), (
+            f"{job} uploads its artifact before proving the bundle starts"
+        )
+    needs = re.search(r"needs:\s*\[([^\]]*)\]", _code_only(jobs[PUBLISH_JOB]))
+    assert needs and set(PACKAGED_EXECUTABLES) <= {
+        n.strip() for n in needs.group(1).split(",") if n.strip()
+    }, "publication no longer depends on the jobs that run the selftest"
+
+
+def test_bi1_release_notes_are_generated_once():
+    """Two copies of the notes agreed only because nothing made them differ."""
+    text = _code_only(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    calls = text.count("extract_release_notes.py")
+    assert calls == 1, (
+        f"extract_release_notes.py is called {calls} times; one Release needs "
+        "one set of notes"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -857,7 +1056,10 @@ def test_release_upload_fails_when_no_files_match():
     public, permanent Release with correct notes and zero assets."""
     text = _code_only(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     releases = text.count("softprops/action-gh-release@")
-    assert releases == 2, f"expected 2 release steps, found {releases}"
+    assert releases == 1, (
+        f"expected exactly 1 release step, found {releases} — see "
+        "test_bi1_exactly_one_job_publishes_the_release"
+    )
     assert text.count("fail_on_unmatched_files: true") == releases, (
         "every action-gh-release step must set fail_on_unmatched_files: true"
     )
@@ -869,7 +1071,9 @@ def test_publish_hardening_is_present_in_both_os_jobs():
     for job in PACKAGED_EXECUTABLES:
         body = _code_only(jobs[job])
         assert "if-no-files-found: error" in body, f"{job} upload is not hardened"
-        assert "fail_on_unmatched_files: true" in body, f"{job} release is not hardened"
+    assert "fail_on_unmatched_files: true" in _code_only(jobs[PUBLISH_JOB]), (
+        "the publish job's release step is not hardened"
+    )
 
 
 # --------------------------------------------------------------------------

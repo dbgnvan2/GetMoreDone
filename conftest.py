@@ -249,6 +249,14 @@ def _isolate_weekly_tactic_log(tmp_path_factory):
 _WINDOWS_MAY_BE_MAPPED = False
 
 
+# Setting this makes ``mapped_windows`` skip instead of mapping, for running
+# the suite on a machine someone is working on. It is deliberately an opt-IN
+# with a loud skip reason rather than a default: the three tests it disables
+# are the only ones that read real geometry, and a silent skip would let them
+# rot. tests/test_ci_contract.py asserts no workflow ever sets it.
+NO_MAPPED_WINDOWS_ENV = "GETMOREDONE_NO_MAPPED_WINDOWS"
+
+
 @pytest.fixture
 def mapped_windows():
     """Let this test's windows actually appear.
@@ -257,7 +265,19 @@ def mapped_windows():
     window returns 1, so the sash-drag contract cannot be checked without a
     laid-out window. Everything else stays withdrawn, so a full run puts one
     window on screen briefly instead of dozens of modals over the user's work.
+
+    A mapped window on macOS takes keyboard focus, which interrupts whoever is
+    using the machine. Set ``GETMOREDONE_NO_MAPPED_WINDOWS=1`` to skip these
+    tests during local iteration; the skip names the variable so a run that
+    disabled them cannot be mistaken for a run that passed them.
     """
+    if os.environ.get(NO_MAPPED_WINDOWS_ENV):
+        pytest.skip(
+            f"{NO_MAPPED_WINDOWS_ENV} is set: this test needs a real on-screen "
+            "window and would take keyboard focus. Unset it to run the "
+            "geometry tests."
+        )
+
     global _WINDOWS_MAY_BE_MAPPED
     _WINDOWS_MAY_BE_MAPPED = True
     try:

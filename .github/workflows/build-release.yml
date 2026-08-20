@@ -106,33 +106,6 @@ jobs:
             GetMoreDone-win64.zip
             GetMoreDone-win64.zip.sha256
 
-      - name: Extract release notes from CHANGELOG (R-M4.C)
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
-        shell: pwsh
-        run: |
-          $tag = if ($env:INPUT_TAG) { $env:INPUT_TAG } else { "${{ github.ref_name }}" }
-          python tools/extract_release_notes.py $tag --output RELEASE_NOTES.md
-        env:
-          INPUT_TAG: ${{ inputs.release_tag }}
-
-      - name: Upload to GitHub Release (if tag)
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
-          # R-M4.C — the notes come from CHANGELOG.md rather than being typed
-          # by hand, so the release and the repo cannot disagree.
-          body_path: RELEASE_NOTES.md
-          # Default is false: a glob matching nothing would publish a public,
-          # permanent Release with correct notes and zero downloadable assets,
-          # and report success. extract_release_notes.py — the producer feeding
-          # this same step — already exits non-zero on missing input; these
-          # consumers must be just as loud (P5).
-          fail_on_unmatched_files: true
-          files: |
-            GetMoreDone-win64.zip
-            GetMoreDone-win64.zip.sha256
-
   build-macos:
     runs-on: macos-latest
     steps:
@@ -295,15 +268,56 @@ jobs:
             GetMoreDone-mac.zip
             GetMoreDone-mac.zip.sha256
 
+  publish:
+    # D1/BI1 — ONE release call, after BOTH builds have succeeded.
+    #
+    # Each OS job used to make its own call to action-gh-release, so a tagged
+    # run published twice. Whichever job finished first created the public
+    # Release; if the other then failed, that Release stayed up carrying one
+    # platform's assets, because a failed job does not un-publish a Release
+    # another job already created. There is no rollback for this: a Release is
+    # public and permanent the moment it exists, and the download page would
+    # show macOS-only (or Windows-only) assets under a version number that
+    # claims both.
+    #
+    # `needs:` makes both builds a precondition of publishing anything, so a
+    # half-succeeded run now publishes nothing at all.
+    needs: [build-windows, build-macos]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      # Both artifacts land in one directory. download-artifact fails when a
+      # named artifact does not exist, so a build that uploaded nothing stops
+      # the release here rather than publishing a partial one.
+      - name: Download the Windows build
+        uses: actions/download-artifact@v8
+        with:
+          name: GetMoreDone-win64
+          path: release-assets
+
+      - name: Download the macOS build
+        uses: actions/download-artifact@v8
+        with:
+          name: GetMoreDone-mac
+          path: release-assets
+
       - name: Extract release notes from CHANGELOG (R-M4.C)
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+        # Generated once now, rather than once per OS job. The two copies were
+        # built from the same script and the same tag, so they agreed — but
+        # nothing made them agree.
         run: |
           TAG="${{ inputs.release_tag }}"
           if [ -z "$TAG" ]; then TAG="${{ github.ref_name }}"; fi
           python tools/extract_release_notes.py "$TAG" --output RELEASE_NOTES.md
 
-      - name: Upload to GitHub Release (if tag)
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+      - name: Publish the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || github.ref_name }}
@@ -313,9 +327,11 @@ jobs:
           # Default is false: a glob matching nothing would publish a public,
           # permanent Release with correct notes and zero downloadable assets,
           # and report success. extract_release_notes.py — the producer feeding
-          # this same step — already exits non-zero on missing input; these
-          # consumers must be just as loud (P5).
+          # this same step — already exits non-zero on missing input; this
+          # consumer must be just as loud (P5).
           fail_on_unmatched_files: true
           files: |
-            GetMoreDone-mac.zip
-            GetMoreDone-mac.zip.sha256
+            release-assets/GetMoreDone-win64.zip
+            release-assets/GetMoreDone-win64.zip.sha256
+            release-assets/GetMoreDone-mac.zip
+            release-assets/GetMoreDone-mac.zip.sha256
