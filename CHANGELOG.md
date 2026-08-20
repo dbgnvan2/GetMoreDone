@@ -128,6 +128,32 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Renaming anything no longer breaks a link.** A segment, sub-segment, category,
+  vision element key field, Project or Weekly Tactic can be renamed and every link
+  survives. Renaming a segment used to make an ordinary date change on a filed Action
+  Item **raise** — the item silently did not move — because the re-filing cascade
+  resolved the segment by name, and `rename_vision_segment` updated only one of the
+  two tables holding that name. Renaming a key field made the next assignment build a
+  **second** Annual Initiative and Quarter Initiative for the same plan element,
+  which accumulated silently.
+
+  Four nullable id columns now hold those links (`annual_plan_elements` and
+  `annual_vision_elements` gain `segment_description_id`, `vision_segments` gains one
+  too, and `annual_initiatives` gains `annual_plan_element_id`). A migration backfills
+  them from the current name once, at first launch. **It never guesses**: a row whose
+  name matches nothing — or matches two segments differing only by case — is left
+  unlinked and named in the report, because a wrong link is invisible where a missing
+  one is not.
+
+  Names are still shown, and a rename now refreshes every stored copy, including the
+  Annual Initiative's derived title — unless you have edited that title yourself, in
+  which case it is left alone.
+
+  A user who has already renamed gets a report at startup naming every plan element
+  with no resolvable segment, every orphaned initiative and every duplicate pair.
+  Nothing ambiguous is repaired automatically: which of two duplicates holds work
+  worth keeping is not a decision the app should make.
+
 - **The test suite no longer has to steal keyboard focus.** Three tests build a real
   on-screen window to read geometry. `GETMOREDONE_NO_MAPPED_WINDOWS=1` now skips them, with a
   skip reason naming the variable so a suppressed run cannot be mistaken for a passing one.

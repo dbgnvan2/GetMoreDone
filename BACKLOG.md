@@ -4,6 +4,36 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 
 ## Deferred — found by review, deliberately not fixed
 
+### rename-safe links: low-severity findings (2026-08-20)
+
+Graded below medium by the two reviews of Batch 4 and deliberately not fixed
+in-loop, per the sweep rules — each fix is new unreviewed surface.
+
+- **`_find_annual_initiative_for_ape`'s id lookup still filters `ap.year = ape.year`.**
+  A correctly-linked initiative whose annual plan's year drifts becomes
+  invisible and gets duplicated on the next assignment — RN-F4 by another route.
+- **`update_segment`'s `INSERT INTO vision_segments`** (`vps_manager.py`) still
+  omits `segment_description_id`, unlike the two sibling inserts that were
+  fixed. Self-heals at the next sync, but leaves the row colourless until then.
+- **`link_integrity.add_segment_description_id_columns` returns `False` for
+  both "column already there" and "table absent",** so the report cannot tell
+  a no-op from a missing table. `test_rn_m1d` is satisfied by either.
+- **`counts["duplicate_initiatives"]` counts GROUPS, not rows,** and
+  `_log_report` then says "%d duplicate_initiatives need a human" using it.
+- **`test_vps_data_integrity.py::test_comprehensive_count` asserts
+  `len(tables) >= 6`** — a P29 floor over an enumerable set. This change added
+  two qualifying tables and the floor absorbed it silently.
+- **`_collected_files`'s `lru_cache` returns a mutable `set`.** No caller
+  mutates it today; `frozenset` would keep it that way.
+- **`rename_vision_segment` now writes `segment_descriptions.name` (UNIQUE) but
+  still checks for duplicates only against `vision_segments`.** No reachable
+  conflict was found — `sync_vision_segments_with_settings` keeps the tables
+  1:1 — so this is a latent hazard rather than a defect.
+- **Whether an Annual Plan Element should block a segment delete** is now
+  answered yes (it does), but `annual_vision_elements` blocking too may be
+  stricter than intended. Worth a look the first time it refuses.
+
+
 ### Test-suite remediation leftovers (2026-08-20)
 
 - **Random-order testing is untested.** `pytest-randomly` is not a dev
