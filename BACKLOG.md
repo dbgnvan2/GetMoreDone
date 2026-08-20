@@ -1,6 +1,6 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-08-19 (Batch 2 complete)
+Last Updated: 2026-08-19 (Batch 2 complete, twelve review passes)
 
 ## Deferred — found by review, deliberately not fixed
 
@@ -82,6 +82,12 @@ took each decision and closed it. Kept here as the record of what was decided.
   `_stamp_segment_from_relationships`**, so `segment_description_id` stays
   derived from the previous plan element until the next `update_action_item`.
   Reasoned from the code, not reproduced.
+- **`ProjectBoardsAttachedError`'s message lists every attached board with no
+  cap**, while its sibling `ActionItemsAttachedError` caps at ten. Bounded in
+  practice by boards-per-APE, so left alone — noted because the cap was added
+  to one of two sibling handlers.
+- **`test_app_icon._tk_available` leaks a Tk root** if `Tk()` succeeds but
+  `withdraw()` raises. Not reachable in practice.
 - **`LinkProjectActionItemsDialog` renders up to 200 rows eagerly** on open,
   each with four widgets, and does it again on every keystroke in Search. On a
   real database this takes long enough to notice.

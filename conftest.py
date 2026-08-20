@@ -3,7 +3,7 @@
 Purpose: make every test importable regardless of collection order or which
          subset of the suite is invoked.
 Spec:    docs/spec_2026-08-18_downloadable_release.md#r-m3d
-Tests:   tests/test_ci_contract.py::test_rm3d_every_test_file_passes_in_isolation
+Tests:   tests/test_ci_contract.py::test_rm3d_every_test_file_is_importable_on_its_own
 
 Two import styles coexist in this suite: `from src.getmoredone...` (needs the
 repo root on sys.path) and `from getmoredone...` (needs src/). Several test

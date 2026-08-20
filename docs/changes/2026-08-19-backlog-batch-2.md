@@ -46,7 +46,14 @@ rows carry both, so the prefix was a third choice that was never reached.
 ## What the sweeps added
 
 **Twelve passes: 7, 10, 6, 6, 3, 2, then 11 across two independent reviews,
-then 8, 9, 2, 4.** Every warm pass found a defect inside its predecessor's fix.
+then 8, 9, 2, 4, 4.**
+
+The twelfth is the first with **no high-severity finding** and the first to
+answer the central question — *is there any reachable state where an item's
+project link or Annual Plan Element changes and the user is not asked, or is
+told something untrue?* — with a verified **no**, checked against the rows each
+write actually deletes across six board/target shapes rather than against the
+sentence. Two minor items are left open, both recorded in `BACKLOG.md`. Every warm pass found a defect inside its predecessor's fix.
 
 The number that matters is the seventh. After six warm passes had the findings
 down to two cosmetic ones, a **cold** review — given the diff and no knowledge

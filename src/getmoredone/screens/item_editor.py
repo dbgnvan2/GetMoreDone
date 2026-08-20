@@ -34,6 +34,7 @@ from .item_editor_dialogs import (
 )
 from .item_editor_project_dialog import SetProjectDialog
 from .project_link_notice import (
+    UNNAMED_PROJECT,
     ape_outcome_for_change,
     confirm_exclusive_relink,
     describe_single_relink,
@@ -642,7 +643,13 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         target = None
         if board_id:
             board = self.db_manager.get_project_board(board_id)
-            target = board.title if board else "the selected project"
+            # ``or UNNAMED_PROJECT``, not a None check: an empty board title is
+            # falsy, and every branch of describe_single_relink reads a falsy
+            # title as "this is a clear" — so filing under one showed the
+            # clearing sentence over a filing write. confirm_exclusive_relink
+            # carries this guard; this second copy of the same resolution did
+            # not (P5).
+            target = (board.title if board else "") or UNNAMED_PROJECT
         # BP1 — the Projects screen asks the same question in the same words.
         # ``clears_ape`` has to be passed, not defaulted: this is the *only*
         # dialog a multi-filed item gets (the guard below it is scoped to

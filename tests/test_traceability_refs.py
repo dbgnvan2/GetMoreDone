@@ -15,15 +15,35 @@ import re
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-SRC = REPO / "src"
-TESTS = REPO / "tests"
 
-# "Tests:   tests/test_x.py::test_y" and bare "# Tests: tests/test_x.py"
-_REF = re.compile(r"Tests:\s*(tests/[\w/]+\.py)(?:::(\w+))?")
+# Scanned in full rather than just src/: the first version of this guard looked
+# only under src/, and there was a broken reference in conftest.py at the time
+# — the exact defect it was written to catch, in a file it could not see.
+SCANNED = ("src", "tools", "conftest.py")
+SKIP_DIRS = {"venv", ".git", "build", "dist", "__pycache__"}
+
+# A reference is any tests/... path, wherever it appears. Anchoring on the
+# "Tests:" label matched only the first path on that line, so the 22 references
+# written as indented continuation lines under a Tests: header were never
+# checked — 15% of the domain the docstring claims (P24: a guard whose
+# unchecked input path is a silent pass).
+_REF = re.compile(r"(tests/[\w/]+\.py)(?:::(\w+))?")
+
+
+def _scanned_files():
+    for entry in SCANNED:
+        target = REPO / entry
+        if target.is_file():
+            yield target
+        elif target.is_dir():
+            for path in sorted(target.rglob("*.py")):
+                if SKIP_DIRS & set(path.parts):
+                    continue
+                yield path
 
 
 def _references():
-    for path in sorted(SRC.rglob("*.py")):
+    for path in _scanned_files():
         text = path.read_text(encoding="utf-8")
         for match in _REF.finditer(text):
             yield path.relative_to(REPO), match.group(1), match.group(2)
@@ -69,11 +89,19 @@ def test_every_referenced_test_name_exists():
 def test_this_guard_can_actually_fire():
     """Guards the guard: the sweep has to be reading real references."""
     found = list(_references())
-    assert len(found) > 20, (
-        f"only {len(found)} Tests: references found — the pattern is not "
-        "matching the docstrings it is meant to check")
+    # An exact floor, not "more than 20": the first version was satisfied by
+    # 127 references as comfortably as by the 149 that exist, so narrowing the
+    # scan by 15% went unnoticed. If this number drops, the scan shrank.
+    assert len(found) >= 140, (
+        f"only {len(found)} references found — the scan or the pattern has "
+        "narrowed; it must cover every tests/... path under "
+        f"{SCANNED}")
     assert any(name for _src, _target, name in found), (
         "no reference carries a ::test_name, so the name check is inert")
-    # And a deliberately broken reference is caught by the same matcher.
-    assert _REF.search("Tests:   tests/test_nope.py::test_nothing").group(1) == (
-        "tests/test_nope.py")
+    assert any(str(src) == "conftest.py" for src, _t, _n in found), (
+        "conftest.py is not being scanned — that is where the first broken "
+        "reference this guard missed was living")
+    # A continuation line under a Tests: header must be matched too.
+    block = "    Tests:   tests/test_a.py\n             tests/test_b.py::test_c\n"
+    assert [m.group(1) for m in _REF.finditer(block)] == [
+        "tests/test_a.py", "tests/test_b.py"]

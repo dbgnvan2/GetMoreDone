@@ -1754,3 +1754,39 @@ def test_p11_all_three_surfaces_say_the_same_number(tmp_path, monkeypatch):
         assert "filed under 2 other projects" in dialog_message, dialog_message
     finally:
         vps.close()
+
+
+def test_p12_a_blank_board_title_is_a_filing_on_the_editor_too(tmp_path, monkeypatch):
+    """The editor resolved the target's name itself and got the blank case wrong.
+
+    An empty board title is falsy, and every branch of ``describe_single_relink``
+    reads a falsy title as "this is a clear" — so the editor showed "Removing
+    the project unfiles it from all of them" over a write that files the item
+    and overwrites its Annual Plan Element. ``confirm_exclusive_relink`` carries
+    the guard for exactly this; the editor's second copy of the same resolution
+    did not (P5).
+    """
+    import tkinter.messagebox as messagebox
+    from src.getmoredone.screens.item_editor import ItemEditorDialog
+
+    vps = make_vps(tmp_path)
+    try:
+        manager, item, boards = _three_linked(vps)
+        blank = _board(manager, "", None)
+
+        asked = []
+        monkeypatch.setattr(messagebox, "askyesno",
+                            lambda title, message, **kw: asked.append(message) or False)
+
+        stub = SimpleNamespace(db_manager=manager, item_id=item.id,
+                               item=manager.get_action_item(item.id),
+                               _loaded_extra_project_links=2)
+        ItemEditorDialog._confirm_dropping_extra_project_links(stub, blank.id)
+
+        message = asked[0]
+        assert "Removing the project" not in message, message
+        assert "Filing it under" in message, message
+        assert "the selected project" in message, message
+        assert "“the selected project”" not in message, message
+    finally:
+        vps.close()

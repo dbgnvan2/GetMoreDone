@@ -37,10 +37,12 @@ def describe_single_relink(count: int, target_title: Optional[str],
                            ape_outcome: Optional[str] = APE_UNCHANGED) -> str:
     """What the user is about to lose by filing one item under one project.
 
-    ``count`` is how many projects the item currently sits on. One is the
-    ordinary case from the Projects screen (moving an item between two boards);
-    more than one only happens on rows that predate exclusive filing.
-    ``target_title`` is None when the project is being cleared instead.
+    ``count`` is the number of projects this write will unfile the item from:
+    the *other* projects when ``target_title`` is set, with the target itself
+    excluded, and every project the item sits on when it is None (a clear has
+    no target to exclude). Passing the wrong one of those two measures is the
+    defect this parameter's own history is made of, so it is stated here rather
+    than left to be inferred.
 
     ``ape_outcome`` says what this write does to the item's Annual Plan
     Element: nothing, clears it, or replaces it with the board's. The sentence
@@ -102,7 +104,8 @@ def describe_single_relink(count: int, target_title: Optional[str],
             "Element is not affected. Continue?"
         )
 
-    plural = "project" if count == 1 else "projects"
+    # count == 1 returned above, so this is the two-or-more wording only.
+    plural = "projects"
     if target_title:
         # ``count`` is the number of *other* projects — the target is excluded
         # by both this caller and ``classify_losses``. The sentence used to say
@@ -112,9 +115,8 @@ def describe_single_relink(count: int, target_title: Optional[str],
         # measuring different things).
         return (
             f"This item is filed under {count} other {plural}.\n\n"
-            f"Filing it under {_name(target_title)} removes "
-            f"{'that link' if count == 1 else f'those {count} links'}"
-            f"{ape_clause}. Continue?"
+            f"Filing it under {_name(target_title)} removes those {count} "
+            f"links{ape_clause}. Continue?"
         )
     # Clearing: there is no target to exclude, so ``count`` is every project
     # the item is on.
