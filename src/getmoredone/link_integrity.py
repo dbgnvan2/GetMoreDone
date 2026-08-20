@@ -260,6 +260,82 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
 
 
 # --------------------------------------------------------------------------
+# RN-M5 — report what is already broken
+# --------------------------------------------------------------------------
+
+def report_existing_breakage(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """What a user who has already renamed has right now (RN-M5.A).
+
+    Spec:  docs/spec_2026-08-19_rename_safe_links.md#rn-m5a
+    Tests: tests/test_rename_safe_links.py::test_rn_m5a_existing_breakage_is_reported
+           tests/test_rename_safe_links.py::test_rn_m5b_ambiguous_data_is_left_alone
+
+    Counts AND ids, so a human can go and look. Three things:
+
+    * APEs with no resolvable segment — the re-filing cascade is dead for these
+      until someone says which segment they belong to.
+    * Annual Initiatives with no APE — orphaned by a rename before this change.
+    * Duplicate initiatives per (APE, year) — RN-F4's duplicate, which
+      accumulates silently because nothing dedupes above the weekly level
+      (RN-F6).
+
+    **Nothing here repairs anything** (RN-M5.B, RN-D2). The backfill already
+    linked everything it could resolve unambiguously; what is left needs a
+    decision no assertion can make — which of two duplicate initiatives holds
+    work worth keeping.
+    """
+    result: Dict[str, Any] = {
+        "apes_without_segment": [],
+        "initiatives_without_ape": [],
+        "duplicate_initiatives": [],
+    }
+    if not _table_exists(conn, "annual_plan_elements"):
+        return result
+
+    if "segment_description_id" in _columns(conn, "annual_plan_elements"):
+        result["apes_without_segment"] = [
+            {"id": r["id"], "segment_name": r["segment_name"], "year": r["year"]}
+            for r in conn.execute(
+                "SELECT id, segment_name, year FROM annual_plan_elements "
+                "WHERE segment_description_id IS NULL"
+            ).fetchall()
+        ]
+
+    if (_table_exists(conn, "annual_initiatives")
+            and "annual_plan_element_id" in _columns(conn, "annual_initiatives")):
+        result["initiatives_without_ape"] = [
+            {"id": r["id"], "title": r["title"], "year": r["year"]}
+            for r in conn.execute(
+                "SELECT id, title, year FROM annual_initiatives "
+                "WHERE annual_plan_element_id IS NULL"
+            ).fetchall()
+        ]
+        result["duplicate_initiatives"] = [
+            {
+                "annual_plan_element_id": r["annual_plan_element_id"],
+                "year": r["year"],
+                "count": r["n"],
+                "ids": r["ids"].split(","),
+            }
+            for r in conn.execute(
+                """
+                SELECT annual_plan_element_id, year, COUNT(*) AS n,
+                       GROUP_CONCAT(id) AS ids
+                FROM annual_initiatives
+                WHERE annual_plan_element_id IS NOT NULL
+                GROUP BY annual_plan_element_id, year
+                HAVING COUNT(*) > 1
+                """
+            ).fetchall()
+        ]
+
+    result["counts"] = {
+        key: len(value) for key, value in result.items() if isinstance(value, list)
+    }
+    return result
+
+
+# --------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------
 
@@ -285,6 +361,10 @@ def run_link_integrity_migrations(conn: sqlite3.Connection) -> Dict[str, Any]:
 
     report["backfill_initiative_ape"] = backfill_initiative_ape_links(conn)
 
+    # RN-M5.A — after the backfill, so it reports what is STILL broken rather
+    # than what the migration was about to fix.
+    report["existing_breakage"] = report_existing_breakage(conn)
+
     _log_report(report)
     return report
 
@@ -295,6 +375,14 @@ def _log_report(report: Dict[str, Any]) -> None:
     Only unresolved rows are logged. A migration that links everything cleanly
     says nothing, so a line in this log always means something needs a human.
     """
+    breakage = report.get("existing_breakage") or {}
+    for key, rows in breakage.items():
+        if key == "counts" or not rows:
+            continue
+        logger.warning(
+            "link-integrity: %d %s need a human: %s", len(rows), key, rows
+        )
+
     for key, value in report.items():
         if not isinstance(value, dict) or "unmatched" not in value:
             continue
