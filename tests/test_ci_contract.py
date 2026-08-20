@@ -466,16 +466,66 @@ def test_rm3d_every_test_file_is_importable_on_its_own():
     Two relocated files imported ``getmoredone`` before their own sys.path
     insert ran, so they only worked when an alphabetically earlier file had
     already set the path. Run alone, they errored.
+
+    ONE subprocess, not one per file.
+
+    This used to run `pytest <file> --collect-only` for every test file — 91
+    separate interpreter starts, each importing the whole application. It was
+    the single heaviest thing in the suite and made a full run noticeably slow
+    the machine it ran on.
+
+    The child below imports each module with `sys.modules` reset between files,
+    which is what the guarantee actually needs: a file that only works because
+    an alphabetically earlier one already inserted `src/` on the path fails
+    here, exactly as it did before.
     """
-    failures = []
-    for path in sorted((REPO_ROOT / "tests").glob("test_*.py")):
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", str(path), "--collect-only", "-q"],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300,
-        )
-        if result.returncode != 0:
-            failures.append(f"{path.name}: {result.stdout.strip().splitlines()[-1:]}")
-    assert not failures, f"test files that cannot be collected alone: {failures}"
+    probe = r"""
+import importlib.util, pathlib, sys
+
+root = pathlib.Path.cwd()
+failures = []
+
+# Only the PROJECT's modules are evicted between files. Clearing all of
+# sys.modules re-imports C extensions, and objc refuses:
+# "RuntimeError: Reload of objc._objc detected, this is not supported".
+# Scoping it is also more honest — the bug being guarded is a file importing
+# `getmoredone` before its own sys.path insert ran, which is about project
+# modules and sys.path, not about third-party state.
+PROJECT = ("getmoredone", "src", "tests", "conftest")
+
+for path in sorted(root.glob("tests/test_*.py")):
+    for name in [n for n in sys.modules
+                 if n.split(".")[0] in PROJECT or n == path.stem]:
+        sys.modules.pop(name, None)
+    for entry in ("", str(root), str(root / "src")):
+        while entry in sys.path:
+            sys.path.remove(entry)
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        failures.append("FAIL " + path.name + ": " + type(exc).__name__ + ": " + str(exc))
+
+# Prefixed, because importing the app prints banners (pygame) to stdout and a
+# bare line-split would count those as failures.
+for line in failures:
+    print(line)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300,
+    )
+    assert result.returncode == 0, (
+        f"the import probe itself failed:\n{result.stdout}\n{result.stderr}"
+    )
+    failures = [
+        line[len("FAIL "):] for line in result.stdout.splitlines()
+        if line.startswith("FAIL ")
+    ]
+    assert not failures, (
+        f"test files that cannot be imported on their own: {failures}"
+    )
 
 
 # --------------------------------------------------------------------------
