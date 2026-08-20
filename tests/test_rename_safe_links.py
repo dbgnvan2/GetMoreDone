@@ -116,24 +116,27 @@ def _resolve_links(vps, chain):
     ape = vps._get_annual_plan_element_row(chain["ape_id"])
     initiative = vps._find_annual_initiative_for_ape(ape) if ape else None
 
-    # The vision_segments <-> segment_descriptions join (RN-F2), exactly as
-    # vps_manager_taxonomy.py does it.
+    # The vision_segments <-> segment_descriptions link (RN-F2). Resolved by
+    # id, which is RN-M2.C: the three joins in vps_manager_taxonomy.py used
+    # LOWER(sd.name) = LOWER(vs.name), and rename_vision_segment updates only
+    # one of the two tables, so the join found nothing after a rename.
     join_row = vps.db.conn.execute(
         """
         SELECT sd.id AS segment_description_id
         FROM vision_segments vs
-        JOIN segment_descriptions sd ON LOWER(sd.name) = LOWER(vs.name)
+        JOIN segment_descriptions sd ON sd.id = vs.segment_description_id
         WHERE vs.id = ?
         """,
         (chain["vision_segment_id"],),
     ).fetchone()
 
     return {
-        # APE -> segment. This is what the re-filing cascade calls, and what
-        # raises ValueError("Segment '<new name>' not found.") once renamed.
-        "ape_to_segment": (
-            vps.resolve_segment_id_by_name(ape["segment_name"]) if ape else None
-        ),
+        # APE -> segment, by id (RN-M2.B). This is what the re-filing cascade
+        # resolves; resolving it by name is what made an ordinary date change
+        # raise ValueError("Segment '<new name>' not found.") after a rename.
+        # resolve_segment_id_by_name survives for genuine NAME lookups (user
+        # input, import) and is no longer a link path.
+        "ape_to_segment": ape["segment_description_id"] if ape else None,
         # APE -> annual initiative (RN-F4): a title string match today.
         "ape_to_annual_initiative": initiative["id"] if initiative else None,
         # vision_segments -> segment_descriptions (RN-F2).
@@ -513,5 +516,224 @@ def test_rn_migration_runs_once_per_launch(tmp_path):
             "initialize_schema ran the link-integrity migration a second time, "
             "replacing the real report with a no-op one"
         )
+    finally:
+        vps.close()
+
+
+# --------------------------------------------------------------------------
+# RN-M2 — resolve by id, never by name
+# --------------------------------------------------------------------------
+
+def test_rn_m2a_initiative_found_by_id_after_rename(tmp_path):
+    """RN-M2.A — the APE's initiative survives a key-field rename.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+
+    Before: `LOWER(ai.title) = LOWER(ape.key_field)`. A rename made the lookup
+    return None, so the next assignment built a second Annual Initiative and a
+    second Quarter Initiative for the same APE and quarter (RN-F4).
+    """
+    vps = make_vps(tmp_path, name="m2a.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.update_vision_element(
+            chain["vision_element_id"],
+            segment_name=chain["segment_name"],
+            subsegment_name="Living Systems",
+            category_name="Renamed Key Field",
+        )
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        found = vps._find_annual_initiative_for_ape(ape)
+
+        assert found is not None, "the initiative was lost by the rename"
+        assert found["id"] == chain["annual_initiative_id"], (
+            "a DIFFERENT initiative was resolved after the rename"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_m2a1_legacy_row_heals_on_first_lookup(tmp_path):
+    """RN-M2.A.1 — a NULL id heals once, by the old title match, and stays healed.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2a
+
+    The heal must WRITE the id, or it fires on every lookup and the rename bug
+    is still live for that row — it would just be re-resolved by name each time.
+    """
+    vps = make_vps(tmp_path, name="m2a1.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.db.conn.execute(
+            "UPDATE annual_initiatives SET annual_plan_element_id = NULL WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        )
+        vps.db.conn.commit()
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        healed = vps._find_annual_initiative_for_ape(ape)
+        assert healed is not None and healed["id"] == chain["annual_initiative_id"]
+
+        stored = vps.db.conn.execute(
+            "SELECT annual_plan_element_id FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+        assert stored["annual_plan_element_id"] == chain["ape_id"], (
+            "the heal resolved the row but did not write the id, so it will "
+            "resolve by name again next time"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_m2a1_ambiguous_legacy_row_is_not_healed(tmp_path):
+    """The heal must refuse when two initiatives match (RN-INV5).
+
+    Choosing between them here would silently pick one of a user's two plans.
+    """
+    vps = make_vps(tmp_path, name="m2a1b.db")
+    try:
+        chain = _build_full_chain(vps)
+        original = vps.db.conn.execute(
+            "SELECT * FROM annual_initiatives WHERE id = ?",
+            (chain["annual_initiative_id"],),
+        ).fetchone()
+        vps.db.conn.execute(
+            "INSERT INTO annual_initiatives "
+            "(id, annual_plan_id, segment_description_id, year, title, "
+            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("ai-dup-heal", original["annual_plan_id"],
+             original["segment_description_id"], original["year"],
+             original["title"], "2099-01-01T00:00:00", "2099-01-01T00:00:00"),
+        )
+        vps.db.conn.execute("UPDATE annual_initiatives SET annual_plan_element_id = NULL")
+        vps.db.conn.commit()
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert vps._find_annual_initiative_for_ape(ape) is None, (
+            "the heal picked one of two matching initiatives instead of "
+            "refusing — that silently attaches the APE to an arbitrary plan"
+        )
+        still_null = vps.db.conn.execute(
+            "SELECT COUNT(*) AS n FROM annual_initiatives "
+            "WHERE annual_plan_element_id IS NOT NULL"
+        ).fetchone()
+        assert still_null["n"] == 0, "the heal wrote a link it should have refused"
+    finally:
+        vps.close()
+
+
+def test_rn_m2b_cascade_survives_a_segment_rename(tmp_path):
+    """RN-M2.B — the §2 failure, as a test.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2b
+
+    Renaming a segment made an ordinary date change on a filed Action Item
+    RAISE `ValueError: Segment 'Health Renamed' not found.`, and the item
+    silently did not move. This drives the real re-filing path.
+    """
+    vps = make_vps(tmp_path, name="m2b.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.rename_vision_segment(chain["vision_segment_id"], "Health Renamed")
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert vps._segment_id_for_ape(ape) == chain["segment_description_id"], (
+            "the APE lost its segment when the segment was renamed"
+        )
+
+        # The cascade itself: assigning the APE to a month must not raise.
+        assert vps.assign_ape_to_month(chain["ape_id"], quarter=3, month=8) is True, (
+            "the re-filing cascade failed after a segment rename"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_m2c_segment_join_survives_a_rename(tmp_path):
+    """RN-M2.C — the vision_segments ↔ segment_descriptions join (RN-F2).
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-m2c
+
+    Driven through the real admin reader, not a hand-written query: the three
+    joins live in vps_manager_taxonomy and this is what reads them.
+    """
+    vps = make_vps(tmp_path, name="m2c.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.rename_vision_segment(chain["vision_segment_id"], "Health Renamed")
+
+        rows = vps.get_vision_segments_admin()
+        row = next(r for r in rows if r["id"] == chain["vision_segment_id"])
+        assert row["name"] == "Health Renamed"
+        assert row.get("color_hex"), (
+            "the renamed segment lost its colour — the join to "
+            "segment_descriptions resolved by name and found nothing"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_no_duplicate_initiative_after_rename(tmp_path):
+    """RN-F4's second half: a rename must not make the next assignment duplicate.
+
+    Plan: docs/implementation_plan_2026-08-19_rename_safe_links.md §4
+
+    The spec covers the broken link. This covers the duplicate it caused —
+    reproduced before the fix as `annual_initiatives: 2, quarter_initiatives: 2`.
+    """
+    vps = make_vps(tmp_path, name="dupe.db")
+    try:
+        chain = _build_full_chain(vps)
+
+        def _counts():
+            return (
+                vps.db.conn.execute(
+                    "SELECT COUNT(*) AS n FROM annual_initiatives"
+                ).fetchone()["n"],
+                vps.db.conn.execute(
+                    "SELECT COUNT(*) AS n FROM quarter_initiatives"
+                ).fetchone()["n"],
+            )
+
+        before = _counts()
+        vps.update_vision_element(
+            chain["vision_element_id"],
+            segment_name=chain["segment_name"],
+            subsegment_name="Living Systems",
+            category_name="Renamed Again",
+        )
+        vps.assign_ape_to_month(chain["ape_id"], quarter=2, month=6)
+
+        assert _counts() == before, (
+            f"the rename made the next assignment duplicate: {before} -> {_counts()}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_project_and_tactic_links_are_id_based(tmp_path):
+    """RN-F5 says these are already safe. Asserted, so a future refactor to
+    name-matching fails here rather than in a user's data.
+
+    Plan: docs/implementation_plan_2026-08-19_rename_safe_links.md §4
+    """
+    vps = make_vps(tmp_path, name="f5.db")
+    try:
+        chain = _build_full_chain(vps)
+        item_columns = [
+            r[1] for r in vps.db.conn.execute("PRAGMA table_info(action_items)")
+        ]
+        assert "weekly_tactic_id" in item_columns
+        assert "annual_plan_element_id" in item_columns
+
+        board_item_columns = [
+            r[1] for r in vps.db.conn.execute("PRAGMA table_info(project_board_items)")
+        ]
+        assert "project_board_id" in board_item_columns
+        assert "item_id" in board_item_columns
+
+        assert _item_board(vps, chain["action_item_id"]) == chain["project_board_id"]
+        assert _tactic_ape(vps, chain["weekly_tactic_id"]) == chain["ape_id"]
     finally:
         vps.close()
