@@ -18,14 +18,13 @@ if [ ! -x "$VENV_PY" ]; then
 fi
 echo "🔧 Using virtual environment: $VENV_PY"
 
-# Install/update requirements (skip test deps for startup)
+# Install/update requirements. requirements.txt is runtime-only since the
+# requirements-dev.txt split, so this no longer greps the test packages out of
+# it by name — a third test-only package used to slip straight through that.
 echo "📥 Installing runtime requirements..."
 export PIP_CACHE_DIR="${PIP_CACHE_DIR:-$(pwd)/.pip-cache}"
-RUNTIME_REQ="$(mktemp /tmp/getmoredone-req.XXXXXX)"
-grep -v -E '^\s*#|^\s*$|^pytest\b|^pytest-cov\b' requirements.txt > "$RUNTIME_REQ"
-"$VENV_PY" -m pip install -q -r "$RUNTIME_REQ"
+"$VENV_PY" -m pip install -q -r requirements.txt
 PIP_STATUS=$?
-rm -f "$RUNTIME_REQ"
 if [ $PIP_STATUS -ne 0 ]; then
     echo "❌ Failed to install requirements. Check your network/DNS and try again."
     echo "   Tip: If you are offline, connect to the internet and re-run ./start.sh"

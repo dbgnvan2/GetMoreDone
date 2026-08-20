@@ -1,6 +1,9 @@
-# Testing
-pytest>=7.4.0
-pytest-cov>=4.1.0
+# Runtime dependencies — everything the application needs to run.
+#
+# Test-only packages live in requirements-dev.txt. Keep them there: this file
+# is the list that ships. tests/test_release_licensing.py reads both files and
+# checks the GPL rule against *this* one only, so a package added here is a
+# package asserted to be shippable inside the binary.
 
 # GUI Libraries (uncomment the one you want to use)
 # Option 1: CustomTkinter (modern themed tkinter)

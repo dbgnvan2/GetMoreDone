@@ -29,9 +29,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REQUIREMENTS = REPO_ROOT / "requirements.txt"
-
-# Declared for running the test suite, not shipped inside the binary.
-TEST_ONLY_PACKAGES = {"pytest", "pytest-cov"}
+DEV_REQUIREMENTS = REPO_ROOT / "requirements-dev.txt"
 
 # Substrings that mean "Lesser/Library GPL" — permitted under one-folder linking.
 LGPL_MARKERS = (
@@ -44,18 +42,58 @@ LGPL_MARKERS = (
 GPL_MARKERS = ("gpl", "general public license")
 
 
-def _declared_requirements() -> list[str]:
-    """Distribution names from requirements.txt, minus comments and markers."""
+def _shell_code_only(text: str) -> str:
+    """Drop `#` comments from a shell script.
+
+    start.sh carries a comment naming the grep this split removed, in order to
+    explain why it is gone. Matching on the explanation would pressure the next
+    person into deleting the reasoning to get back to green.
+    """
+    return "\n".join(
+        line.split("#", 1)[0]
+        for line in text.splitlines()
+        if not line.strip().startswith("#")
+    )
+
+
+def _parse_requirements(path: Path) -> list[str]:
+    """Distribution names from a requirements file, minus comments and markers.
+
+    ``-r other.txt`` lines are skipped rather than followed: every caller here
+    wants the names *this* file declares. Following them would make
+    requirements-dev.txt report the runtime set as its own and collapse the
+    split this module exists to check.
+    """
     names = []
-    for raw in REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
+            continue
+        if line.startswith("-"):                      # -r / -c / -e and friends
             continue
         line = line.split(";", 1)[0].strip()          # environment marker
         name = re.split(r"[<>=!~\[]", line, 1)[0].strip()
         if name:
             names.append(name)
     return names
+
+
+def _declared_requirements() -> list[str]:
+    """Runtime distribution names — the ones that ship inside the binary."""
+    return _parse_requirements(REQUIREMENTS)
+
+
+def _dev_requirements() -> list[str]:
+    """Test-only distribution names.
+
+    Read from requirements-dev.txt rather than hardcoded. This used to be
+    ``TEST_ONLY_PACKAGES = {"pytest", "pytest-cov"}`` — a hand-maintained copy
+    of the answer that the licensing and notices checks both subtracted. A
+    third test-only package added to requirements.txt would have been treated
+    as a runtime dependency: it would have demanded a THIRD_PARTY_NOTICES entry
+    it does not need, and been asserted shippable when it is not.
+    """
+    return _parse_requirements(DEV_REQUIREMENTS)
 
 
 def _license_strings(dist_name: str) -> list[str] | None:
@@ -94,6 +132,146 @@ def _classify(license_strings: list[str]) -> str:
     if any(marker in blob for marker in LGPL_MARKERS):
         return "lgpl"
     return "other"
+
+
+# --------------------------------------------------------------------------
+# BI2 — the runtime/dev split is real, and nothing hardcodes a copy of it
+# --------------------------------------------------------------------------
+
+def test_bi2_dev_requirements_file_exists():
+    """Everything below reads it; an absent file must fail loudly, not skip."""
+    assert DEV_REQUIREMENTS.exists(), (
+        "requirements-dev.txt does not exist. The test-only packages were "
+        "split out of requirements.txt so nothing has to hardcode which ones "
+        "they are."
+    )
+
+
+def test_bi2_test_only_packages_are_not_declared_as_runtime():
+    """The concrete regression: pytest must not ship inside the binary.
+
+    Stated as set disjointness rather than by naming pytest, so a third
+    test-only package cannot be added to the wrong file and pass.
+    """
+    runtime = {name.lower() for name in _declared_requirements()}
+    dev = {name.lower() for name in _dev_requirements()}
+    overlap = sorted(runtime & dev)
+    assert not overlap, (
+        f"declared in BOTH requirements.txt and requirements-dev.txt: {overlap}. "
+        "A package belongs in exactly one; the licensing and notices checks "
+        "treat everything in requirements.txt as shipped."
+    )
+
+
+def test_bi2_pytest_is_a_dev_dependency_not_a_runtime_one():
+    """Ground truth for the split (P6): assert the artifact, not the intent."""
+    runtime = {name.lower() for name in _declared_requirements()}
+    dev = {name.lower() for name in _dev_requirements()}
+
+    assert "pytest" in dev, "pytest is not declared in requirements-dev.txt"
+    assert "pytest" not in runtime, (
+        "pytest is back in requirements.txt — it would be treated as a shipped "
+        "dependency and demand a THIRD_PARTY_NOTICES.md entry"
+    )
+
+
+def test_bi2_dev_requirements_pulls_in_the_runtime_set():
+    """One install must give a contributor everything.
+
+    Without the -r line, `pip install -r requirements-dev.txt` yields a
+    checkout that can run the tests and not the app.
+    """
+    text = DEV_REQUIREMENTS.read_text(encoding="utf-8")
+    assert re.search(r"^-r\s+requirements\.txt\s*$", text, re.MULTILINE), (
+        "requirements-dev.txt does not include '-r requirements.txt'"
+    )
+
+
+def test_bi2_runtime_requirements_does_not_include_the_dev_file():
+    """The include must not run the other way, or the split is cosmetic."""
+    text = REQUIREMENTS.read_text(encoding="utf-8")
+    assert not re.search(r"^-r\s+requirements-dev\.txt", text, re.MULTILINE), (
+        "requirements.txt includes requirements-dev.txt, which puts the "
+        "test-only packages back into the shipped set"
+    )
+
+
+def test_bi2_no_module_hardcodes_a_list_of_test_only_packages():
+    """The set this split removed must not grow back somewhere else.
+
+    ``TEST_ONLY_PACKAGES = {"pytest", "pytest-cov"}`` lived here, and start.sh
+    grepped the same two names out of requirements.txt. Both were copies of an
+    answer the files now hold.
+    """
+    import ast
+
+    def _assigns_a_test_only_list(path: Path) -> bool:
+        """True when the file *assigns* such a name, not merely mentions it.
+
+        Parsed rather than grepped, for the same reason the tkcalendar scan is:
+        the docstring above explains what was removed and names it, and a text
+        search would force that explanation to be deleted to stay green.
+        """
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            targets = []
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, ast.AnnAssign):
+                targets = [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and "TEST_ONLY" in target.id.upper():
+                    return True
+        return False
+
+    offenders = []
+    for folder in ("src", "tests", "tools"):
+        for path in sorted((REPO_ROOT / folder).rglob("*.py")):
+            if _assigns_a_test_only_list(path):
+                offenders.append(str(path.relative_to(REPO_ROOT)))
+
+    start_sh = _shell_code_only((REPO_ROOT / "start.sh").read_text(encoding="utf-8"))
+    if re.search(r"grep[^\n]*pytest", start_sh):
+        offenders.append("start.sh")
+
+    assert not offenders, (
+        f"a hardcoded test-only package list is back in: {offenders}. "
+        "requirements-dev.txt is the list."
+    )
+
+
+def test_bi2_requirements_parser_does_not_follow_include_lines(tmp_path):
+    """Adversarial: following -r would make the disjointness test vacuous.
+
+    If ``_parse_requirements`` followed the include, requirements-dev.txt would
+    report the runtime names as its own, every name would appear in both sets,
+    and ``test_bi2_test_only_packages_are_not_declared_as_runtime`` would fail
+    for the wrong reason — or, had it been written as a subset check, pass
+    forever.
+    """
+    runtime = tmp_path / "requirements.txt"
+    runtime.write_text("customtkinter>=5.2.0\n", encoding="utf-8")
+    dev = tmp_path / "requirements-dev.txt"
+    dev.write_text("-r requirements.txt\npytest>=7.4.0\n", encoding="utf-8")
+
+    assert _parse_requirements(dev) == ["pytest"]
+    assert _parse_requirements(runtime) == ["customtkinter"]
+
+
+def test_bi2_requirements_parser_handles_markers_extras_and_comments(tmp_path):
+    """The real file uses all three; a parser that mangles them mis-reports."""
+    sample = tmp_path / "requirements.txt"
+    sample.write_text(
+        "# a comment\n"
+        "\n"
+        "pyobjc-framework-Cocoa>=9.0; sys_platform == \"darwin\"  # trailing\n"
+        "uvicorn[standard]>=0.30\n"
+        "requests\n",
+        encoding="utf-8",
+    )
+    assert _parse_requirements(sample) == [
+        "pyobjc-framework-Cocoa", "uvicorn", "requests",
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -171,8 +349,6 @@ def test_rm2b3_installed_runtime_deps_have_no_gpl_license():
     unresolved = []
 
     for name in _declared_requirements():
-        if name.lower() in TEST_ONLY_PACKAGES:
-            continue
         strings = _license_strings(name)
         if strings is None:
             unresolved.append(name)
@@ -272,7 +448,7 @@ def test_rm2c_third_party_notices_covers_every_runtime_dep():
     notices = NOTICES_FILE.read_text(encoding="utf-8").lower()
     missing = [
         name for name in _declared_requirements()
-        if name.lower() not in TEST_ONLY_PACKAGES and name.lower() not in notices
+        if name.lower() not in notices
     ]
     assert not missing, (
         f"runtime dependencies with no entry in THIRD_PARTY_NOTICES.md: {missing}"

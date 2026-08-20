@@ -1,0 +1,19 @@
+# Development dependencies — running the test suite.
+#
+# These are NOT shipped inside the binary. The split exists so nothing has to
+# hold a second, hand-maintained copy of the answer: tests/test_release_licensing.py
+# used to carry `TEST_ONLY_PACKAGES = {"pytest", "pytest-cov"}` and start.sh
+# used to grep those two names out of requirements.txt, so adding a third
+# test-only package would have silently made it a "runtime" dependency needing
+# a licence notice, and shipped it to users.
+#
+#   pip install -r requirements-dev.txt
+#
+# The -r line pulls in the runtime set too, so this one file is everything a
+# contributor needs.
+
+-r requirements.txt
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
