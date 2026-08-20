@@ -379,9 +379,14 @@ class DBManagerProjectBoardsMixin:
         if status_filter:
             query += " AND ai.status = ?"
             params.append(status_filter)
-        if who_filter:
+        if who_filter is not None:
             # The owner is resolved in Python and matched by exact value,
-            # rather than compared with SQL string functions.
+            # rather than compared with SQL string functions. The gate is
+            # ``is not None``, not truthiness: an empty-string filter used to
+            # fall past it and drop the filter altogether, so the unlinked list
+            # returned *everything* while the project-board branch's
+            # ``_matches_who`` returned nothing for the same value (sweep pass
+            # 5, P5).
             #
             # ``LOWER(TRIM(ai.who)) = ?`` looked equivalent to the Python
             # predicate this replaced and was not: SQLite's LOWER is ASCII-only
@@ -410,8 +415,14 @@ class DBManagerProjectBoardsMixin:
         whitespace-only filter. A blank filter matches nothing here instead,
         because "filter by nobody" returning a set of rows is a worse answer
         than returning none; ``DragScheduleScreen._matches_who`` applies the
-        same rule on the project-board branch so the two cannot disagree about
-        the same screen (sweep pass 4).
+        same rule on the project-board branch so those two branches cannot
+        disagree (sweep pass 4/5).
+
+        Parity is with that branch, not with the whole screen:
+        ``get_all_items`` and ``get_upcoming_items`` compare with
+        ``LOWER(TRIM(COALESCE(who,'')))``, which matches an owner-less row for
+        a blank filter. They are shared with other screens and are recorded in
+        BACKLOG.md rather than changed from here.
         """
         target = who_filter.strip().lower()
         if not target:

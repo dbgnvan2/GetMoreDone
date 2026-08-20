@@ -463,11 +463,19 @@ class DragScheduleScreen(ctk.CTkFrame):
     def _matches_who(item, who_filter) -> bool:
         """Does this item belong to the filtered owner?
 
-        The unlinked branch applies the same rule in SQL. Both treat a
-        whitespace-only filter as matching nothing, rather than as matching the
-        rows whose owner is also whitespace: the two branches disagreeing meant
-        the same screen listed those rows under a project box and reported zero
-        under "No Project" (sweep pass 4, P5).
+        Shared with the unlinked branch, which applies the same rule in SQL
+        (``_apply_unlinked_filters`` / ``_who_values_matching``). Both treat a
+        blank filter — empty or whitespace — as matching nothing rather than as
+        matching the rows whose owner is also blank, because the two branches
+        disagreeing meant this screen listed those rows under a project box and
+        reported zero under "No Project" (sweep pass 4/5, P5).
+
+        This covers the two project-scoped branches only. The date-filter and
+        default branches go through ``get_all_items`` / ``get_upcoming_items``,
+        whose SQL ``LOWER(TRIM(COALESCE(who,''))) = LOWER(TRIM(?))`` matches an
+        owner-*less* row for a blank filter. Those are shared with other
+        screens, so they are recorded in BACKLOG.md rather than changed here —
+        do not read this docstring as claiming screen-wide parity.
         """
         if who_filter is None:
             return True

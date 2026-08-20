@@ -902,14 +902,95 @@ def test_s4_6_both_who_branches_read_a_blank_filter_the_same_way(tmp_path):
     vps = make_vps(tmp_path)
     try:
         manager = vps.db_manager
+        # The row has to exist, or the SQL half of this test returns [] under
+        # any implementation and proves only that the fixture is empty (sweep
+        # pass 5, P10).
         blank_owner = ActionItem(who="   ", title="Whitespace owner")
+        manager.create_action_item(blank_owner, apply_defaults=False)
+        named = ActionItem(who="Ana", title="Named")
+        manager.create_action_item(named, apply_defaults=False)
 
         assert DragScheduleScreen._matches_who(blank_owner, "   ") is False
         assert DragScheduleScreen._matches_who(blank_owner, None) is True
-        assert manager.get_unlinked_action_items(who_filter="   ") == []
 
-        named = ActionItem(who="Ana", title="Named")
+        listed = manager.get_unlinked_action_items(who_filter="   ")
+        assert listed == [], f"a blank filter listed {[i.title for i in listed]}"
+        assert {i.title for i in manager.get_unlinked_action_items(who_filter=None)} == {
+            "Whitespace owner", "Named"}, "the row is not in the fixture at all"
+
+        # An *empty* filter is the same answer as a whitespace one. It used to
+        # fall past `if who_filter:` and drop the filter entirely, so the
+        # unlinked list returned everything while _matches_who returned nothing.
+        assert DragScheduleScreen._matches_who(blank_owner, "") is False
+        assert manager.get_unlinked_action_items(who_filter="") == []
+        assert manager.count_unlinked_action_items(who_filter="") == 0
+
         assert DragScheduleScreen._matches_who(named, "ana") is True
         assert DragScheduleScreen._matches_who(named, "Bob") is False
+    finally:
+        vps.close()
+
+
+def test_s5_1_a_bulk_clear_names_the_plan_element_every_affected_item_loses(
+        tmp_path, answers):
+    """Clearing nulls the Annual Plan Element of every item, not just some.
+
+    Sweep pass 5. Pass 4 built the closing sentence from the ape-*only* bucket,
+    so a batch of items that were filed under an APE-bearing board — which is
+    how they got an APE — was told only the project link would go. An
+    under-warning before a destructive write, and it disagreed with the
+    single-item sentence about the identical write (P2/P5).
+    """
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        ape_id = seed_ape(vps)
+        board = _board(manager, "Website Rebuild", ape_id)
+        items = [make_daily_item(vps, f"Task {i}") for i in range(2)]
+        for item in items:
+            manager.link_item_to_project_exclusive(board.id, item.id)
+        assert all(manager.get_action_item(i.id).annual_plan_element_id == ape_id
+                   for i in items), "filing did not stamp the APE — fixture is wrong"
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=items)
+        stub.refresh = lambda: None
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+
+        message = answers["messages"][0]
+        assert "Annual Plan Element" in message, message
+        assert "the project link and the Annual Plan Element" in message, message
+    finally:
+        vps.close()
+
+
+def test_s5_1_a_batch_with_no_plan_element_is_not_warned_about_one(tmp_path, answers):
+    """...and the over-warning pass 4 removed does not come back."""
+    from types import SimpleNamespace
+    import src.getmoredone.screens.drag_schedule as ds
+
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        seed_ape(vps)
+        board = _board(manager, "No Plan Element", None)
+        items = [make_daily_item(vps, f"Task {i}") for i in range(2)]
+        for item in items:
+            manager.link_item_to_project_exclusive(board.id, item.id)
+            assert manager.get_action_item(item.id).annual_plan_element_id is None
+
+        stub = SimpleNamespace(db_manager=manager, drag_items=items)
+        stub.refresh = lambda: None
+
+        answers["reply"] = False
+        ds.DragScheduleScreen._drop_onto_project(stub, "__none__")
+
+        message = answers["messages"][0]
+        assert "Annual Plan Element" not in message, message
+        assert "clears the project link." in message, message
     finally:
         vps.close()

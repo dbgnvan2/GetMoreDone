@@ -83,7 +83,8 @@ def describe_bulk_relink(item_count: int, target_title: Optional[str]) -> str:
     )
 
 
-def describe_bulk_clear(filed_count: int, ape_only_count: int = 0) -> str:
+def describe_bulk_clear(filed_count: int, ape_only_count: int = 0,
+                        ape_total: Optional[int] = None) -> str:
     """What dropping a batch onto "No Project" destroys.
 
     Two different losses, counted separately. The sentence used to say "N
@@ -96,6 +97,17 @@ def describe_bulk_clear(filed_count: int, ape_only_count: int = 0) -> str:
     if not total:
         return ""
 
+    # How many of the affected items lose an Annual Plan Element. Defaults to
+    # the ape-only bucket for callers that do not know, but the two are not the
+    # same number: ``clear_item_project_links`` nulls the APE of *every* item
+    # it touches, and an item filed under an APE-bearing board has one. Reading
+    # it from the ape-only bucket alone made this sentence promise less than
+    # the write performs — an under-warning before a destructive action, and it
+    # disagreed with the single-item sentence about the identical write
+    # (sweep pass 5, P2/P5).
+    if ape_total is None:
+        ape_total = ape_only_count
+
     noun = "item" if total == 1 else "items"
     parts = []
     losses = []
@@ -107,6 +119,7 @@ def describe_bulk_clear(filed_count: int, ape_only_count: int = 0) -> str:
         parts.append(f"{ape_only_count} with an Annual Plan Element"
                      if ape_only_count == 1
                      else f"{ape_only_count} with Annual Plan Elements")
+    if ape_total:
         losses.append("the Annual Plan Element")
     # "of the dragged items", not "dragged items": this is the number that
     # loses something, not the size of the drag (sweep pass 4).
@@ -197,7 +210,11 @@ def confirm_exclusive_relink(parent, db_manager, item_ids: Iterable[str],
             count, title,
             clears_ape=clearing and has_annual_plan_element(db_manager, only))
     elif clearing:
-        question = describe_bulk_clear(len(with_links), len(ape_only))
+        question = describe_bulk_clear(
+            len(with_links), len(ape_only),
+            ape_total=sum(1 for item_id in with_links + ape_only
+                          if has_annual_plan_element(db_manager, item_id)),
+        )
     else:
         question = describe_bulk_relink(len(with_links), title)
     return messagebox.askyesno("Change Project", question, parent=parent)

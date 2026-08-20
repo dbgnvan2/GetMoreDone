@@ -1,6 +1,6 @@
 # GetMoreDone Backlog
 
-Last Updated: 2026-08-19 (Batch 1 complete)
+Last Updated: 2026-08-19 (Batch 2 complete)
 
 ## Deferred — found by review, deliberately not fixed
 
@@ -21,31 +21,71 @@ Fix when convenient: a `publish` job with
 `needs: [build-windows, build-macos]` that downloads both artifacts and makes a
 single release call. Recorded in `LEARNINGS.md` under Open risks.
 
-### Item editor Project link: deferred decisions (2026-08-19)
+### Item editor Project link: deferred decisions — all resolved in Batch 2 (2026-08-19)
 
-Surfaced while adding "Set Project" to the item editor. All deliberately not
-fixed; each is a decision, not an oversight.
+Surfaced while adding "Set Project" to the item editor, deferred as decisions
+rather than oversights. Batch 2 of
+[`docs/implementation_plan_2026-08-19_backlog_clearance.md`](docs/implementation_plan_2026-08-19_backlog_clearance.md)
+took each decision and closed it. Kept here as the record of what was decided.
 
-- **Two surfaces disagree about how many projects an item may have.** The
-  Scheduler drag-drop and the item editor use the exclusive
-  `link_item_to_project_exclusive`; the Projects screen's "link existing items"
-  dialog uses the additive `link_action_item_to_project_board`. The editor
-  tolerates both — it shows "(+N more)" and now confirms before an exclusive
-  re-link drops the extras — but nothing reconciles the two models. Decide
-  which one is the rule.
-- **`weekly_items.py` still composes prefixed titles.** Creating an Action Item
-  from a Weekly Tactic builds `<tactic context> - <title>` while no screen
-  offers a Context field any more. Measured: with a canonical tactic title
-  (`PW|LS|Blog - W34`) the splitter finds no context and nothing is prefixed;
-  it only fires for the legacy shape that carries a body after the week number.
-  Narrow, cosmetic, left alone.
-- **`get_unlinked_action_items` has no `LIMIT`**, so the Projects screen's link
-  dialog loads every open unlinked item.
-- **`complete_and_create` has no caller in `src/`.** Its PL12 project-link
-  inheritance is precautionary. Either wire it or retire it.
-- **`save_item` and `save_item_if_needed` assemble a new item's fields twice.**
-  They have now drifted twice (the project link, then the APE ordering). Factor
-  the new-item assembly out so they cannot drift a third time.
+- ~~**Two surfaces disagree about how many projects an item may have.**~~
+  **Decided: an Action Item belongs to exactly one Project (BP1).** The
+  Projects screen's "link existing items" dialog is exclusive too now. Because
+  that dialog can therefore delete links, all three surfaces — the editor, the
+  Scheduler's drag-drop and this dialog — ask the same question through
+  `screens/project_link_notice.confirm_exclusive_relink` before anything is
+  unfiled, and the same question covers the Annual Plan Element that clearing
+  a project also destroys.
+- ~~**`weekly_items.py` still composes prefixed titles.**~~ **Stopped (BP6).**
+  A related Action Item is titled what the user typed. Confirmed first that
+  `lineage_for_item` resolves an item's lineage from its Annual Plan Element
+  and then its parent, and that these rows carry both, so the title prefix was
+  a third choice that was never reached.
+- ~~**`get_unlinked_action_items` has no `LIMIT`.**~~ **Capped at 500 (BP5),**
+  with `count_unlinked_action_items` for the callers that wanted a number, and
+  the Scheduler saying "showing N of M" when the cap bites. A lineage-filtered
+  view fetches up to `UNLINKED_FILTERED_LIMIT` (5000) instead, because those
+  filters cannot go into SQL and truncating before them would drop rows the
+  filter would have kept.
+- ~~**`complete_and_create` has no caller in `src/`.**~~ **Retired (BP4),**
+  along with `RescheduleDialog` and `screens/reschedule_dialog.py`.
+- ~~**`save_item` and `save_item_if_needed` assemble a new item's fields
+  twice.**~~ **Factored into `screens/item_editor_form.py` (BP3).** Both paths
+  share one field assembly, one validation and one insert sequence, and a test
+  compares the rows they produce field by field.
+
+### Open — found while clearing Batch 2 (2026-08-19)
+
+- **`duplicate_action_item` has no caller in `src/`.** BP4 deleted
+  `complete_and_create`, which was its only one; `create_followup_item` builds
+  its copy independently. It is a public DB API with three tests of its own, so
+  removing it was outside the decision taken. Either wire it or retire it, the
+  same call BP4 made.
+- **`ProjectBoardsScreen.create_action_item_from_board` still uses the additive
+  `link_action_item_to_project_board`.** Provably identical there — the item is
+  brand new and has no links to drop — so BP1 left it, but it is the last
+  caller of the additive function outside tests.
+- **`LinkProjectActionItemsDialog` renders up to 200 rows eagerly** on open,
+  each with four widgets. On a real database this takes long enough to notice.
+- **`build_item_from_form` canonicalises a Weekly Tactic title from the item's
+  *stored* start date**, before the form's start date is written onto it. That
+  is the order `save_item` used before BP3 and was preserved deliberately; it
+  looks wrong and should be checked against what WT-M6 intends.
+- **Four Who-filter predicates on one screen, two of them different.** The
+  Scheduler's project and unlinked branches now share one rule
+  (`DragScheduleScreen._matches_who` / `_who_values_matching`): a blank filter
+  matches nothing. Its date-filter and default branches go through
+  `get_all_items` / `get_upcoming_items`, whose
+  `LOWER(TRIM(COALESCE(who,''))) = LOWER(TRIM(?))` matches an owner-*less* row
+  for a blank filter — so the same blank selection lists rows on one branch and
+  none on another. Not fixed here because those two methods are shared with
+  other screens; changing them is its own change with its own blast radius.
+  Reachable because `get_distinct_who_values` returns blank owners verbatim
+  into the dropdown.
+- **`get_distinct_who_values` has no `WHERE who IS NOT NULL`**, unlike its
+  `group` and `category` siblings, and `who` is nullable — so a `None` can
+  reach `CTkComboBox(values=...)`. Pre-existing; same family as the entry
+  above.
 
 ### delete_segment coverage — resolved, and the entry was wrong (2026-08-19)
 
