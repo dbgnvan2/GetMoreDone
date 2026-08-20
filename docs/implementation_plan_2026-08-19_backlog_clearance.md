@@ -1,6 +1,6 @@
 # Implementation plan — Backlog clearance (2026-08-19)
 
-Status: awaiting approval (no implementation code written)
+Status: Batch 1 complete (2026-08-19). Batch 2 complete (2026-08-19). Batch 3 outstanding.
 Source: [`BACKLOG.md`](../BACKLOG.md) open items, plus the two decisions taken today.
 
 ## Decisions taken
@@ -41,7 +41,10 @@ not — `get_unlinked_action_items` is called from `drag_schedule.py:426` and
 Risk: BC2 touches the migration that runs at every app start on a real database.
 It gets a dirty-state test and a no-op-on-clean-database assertion before anything else.
 
-## Batch 2 — The project-link model (decision applied)
+## Batch 2 — The project-link model (decision applied) — **complete**
+
+Handoff: [`docs/changes/2026-08-19-backlog-batch-2.md`](changes/2026-08-19-backlog-batch-2.md).
+BP6 was confirmed with the user before doing it, as the plan required.
 
 | ID | Work | Test |
 |---|---|---|

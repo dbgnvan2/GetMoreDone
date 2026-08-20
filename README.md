@@ -138,7 +138,8 @@ GetMoreDone/
 │           ├── stats.py        # Statistics & insights
 │           ├── settings.py     # App settings
 │           ├── item_editor.py  # Create/edit dialog (with sub-items)
-│           └── reschedule_dialog.py
+│           ├── item_editor_form.py     # Form -> ActionItem, shared by both save paths
+│           └── project_link_notice.py  # One wording for "filing this here unfiles it there"
 ├── docs/                       # Documentation
 │   └── action-timer-requirements.md  # Timer feature spec
 ├── tests/                      # Test suite

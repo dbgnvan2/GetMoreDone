@@ -19,8 +19,9 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Weekly Tactic together. The Weekly Tactic and Orig. Week fields moved here from the
   Organization tab, which now holds Group and Category only.
 - **A follow-up inherits the original's Project**, the way it already inherited the weekly
-  lineage. The same applies to complete-and-create. Previously a follow-up of a project task
-  landed unfiled.
+  lineage. Previously a follow-up of a project task landed unfiled. It inherits exactly one
+  project, since an Action Item belongs to exactly one — a follow-up of one of the older
+  multi-filed rows lands on the first of them, and the drop is logged.
 
 - **A Weekly Tactic link of its own.** `action_items.weekly_tactic_id` replaces the
   overloaded use of `parent_id`, which previously served both ordinary subtask nesting
@@ -52,8 +53,42 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **A first-week-of-year setting** under Settings, and project start/end dates on Project
   Boards.
 
+### Changed
+
+- **An Action Item belongs to exactly one Project, on every screen.** The Projects
+  screen's "Link Action Items" dialog used to *add* a project to an item while the
+  Scheduler and the item editor *moved* it, so the same item could accumulate boards
+  depending on which screen you used. Linking now moves the item everywhere. Because
+  that means links get deleted, all three screens ask the same question before
+  unfiling anything — naming the project you are filing under and how many links go —
+  and nothing is removed without an answer. Dropping an item onto **No Project** in
+  the Scheduler also says that it clears the item's Annual Plan Element, which it
+  always did silently.
+- **Items already filed under several projects are reported, not quietly cleaned up.**
+  The Projects screen names them above the board list, with how many projects each
+  sits on, and the count appears at start-up. Nothing is deleted for you: each one is
+  resolved the next time you choose a project for it.
+- **Creating an Action Item from a Weekly Tactic uses the title you typed.** It used
+  to prepend the tactic's context (`PW|LS|Blog - W34 - your title`) for tactics with
+  an older-style title. The item's place in the plan comes from its Annual Plan
+  Element and its parent tactic, not from the title text.
+- **The Scheduler's "Unlinked (No Project)" box no longer loads every unlinked item
+  in the database to show a count**, and says "showing N of M" if there are more than
+  it fetched.
+
+### Removed
+
+- **Push to Next Day (the Reschedule dialog) and complete-and-create.** Neither had
+  been reachable from anywhere in the app; both were kept alive only by their own
+  tests. Rescheduling is unchanged — drag an item in the Scheduler, or edit its dates.
+
 ### Fixed
 
+- **The item editor's Save and its Create Note both build a new item the same way.**
+  They assembled the fields separately and had already disagreed twice about what a
+  new item gets, so which button you pressed could change what was stored — most
+  visibly the Annual Plan Element when a project and a weekly tactic were chosen
+  together.
 - **A Weekly Tactic left mid-week is now repaired instead of surviving forever.**
   When a tactic could not be moved onto its week start — because a duplicate
   already held that date — it was left where it was and never merged, because

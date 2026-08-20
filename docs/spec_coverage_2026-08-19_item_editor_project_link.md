@@ -47,9 +47,9 @@ Suite: `venv/bin/python -m pytest -q` → **866 passed, 2 skipped**, exit code 0
 | Spec ID | Criterion | Implementation | Test | Status |
 |---|---|---|---|---|
 | PL12 | A follow-up inherits the original's Project link and APE | `db_manager_project_boards.py::inherit_project_links`, called from `db_manager.py::create_followup_item` | `tests/test_item_editor_project_link.py::test_pl12_followup_inherits_project_link` | done |
-| PL12.1 | The sibling copy path (`complete_and_create`) inherits it too — **precautionary**: that function has no caller in `src/` today, only tests, so `create_followup_item` is the only live path | `db_manager.py::complete_and_create` | `::test_pl12_1_complete_and_create_inherits_project_link` | done |
+| PL12.1 | ~~The sibling copy path (`complete_and_create`) inherits it too~~ — **withdrawn 2026-08-19 (BP4).** It was marked precautionary here because that function had no caller in `src/`, only tests. Batch 2 retired it rather than wiring it, so there is no sibling path and nothing to cover | — (deleted) | — (deleted) | withdrawn |
 | PL12.2 | A follow-up of an unfiled item stays unfiled | `inherit_project_links` early return | `::test_pl12_2_followup_of_an_unfiled_item_stays_unfiled` | done |
-| PL12.3 | Every link is copied, not just the first | `inherit_project_links` loop | `::test_pl12_3_multi_link_source_copies_every_link` | done |
+| PL12.3 | ~~Every link is copied, not just the first~~ — **reversed 2026-08-19 (BP1/BP2, sweep F2).** An Action Item belongs to exactly one Project, so a copy gets exactly one; copying every link made a follow-up of a legacy multi-filed row into a new multi-filed row, which the start-up notice said could not happen. The drop is logged | `inherit_project_links`, `board_ids[:1]` | `::test_pl12_3_a_copy_of_a_multi_linked_item_lands_on_one_board`, `tests/test_project_multi_link.py::test_s2_6_a_dropped_inherited_link_is_logged` | reversed |
 
 ## Human review (not code-testable)
 
