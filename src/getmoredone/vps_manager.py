@@ -652,18 +652,27 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         row written by an older build. When it fires it WRITES the id, so it
         never fires again for that row. It runs inside the caller's
         transaction, so a cascade rollback takes it with it.
+
+        **The id is the whole predicate.** This lookup also filtered
+        ``AND ap.year = ape.year`` through a join on annual_plans. An APE id
+        identifies one APE and an APE carries one year, so that clause could
+        never select a *different* initiative — it could only hide the right
+        one. The year is stored independently on annual_plans,
+        annual_plan_elements and annual_initiatives, so any path that writes
+        one without the others drifts them; when it drifted, this returned
+        None, ``_get_or_create_annual_initiative_for_ape`` built a second
+        initiative, and RN-F4's duplicate reappeared through the function
+        written to close it. Resolving by id means resolving by id alone.
         """
         row = self.db.conn.execute(
             """
             SELECT ai.*
             FROM annual_initiatives ai
-            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
             WHERE ai.annual_plan_element_id = ?
-              AND ap.year = ?
             ORDER BY ai.created_at ASC
             LIMIT 1
             """,
-            (ape["id"], int(ape["year"])),
+            (ape["id"],),
         ).fetchone()
         if row:
             return dict(row)
@@ -683,6 +692,13 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         initiative matches: two matches is the RN-F4 duplicate, and choosing
         between them here would silently pick one of a user's two plans
         (RN-INV5). Those are left for the report.
+
+        ``ai.year`` is the identifying comparison — the initiative's own year
+        against the APE's. The join on annual_plans added ``ap.year`` against
+        the same APE year: a third copy of one fact, contributing no
+        identifying power and able only to drop a candidate that would have
+        healed correctly. A heal that finds nothing does not fail safe; the
+        caller then creates the duplicate.
         """
         was_open = bool(getattr(self.db.conn, "in_transaction", False))
         segment_id = self._segment_id_for_ape(ape)
@@ -692,15 +708,13 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             """
             SELECT ai.*
             FROM annual_initiatives ai
-            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
             WHERE ai.year = ?
               AND ai.segment_description_id = ?
               AND LOWER(ai.title) = LOWER(?)
-              AND ap.year = ?
               AND ai.annual_plan_element_id IS NULL
             ORDER BY ai.created_at ASC, ai.id ASC
             """,
-            (int(ape["year"]), segment_id, ape["key_field"], int(ape["year"])),
+            (int(ape["year"]), segment_id, ape["key_field"]),
         ).fetchall()
         if len(matches) != 1:
             return None

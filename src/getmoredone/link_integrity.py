@@ -219,9 +219,12 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
            tests/test_rename_safe_links.py::test_rn_m1b2_ambiguous_backfill_is_reported
 
     This is the **only** time the title match is used to establish the link. It
-    reproduces exactly what ``_find_annual_initiative_for_ape`` does today —
-    same year, same segment, ``LOWER(title) = LOWER(key_field)`` — so a
-    database that works before the migration links the same way after it.
+    reproduces exactly what ``_heal_annual_initiative_link`` does — same year,
+    same segment, ``LOWER(title) = LOWER(key_field)`` — so a database that
+    works before the migration links the same way after it. The two move
+    together: both dropped the ``annual_plans.year`` predicate, which compared
+    a third copy of the APE's year and could only hide a row that was going to
+    link correctly.
 
     RN-M1.B.2: a user who has already renamed may have TWO initiatives matching
     one APE (that is RN-F4's duplicate). The oldest by ``created_at`` is
@@ -253,15 +256,13 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
             """
             SELECT ai.id
             FROM annual_initiatives ai
-            JOIN annual_plans ap ON ap.id = ai.annual_plan_id
             WHERE ai.year = ?
               AND ai.segment_description_id = ?
               AND LOWER(ai.title) = LOWER(?)
-              AND ap.year = ?
               AND ai.annual_plan_element_id IS NULL
             ORDER BY ai.created_at ASC, ai.id ASC
             """,
-            (int(ape["year"]), segment_id, ape["key_field"], int(ape["year"])),
+            (int(ape["year"]), segment_id, ape["key_field"]),
         ).fetchall()
         if not matches:
             continue
