@@ -6,6 +6,30 @@ Last Updated: 2026-08-20 (Batch 3 complete — BI1 release workflow, BI2 dev req
 
 ### rename-safe links: low-severity findings (2026-08-20)
 
+From the third review round, not fixed in-loop:
+
+- **`update_segment`'s `vision_segments` lookup is invisible to the RN-M4
+  scan** and its `else` branch inserts a second row without
+  `segment_description_id`. Two of four `INSERT INTO vision_segments` sites
+  were hardened; `vps_manager.py` and `vps_schema.py` were not.
+- **`_commit_heal` is safe only inside `DatabaseManager.transaction()`.** Four
+  raw `conn.execute("BEGIN")` blocks exist (the three renames and
+  `delete_entity_cascade`). No healer is reachable from them today — the code
+  now returns early rather than committing when a transaction was already
+  open — but the interaction is worth removing rather than guarding.
+- **The four `COALESCE` clauses are two redundant copies.** `update_vision_element`
+  delegates to its sibling now, so its own mirror `UPDATE`s are dead work.
+- **`test_rn_deleting_a_segment_with_plan_elements_is_refused`'s
+  `assert ok is False` is weak on its fixture** — the delete already refuses via
+  four other tables. Only the `"Annual Plan Elements" in counts` assertion has
+  teeth.
+- **`backfill_segment_ids` runs its candidate query twice per NULL row** —
+  the pre-existing `matches` query was left beside `resolve_segment_id_exact`.
+- **`create_segment` allows two life segments whose names differ only by case.**
+  That is the root cause of every ambiguity this batch had to handle; a
+  case-insensitive guard there would remove the class.
+
+
 Graded below medium by the two reviews of Batch 4 and deliberately not fixed
 in-loop, per the sweep rules — each fix is new unreviewed surface.
 

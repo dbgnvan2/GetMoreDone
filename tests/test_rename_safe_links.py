@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import collections
+import logging
 import re
 from datetime import date
 from pathlib import Path
@@ -1069,10 +1070,19 @@ PERMITTED_NAME_LOOKUPS = {
     ("vps_manager.py", "initiative_by_title"): 1,
     # resolve_segment_id_by_name's DEFINITION and body. RN-M2.B keeps it for
     # genuine name lookups — user input and import. Neither is a caller.
-    ("vps_manager.py", "segment_by_name_any_caller"): 1,
+    # resolve_segment_id_by_name's DEFINITION and body, plus one non-persisting
+    # fallback in _segment_id_for_ape. That fallback returns an answer to the
+    # CALLER and writes nothing — refusing to answer made the cascade raise.
+    ("vps_manager.py", "segment_by_name_any_caller"): 2,
     ("vps_manager.py", "segment_descriptions_by_name"): 1,
+    # db_manager's own non-persisting fallback: the helper's definition and
+    # its call site, plus the body's query.
+    ("db_manager.py", "segment_by_name_any_caller"): 2,
+    ("db_manager.py", "segment_descriptions_by_name"): 1,
     # The canonical-name lookup in the taxonomy.
-    ("vps_manager_taxonomy.py", "segment_descriptions_by_name"): 1,
+    # The canonical-name lookup, plus delete_vision_segment_admin's ambiguity
+    # count — which refuses rather than falling through to a raw DELETE.
+    ("vps_manager_taxonomy.py", "segment_descriptions_by_name"): 2,
 }
 
 # Allowlisted, BY NAME, each with the reason inline (RN-M4.A).
@@ -1351,9 +1361,25 @@ def test_rn_ambiguous_name_is_never_resolved_to_a_link(tmp_path):
             "segment descriptions, after the migration refused to"
         )
 
+        # _segment_id_for_ape may still ANSWER the caller from the name — a
+        # refusal there made assign_ape_to_month raise the spec §2 error for
+        # every plan element created while two names collide. What must never
+        # happen is a WRITE.
         ape = vps._get_annual_plan_element_row(chain["ape_id"])
-        assert vps._segment_id_for_ape(ape) is None, (
-            "the heal guessed a segment for an ambiguous name"
+        vps._segment_id_for_ape(ape)
+        persisted = vps.db.conn.execute(
+            "SELECT segment_description_id FROM annual_plan_elements WHERE id = ?",
+            (chain["ape_id"],),
+        ).fetchone()["segment_description_id"]
+        assert persisted is None, (
+            f"the heal WROTE {persisted!r} for a name matching two segment "
+            "descriptions, after the migration refused to"
+        )
+
+        # And the cascade still works rather than raising.
+        assert vps.assign_ape_to_month(chain["ape_id"], quarter=3, month=9) is True, (
+            "refusing to resolve an ambiguous name broke the cascade — the "
+            "exact spec §2 failure this change exists to remove"
         )
     finally:
         vps.close()
@@ -1460,7 +1486,7 @@ def test_rn_repointing_a_vision_element_moves_its_segment_link(tmp_path):
         vps.close()
 
 
-def test_rn_a_hand_created_initiative_is_not_reported_as_breakage(tmp_path):
+def test_rn_a_hand_created_initiative_is_not_warned_about(tmp_path, caplog):
     """The report must not cry wolf on normal data.
 
     Found by the sweep. An Annual Initiative can be created from the editor
@@ -1487,11 +1513,24 @@ def test_rn_a_hand_created_initiative_is_not_reported_as_breakage(tmp_path):
         )
         vps.db.conn.commit()
 
+        # It IS in the report — RN-INV5 says never silently skipped, and no
+        # filter can tell a hand-created initiative from an orphaned one.
         breakage = report_existing_breakage(vps.db.conn)
         ids = [r["id"] for r in breakage["initiatives_without_ape"]]
-        assert "ai-byhand" not in ids, (
-            "a hand-created initiative with a plain title was reported as "
-            f"breakage: {breakage['initiatives_without_ape']}"
+        assert "ai-byhand" in ids, "RN-INV5: it must still be reported"
+
+        # What must not happen is a WARNING at every launch. It is stated at
+        # INFO instead, so a WARNING in this log always means something needs
+        # a human.
+        with caplog.at_level(logging.INFO):
+            run_link_integrity_migrations(vps.db.conn)
+        warnings = [
+            r for r in caplog.records
+            if r.levelno >= logging.WARNING and "initiatives_without_ape" in r.getMessage()
+        ]
+        assert not warnings, (
+            f"a hand-created initiative produced a WARNING: "
+            f"{[w.getMessage() for w in warnings]}"
         )
     finally:
         vps.close()
@@ -1561,6 +1600,37 @@ def test_rn_m3a_title_refreshes_on_the_update_vision_element_path_too(tmp_path):
         ).fetchone()["title"]
         assert "Renamed Cat" in title, (
             f"the initiative title is stale after update_vision_element: {title!r}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_the_cascade_resolver_reads_the_id_not_the_name(tmp_path):
+    """`_segment_id_for_ape` must be load-bearing, and only a drift proves it.
+
+    The previous attempt at this routed the matrix's `ape_to_segment` through
+    this function and claimed that made a mutation fail. It did not: RN-M3.A
+    keeps the APE's segment_name and segment_descriptions.name in step, so the
+    by-name fallback returns the same answer and the mutation stayed green
+    across all 35 tests.
+
+    Drifting the name is the only thing that separates them — and a drifted
+    name is exactly the state RN-M5 exists to report, so it is a real state,
+    not a contrived one.
+    """
+    vps = make_vps(tmp_path, name="loadbearing.db")
+    try:
+        chain = _build_full_chain(vps)
+        vps.db.conn.execute(
+            "UPDATE annual_plan_elements SET segment_name = 'Drifted' WHERE id = ?",
+            (chain["ape_id"],),
+        )
+        vps.db.conn.commit()
+
+        ape = vps._get_annual_plan_element_row(chain["ape_id"])
+        assert vps._segment_id_for_ape(ape) == chain["segment_description_id"], (
+            "the cascade's segment resolver did not read the stored id — with "
+            "the name drifted, only the id column has the right answer"
         )
     finally:
         vps.close()
