@@ -51,6 +51,36 @@ Referenced by ID from the global catalogue; listed here because they recur.
 
 ## Open risks (found by review, not yet bitten)
 
+- **2026-08-20 — a test fixture too narrow to reach the bug it names.** The
+  credential-discard test used a cp1252 console to prove a status `print` could
+  not invalidate a token. But the status line in question —
+  `"Loaded existing token from:"` — is **pure ASCII**, so cp1252 encodes it
+  fine and the test passed against the live defect. The trigger for an ASCII
+  print is a *closed pipe / full disk* (`OSError`), not an encoding error.
+  *Ask:* can my fixture actually produce the failure, for **this** input? Not
+  "is the fixture hostile", but "is it hostile in the way that reaches this
+  line"?
+  *Rule:* write an adversarial test **for the fixture itself** — assert the
+  hostile stdout/clock/filesystem really does raise on the exact value under
+  test. And re-run the mutation *after* changing the fixture; the first
+  mutation here reported red only because a different, broader test caught it,
+  which reads as success and is not.
+
+- **2026-08-20 — "fixed as a class" that covered a third of the class, three
+  commits running.** A `_say()` helper was introduced with a docstring saying
+  the guard had been applied class-wide "which is the only way a guard like
+  this is worth anything". It covered 9 of 22 `print` calls. The 13 left
+  included one inside the `try` whose `except` discards a loaded credential, so
+  a failed status write threw away a valid token and reported "credentials not
+  found" on every launch (P1 via P5). The two preceding fix commits had the
+  same shape: the reported site fixed, its siblings not.
+  *Ask:* I have said "as a class" — what is the denominator? Count them.
+  *Rule:* when a fix claims to be class-wide, **assert the class in a test**
+  (an AST walk for the remaining call sites), not in the docstring. A prose
+  claim of completeness is the least reliable kind, because it is written at
+  the moment of least remaining attention.
+
+
 - **2026-08-20 — a guard that matches TEXT will match the comment explaining
   it.** Three instances in one batch, each in a test written to close a
   regression, each passing against the exact defect it named:

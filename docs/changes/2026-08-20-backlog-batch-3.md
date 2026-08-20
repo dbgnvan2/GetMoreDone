@@ -98,9 +98,9 @@ will keep producing this question.
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 ./venv/bin/python -m pytest -q`
-- Result after both review rounds: **1099 passed, 6 skipped, exit code 0.**
-  (1090 after the original work, 1098 after round one.) The window-mapping
-  tests were additionally run unsuppressed: 14 passed, exit 0.
+- Result after four review rounds: **1107 passed, 5 skipped, exit code 0.**
+  (1090 original, 1098 round one, 1099 round two, 1102 round three.) The
+  window-mapping tests were additionally run unsuppressed: 14 passed, exit 0.
   Baseline was 1062 passed / 2 skipped. The three extra skips are the geometry
   tests suppressed by the variable above; a run without it is required before
   this is called green, and is recorded in the status report.
@@ -206,6 +206,34 @@ replaced (blind to `python3 -m pip install X`, `pip3 install X`,
 `sudo pip install X`), and the subprocess test written to replace a
 string-matching one was itself scraping stdout for `"1 passed"` — the practice
 its own file's docstring forbids (P24).
+
+### Rounds three and four
+
+Seven review passes in total across the batch — three on the original work, two
+on each of the first two fix commits — and **every round found a defect in its
+predecessor's fix.** The finding counts fell (≈30, 23, 16, 6) but the severity
+did not fall monotonically: round three found a **net regression**, and round
+four found a **user-facing bug**.
+
+* **Round three — a fix that made the code worse.** "Removing duplication" by
+  sharing one constant between the pip guard and the requirements parser
+  conflated two different questions. The shared set contains flags that take no
+  value, so `pip install --pre pyinstaller` became invisible to a guard that had
+  caught it. P5 says unify enumerations of the *same* concept; these merely
+  overlapped.
+* **Round four — a status line that could discard a credential.** The `_say()`
+  helper introduced to fix an emoji-encoding hazard "as a class" covered 9 of
+  22 prints. One of the 13 left sat inside the `try` whose `except` sets
+  `creds = None`, so a failed write to stdout threw away a token that had
+  loaded perfectly and the run reported "credentials not found" — every launch,
+  from a transient console problem.
+* **And my test for it could not reach it.** The fixture was a cp1252 console;
+  the status line is pure ASCII and encodes fine there. It passed against the
+  live defect. The honest trigger is a broken pipe, and the test now uses one,
+  with an adversarial test asserting the fixture itself really raises.
+
+Both are in `LEARNINGS.md`. The count of my own tests that could not fail,
+across the batch, is **seven**.
 
 ## Risks / Known gaps
 
