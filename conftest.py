@@ -370,6 +370,49 @@ def mapped_windows():
         _WINDOWS_MAY_BE_MAPPED = False
 
 
+def reapply_transparency(window) -> None:
+    """Re-assert alpha 0 on a window that has just been (re-)mapped.
+
+    Purpose: keep the transparency invariant across a deiconify, on every
+             platform rather than only the one the author was sitting at.
+    Tests:   tests/test_tk_offscreen.py::test_reapply_transparency_sets_alpha_to_zero
+             tests/test_tk_offscreen.py::test_a_mapped_window_is_invisible_but_still_measurable
+
+    Setting alpha once at creation is not enough. On X11 the attribute is the
+    ``_NET_WM_WINDOW_OPACITY`` property, and re-mapping a window drops it, so
+    ``deiconify()`` restores full opacity. On macOS it is a window property
+    that survives, which is why the suite was green on the author's machine
+    and red on CI for five consecutive runs against the same assertion.
+
+    Swallows errors on purpose: a window destroyed between the deiconify and
+    this call must not turn into a test error.
+    """
+    try:
+        window.attributes("-alpha", 0.0)
+    except Exception:
+        pass
+
+
+def wrap_deiconify(original):
+    """``deiconify`` that maps the window and then restores its transparency.
+
+    Purpose: keep a re-mapped window invisible without stopping it mapping.
+    Tests:   tests/test_tk_offscreen.py::test_the_deiconify_wrapper_reapplies_after_calling_through
+
+    A named factory rather than a closure inside the fixture, so a test can
+    build one over a stub and prove it both calls through AND reapplies —
+    neither of which is observable from the installed wrapper without a real
+    mapped window, which is the thing this whole module exists to avoid.
+    """
+    def _deiconify(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        reapply_transparency(self)
+        return result
+
+    _deiconify._gmd_reapplies_transparency = True
+    return _deiconify
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _keep_tk_windows_off_screen():
     """No test may put a window over the user's work or take their keyboard.
@@ -427,13 +470,23 @@ def _keep_tk_windows_off_screen():
         _silence(cls, "lift", lambda self, *a, **k: None)
         _silence(cls, "focus_force", lambda self, *a, **k: None)
         _silence(cls, "grab_set", lambda self, *a, **k: None)
-        # deiconify is deliberately NOT silenced. Silencing it hung
-        # tests/test_item_editor_sash.py — verified by bisection — and it is
-        # unnecessary: the alpha above is applied at creation, so a window that
-        # deiconifies is mapped and still fully transparent.
-        # deiconify undoes the withdraw above. It was not silenced, so any
-        # screen that calls it — directly or via wm_deiconify — put its window
-        # back on the user's display after the guard had removed it.
+        # deiconify is WRAPPED, not silenced. Silencing it hung
+        # tests/test_item_editor_sash.py — verified by bisection — because the
+        # window never maps and its geometry never resolves.
+        #
+        # Wrapping is needed because the old reasoning here was wrong. It said
+        # silencing was "unnecessary: the alpha above is applied at creation,
+        # so a window that deiconifies is mapped and still fully transparent".
+        # That holds on macOS, where alpha is a window property that survives a
+        # re-map. On X11 it is the _NET_WM_WINDOW_OPACITY property, which the
+        # re-map drops — so deiconify restored full opacity and
+        # test_a_mapped_window_is_invisible_but_still_measurable failed on all
+        # three Python versions in CI while passing on the author's Mac. The
+        # comment was the claim; CI was the measurement.
+        original_deiconify = getattr(cls, "deiconify", None)
+        if original_deiconify is not None:
+            patched.append((cls, "deiconify", original_deiconify))
+            cls.deiconify = wrap_deiconify(original_deiconify)
 
     try:
         yield
