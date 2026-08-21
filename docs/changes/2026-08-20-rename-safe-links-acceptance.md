@@ -224,6 +224,58 @@ fixed: the residual mis-filing the legacy collapse still causes, a missing
 `_table_exists` guard for `annual_plans`, an orphaned-plan initiative being
 invisible to the title match, and the tie-break's remaining silence in the heal.
 
+### The pre-push sweep — one medium, and it falsified my own prose
+
+`learning-qa` over all ten commits. **11 of 29 patterns applicable, 5 findings,
+one at medium.**
+
+The medium is **P5**, the pattern about a guard applied to one door into a
+class. `create_segment` refuses a life segment whose name differs from another
+only by case. `update_segment` had no collision check at all, so *renaming* one
+created exactly the state creating one could not:
+
+```
+create_segment('zeta')            refused: 'Zeta' already exists
+update_segment(other, name='zeta') -> True
+segment_descriptions now holds:    ['Zeta', 'zeta']
+resolve_segment_id_exact('Zeta')   -> None
+```
+
+Once the pair exists both spellings resolve to None, so every link resolution
+refuses forever and the migration reports the rows at every launch. Reachable
+from the running app — the segment editor's Save passes the typed name through.
+
+It also **falsified a sentence I wrote in this batch**: the legacy fixture's
+docstring said "`create_segment` refuses to make a new one now; it cannot
+un-make the ones already there." The first half was false, and the whole
+`_agreed_description_id` mechanism is premised on collisions being a legacy-only
+artefact. They were creatable today.
+
+The guard is now `_refuse_case_collision` with an `exclude_id`, so a row is
+never a collision with itself. `update_segment` also strips the name before both
+the check and the write — it had been writing the raw spelling to
+`segment_descriptions` while `vision_segments` got the stripped one, so one
+segment could sit in two tables under two names.
+
+Three writers of `segment_descriptions.name` exist. Two are now guarded. The
+third, `rename_vision_segment`, checks `vision_segments` for the same collision
+and the sync keeps the two tables 1:1 — a guard there would be unfalsifiable
+today, so it is recorded rather than written.
+
+Two tests, both mutation-proved: one at the manager, and one driving the real
+`VPSSegmentEditorDialog` widget (**P25** — a guard the library enforces is worth
+nothing if Save swallows it). The widget test asserts the table is unchanged,
+the reason reaches the user, the dialog is still open, and their typing is still
+in the field. Without the guard it fails on "the editor saved or failed
+silently".
+
+Four further findings graded below medium are in `BACKLOG.md`.
+
+**What this sweep did not assess**, in its own words: logic correctness beyond
+the link-resolution paths, concurrency, UI-contract regression across the 50+
+screens, security, performance, dependency risk, API compatibility, and
+architecture. It is a pass against one failure family, not a clean bill.
+
 ## Files changed
 
 **Changed**
@@ -289,9 +341,10 @@ was redundant, so the branch went instead of the test being kept as decoration.
 - **The finding count is not the reassuring part.** Every fix commit in this
   batch contained a defect found by the next pass, and the highest-severity
   finding overall was created by a fix rather than found in the original code.
-  Two cold passes, five findings at medium or above, **all five inside my own
-  fixes**. The passes stopped because the second one's findings were a wrong
-  baseline and a bad assertion in a test — not because the count fell.
+  Across two cold passes and one failure-pattern sweep: **six findings at
+  medium or above, all six inside code this batch wrote**. The last of them
+  disproved a sentence written two commits earlier. Reviewing stopped on the
+  budget's rule, not because the count fell.
 - **`vps_schema.py` runs against every user database at launch.** The change is
   inside schema initialization, which is the highest-blast-radius code here. It
   is guarded by `_table_exists(conn, "vision_segments_legacy")` and so is inert

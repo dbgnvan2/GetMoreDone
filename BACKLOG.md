@@ -115,6 +115,38 @@ Below medium, or bigger than this batch. Not fixed in-loop.
   two apart needs something the data does not currently hold.
 
 
+### Found by the pre-push failure-pattern sweep (2026-08-20)
+
+The one medium finding — `update_segment` having no case-collision guard — was
+fixed (`2d97da3`). These four were graded below medium and recorded.
+
+- **`NAME_LOOKUP_ALLOWLIST`'s keys are unchecked editorial data.**
+  `test_rn_m4a_no_link_resolves_through_a_name` pins `PERMITTED_NAME_LOOKUPS` to
+  an exact count, but the allowlist beside it is only checked with
+  `len(reason) > 40`. Nothing verifies a key's `file.py::symbol` still exists,
+  so renaming or deleting the function rots the entry green — the same failure
+  the exact-count comment was written to avoid. Fix by parsing each key's file
+  with `ast` and asserting the named function is defined there.
+- **`_find_annual_initiative_for_ape` returns two different row shapes.** The
+  id path returns `SELECT ai.*`; the heal path returns a row from
+  `find_initiative_candidates_by_title`, whose `SELECT ai.*, ap.year AS
+  annual_plan_year` carries an extra key that is not a column of the table. All
+  four consumers read only `["id"]`, so there is no live defect — but it is an
+  implicit contract difference between two branches of one function.
+- **A whitespace-only difference in a stored segment name defeats the abstain
+  logic.** `_agreed_description_id` strips its bucket key; `resolve_segment_id_exact`
+  strips only the needle, not the stored side. So `'Health'` and `'Health '`
+  disagree in the bucket — stamp correctly withheld — and then resolve to
+  exactly one match in the backfill, which links silently, producing no
+  `ambiguous` entry. Needs a legacy database holding an untrimmed name; no
+  current app path writes one, and `update_segment` now strips before writing.
+- **An initiative whose `annual_plan_id` names no surviving plan is invisible
+  to the title match**, and `backfill_initiative_ape_links` does not
+  `_table_exists`-guard `annual_plans`, which its candidate query joins. Both
+  need a database another build corrupted; the FK is `NOT NULL … ON DELETE
+  CASCADE` with `PRAGMA foreign_keys` ON.
+
+
 ### Test-suite remediation leftovers (2026-08-20)
 
 - **Random-order testing is untested.** `pytest-randomly` is not a dev
