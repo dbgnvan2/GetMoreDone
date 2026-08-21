@@ -116,9 +116,15 @@ def run_selftest(out=None) -> int:
     Every check runs even after one fails, so a single run reports every problem
     rather than only the first.
     """
+    from . import branding
+
     stream = out or sys.stdout
     frozen = getattr(sys, "frozen", False)
-    print(f"GetMoreDone selftest ({'frozen' if frozen else 'source'})", file=stream)
+    print(
+        f"{branding.APP_DISPLAY_NAME} selftest "
+        f"({'frozen' if frozen else 'source'})",
+        file=stream,
+    )
 
     failures = 0
     for name, check in CHECKS:

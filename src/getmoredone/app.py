@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 from typing import Optional
 
+from . import branding
 from .app_settings import AppSettings
 from .db_manager import DatabaseManager
 from .paths import app_data_dir_path
@@ -32,7 +33,7 @@ class GetMoreDoneApp(ctk.CTk):
         day_of_week = today.strftime("%A")
         date_str = today.strftime("%B %d, %Y")
         mode_tag = "[PROD]" if getattr(sys, "frozen", False) else "[DEV]"
-        self.title(f"GetMoreDone {mode_tag} - {day_of_week}, {date_str}")
+        self.title(branding.window_title(mode_tag, day_of_week, date_str))
         self.geometry("1200x700")
 
         # Show the GMD brand check-mark icon instead of the default Python
@@ -134,7 +135,7 @@ class GetMoreDoneApp(ctk.CTk):
         # Logo/title
         self.logo_label = ctk.CTkLabel(
             self.sidebar,
-            text="GetMoreDone",
+            text=branding.APP_DISPLAY_NAME,
             font=ctk.CTkFont(size=20, weight="bold")
         )
         self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
