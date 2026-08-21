@@ -20,6 +20,7 @@ import ast
 import collections
 import logging
 import re
+import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
@@ -2331,6 +2332,9 @@ RENAME_VERDICTS = [
     ("A", "solo",        True,  "same, reached by case"),
     ("A", "SOLO",        True,  "same, reached by case the other way"),
     ("A", "Totally New", False, "a collided row freeing itself is the way out"),
+    ("A", "kappa",       True,  "an EXACT duplicate of its own partner: the set "
+                                "comparison permits it, so SQLite's UNIQUE is "
+                                "what stops it, and it must still be a refusal"),
     ("B", "Other",       True,  "the other half of the pair, same hazard"),
     ("C", "Kappa",       True,  "a clean row joining an existing pair"),
     ("C", "KAPPA",       True,  "same, by case"),
@@ -2383,7 +2387,10 @@ def test_rn_rename_verdicts_are_exhaustive(tmp_path, row, new_name, must_raise, 
         }
 
         if must_raise:
-            with pytest.raises(ValueError, match="already exists"):
+            # "already exists" is the guard's wording, "already taken" the
+            # constraint fallback's. Either is a refusal; which one fires says
+            # WHICH mechanism caught it, and both must leave the table alone.
+            with pytest.raises(ValueError, match="already (exists|taken)"):
                 vps.update_segment(target, name=new_name)
             after = {
                 r["id"]: r["name"]
@@ -2448,6 +2455,51 @@ def test_rn_a_refused_rename_leaves_no_half_written_row(tmp_path):
         ).fetchone()["name"] == "Kappa", (
             "a later unrelated save committed the abandoned rename"
         )
+    finally:
+        vps.close()
+
+
+def test_rn_any_failure_mid_write_rolls_back_not_just_a_constraint(tmp_path):
+    """Every escape from the write block rolls back, not only IntegrityError.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv2
+
+    Catching one exception type leaves every other one — a locked database, a
+    failure inside the derived-field sync — free to escape with the first
+    write applied and the transaction still open, which is the exact state the
+    rollback was added to prevent. The three sibling renames in
+    `vps_manager_taxonomy` all pair the typed handler with a bare
+    `except Exception: rollback; raise`; this one did not (P5).
+    """
+    vps = make_vps(tmp_path, name="midwrite.db")
+    try:
+        seg = vps.create_segment("Before Failure", "d", "#123456", 96)
+        vps.create_vision_subsegment("Before Failure", "Sub")
+        vps.create_or_get_vision_element("Before Failure", "Sub", "Cat")
+
+        def boom(*_a, **_k):
+            raise sqlite3.OperationalError("database is locked")
+
+        original = vps._sync_vision_element_derived_fields
+        vps._sync_vision_element_derived_fields = boom
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                vps.update_segment(seg, name="After Failure")
+        finally:
+            vps._sync_vision_element_derived_fields = original
+
+        assert vps.db.conn.in_transaction is False, (
+            "the transaction was left open for the next save to commit"
+        )
+        assert vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?", (seg,)
+        ).fetchone()["name"] == "Before Failure", "the failed rename was applied"
+
+        # And an unrelated later save must not publish it.
+        vps.update_segment(seg, color_hex="#FF0000")
+        assert vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?", (seg,)
+        ).fetchone()["name"] == "Before Failure"
     finally:
         vps.close()
 
