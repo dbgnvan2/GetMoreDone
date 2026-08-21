@@ -68,7 +68,7 @@ client_id=592866309318-7r1aor9ln8von3vlbqgrineslrl91e6u (CORRECT - getmoredone)
 If the above doesn't work, revoke all OAuth access:
 
 1. Go to: https://myaccount.google.com/permissions
-2. Find "Bowen1rag" or any GetMoreDone-related apps
+2. Find "Bowen1rag" or any daVIPA-related apps
 3. Click on it
 4. Click "Remove Access"
 5. **Close ALL browser windows**
@@ -102,7 +102,7 @@ After clearing cache:
    ```
 
 4. **Check the OAuth consent screen**:
-   - App name should be: **"GetMoreDone"** (not "Bowen1rag")
+   - App name should be: **"daVIPA"** (not "Bowen1rag")
    - Project should be: **"getmoredone"**
 
 ## 🔍 Why This Happens

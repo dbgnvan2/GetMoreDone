@@ -1,6 +1,6 @@
-# Installing GetMoreDone
+# Installing daVIPA
 
-GetMoreDone is a desktop app for macOS and Windows. Everything it stores stays
+daVIPA is a desktop app for macOS and Windows. Everything it stores stays
 on your own machine — there is no account, no server, and no telemetry.
 
 - [Download a build](#download-a-build) — the quickest route
@@ -17,13 +17,13 @@ on your own machine — there is no account, no server, and no telemetry.
 
 ## Download a build
 
-Go to the [Releases page](https://github.com/dbgnvan2/GetMoreDone/releases) and
+Go to the [Releases page](https://github.com/dbgnvan2/daVIPA/releases) and
 take the archive for your system:
 
 | System | File | Unpacks to |
 |---|---|---|
 | macOS | `daVIPA-mac.zip` | `daVIPA.app` |
-| Windows | `daVIPA-win64.zip` | a `GetMoreDone` folder containing `daVIPA.exe` |
+| Windows | `daVIPA-win64.zip` | a `daVIPA` folder containing `daVIPA.exe` |
 
 Each release also carries a `.sha256` file — see
 [Verify your download](#verify-your-download).
@@ -48,7 +48,7 @@ whichever of these suits you.
 
 1. Double-click the app and let it get blocked.
 2. Open **System Settings → Privacy & Security**.
-3. Scroll down. There is a message naming GetMoreDone with an **Open Anyway** button.
+3. Scroll down. There is a message naming daVIPA with an **Open Anyway** button.
 4. Click it, authenticate, and open the app again.
 
 The **Open Anyway** button only appears *after* a blocked launch attempt, and it
@@ -101,7 +101,7 @@ no binary to check.
 ## Windows: first launch
 
 Unpack `daVIPA-win64.zip` anywhere you like — your user folder is fine —
-and run `daVIPA.exe` from inside the unpacked `GetMoreDone` folder.
+and run `daVIPA.exe` from inside the unpacked `daVIPA` folder.
 
 Keep the folder together. `daVIPA.exe` needs the `_internal` folder beside
 it; moving the .exe out on its own will stop it working.
@@ -117,8 +117,8 @@ happy to proceed.
 Works on macOS, Windows, and Linux. Requires **Python 3.11 or newer**.
 
 ```bash
-git clone https://github.com/dbgnvan2/GetMoreDone.git
-cd GetMoreDone
+git clone https://github.com/dbgnvan2/daVIPA.git
+cd daVIPA
 ./start.sh
 ```
 
@@ -161,7 +161,7 @@ and compare the result with the contents of `daVIPA-win64.zip.sha256`.
 
 ## Optional: Google Calendar
 
-GetMoreDone runs fully without this. If you skip it, calendar features report
+daVIPA runs fully without this. If you skip it, calendar features report
 that they're unavailable and explain what's missing — nothing breaks.
 
 To enable it you need your own Google Cloud OAuth credentials:
@@ -186,7 +186,7 @@ run `python3 tools/diagnose_google_auth.py` from a source checkout.
 ## Optional: background music
 
 The timer can play background music while you work. **No music ships with
-GetMoreDone** — point it at a folder of your own in
+daVIPA** — point it at a folder of your own in
 **Settings → Timer & Audio → Music folder**.
 
 Supported formats: `.mp3`, `.wav`, `.ogg`, `.aif`, `.aiff`, `.flac`, `.m4a`.
@@ -208,7 +208,13 @@ app does not touch your data:
 That folder holds `getmoredone.db` (all your items) and `settings.json`. Google
 credentials, if you set them up, live separately in `~/.getmoredone/`.
 
-**Back up `getmoredone.db` yourself.** GetMoreDone does not back it up for you.
+Those folder and file names still say `GetMoreDone`, which was the app's
+previous name. That is deliberate and permanent: renaming them would mean the
+app looked for your database somewhere it had never written one, and your
+items would appear to be gone. The name on the outside changed; where your
+data lives did not.
+
+**Back up `getmoredone.db` yourself.** daVIPA does not back it up for you.
 
 To run against a different database — for testing, or to keep work and personal
 separate — set `GETMOREDONE_DB` to a path of your choosing.

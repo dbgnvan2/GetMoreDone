@@ -26,7 +26,7 @@ If applicable, add screenshots.
 ## Environment
 - OS: [e.g. macOS 14, Windows 11]
 - Python Version: [e.g. 3.11.4]
-- GetMoreDone Version: [e.g. commit hash or tag]
+- daVIPA Version: [e.g. commit hash or tag]
 
 ## Additional Context
 Any other context about the problem.

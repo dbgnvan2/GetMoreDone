@@ -1,6 +1,6 @@
 # Gmail Import Troubleshooting
 
-Use these steps whenever the Gmail → GetMoreDone importer stops working (for example, the OAuth token is revoked or launchd stops pulling emails).
+Use these steps whenever the Gmail → daVIPA importer stops working (for example, the OAuth token is revoked or launchd stops pulling emails).
 
 ## 1. Reset the Gmail token
 
@@ -14,7 +14,7 @@ rm ~/.getmoredone/gmail_token.json
 ## 2. Run the importer manually
 
 ```bash
-cd /Users/davemini2/ProjectsLocal/GetMoreDone
+cd /Users/davemini2/ProjectsLocal/daVIPA
 python3 tools/import_gmd_from_gmail.py
 ```
 
@@ -24,7 +24,7 @@ python3 tools/import_gmd_from_gmail.py
 ## 3. Restart the launchd job (optional but recommended)
 
 ```bash
-cd /Users/davemini2/ProjectsLocal/GetMoreDone
+cd /Users/davemini2/ProjectsLocal/daVIPA
 python3 tools/update_launchd_importer.py --reload prod
 ```
 

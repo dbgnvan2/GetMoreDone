@@ -2,7 +2,7 @@
 
 ## Overview
 
-GetMoreDone uses **Google Calendar API with OAuth 2.0** for calendar integration. There is no direct "email login" - authentication is handled through Google's secure OAuth flow.
+daVIPA uses **Google Calendar API with OAuth 2.0** for calendar integration. There is no direct "email login" - authentication is handled through Google's secure OAuth flow.
 
 ## ✅ What Has Been Fixed
 
@@ -38,9 +38,9 @@ GetMoreDone uses **Google Calendar API with OAuth 2.0** for calendar integration
 
 ### Method 1: Browser Authentication (Recommended)
 
-1. **Launch GetMoreDone**
+1. **Launch daVIPA**
    ```bash
-   cd /home/user/GetMoreDone
+   cd /home/user/daVIPA
    python3 -m getmoredone
    ```
 
@@ -55,7 +55,7 @@ GetMoreDone uses **Google Calendar API with OAuth 2.0** for calendar integration
    - Sign in with your Google account
    - Click **"Allow"** to grant calendar access
    - Browser will show: "Authentication successful! You can close this window."
-   - Return to GetMoreDone
+   - Return to daVIPA
 
 4. **Verify success**
    - Check that `~/.getmoredone/token.pickle` was created:
@@ -80,7 +80,7 @@ If the browser doesn't open automatically, the app will display:
    - Sign in with your Google account
    - Click "Allow" to grant calendar access
    - Copy the authorization code shown
-   - Paste the code back into the GetMoreDone terminal when prompted
+   - Paste the code back into the daVIPA terminal when prompted
    - Press Enter
 
 3. **Verify success**
@@ -186,7 +186,7 @@ To avoid zombie tokens in the future:
 ls -la ~/.getmoredone/credentials.json
 
 # If missing, download from Google Cloud Console
-# See: /home/user/GetMoreDone/docs/google-calendar-setup.md
+# See: /home/user/daVIPA/docs/google-calendar-setup.md
 ```
 
 ### Issue 4: "Failed to create calendar event: 403"
@@ -268,7 +268,7 @@ ls -la ~/.getmoredone/
 Use this test script to verify authentication without launching the full app:
 
 ```bash
-cd /home/user/GetMoreDone
+cd /home/user/daVIPA
 python3 tools/diagnose_google_auth.py
 ```
 
@@ -312,7 +312,7 @@ If all else fails:
 
 1. **Revoke app access**
    - Go to: https://myaccount.google.com/permissions
-   - Find "GetMoreDone" and click "Remove Access"
+   - Find "daVIPA" and click "Remove Access"
 
 2. **Delete local credentials**
    ```bash
@@ -320,7 +320,7 @@ If all else fails:
    ```
 
 3. **Re-authenticate**
-   - Launch GetMoreDone
+   - Launch daVIPA
    - Complete OAuth flow again
 
 ## 📞 Getting Help
@@ -342,15 +342,15 @@ If you're still experiencing issues:
    ```
 
 2. **Check the project documentation:**
-   - Main setup guide: `/home/user/GetMoreDone/docs/google-calendar-setup.md`
-   - README: `/home/user/GetMoreDone/README.md`
+   - Main setup guide: `/home/user/daVIPA/docs/google-calendar-setup.md`
+   - README: `/home/user/daVIPA/README.md`
 
 3. **Common questions:**
    - **Q: Do I need a Google Workspace account?**
      A: No, a regular free Gmail account works fine
 
    - **Q: Can I use a different email provider?**
-     A: No, GetMoreDone currently only supports Google Calendar
+     A: No, daVIPA currently only supports Google Calendar
 
    - **Q: Is my data secure?**
      A: Yes, credentials are stored locally and never sent to third parties. OAuth tokens are encrypted by Google.
@@ -364,8 +364,8 @@ If you're still experiencing issues:
 |------|---------|----------|
 | credentials.json | OAuth client secrets | ~/.getmoredone/credentials.json |
 | token.pickle | Authorization token (auto-created) | ~/.getmoredone/token.pickle |
-| google_calendar.py | Authentication code | /home/user/GetMoreDone/src/getmoredone/google_calendar.py |
-| tools/diagnose_google_auth.py | Test script | /home/user/GetMoreDone/tools/diagnose_google_auth.py |
+| google_calendar.py | Authentication code | /home/user/daVIPA/src/getmoredone/google_calendar.py |
+| tools/diagnose_google_auth.py | Test script | /home/user/daVIPA/tools/diagnose_google_auth.py |
 
 ## ✨ What's New
 
@@ -381,4 +381,4 @@ If you're still experiencing issues:
 ---
 
 **Last Updated:** 2026-01-16
-**GetMoreDone Version:** Latest (claude/setup-getmoredone-env-BjJcS branch)
+**daVIPA Version:** Latest (claude/setup-getmoredone-env-BjJcS branch)

@@ -18,13 +18,13 @@ Role prompts live in:
 From repo root:
 
 ```bash
-tools/agents/setup_worktrees.sh ../GetMoreDone-agents
+tools/agents/setup_worktrees.sh ../daVIPA-agents
 ```
 
 This creates:
-- `../GetMoreDone-agents/code` on `codex/agent-code`
-- `../GetMoreDone-agents/docs` on `codex/agent-docs`
-- `../GetMoreDone-agents/github` on `codex/agent-github`
+- `../daVIPA-agents/code` on `codex/agent-code`
+- `../daVIPA-agents/docs` on `codex/agent-docs`
+- `../daVIPA-agents/github` on `codex/agent-github`
 
 ## Daily usage
 

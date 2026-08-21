@@ -158,7 +158,7 @@ client_id=592866309318-7r1aor9ln8von3vlbqgrineslrl91e6u.apps.googleusercontent.c
 ### 3. Check OAuth Consent Screen
 
 The consent screen should show:
-- **App name**: GetMoreDone (not "Bowen1rag")
+- **App name**: daVIPA (not "Bowen1rag")
 - **Project**: getmoredone
 - **Permissions**: Google Calendar access
 
@@ -180,7 +180,7 @@ The consent screen should show:
 3. **Multiple Python environments**: Make sure you're using the right venv
    ```bash
    which python3
-   # Should show: /home/user/GetMoreDone/venv/bin/python3
+   # Should show: /home/user/daVIPA/venv/bin/python3
    ```
 
 4. **Hardcoded credentials**: Search the codebase (already checked - none found)

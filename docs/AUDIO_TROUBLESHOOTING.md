@@ -16,7 +16,7 @@ You're likely using **M4A, AAC, WMA, or FLAC** files, which pygame doesn't suppo
 
 2. Run the converter script:
    ```bash
-   cd ~/ProjectsLocal/Projects/GetMoreDone
+   cd ~/ProjectsLocal/Projects/daVIPA
    source venv/bin/activate
    python3 ../tools/convert_music_to_mp3.py
    ```

@@ -1,8 +1,8 @@
-# GetMoreDone
+# daVIPA
 
 A comprehensive Python task management application with GUI interface and SQLite database. Built to help you prioritize tasks, track time, and improve productivity through data-driven insights.
 
-**[Download for macOS or Windows](https://github.com/dbgnvan2/GetMoreDone/releases)** ·
+**[Download for macOS or Windows](https://github.com/dbgnvan2/daVIPA/releases)** ·
 [Install guide](INSTALL.md) · [User guide](docs/USER_GUIDE.md) · [Licence](LICENSE)
 
 ## Features
@@ -33,7 +33,7 @@ A comprehensive Python task management application with GUI interface and SQLite
 ### Download a build (recommended)
 
 Grab the archive for your system from the
-[Releases page](https://github.com/dbgnvan2/GetMoreDone/releases):
+[Releases page](https://github.com/dbgnvan2/daVIPA/releases):
 
 | System | File |
 |---|---|
@@ -118,7 +118,7 @@ python -m getmoredone
 ## Project Structure
 
 ```
-GetMoreDone/
+daVIPA/
 ├── src/
 │   └── getmoredone/
 │       ├── app.py              # Main application window
@@ -374,7 +374,7 @@ The Action Timer helps you stay focused on tasks with countdown timing, break ma
 Create Google Calendar events directly from action items with automatic linking and meeting tracking.
 
 **Configuration Directory:**
-GetMoreDone stores credentials in your home directory:
+daVIPA stores credentials in your home directory:
 
 ```
 ~/.getmoredone/credentials.json  # OAuth credentials (you provide)
@@ -387,7 +387,7 @@ is why it is deliberately one fixed location rather than the app's own data
 folder.
 
 Create `~/.getmoredone` yourself and put `credentials.json` in it. Nothing in
-GetMoreDone creates it *before* a successful sign-in — opening the calendar
+daVIPA creates it *before* a successful sign-in — opening the calendar
 dialog, or checking whether credentials exist, has no side effect, and the
 "credentials not found" message names the exact path it checked. After that,
 saving a token creates the directory if it is missing, and the Gmail importer
@@ -425,7 +425,7 @@ creates it whenever it runs.
 
 **Benefits:**
 
-- 📆 Schedule meetings without leaving GetMoreDone
+- 📆 Schedule meetings without leaving daVIPA
 - 🔗 Calendar link stored with action item for easy access
 - ⏰ Pre-fills event with action item details
 - 🌍 Uses your local timezone automatically (no more timezone confusion!)
@@ -519,7 +519,7 @@ GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest
 - **SQLite** - Embedded database (no server required)
 - **CustomTkinter** - Modern, customizable GUI framework
 - **pygame** - Audio playback for timer music and sound effects
-- **pyobjc-framework-Cocoa** *(macOS only)* - Sets the GetMoreDone check-mark Dock icon at runtime (replaces the default Python launcher rocket)
+- **pyobjc-framework-Cocoa** *(macOS only)* - Sets the daVIPA check-mark Dock icon at runtime (replaces the default Python launcher rocket)
 - **pytest** - Comprehensive testing framework
 - **Google Calendar API** - OAuth 2.0 integration for calendar events
 - **tzlocal** - Automatic timezone detection for accurate event scheduling
@@ -694,7 +694,7 @@ GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest
 
 ## Specification
 
-See `GetMoreDone_MasterSpec_SQLite_v1.md` for complete requirements and design decisions. Timer requirements are consolidated there.
+See `daVIPA_MasterSpec_SQLite_v1.md` for complete requirements and design decisions. Timer requirements are consolidated there.
 
 ## License
 
@@ -766,7 +766,7 @@ All tests pass consistently with 100% success rate. Tests use in-memory database
 
 ## Licence
 
-GetMoreDone is **proprietary and source-available**. It is free to use for
+daVIPA is **proprietary and source-available**. It is free to use for
 personal and internal business purposes; the copyright is retained and
 redistribution and commercial use are reserved. See [LICENSE](LICENSE).
 

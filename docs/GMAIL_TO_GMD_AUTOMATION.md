@@ -1,13 +1,13 @@
-# Gmail → GetMoreDone automation (Spark-friendly)
+# Gmail → daVIPA automation (Spark-friendly)
 
-This implements **Option 1**: use a Gmail label as the trigger, and a local script that imports labeled emails into GetMoreDone’s SQLite DB.
+This implements **Option 1**: use a Gmail label as the trigger, and a local script that imports labeled emails into daVIPA’s SQLite DB.
 
 ## Desired workflow (Dave)
 
 - You use Spark with multiple accounts.
 - For the automation account (`davebgalloway@gmail.com`), you:
   1) put an email into label/folder **`GMD`**
-  2) the importer creates a GetMoreDone Action Item
+  2) the importer creates a daVIPA Action Item
   3) then the importer “moves” the email by removing label `GMD` and applying label **`GMD/moved`**
 
 ## Field mapping
@@ -36,8 +36,8 @@ First run will open a browser to authorize and will store a token at:
 
 ## Dev vs Prod DB selection
 
-GetMoreDone supports two modes:
-- **Dev (repo)**: set `GETMOREDONE_DB` to a repo-local DB (e.g. `.../GetMoreDone/data/getmoredone.db`)
+daVIPA supports two modes:
+- **Dev (repo)**: set `GETMOREDONE_DB` to a repo-local DB (e.g. `.../daVIPA/data/getmoredone.db`)
 - **Prod (installed app)**: do not set `GETMOREDONE_DB` → uses `~/Library/Application Support/GetMoreDone/getmoredone.db`
 
 The Gmail importer uses the same rule.
@@ -75,14 +75,14 @@ Example (DEV instance; edit paths to your repo/venv):
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/davemini2/ProjectsLocal/GetMoreDone/venv/bin/python</string>
-    <string>/Users/davemini2/ProjectsLocal/GetMoreDone/tools/import_gmd_from_gmail.py</string>
+    <string>/Users/davemini2/ProjectsLocal/daVIPA/venv/bin/python</string>
+    <string>/Users/davemini2/ProjectsLocal/daVIPA/tools/import_gmd_from_gmail.py</string>
   </array>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>GETMOREDONE_DB</key>
-    <string>/Users/davemini2/ProjectsLocal/GetMoreDone/data/getmoredone.db</string>
+    <string>/Users/davemini2/ProjectsLocal/daVIPA/data/getmoredone.db</string>
   </dict>
 
   <key>StartInterval</key>

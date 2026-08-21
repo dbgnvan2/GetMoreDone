@@ -1,6 +1,6 @@
 # Standalone builds (Windows + macOS)
 
-GetMoreDone is already a single-user, SQLite desktop app.
+daVIPA is already a single-user, SQLite desktop app.
 
 The main extra work for *standalone distribution* is:
 - storing the DB + settings in a user-writable per-OS location (not inside the app bundle)
@@ -8,7 +8,7 @@ The main extra work for *standalone distribution* is:
 
 ## 1) User data location
 
-As of this change, GetMoreDone stores:
+As of this change, daVIPA stores:
 - SQLite DB: platform user data dir + `getmoredone.db`
 - Settings: platform user data dir + `settings.json`
 
@@ -53,7 +53,7 @@ From repo root (PowerShell):
 ```
 
 Result:
-- `dist\GetMoreDone\daVIPA.exe`
+- `dist\daVIPA\daVIPA.exe`
 
 (Manual equivalent uses `pyinstaller --clean daVIPA.spec`.)
 
@@ -68,7 +68,7 @@ Both build scripts run the packaged app's selftest and fail if it does not
 start. To check a build by hand:
 
 ```bash
-./dist/daVIPA.app/Contents/MacOS/GetMoreDone --selftest
+./dist/daVIPA.app/Contents/MacOS/daVIPA --selftest
 ```
 
 It prints one line per check and exits non-zero on failure. On Windows the

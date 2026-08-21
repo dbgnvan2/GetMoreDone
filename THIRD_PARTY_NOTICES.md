@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-GetMoreDone incorporates the third-party components listed below. Each remains
+daVIPA incorporates the third-party components listed below. Each remains
 under its own licence, which governs that component. Nothing in `LICENSE`
 limits any right those licences grant you.
 
@@ -42,33 +42,33 @@ Not distributed in the binaries; listed for completeness.
 
 ## pygame — LGPL notice and relink statement
 
-GetMoreDone links **pygame**, which is distributed under the GNU Lesser General
+daVIPA links **pygame**, which is distributed under the GNU Lesser General
 Public Licence (LGPL), version 2.1. A verbatim copy of that licence — the one
 pygame itself ships — is distributed inside every release archive:
 
-- macOS: `GetMoreDone.app/Contents/Resources/licenses/pygame-LGPL-2.1.txt`
-- Windows: `licenses\pygame-LGPL-2.1.txt`, beside `GetMoreDone.exe`
+- macOS: `daVIPA.app/Contents/Resources/licenses/pygame-LGPL-2.1.txt`
+- Windows: `licenses\pygame-LGPL-2.1.txt`, beside `daVIPA.exe`
 
 It is also available at https://www.gnu.org/licenses/lgpl-2.1.html
 
-In accordance with that licence, GetMoreDone is distributed in **one-folder**
+In accordance with that licence, daVIPA is distributed in **one-folder**
 form rather than as a single self-extracting executable, so that pygame's
 libraries remain separate, replaceable files. You may replace the pygame
 libraries inside the application folder with a modified or different compatible
-version and continue to run GetMoreDone.
+version and continue to run daVIPA.
 
-- macOS: `GetMoreDone.app/Contents/Resources/pygame/`
-- Windows: `GetMoreDone\_internal\pygame\`
+- macOS: `daVIPA.app/Contents/Resources/pygame/`
+- Windows: `daVIPA\_internal\pygame\`
 
 This packaging choice is enforced by
 `tests/test_packaging_resources.py::test_rm1d_spec_uses_onefolder_not_onefile`,
 so it cannot be changed to `--onefile` without a test failing.
 
 pygame is used only for optional background-music playback during timer
-sessions. No audio files are distributed with GetMoreDone; you supply your own
+sessions. No audio files are distributed with daVIPA; you supply your own
 music folder in Settings.
 
 ## Fonts, icons, and audio
 
-No third-party fonts or audio files are distributed with GetMoreDone. Icons in
+No third-party fonts or audio files are distributed with daVIPA. Icons in
 `assets/` are the copyright holder's own work.

@@ -1,8 +1,8 @@
-# GetMoreDone Documentation Index
+# daVIPA Documentation Index
 
 ## Overview
 
-Complete index of all documentation files for the GetMoreDone task management application.
+Complete index of all documentation files for the daVIPA task management application.
 
 ## Primary Documentation
 
@@ -46,7 +46,7 @@ Current end-user documentation including:
 - Vision Strategy Plan hub, Annual Plan Elements, and APE assignment flow
 - List View terminology and current responsive-column behavior
 
-### GetMoreDone_MasterSpec_SQLite_v1.md (19KB)
+### daVIPA_MasterSpec_SQLite_v1.md (19KB)
 
 Complete specification including:
 
@@ -128,7 +128,7 @@ Summary of documentation and test updates:
 
 ### Requirements (Consolidated)
 
-All requirements are now maintained in `GetMoreDone_MasterSpec_SQLite_v1.md`. The timer-specific requirements document is retained only for archival reference.
+All requirements are now maintained in `daVIPA_MasterSpec_SQLite_v1.md`. The timer-specific requirements document is retained only for archival reference.
 
 ### docs/google-calendar-setup.md (8.7KB)
 
@@ -312,7 +312,7 @@ Verify authentication setup
 **Getting Started**
 
 - README.md
-- GetMoreDone_MasterSpec_SQLite_v1.md
+- daVIPA_MasterSpec_SQLite_v1.md
 
 **VPS Documentation**
 
@@ -345,7 +345,7 @@ Verify authentication setup
 Large (>10KB):
 
 - README.md (27KB)
-- GetMoreDone_MasterSpec_SQLite_v1.md (19KB)
+- daVIPA_MasterSpec_SQLite_v1.md (19KB)
 - docs/action-timer-requirements.md (19KB)
 - docs/EMAIL-AUTH-TROUBLESHOOTING.md (11KB)
 
@@ -400,7 +400,7 @@ Small (<5KB):
 
 **Check feature backlog** → BACKLOG.md
 
-**Understand the system** → GetMoreDone_MasterSpec_SQLite_v1.md
+**Understand the system** → daVIPA_MasterSpec_SQLite_v1.md
 
 **Clear browser cache** → CLEAR_BROWSER_CACHE.md
 

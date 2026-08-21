@@ -23,7 +23,7 @@ At the top of the OAuth consent screen page, click the **"EDIT APP"** button.
 ### Step 3: Change the App Name
 
 1. In the **"App name"** field, you'll see: `bowen1rag`
-2. Change it to: `GetMoreDone`
+2. Change it to: `daVIPA`
 3. Scroll down and click **"SAVE AND CONTINUE"**
 4. Click through the remaining screens (Scopes, Test users, Summary)
 5. Click **"BACK TO DASHBOARD"**
@@ -42,13 +42,13 @@ At the top of the OAuth consent screen page, click the **"EDIT APP"** button.
 rm ~/.getmoredone/token.pickle
 
 # Test authentication
-cd /home/user/GetMoreDone
+cd /home/user/daVIPA
 python3 tools/diagnose_google_auth.py
 ```
 
 ### Step 6: Verify
 
-When you authenticate now, the Google screen should show **"GetMoreDone"** instead of "bowen1rag".
+When you authenticate now, the Google screen should show **"daVIPA"** instead of "bowen1rag".
 
 ---
 
@@ -71,7 +71,7 @@ rm ~/.getmoredone/token.pickle 2>/dev/null
 1. Go to: https://console.cloud.google.com/apis/credentials?project=getmoredone
 2. Click **"+ CREATE CREDENTIALS"** > **"OAuth client ID"**
 3. Application type: **Desktop app**
-4. Name: **GetMoreDone Desktop New**
+4. Name: **daVIPA Desktop New**
 5. Click **"CREATE"**
 
 ### 3. Download New Credentials
@@ -83,7 +83,7 @@ rm ~/.getmoredone/token.pickle 2>/dev/null
 ### 4. Install New Credentials
 
 ```bash
-# Move to GetMoreDone config directory
+# Move to daVIPA config directory
 mv ~/Downloads/client_secret_*.json ~/.getmoredone/credentials.json
 
 # Set permissions
@@ -101,7 +101,7 @@ Should show: `Project: getmoredone`
 ### 6. Test Authentication
 
 ```bash
-cd /home/user/GetMoreDone
+cd /home/user/daVIPA
 python3 tools/diagnose_google_auth.py
 ```
 

@@ -1,4 +1,4 @@
-# GetMoreDone Backlog
+# daVIPA Backlog
 
 Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy migration's discarded id closed; §5 and the migration report signed off)
 

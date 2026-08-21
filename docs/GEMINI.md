@@ -3,7 +3,7 @@
 This file provides project-specific instructions and context for Gemini CLI.
 
 ## Project Overview
-**GetMoreDone** is a Python desktop task management application using CustomTkinter and SQLite. It features a layered architecture and a comprehensive Vision Strategy Plan (VSP) subsystem.
+**daVIPA** is a Python desktop task management application using CustomTkinter and SQLite. It features a layered architecture and a comprehensive Vision Strategy Plan (VSP) subsystem.
 
 ## Core Commands
 - **Run App:** `./start.sh` (Mac/Linux) or `start.bat` (Windows)
@@ -44,6 +44,6 @@ Follow `AGENT_UI_REGRESSION_POLICY.md` for any UI change. Existing user-visible 
 - Verify UI alignment in dual-panel layouts; matching columns must use consistent widths.
 
 ## Documentation
-- Refer to `GetMoreDone_MasterSpec_SQLite_v1.md` for the full technical specification.
+- Refer to `daVIPA_MasterSpec_SQLite_v1.md` for the full technical specification.
 - `AGENTS.md` contains detailed multi-agent rules and theme system specs.
 - `codex.md` contains the full maintainability policy.

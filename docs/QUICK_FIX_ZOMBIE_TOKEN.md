@@ -20,13 +20,13 @@ Python's OAuth logic:
 
 ### Method 1: Quick Script (Recommended)
 ```bash
-cd /home/user/GetMoreDone
+cd /home/user/daVIPA
 ./fix_zombie_token.sh
 ```
 
 ### Method 2: Test Script with Auto-Detection
 ```bash
-cd /home/user/GetMoreDone
+cd /home/user/daVIPA
 python3 tools/diagnose_google_auth.py
 # It will detect zombie token and offer to delete it
 ```

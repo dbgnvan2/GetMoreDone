@@ -102,7 +102,7 @@ app without complaint.
 
 Then download the artifact **through a browser** — not `curl` or
 `gh release download`, neither of which sets the quarantine flag — and confirm
-it opens with no prompt on a Mac that has never run GetMoreDone.
+it opens with no prompt on a Mac that has never run daVIPA.
 
 ---
 

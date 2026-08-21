@@ -1,4 +1,4 @@
-# GetMoreDone User Guide
+# daVIPA User Guide
 
 This guide explains what each screen, button, and workflow does, and why you might use it. It is aligned to the current UI and screen code in `src/getmoredone/screens`.
 
@@ -6,9 +6,9 @@ Last updated: 2026-06-06
 
 ---
 
-## 1) What GetMoreDone is for
+## 1) What daVIPA is for
 
-GetMoreDone is a desktop task manager focused on prioritization and execution.
+daVIPA is a desktop task manager focused on prioritization and execution.
 
 - What: A single place to capture action items, assign priorities, and schedule work.
 - Why: It helps you decide what to do next, track progress, and keep long-term planning connected to daily execution.
@@ -319,8 +319,8 @@ Database Management:
 
 Obsidian Integration:
 - **Vault Path** — What: Path to your Obsidian vault. Why: Enable note linking.
-- **Notes Subfolder** — What: Subfolder for notes created from Action Items (and other non-project entities). Default `GetMoreDone`. Why: Keep generic GMD notes organized.
-- **Project Notes Folder** — What: Separate subfolder for notes created from a Project (via Create Note, Link Note, or the 📄 chooser on a project tile). Default `GetMoreDone/Projects`. Leave blank to fall back to the Notes Subfolder above. Why: Keep project reference material separate from per-task notes so the vault stays browsable.
+- **Notes Subfolder** — What: Subfolder for notes created from Action Items (and other non-project entities). Default `daVIPA`. Why: Keep generic GMD notes organized.
+- **Project Notes Folder** — What: Separate subfolder for notes created from a Project (via Create Note, Link Note, or the 📄 chooser on a project tile). Default `daVIPA/Projects`. Leave blank to fall back to the Notes Subfolder above. Why: Keep project reference material separate from per-task notes so the vault stays browsable.
 - **Save Settings** — What: Stores vault settings. Why: Persist configuration.
 - **Test Connection** — What: Validates vault path and subfolder. Why: Confirm setup is correct.
 
@@ -560,6 +560,9 @@ Buttons:
 Default locations:
 - macOS: `~/Library/Application Support/GetMoreDone/getmoredone.db`
 - Windows: `%APPDATA%\GetMoreDone\getmoredone.db`
+
+These paths keep the app's previous name, `GetMoreDone`, on purpose — changing
+them would leave the app looking for your data somewhere it was never written.
 
 Development mode:
 - Set `GETMOREDONE_DB=/path/to/your/dev/getmoredone.db`

@@ -1,4 +1,4 @@
-# Working agreements (GetMoreDone)
+# Working agreements (daVIPA)
 
 > **The three-agent branch workflow this file used to describe is retired.**
 > `codex/agent-docs` and `codex/agent-github` were never created as branches,
@@ -44,7 +44,7 @@ preserve them.
 
 ---
 
-# GetMoreDone — UI Theme System (CustomTkinter)
+# daVIPA — UI Theme System (CustomTkinter)
 
 ## Goal
 Implement a cohesive UI color system with low runtime overhead by:

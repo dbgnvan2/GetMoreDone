@@ -34,7 +34,7 @@ python tools/create_demo_data.py
 
 ## Architecture
 
-**GetMoreDone** is a Python desktop task management app using CustomTkinter + SQLite.
+**daVIPA** is a Python desktop task management app using CustomTkinter + SQLite.
 
 ### Layered structure
 
@@ -48,7 +48,7 @@ python tools/create_demo_data.py
 
 ### Entry point
 
-`run.py` → `getmoredone.app.GetMoreDoneApp` → `AppSettings` loaded first (theme applied before UI) → sidebar drives navigation between 13 screens.
+`run.py` → `getmoredone.app.daVIPAApp` → `AppSettings` loaded first (theme applied before UI) → sidebar drives navigation between 13 screens.
 
 ### Key data relationships
 
@@ -171,7 +171,7 @@ In tabular/dual-panel UIs, aligned columns are a design goal — matching column
 |---|---|
 | `codex.md` | Full file maintainability policy — read before any refactor |
 | `AGENTS.md` | Multi-agent workflow rules + theme system spec |
-| `GetMoreDone_MasterSpec_SQLite_v1.md` | Complete technical spec |
+| `daVIPA_MasterSpec_SQLite_v1.md` | Complete technical spec |
 | `docs/USER_GUIDE.md` | User documentation |
 | `BACKLOG.md` | Development priorities |
 | `NOTES.md` | Recent changes and known issues |

@@ -1,6 +1,6 @@
 # Google Calendar Integration Setup
 
-GetMoreDone can create Google Calendar events directly from action items, making it easy to schedule meetings and block time for tasks.
+daVIPA can create Google Calendar events directly from action items, making it easy to schedule meetings and block time for tasks.
 
 ## Features
 
@@ -14,7 +14,7 @@ GetMoreDone can create Google Calendar events directly from action items, making
 
 ## Configuration Directory
 
-GetMoreDone stores Google Calendar credentials and authentication tokens in:
+daVIPA stores Google Calendar credentials and authentication tokens in:
 ```
 ~/.getmoredone/
 ```
@@ -22,7 +22,7 @@ GetMoreDone stores Google Calendar credentials and authentication tokens in:
 This is your **home directory**, not the project directory. This approach:
 - ✅ Keeps credentials secure (less likely to commit to git)
 - ✅ Persists across project clones/deletions
-- ✅ Shares credentials across multiple GetMoreDone projects
+- ✅ Shares credentials across multiple daVIPA projects
 - ✅ Follows standard patterns (like ~/.ssh, ~/.aws)
 
 **Files stored:**
@@ -60,7 +60,7 @@ Both files are sensitive and should be kept private.
 3. If prompted, configure the OAuth consent screen:
    - Choose **"Internal"** (for organization) or **"External"** (for personal use)
    - Fill in required fields:
-     - App name: "GetMoreDone"
+     - App name: "daVIPA"
      - User support email: your email
      - Developer contact: your email
    - Click **"Save and Continue"**
@@ -73,7 +73,7 @@ Both files are sensitive and should be kept private.
 4. Back on Credentials page:
    - Click **"+ CREATE CREDENTIALS"** > **"OAuth client ID"**
    - Application type: **"Desktop app"**
-   - Name: "GetMoreDone Desktop"
+   - Name: "daVIPA Desktop"
    - Click **"Create"**
 
 5. Download the credentials:
@@ -83,7 +83,7 @@ Both files are sensitive and should be kept private.
 ### Step 3: Install Credentials
 
 1. Rename the downloaded file to `credentials.json`
-2. Place it in the GetMoreDone config directory:
+2. Place it in the daVIPA config directory:
    ```bash
    mkdir -p ~/.getmoredone
    mv ~/Downloads/client_secret_*.json ~/.getmoredone/credentials.json
@@ -96,7 +96,7 @@ Both files are sensitive and should be kept private.
 
 ### Step 4: First-Time Authorization
 
-1. Launch GetMoreDone
+1. Launch daVIPA
 2. Open any action item
 3. Click the **"📅 Calendar"** button
 4. Fill in event details
@@ -105,7 +105,7 @@ Both files are sensitive and should be kept private.
 7. Sign in with your Google account
 8. Click **"Allow"** to grant calendar access
 9. The browser will show "The authentication flow has completed"
-10. Close the browser tab and return to GetMoreDone
+10. Close the browser tab and return to daVIPA
 
 A `token.pickle` file will be created in `~/.getmoredone/` to save your authorization for future use.
 
@@ -139,7 +139,7 @@ A `token.pickle` file will be created in `~/.getmoredone/` to save your authoriz
 
 - **Edit**: Click the calendar link to open in Google Calendar, edit there
 - **Delete**: Delete from Google Calendar directly
-- **Remove Link**: Click the 🗑️ button next to the link in GetMoreDone
+- **Remove Link**: Click the 🗑️ button next to the link in daVIPA
 
 ## Troubleshooting
 
@@ -202,11 +202,11 @@ start.bat   # Windows
 
 ### Calendar event appears at wrong time
 
-**This should not happen anymore** - GetMoreDone now auto-detects your timezone.
+**This should not happen anymore** - daVIPA now auto-detects your timezone.
 
 If you still see incorrect times:
 1. Verify your system timezone is set correctly
-2. Restart GetMoreDone to pick up timezone changes
+2. Restart daVIPA to pick up timezone changes
 3. Check if `tzlocal` is installed: `pip show tzlocal`
 4. If issue persists, check the terminal for timezone detection warnings
 
@@ -221,7 +221,7 @@ If you still see incorrect times:
 ## Timezone Handling
 
 **Automatic Detection:**
-GetMoreDone automatically detects and uses your **local timezone** when creating calendar events. No configuration needed!
+daVIPA automatically detects and uses your **local timezone** when creating calendar events. No configuration needed!
 
 - Uses the `tzlocal` library to detect your system's timezone
 - Events are created in your local timezone automatically
@@ -237,7 +237,7 @@ This ensures calendar events appear at the correct time in Google Calendar, rega
 
 ## Privacy
 
-- GetMoreDone only accesses your primary Google Calendar
+- daVIPA only accesses your primary Google Calendar
 - It only creates/reads events you explicitly create through the app
 - No data is sent to external servers (direct Google API connection)
 - Authorization tokens are stored locally on your machine
@@ -265,5 +265,5 @@ rm ~/.getmoredone/token.pickle
 
 # Revoke app access (optional)
 # Go to: https://myaccount.google.com/permissions
-# Find "GetMoreDone" and click "Remove Access"
+# Find "daVIPA" and click "Remove Access"
 ```
