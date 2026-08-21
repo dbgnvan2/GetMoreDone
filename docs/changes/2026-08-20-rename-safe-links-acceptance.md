@@ -433,8 +433,25 @@ regression now fails on macOS too, instead of waiting five pushes for CI.
 
 Verified with real windows this time, on the user's explicit go-ahead: all four
 mapped-window tests pass, the sash test does not hang, and the **full suite
-runs 1219 passed, 2 skipped, exit 0**. A `conftest.py` change touches every
-test, which is the one case where a full local run earns its cost.
+runs green**. A `conftest.py` change touches every test, which is the one case
+where a full local run earns its cost.
+
+**And the first fix was not enough — CI said so.** The mapped-window test has
+three assertions and the deiconify one came first, so it had been aborting the
+test before the others ran. With it passing, the next line failed instead:
+*"a mapped window is visible (alpha=1.0)"*. Same cause, earlier: on X11
+**every** map drops the opacity, the first one included, so setting alpha at
+construction never worked there at all. `deiconify`, `update_idletasks` and
+`update` now all call through and put it back — the layout calls rather than a
+`<Map>` binding, because `<Map>` is a real event and `update_idletasks()`
+processes only idle callbacks, so the binding would not have fired before a
+test read the attribute.
+
+That second round is the honest measure of the platform gap. The state pushed
+in `4f972e3` looked clean on this machine and took a CI round to disprove.
+Reverting to it now fails **five** tests locally, because the test forces the
+opaque state and checks each recovery path separately instead of relying on the
+platform to produce it. Final: **1223 passed, 2 skipped, exit 0.**
 
 ## Files changed
 
