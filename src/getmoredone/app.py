@@ -22,11 +22,18 @@ class GetMoreDoneApp(ctk.CTk):
     """Main application window."""
 
     def __init__(self):
-        super().__init__()
+        # Settings and theme BEFORE the root exists. CustomTkinter applies a
+        # colour theme to each widget as it is CREATED, and the root window is
+        # a widget — so calling set_default_color_theme after super().__init__()
+        # left the main window painted in whatever theme was loaded last, one
+        # launch behind the one the user chose. Every theme was affected, not
+        # just the new one; it showed as a window background that never matched
+        # its own sidebar.
+        settings = AppSettings.load()
+        apply_theme_settings(settings)
 
-        # Load settings first so startup theme matches persisted preferences.
-        self.settings = AppSettings.load()
-        apply_theme_settings(self.settings)
+        super().__init__()
+        self.settings = settings
 
         # Configure window
         today = datetime.now()

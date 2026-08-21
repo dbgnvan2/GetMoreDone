@@ -180,9 +180,21 @@ class AppSettings:
 
     @staticmethod
     def _normalize_theme_name(value: Optional[str]) -> str:
-        allowed = {"green", "orange", "pink", "grey", "blue", "purple", "apple_grey", "black_white"}
-        name = (value or "").strip().lower()
-        return name if name in allowed else "apple_grey"
+        """Coerce a persisted theme name, using theme.py's list and no other.
+
+        This held a SECOND hardcoded copy of the theme names. Adding a theme to
+        THEME_NAMES made it appear in the Settings picker and be written to
+        settings.json — and then this rewrote it to "apple_grey" on the next
+        load, because the new name was not in the copy. Picking a new theme
+        silently reverted to the default, with nothing logged.
+
+        Imported inside the function: theme.py pulls in customtkinter, and
+        loading settings must not require a GUI toolkit. selftest.py defers its
+        imports the same way and for the same reason.
+        """
+        from .theme import normalize_theme_name
+
+        return normalize_theme_name(value)
 
     @staticmethod
     def _normalize_list_row_font_size(value: Optional[int]) -> int:
