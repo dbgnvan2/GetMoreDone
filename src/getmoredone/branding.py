@@ -20,7 +20,9 @@ constants on purpose, and the test asserts they are allowed to differ.
 from __future__ import annotations
 
 #: The name shown to a person. Change this to rebrand the display surface.
-APP_DISPLAY_NAME = "GetMoreDone"
+#: Always "daVIPA" — capital V I P A, lowercase "da". Never expanded, and the
+#: tagline is never appended to it.
+APP_DISPLAY_NAME = "daVIPA"
 
 #: The strapline. Shown beneath the wordmark; never part of the name itself.
 APP_TAGLINE = "Vision - Planning - Action"

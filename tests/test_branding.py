@@ -78,6 +78,10 @@ def test_the_data_directory_does_not_follow_a_rename():
     a rename. The two constants are separate on purpose; this asserts nothing
     has quietly wired one to the other.
     """
+    assert branding.APP_DISPLAY_NAME != paths.APP_NAME, (
+        "the display name and the data-directory name have been wired "
+        "together. They are separate on purpose."
+    )
     assert paths.APP_NAME == "GetMoreDone", (
         "the user-data directory name changed. That moves every existing "
         "user's database and settings, and needs a migration, not a rename."
