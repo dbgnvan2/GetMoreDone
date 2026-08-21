@@ -1473,12 +1473,27 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 "That name is already taken by another life segment, so the "
                 "rename was not applied. Pick a different name."
             ) from exc
+        except Exception:
+            # Every other way out, not just the constraint. A locked database
+            # or a failure inside the derived-field sync left the transaction
+            # open with the first write applied — the exact state the rollback
+            # above exists to prevent. The three sibling renames in
+            # vps_manager_taxonomy pair their typed handler with this one; this
+            # function had only the typed half (P5).
+            self.db.conn.rollback()
+            raise
         return True
 
     def _write_segment_update(
         self, segment_id, set_clause, values, updates, old_name
     ) -> None:
-        """The two writes a segment update makes, inside one transaction.
+        """Everything a segment update writes, inside one transaction.
+
+        Named for the two that can conflict — ``segment_descriptions`` and the
+        mirrored ``vision_segments`` row — but the derived-field sync below
+        reaches ``vision_elements``, ``annual_vision_elements``,
+        ``annual_plan_elements`` and ``annual_initiatives`` as well. All of it
+        commits together or none of it does.
 
         Purpose: keep the mirrored vision_segments rename in the same
                  transaction as the segment_descriptions write.
