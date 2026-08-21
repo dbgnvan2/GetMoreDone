@@ -10,7 +10,10 @@ import customtkinter as ctk
 from .paths import resolve_theme_path
 
 APPEARANCE_MODES = ("system", "dark", "light")
-THEME_NAMES = ("green", "orange", "pink", "grey", "blue", "purple", "apple_grey", "black_white")
+# "davipa" is the brand theme, built from brand.py and the colour system
+# document. The rest predate it and are untouched.
+THEME_NAMES = ("davipa", "green", "orange", "pink", "grey", "blue", "purple",
+               "apple_grey", "black_white")
 DEFAULT_THEME_NAME = "apple_grey"
 LIST_ROW_FONT_SIZE = 14
 
