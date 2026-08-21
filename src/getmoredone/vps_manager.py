@@ -1310,11 +1310,12 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         self.db.conn.commit()
         return segment_id
 
-    def _find_case_collision(self, name: str, exclude_id: Optional[str] = None):
-        """Another life segment whose name differs from this one only by case.
+    def _find_case_collisions(self, name: str, exclude_id: Optional[str] = None):
+        """Every other life segment whose name differs from this one only by case.
 
-        Purpose: one definition of "these two names collide", used both to
-                 refuse a rename and to ask whether a row already collides.
+        Purpose: one definition of "these two names collide", used to refuse a
+                 rename and to compare which segments a name collides with
+                 before and after it.
         Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
         Tests:   tests/test_rename_safe_links.py::test_rn_a_recase_that_creates_a_collision_is_still_refused
                  tests/test_rename_safe_links.py::test_rn_a_strip_that_creates_a_collision_is_still_refused
@@ -1340,9 +1341,52 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         # halves are still two strings. Written that way, this query hid from
         # the guard whose whole job is to see it.
         return self.db.conn.execute(
-            "SELECT name FROM segment_descriptions WHERE LOWER(name) = LOWER(?) AND id IS NOT ?",
+            "SELECT id, name FROM segment_descriptions WHERE LOWER(name) = LOWER(?) AND id IS NOT ?",
             (name or "", exclude_id),
-        ).fetchone()
+        ).fetchall()
+
+    def _refuse_newly_collided_segments(
+        self, segment_id: str, old_name: str, new_name: str
+    ) -> None:
+        """Refuse a rename that drags a segment into a collision it was not in.
+
+        Purpose: let a row that already collides be edited, while never letting
+                 any save break a segment that was fine before it.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+        Tests:   tests/test_rename_safe_links.py::test_rn_rename_verdicts_are_exhaustive
+
+        **A comparison of two sets, not a boolean.** Which segments did the OLD
+        name collide with, and which does the NEW one? An id in the second set
+        and not the first is a segment being newly broken, and that is the only
+        thing worth refusing.
+
+        Every cheaper formulation failed, each in a way the previous one's test
+        could not see:
+
+        * "is there a collision" froze every row of a pre-existing pair —
+          colour, description, order and the active flag all raised, because
+          both editors send the unchanged name along with the real edit;
+        * "did the name change", asked in Python, let a non-ASCII re-case
+          create one, since ``str.lower()`` folds where SQLite's ``LOWER()``
+          does not;
+        * "did the OLD name collide" disabled the guard for the whole save, so
+          a collided row could be renamed onto a clean third segment's name and
+          break a row nobody had touched.
+
+        A row that already collides keeps every edit, including renaming itself
+        free of the collision — which is the only route out of the state.
+        """
+        already = {row["id"] for row in self._find_case_collisions(old_name, segment_id)}
+        newly = [
+            row for row in self._find_case_collisions(new_name, segment_id)
+            if row["id"] not in already
+        ]
+        if newly:
+            raise ValueError(
+                f"A life segment called '{newly[0]['name']}' already exists. "
+                "Two segments whose names differ only by case cannot be told "
+                "apart when resolving links, so pick a different name."
+            )
 
     def _refuse_case_collision(self, name: str, exclude_id: str = None) -> None:
         """Refuse a life-segment name that differs from another only by case.
@@ -1365,8 +1409,9 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         the update path: a row is never a collision with itself, so a segment
         can keep, re-case, or change its own name.
         """
-        collision = self._find_case_collision(name, exclude_id=exclude_id)
-        if collision:
+        collisions = self._find_case_collisions(name, exclude_id=exclude_id)
+        if collisions:
+            collision = collisions[0]
             raise ValueError(
                 f"A life segment called '{collision['name']}' already exists. "
                 "Two segments whose names differ only by case cannot be told "
@@ -1395,24 +1440,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             clean = (updates["name"] or "").strip()
             if not clean:
                 raise ValueError("A life segment needs a name.")
-            # Refuse only a save that makes things WORSE: the new name
-            # collides and the old one did not.
-            #
-            # Not "the name changed". Checking the presence of a `name` key
-            # froze every row of a pre-existing collision — both segment
-            # editors send the unchanged name alongside whatever the user did
-            # change, so colour, description, order and the active flag all
-            # raised. Checking whether the name changed, in Python, opened the
-            # opposite hole: Python's fold and SQLite's disagree on non-ASCII
-            # and on whitespace, so a re-case could create a collision while
-            # being called "unchanged".
-            #
-            # Asking BOTH questions with _find_case_collision keeps one
-            # definition of collision, the same one resolve_segment_id_exact
-            # uses. A row that already collides can still be edited freely; a
-            # row that does not cannot be renamed into one.
-            if self._find_case_collision(old_name, exclude_id=segment_id) is None:
-                self._refuse_case_collision(clean, exclude_id=segment_id)
+            self._refuse_newly_collided_segments(segment_id, old_name, clean)
             # Stripped before the check AND before the write. The two used to
             # diverge: vision_segments got the stripped spelling and
             # segment_descriptions the raw one, so one segment could be held
@@ -1424,6 +1452,39 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         set_clause = ', '.join(f"{k} = ?" for k in updates.keys())
         values = list(updates.values()) + [segment_id]
 
+        # Both writes or neither. segment_descriptions was updated first and
+        # the mirrored vision_segments row second, with the commit at the end
+        # and nothing in between: when the mirror hit its own UNIQUE
+        # constraint the exception escaped with the first write applied and
+        # the transaction still open, and the NEXT unrelated save on this
+        # connection committed the half-finished rename. Measured — the
+        # segment kept the new name on disk with no vision row at all.
+        try:
+            self._write_segment_update(
+                segment_id, set_clause, values, updates, old_name
+            )
+        except sqlite3.IntegrityError as exc:
+            self.db.conn.rollback()
+            # A duplicate reaching SQLite is one the collision guard could not
+            # see — an EXACT duplicate rather than a case variant, or a clash
+            # on vision_segments.name. The user gets the same sentence either
+            # way rather than raw constraint text.
+            raise ValueError(
+                "That name is already taken by another life segment, so the "
+                "rename was not applied. Pick a different name."
+            ) from exc
+        return True
+
+    def _write_segment_update(
+        self, segment_id, set_clause, values, updates, old_name
+    ) -> None:
+        """The two writes a segment update makes, inside one transaction.
+
+        Purpose: keep the mirrored vision_segments rename in the same
+                 transaction as the segment_descriptions write.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv2
+        Tests:   tests/test_rename_safe_links.py::test_rn_a_refused_rename_leaves_no_half_written_row
+        """
         self.db.conn.execute(
             f"UPDATE segment_descriptions SET {set_clause} WHERE id = ?",
             values
@@ -1481,7 +1542,6 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                     (seg_id, new_name, "", segment_id, now, now),
                 )
         self.db.conn.commit()
-        return True
 
     # ========================================================================
     # DELETE METHODS (CASCADE WITH PREVIEW SUPPORT)
