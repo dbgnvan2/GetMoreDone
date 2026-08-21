@@ -29,6 +29,7 @@ from src.getmoredone.link_integrity import (
     SEGMENT_ID_TABLES,
     backfill_initiative_ape_links,
     report_existing_breakage,
+    resolve_segment_id_exact,
     run_link_integrity_migrations,
 )
 from src.getmoredone.models import ProjectBoard
@@ -1449,9 +1450,10 @@ PERMITTED_NAME_LOOKUPS = {
     # fallback in _segment_id_for_ape. That fallback returns an answer to the
     # CALLER and writes nothing — refusing to answer made the cascade raise.
     ("vps_manager.py", "segment_by_name_any_caller"): 2,
-    # resolve_segment_id_by_name's body, plus create_segment's case-collision
-    # check — a UNIQUENESS guard, not a link resolution. It exists to stop the
-    # ambiguity class being created in the first place.
+    # resolve_segment_id_by_name's body, plus _find_case_collision — the one
+    # definition of "these two names collide", shared by create_segment and
+    # update_segment. A UNIQUENESS guard, not a link resolution: it exists to
+    # stop the ambiguity class being created at all.
     ("vps_manager.py", "segment_descriptions_by_name"): 2,
     # db_manager's own non-persisting fallback: the helper's definition and
     # its call site, plus the body's query.
@@ -2197,6 +2199,116 @@ def test_rn_update_segment_stores_the_stripped_name_in_both_tables(tmp_path):
         assert mirrored["name"] == stored, (
             f"the two tables hold one segment under two names: "
             f"{stored!r} vs {mirrored['name']!r}"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_a_recase_that_creates_a_collision_is_still_refused(tmp_path):
+    """The "did the name change" test must use the SAME fold as the guard.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    Deciding "unchanged" with Python's ``str.lower()`` while the guard and
+    ``resolve_segment_id_exact`` decide collision with SQLite's ``LOWER()``
+    opens a hole wherever the two disagree — SQLite folds ASCII only:
+
+        'CAFÉ'  sqlite LOWER -> 'cafÉ'   python lower -> 'café'
+
+    So two segments differing only in a non-ASCII letter's case are legal and
+    both resolve. Tidying the capitalisation of one then made the pair collide
+    by SQLite's rule while Python called the name unchanged, the guard never
+    ran, and BOTH segments were bricked — every link resolution refusing both
+    spellings, permanently, from an ordinary edit of the user's own segment.
+    """
+    vps = make_vps(tmp_path, name="recasecollide.db")
+    try:
+        first = vps.create_segment("Santé", "d", "#111111", 90)
+        second = vps.create_segment("SANTÉ", "d", "#222222", 91)
+        # Legal today, and both resolve: SQLite does not fold É.
+        assert resolve_segment_id_exact(vps.db.conn, "Santé") == first
+        assert resolve_segment_id_exact(vps.db.conn, "SANTÉ") == second
+
+        with pytest.raises(ValueError, match="already exists"):
+            vps.update_segment(second, name="santé")
+
+        assert resolve_segment_id_exact(vps.db.conn, "Santé") == first, (
+            "the segment was bricked by a rename that should have been refused"
+        )
+        assert resolve_segment_id_exact(vps.db.conn, "SANTÉ") == second
+    finally:
+        vps.close()
+
+
+def test_rn_a_strip_that_creates_a_collision_is_still_refused(tmp_path):
+    """Same hole, reached by whitespace instead of by an accent.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    A stored name with trailing space does not collide with its bare twin —
+    ``LOWER('Zeta ')`` is ``'zeta '``. Stripping it makes them collide. The
+    Python-side gate stripped before comparing, called that "unchanged", and
+    let the save through.
+    """
+    vps = make_vps(tmp_path, name="stripcollide.db")
+    try:
+        first, _ = _seed_case_colliding_pair(vps)
+        # Give the first row a trailing space, so the pair does NOT collide.
+        vps.db.conn.execute(
+            "UPDATE segment_descriptions SET name = 'Kappa ' WHERE id = ?", (first,)
+        )
+        vps.db.conn.commit()
+        assert resolve_segment_id_exact(vps.db.conn, "kappa") is not None, (
+            "fixture is wrong: the pair already collides"
+        )
+
+        with pytest.raises(ValueError, match="already exists"):
+            vps.update_segment(first, name="Kappa")
+
+        assert resolve_segment_id_exact(vps.db.conn, "kappa") is not None, (
+            "the surviving segment was bricked by a refused rename"
+        )
+    finally:
+        vps.close()
+
+
+def test_rn_renaming_one_of_a_collided_pair_leaves_the_others_vision_row_alone(tmp_path):
+    """The old-name fallback must not adopt a row that belongs to someone else.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    When the id lookup misses, `update_segment` falls back to the OLD name —
+    "only for a row the migration could not link", says the comment. On a
+    collided pair that fallback matched the *other* segment's vision row, so
+    renaming A relabelled B: B ended up spelled one way in
+    `segment_descriptions` and another in `vision_segments`, and
+    `_sync_vision_element_derived_fields` then pushed B's wrong name down onto
+    B's vision elements. Nobody renamed B.
+
+    The fallback is now restricted to a genuinely unlinked row, which is what
+    the comment always said it was for.
+    """
+    vps = make_vps(tmp_path, name="mirroradopt.db")
+    try:
+        first, second = _seed_case_colliding_pair(vps)
+        now = datetime.now().isoformat()
+        # Only the SECOND has a vision row, and it is properly linked.
+        vps.db.conn.execute(
+            "INSERT INTO vision_segments "
+            "(id, name, vision_text, segment_description_id, created_at, updated_at) "
+            "VALUES ('vsg-owned', 'kappa', '', ?, ?, ?)",
+            (second, now, now),
+        )
+        vps.db.conn.commit()
+
+        assert vps.update_segment(first, name="KAPPA") is True
+
+        owned = vps.db.conn.execute(
+            "SELECT name, segment_description_id FROM vision_segments WHERE id = 'vsg-owned'"
+        ).fetchone()
+        assert owned["segment_description_id"] == second
+        assert owned["name"] == "kappa", (
+            f"renaming one segment relabelled another's vision row: {owned['name']!r}"
         )
     finally:
         vps.close()
