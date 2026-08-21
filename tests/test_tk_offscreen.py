@@ -16,6 +16,106 @@ would look exactly like a passing suite.
 """
 
 import customtkinter as ctk
+import pytest
+
+from conftest import reapply_transparency, wrap_deiconify
+
+
+class _FakeWindow:
+    """Stands in for a Tk window whose re-map dropped its opacity.
+
+    X11 behaviour cannot be reproduced on macOS, and the real check needs a
+    mapped window — so the reapplication is tested here against a stub, and
+    against a real window by
+    ``test_a_mapped_window_is_invisible_but_still_measurable``, which is the
+    one CI was failing.
+    """
+
+    def __init__(self, alpha=1.0, raises=False):
+        self.alpha = alpha
+        self.raises = raises
+        self.calls = []
+
+    def attributes(self, name, value=None):
+        self.calls.append((name, value))
+        if self.raises:
+            raise RuntimeError("window has been destroyed")
+        if value is not None:
+            self.alpha = value
+        return self.alpha
+
+
+def test_reapply_transparency_sets_alpha_to_zero():
+    """A window that came back opaque is made transparent again.
+
+    Setting alpha once at creation is not enough: on X11 the attribute is the
+    ``_NET_WM_WINDOW_OPACITY`` property and re-mapping drops it, so
+    ``deiconify()`` restores full opacity. That is what put a window on screen
+    in CI while the same run was clean on macOS.
+    """
+    window = _FakeWindow(alpha=1.0)
+
+    reapply_transparency(window)
+
+    assert window.alpha == 0.0, "the window was left opaque"
+    assert ("-alpha", 0.0) in window.calls
+
+
+def test_reapply_transparency_survives_a_destroyed_window():
+    """A window destroyed between the deiconify and this call is not an error."""
+    window = _FakeWindow(raises=True)
+
+    reapply_transparency(window)  # must not raise
+
+    assert window.calls == [("-alpha", 0.0)]
+
+
+def test_the_deiconify_wrapper_reapplies_after_calling_through():
+    """It must do BOTH: map the window, then take the opacity back off.
+
+    Silencing deiconify hung tests/test_item_editor_sash.py — the window never
+    maps and its geometry never resolves — so calling through is load-bearing.
+    Reapplying is load-bearing too, because the re-map is what drops the
+    opacity on X11. A wrapper doing only one of the two is useless, and which
+    one it does cannot be seen from the installed method without a real mapped
+    window.
+    """
+    calls = []
+
+    def fake_original(window, *args, **kwargs):
+        calls.append("mapped")
+        window.alpha = 1.0          # what an X11 re-map does to the opacity
+        return "deiconified"
+
+    wrapped = wrap_deiconify(fake_original)
+    window = _FakeWindow(alpha=0.0)
+
+    assert wrapped(window) == "deiconified", "the return value was swallowed"
+    assert calls == ["mapped"], (
+        "the real deiconify was not called — silencing it hangs the sash test"
+    )
+    assert window.alpha == 0.0, (
+        "the window was mapped and left opaque: the re-map dropped the alpha "
+        "and the wrapper did not put it back"
+    )
+
+
+@pytest.mark.parametrize("cls_name", ["CTk", "CTkToplevel"])
+def test_deiconify_is_wrapped_to_reapply_transparency(cls_name):
+    """The guard has to be installed, not merely defined (P21).
+
+    ``deiconify`` is wrapped rather than silenced: silencing it hung
+    tests/test_item_editor_sash.py, because the window never maps and its
+    geometry never resolves. Wrapping keeps the map and restores the alpha the
+    re-map dropped.
+    """
+    cls = getattr(ctk, cls_name)
+
+    assert getattr(cls.deiconify, "_gmd_reapplies_transparency", False) is True, (
+        f"{cls_name}.deiconify is not wrapped — a window that deiconifies will "
+        "come back opaque on any platform that drops opacity on re-map"
+    )
+
 
 def test_a_new_root_is_withdrawn():
     root = ctk.CTk()
@@ -99,6 +199,49 @@ def test_every_test_that_needs_a_mapped_window_asks_for_one():
     assert not offenders, (
         "these files drive real Tk events but no test in them requests the "
         f"mapped_windows fixture, so the suite will hang: {offenders}"
+    )
+
+
+def test_a_remapped_window_is_made_transparent_again(mapped_windows):
+    """A real window that came back opaque is put back, on any platform.
+
+    The neighbouring test caught this on CI and not on macOS, because only X11
+    actually drops ``_NET_WM_WINDOW_OPACITY`` when a window is re-mapped — so
+    it is a check that only fires on one of the two platforms the suite runs
+    on, and it fired five pushes late.
+
+    Forcing the alpha back to 1.0 by hand produces the same STATE the X11
+    re-map produces, which is what the wrapper has to recover from. That makes
+    the assertion platform-independent: it fails on macOS too if the wrapper
+    stops working, instead of waiting for CI to notice.
+
+    Asserts the width as well, because recovering the opacity by refusing to
+    map the window would satisfy the first half and hang the sash test.
+    """
+    import customtkinter as ctk
+
+    window = ctk.CTk()
+    try:
+        window.geometry("400x300")
+        window.update_idletasks()
+        window.attributes("-alpha", 1.0)     # exactly what an X11 re-map leaves
+        window.update_idletasks()
+
+        window.deiconify()
+        window.update_idletasks()
+
+        alpha = float(window.attributes("-alpha"))
+        width = window.winfo_width()
+    finally:
+        window.destroy()
+
+    assert alpha == 0.0, (
+        f"a re-mapped window was left visible (alpha={alpha}) — it will appear "
+        "over the user's work and take their keyboard"
+    )
+    assert width > 1, (
+        f"the window is not laid out (width={width}); transparency was bought "
+        "by not mapping it, which hangs the tests that read real geometry"
     )
 
 
