@@ -393,24 +393,38 @@ def reapply_transparency(window) -> None:
         pass
 
 
-def wrap_deiconify(original):
-    """``deiconify`` that maps the window and then restores its transparency.
+def wrap_reapplying_transparency(original):
+    """Call through to ``original``, then put the transparency back.
 
-    Purpose: keep a re-mapped window invisible without stopping it mapping.
-    Tests:   tests/test_tk_offscreen.py::test_the_deiconify_wrapper_reapplies_after_calling_through
+    Purpose: keep a window invisible across every call that can map it or
+             settle its layout, without stopping any of them happening.
+    Tests:   tests/test_tk_offscreen.py::test_the_wrapper_reapplies_after_calling_through
+
+    Wraps ``deiconify``, ``update_idletasks`` and ``update``. Setting alpha
+    once at construction is not enough on X11: the attribute is the
+    ``_NET_WM_WINDOW_OPACITY`` property and **every** map drops it, the first
+    one included — so a window created under the ``mapped_windows`` fixture
+    was already opaque by the time a test measured it, not merely after a
+    deiconify.
+
+    The layout calls rather than a ``<Map>`` binding, because ``<Map>`` is a
+    real event and ``update_idletasks()`` processes only idle callbacks: the
+    binding would not have fired by the time a test reads the attribute. Every
+    test that reads geometry or opacity settles the window first, so wrapping
+    those calls is deterministic where the event is not.
 
     A named factory rather than a closure inside the fixture, so a test can
     build one over a stub and prove it both calls through AND reapplies —
     neither of which is observable from the installed wrapper without a real
-    mapped window, which is the thing this whole module exists to avoid.
+    mapped window, which is what this module exists to avoid.
     """
-    def _deiconify(self, *args, **kwargs):
+    def _wrapped(self, *args, **kwargs):
         result = original(self, *args, **kwargs)
         reapply_transparency(self)
         return result
 
-    _deiconify._gmd_reapplies_transparency = True
-    return _deiconify
+    _wrapped._gmd_reapplies_transparency = True
+    return _wrapped
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -483,10 +497,15 @@ def _keep_tk_windows_off_screen():
         # test_a_mapped_window_is_invisible_but_still_measurable failed on all
         # three Python versions in CI while passing on the author's Mac. The
         # comment was the claim; CI was the measurement.
-        original_deiconify = getattr(cls, "deiconify", None)
-        if original_deiconify is not None:
-            patched.append((cls, "deiconify", original_deiconify))
-            cls.deiconify = wrap_deiconify(original_deiconify)
+        # deiconify maps the window; update_idletasks/update are where the
+        # first map actually settles. X11 drops the opacity on every one of
+        # them, so all three call through and then put it back.
+        for call in ("deiconify", "update_idletasks", "update"):
+            original_call = getattr(cls, call, None)
+            if original_call is None:
+                continue
+            patched.append((cls, call, original_call))
+            setattr(cls, call, wrap_reapplying_transparency(original_call))
 
     try:
         yield
