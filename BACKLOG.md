@@ -182,6 +182,34 @@ pair — was fixed (`897a16c`). Its medium on the untested strip was fixed
 - **`exclude_id: str = None` should be `Optional[str]`.**
 
 
+### Found by the final reviews of the collision guard (2026-08-20)
+
+Its four highs and its medium were fixed. These were graded low and recorded.
+
+- **`update_segment`'s `rollback()` is not gated on an outer transaction.**
+  `_DeferredCommitConnection` gates `commit()` but lets `rollback()` through
+  to the raw connection, so if a caller ever wrapped `update_segment` in
+  `DatabaseManager.transaction()`, the rollback would discard that caller's
+  work. Checked: all three call sites (`vps_manager_taxonomy.py:913`, `:948`,
+  `screens/vps_segment_editor.py:221`) are outside any `transaction()` block
+  and outside the four raw `BEGIN` sites, so this is latent. Same status the
+  repo already records for `_commit_heal`, and the same fix would serve both.
+- **Renaming a broken row into a *different* existing pair is refused**, even
+  though it strictly reduces the number of unresolvable names. That is what
+  the stated rule mandates and permitting it would be worse policy, but it is
+  the one place the guard is stricter than the harm it prevents.
+- **`RENAME_VERDICTS` names its temp database with `abs(hash(...))`**, which is
+  not stable across runs. Harmless only because pytest already numbers `tmp_path`
+  per test; a stable key would be better.
+- **A SQL query split across adjacent string literals is invisible to RN-M4's
+  scan**, which regexes the source while Python concatenates at compile time.
+  An AST walk over `src/` found exactly one real occurrence hidden this way and
+  it was fixed by writing the query as one literal — but nothing stops the next
+  one. The scan should parse string constants rather than raw text. Note the
+  mirror lookup in `update_segment` is still two literals; no current pattern
+  matches it in either spelling, so nothing is hidden today.
+
+
 ### Test-suite remediation leftovers (2026-08-20)
 
 - **Random-order testing is untested.** `pytest-randomly` is not a dev

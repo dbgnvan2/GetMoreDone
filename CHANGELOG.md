@@ -138,7 +138,15 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   failing silently. A segment can still keep its own name, change its capitalisation,
   or take any name not already taken — and if your database already contains such a
   pair from before this check existed, both segments remain fully editable: you can
-  still change their colour, description, order, or retire one.
+  still change their colour, description, order, retire one, or rename one of them to
+  something free — which is the way out of the situation. What is refused is any save
+  that would pull a *further* segment into the same trap.
+- **A failed segment rename no longer leaves half of itself behind.** The name and the
+  linked Vision Segment were written separately, so if the second write failed the
+  first had already happened and the next unrelated save committed it — leaving one
+  segment recorded under two different names. Both now succeed together or neither
+  does, and a name clash the check could not foresee is explained in words rather than
+  as a database error.
 
 - **A plan element's Annual Initiative is found by its id and nothing else.** The
   lookup resolved by id — correct — and then also required the initiative's annual

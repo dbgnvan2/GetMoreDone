@@ -328,6 +328,71 @@ that id is NULL, which is the state the migration deliberately leaves for an
 ambiguous row, so the tables diverge silently. That is the better fix and it is
 in `BACKLOG.md`.
 
+### Three more rounds on one guard, and how it ended
+
+The `update_segment` case-collision guard came from the pre-push sweep, not
+from the batch's own plan. It then produced **three highs across three
+rounds**, each invisible to the test written for the round before:
+
+| formulation | how it failed |
+|---|---|
+| "is there a collision" | froze every row of a pre-existing pair — colour, description, order and the active flag all raised, because both editors send the unchanged name alongside the real edit |
+| "did the name change", asked in Python | a non-ASCII re-case slipped through: `'CAFÉ'.lower()` folds where SQLite's `LOWER()` does not, so the gate called the name unchanged and the sibling check never ran |
+| "did the OLD name collide" | disabled the guard for the whole save, so a collided row could be renamed onto a clean third segment's name and permanently break a row nobody had touched |
+
+The third is the one worth remembering. `A='Kappa'`, `B='kappa'` (a legacy
+pair), `C='Quite Separate'`; renaming A to `'quite separate'` was allowed and
+left `C` unresolvable under both spellings. It chained — A stayed unguarded and
+could brick a fresh segment on every save — and the partner may be
+`is_active = 0`, so a retired row the user cannot see disarmed the guard on its
+live twin.
+
+**The fix was to change the question, not the branch.** Which segments did the
+old name collide with, and which does the new one? An id in the second set and
+not the first is a segment being newly broken, and that is the only thing worth
+refusing. A row that already collides keeps every edit — including renaming
+itself *free* of the collision, which is the only route out of that state.
+
+**The test is the part that mattered.** `RENAME_VERDICTS` enumerates all 15
+combinations with the verdicts written by hand. Measured by the final review:
+the pre-existing single-case tests caught the third regression **zero** times;
+the matrix catches it in **4 of 15** rows, and removing the guard entirely
+reddens **7 of 15**. That is the difference between patching a branch and
+making the wrong state unrepresentable.
+
+The final review then brute-forced the rule — roughly 430 cases across eight
+seeded topologies — against ground truth, running `resolve_segment_id_exact`
+over every stored name before and after each save. **No allowed save ever left
+a segment newly unresolvable.** Its verdict was no high-severity defect.
+
+Two independent fixes came out of the same rounds:
+
+- **A half-written rename could be committed by the next unrelated save.**
+  `segment_descriptions` was written first and the mirrored `vision_segments`
+  row second, commit at the end, nothing in between — so a UNIQUE failure on
+  the mirror escaped with the first write applied and the transaction open.
+  Measured: the segment kept the new name on disk with no vision row at all.
+  Both writes now share one transaction.
+- **Only `IntegrityError` was caught** (P5). An `OperationalError` — a locked
+  database, a failure inside the derived-field sync — reproduced exactly the
+  state the rollback was added to prevent. The three sibling renames in
+  `vps_manager_taxonomy` all pair the typed handler with a bare
+  `except Exception: rollback; raise`; this one now does too.
+
+### Corrections to claims made in this batch's own commit messages
+
+The repo treats written claims as evidence, and three of mine did not hold:
+
+- `afd40ea` says "defeating the set comparison reddens 12 of them", where
+  "them" reads as the matrix rows. It is **4 of 15** rows for that mutation;
+  12 was the total across both test files. Rows conflated with tests.
+- `afd40ea` says the rollback test "reddens on exactly that assertion" — the
+  later-unrelated-save one. It actually reddens on the **first** assertion,
+  because the connection sees its own uncommitted write. The
+  "next save publishes it" behaviour is real but is never the discriminator.
+- `6fb9543`'s "both writes or neither" was true only for `IntegrityError` when
+  written. `565b7e5` makes it true as stated.
+
 ## Files changed
 
 **Changed**
@@ -410,13 +475,13 @@ was redundant, so the branch went instead of the test being kept as decoration.
 - **The finding count is not the reassuring part.** Every fix commit in this
   batch contained a defect found by the next pass, and the highest-severity
   finding overall was created by a fix rather than found in the original code.
-  Across two cold passes, one failure-pattern sweep and one re-sweep of the
-  fixes: **eight findings at medium or above, all eight inside code this batch
-  wrote**, two of them high. One disproved a sentence written two commits
-  earlier; the last was in a guard added three commits earlier and was
-  invisible to both tests written for it. Every round of fixes in this batch
-  produced a defect the next round found. Reviewing stopped on the budget's
-  rule, never because the count fell.
+  Across four cold passes, one failure-pattern sweep and one re-sweep:
+  **twelve findings at medium or above, all twelve inside code this batch
+  wrote**, four of them high. One disproved a sentence written two commits
+  earlier. Three were in the same guard, on three consecutive rounds, each
+  invisible to the test written for the round before — and that guard was a
+  sweep finding, not part of the plan. Reviewing stopped only when a pass
+  returned no high, never because the count fell.
 - **`vps_schema.py` runs against every user database at launch.** The change is
   inside schema initialization, which is the highest-blast-radius code here. It
   is guarded by `_table_exists(conn, "vision_segments_legacy")` and so is inert
