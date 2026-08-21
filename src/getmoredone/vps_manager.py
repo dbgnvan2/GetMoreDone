@@ -1372,11 +1372,23 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             clean = (updates["name"] or "").strip()
             if not clean:
                 raise ValueError("A life segment needs a name.")
+            # Only when the name actually CHANGES, case-insensitively. Checking
+            # on the presence of a `name` key froze every row of a pre-existing
+            # collision: both segment editors send the unchanged name along
+            # with whatever the user did change, so colour, description, order
+            # and the active flag all raised — and the message told the user to
+            # pick a different name when they had changed none. The guard can
+            # stop new pairs; it can never un-make the ones already there, and
+            # bricking those is worse than the ambiguity it prevents.
+            #
+            # Case-folded, so re-casing a row's OWN name still passes here and
+            # is then checked against its siblings by _refuse_case_collision.
+            if clean.lower() != (old_name or "").strip().lower():
+                self._refuse_case_collision(clean, exclude_id=segment_id)
             # Stripped before the check AND before the write. The two used to
             # diverge: vision_segments got the stripped spelling and
             # segment_descriptions the raw one, so one segment could be held
             # in two tables under two different names.
-            self._refuse_case_collision(clean, exclude_id=segment_id)
             updates["name"] = clean
 
         updates['updated_at'] = datetime.now().isoformat()
