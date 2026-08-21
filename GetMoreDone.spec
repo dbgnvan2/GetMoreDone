@@ -62,6 +62,15 @@ a.datas, _dropped = filter_datas(a.datas)
 print(f"[packaging] excluded {len(_dropped)} file(s) not needed at runtime; "
       f"{len(a.datas)} remain")
 
+# The Windows .exe carries its own icon resource; the macOS .app takes its
+# icon from BUNDLE below and ignores this one. EXE had no icon= at all, so the
+# Windows build has been shipping PyInstaller's default console icon.
+EXE_ICON = (
+    str(PROJECT_ROOT / "assets" / "icons" / "davipa.ico")
+    if sys.platform == "win32"
+    else None
+)
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -70,6 +79,7 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="GetMoreDone",
+    icon=EXE_ICON,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -99,6 +109,6 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="GetMoreDone.app",
-    icon=str(PROJECT_ROOT / "assets" / "icons" / "app_icon.icns"),
+    icon=str(PROJECT_ROOT / "assets" / "icons" / "davipa.icns"),
     bundle_identifier=None,
 )

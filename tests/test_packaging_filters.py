@@ -146,7 +146,7 @@ def test_every_selectable_theme_survives_the_filter():
 # --------------------------------------------------------------------------
 
 @pytest.mark.parametrize("path", [
-    "assets/icons/app_icon.icns",
+    "assets/icons/davipa.icns",
     "themes/apple_grey.json",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
@@ -196,5 +196,5 @@ def test_os_debris_is_dropped(path):
 
 def test_os_debris_exclusion_does_not_catch_real_files():
     """Adversarial: matching too broadly would drop legitimate resources."""
-    assert should_bundle("assets/icons/app_icon.icns") is True
+    assert should_bundle("assets/icons/davipa.icns") is True
     assert should_bundle("themes/apple_grey.json") is True

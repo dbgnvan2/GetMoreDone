@@ -1,6 +1,6 @@
 """Application icon setup (window / taskbar / macOS Dock).
 
-Purpose: Show the GetMoreDone brand check-mark icon for the running app instead
+Purpose: Show the daVIPA brand icon for the running app instead
          of the default Python launcher rocket in the macOS Dock (and the OS
          taskbar on Windows/Linux).
 Spec:    docs/changes/2026-08-06-app-dock-icon.md
@@ -22,16 +22,16 @@ from ..paths import resource_root
 
 
 def app_icon_path() -> Path:
-    """Absolute path to the bundled GMD app icon PNG.
+    """Absolute path to the bundled daVIPA app icon PNG.
 
     Resolves under the repo in dev and under the PyInstaller bundle when frozen
     (both expose ``assets/icons`` via :func:`resource_root`).
     """
-    return resource_root() / "assets" / "icons" / "app_icon.png"
+    return resource_root() / "assets" / "icons" / "davipa.png"
 
 
 def set_app_icon(window) -> bool:
-    """Set the GMD check-mark icon for ``window`` and the macOS Dock.
+    """Set the daVIPA icon for ``window`` and the macOS Dock.
 
     Returns True if at least one icon channel was set. Never raises: icon setup
     is cosmetic and must never block application startup.

@@ -16,7 +16,7 @@ from src.getmoredone.utils import app_icon  # noqa: E402
 def test_app_icon_asset_present():
     """The bundled GMD icon PNG resolves and exists (dev resource root)."""
     path = app_icon.app_icon_path()
-    assert path.name == "app_icon.png"
+    assert path.name == "davipa.png"
     assert path.exists(), f"GMD app icon missing at {path}"
 
 
