@@ -2314,6 +2314,144 @@ def test_rn_renaming_one_of_a_collided_pair_leaves_the_others_vision_row_alone(t
         vps.close()
 
 
+# Every combination of "did the old name collide" x "does the new name
+# collide", with the expected verdict written by hand rather than derived from
+# the rule under test. Three consecutive review rounds each found a hole in a
+# single-case patch of this decision; enumerating it is what makes a hole
+# unrepresentable rather than merely unobserved.
+#
+# Fixture: 'Kappa' (A) and 'kappa' (B) are a pre-existing collided pair.
+# 'Solo' (C) and 'Other' (D) are clean.
+RENAME_VERDICTS = [
+    # (which row, new name, must raise, why)
+    ("A", "Kappa",       False, "a no-op save on a collided row"),
+    ("A", "KAPPA",       False, "re-casing inside its own existing pair"),
+    ("A", "  Kappa  ",   False, "the same name, padded"),
+    ("A", "Solo",        True,  "drags a clean third segment into a collision"),
+    ("A", "solo",        True,  "same, reached by case"),
+    ("A", "SOLO",        True,  "same, reached by case the other way"),
+    ("A", "Totally New", False, "a collided row freeing itself is the way out"),
+    ("B", "Other",       True,  "the other half of the pair, same hazard"),
+    ("C", "Kappa",       True,  "a clean row joining an existing pair"),
+    ("C", "KAPPA",       True,  "same, by case"),
+    ("C", "Other",       True,  "a clean row onto another clean row"),
+    ("C", "Solo",        False, "its own name unchanged"),
+    ("C", "SOLO",        False, "re-casing its own name, colliding with nobody"),
+    ("C", "Brand New",   False, "an ordinary rename"),
+]
+
+
+@pytest.mark.parametrize("row,new_name,must_raise,why", RENAME_VERDICTS)
+def test_rn_rename_verdicts_are_exhaustive(tmp_path, row, new_name, must_raise, why):
+    """Renaming may never drag a segment into a collision it was not already in.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    The decision is a comparison of two SETS, not a boolean: the segments the
+    OLD name collided with, and the ones the NEW name collides with. A save is
+    refused when the second set contains an id the first did not — that id is
+    a segment being newly broken.
+
+    Every cheaper formulation has failed here. "Is there a collision" froze
+    every row of a pre-existing pair. "Did the name change", asked in Python,
+    let a non-ASCII re-case create one. "Did the old name collide" disabled
+    the guard for the whole save, so a collided row could rename a clean third
+    segment into a collision and permanently break a row nobody touched.
+    """
+    vps = make_vps(tmp_path, name=f"verdict_{abs(hash((row, new_name)))}.db")
+    try:
+        now = datetime.now().isoformat()
+        ids = {}
+        for key, name, order in (("A", "Kappa", 90), ("B", "kappa", 91)):
+            ids[key] = f"seg-{key.lower()}"
+            vps.db.conn.execute(
+                """
+                INSERT INTO segment_descriptions
+                (id, name, description, color_hex, order_index, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (ids[key], name, "", "#4CAF50", order, now, now),
+            )
+        vps.db.conn.commit()
+        ids["C"] = vps.create_segment("Solo", "d", "#123456", 92)
+        ids["D"] = vps.create_segment("Other", "d", "#123456", 93)
+
+        target = ids[row]
+        before = {
+            r["id"]: r["name"]
+            for r in vps.db.conn.execute("SELECT id, name FROM segment_descriptions")
+        }
+
+        if must_raise:
+            with pytest.raises(ValueError, match="already exists"):
+                vps.update_segment(target, name=new_name)
+            after = {
+                r["id"]: r["name"]
+                for r in vps.db.conn.execute("SELECT id, name FROM segment_descriptions")
+            }
+            assert after == before, (
+                f"a refused rename ({why}) still changed the table: "
+                f"{ {k: v for k, v in after.items() if before.get(k) != v} }"
+            )
+        else:
+            assert vps.update_segment(target, name=new_name) is True, (
+                f"a legitimate rename was refused: {why}"
+            )
+            stored = vps.db.conn.execute(
+                "SELECT name FROM segment_descriptions WHERE id = ?", (target,)
+            ).fetchone()["name"]
+            assert stored == new_name.strip(), (
+                f"stored {stored!r}, expected {new_name.strip()!r}"
+            )
+    finally:
+        vps.close()
+
+
+def test_rn_a_refused_rename_leaves_no_half_written_row(tmp_path):
+    """A failed save must not leave a partial write for the next save to commit.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv2
+
+    `update_segment` wrote `segment_descriptions` first and the mirrored
+    `vision_segments` row second, with the commit at the end and no handler
+    between. When the mirror hit its own UNIQUE constraint the exception
+    escaped with the first write already applied and the transaction still
+    open — and the next unrelated save on the same connection committed the
+    half-finished rename. Measured: the segment kept the new name on disk with
+    no vision row at all.
+    """
+    vps = make_vps(tmp_path, name="halfwrite.db")
+    try:
+        now = datetime.now().isoformat()
+        first, second = _seed_case_colliding_pair(vps)
+        # A vision row named 'Zulu' that belongs to the OTHER half of the pair,
+        # so renaming this one to 'Zulu' collides on vision_segments.name.
+        vps.db.conn.execute(
+            "INSERT INTO vision_segments "
+            "(id, name, vision_text, segment_description_id, created_at, updated_at) "
+            "VALUES ('vsg-zulu', 'Zulu', '', ?, ?, ?)",
+            (second, now, now),
+        )
+        vps.db.conn.commit()
+
+        with pytest.raises(ValueError):
+            vps.update_segment(first, name="Zulu")
+
+        assert vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?", (first,)
+        ).fetchone()["name"] == "Kappa", "the failed rename was applied anyway"
+
+        # An unrelated later save must not publish the abandoned write.
+        vps.update_segment(second, color_hex="#FF0000")
+        assert vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?", (first,)
+        ).fetchone()["name"] == "Kappa", (
+            "a later unrelated save committed the abandoned rename"
+        )
+    finally:
+        vps.close()
+
+
 def test_rn_renaming_a_segment_does_not_create_a_second_vision_segment(tmp_path):
     """RN-INV2 — renaming never causes a duplicate.
 
