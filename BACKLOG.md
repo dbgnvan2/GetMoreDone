@@ -45,10 +45,20 @@ in-loop, per the sweep rules — each fix is new unreviewed surface.
   two qualifying tables and the floor absorbed it silently.
 - **`_collected_files`'s `lru_cache` returns a mutable `set`.** No caller
   mutates it today; `frozenset` would keep it that way.
-- **`rename_vision_segment` now writes `segment_descriptions.name` (UNIQUE) but
-  still checks for duplicates only against `vision_segments`.** No reachable
-  conflict was found — `sync_vision_segments_with_settings` keeps the tables
-  1:1 — so this is a latent hazard rather than a defect.
+- **`rename_vision_segment` writes `segment_descriptions.name` (UNIQUE) but
+  checks for duplicates only against `vision_segments`.** Confirmed again by
+  the pre-push re-sweep, which also could not produce a collision through it:
+  `sync_vision_segments_with_settings` mirrors every description into
+  `vision_segments` at manager init, so the `vision_segments` check covers
+  `segment_descriptions` by proxy. It is the **third** writer of that column;
+  the other two now share `_refuse_case_collision`. Not guarded here because
+  the guard would be unfalsifiable on a synced database, and this batch has
+  shown what an untestable guard costs. What makes it worth revisiting is the
+  proxy's own weak point: the `UPDATE segment_descriptions … WHERE id =
+  (SELECT segment_description_id FROM vision_segments WHERE id = ?)` matches
+  nothing when that id is NULL — the state the migration deliberately leaves
+  for an ambiguous row — so the two tables diverge silently rather than
+  erroring. That silent no-op is the falsifiable part, and the better fix.
 - **Whether an Annual Plan Element should block a segment delete** is now
   answered yes (it does), but `annual_vision_elements` blocking too may be
   stricter than intended. Worth a look the first time it refuses.
@@ -145,6 +155,31 @@ fixed (`2d97da3`). These four were graded below medium and recorded.
   `_table_exists`-guard `annual_plans`, which its candidate query joins. Both
   need a database another build corrupted; the FK is `NOT NULL … ON DELETE
   CASCADE` with `PRAGMA foreign_keys` ON.
+
+
+### Found by the pre-push re-sweep of the fix commits (2026-08-20)
+
+Its high finding — `update_segment`'s guard freezing a pre-existing collided
+pair — was fixed (`897a16c`). Its medium on the untested strip was fixed
+(`b5276dc`). These are the rest.
+
+- **`update_vision_segment_admin` is annotated `-> bool` but can now raise.**
+  `update_segment` raises a `ValueError` on a colliding rename and on a blank
+  name; this caller does not catch, so the exception propagates through a
+  `bool` signature to `screens/vision_segments.py::save`, which does catch it
+  and shows an inline message. The behaviour is right and the annotation
+  under-describes it. Nothing tests that propagation.
+- **The blank-name raise is an untested contract change.** `update_segment`
+  previously wrote a blank name into `segment_descriptions` and the
+  vision-rename branch silently skipped. Raising is better; no test says so.
+- **The widget test drives `save_segment()` directly**, so it does not assert
+  the Save button is wired to it — only a `callable(getattr(...))` existence
+  check covers that seam. One seam short of a full front-end assertion.
+- **`_refuse_case_collision`'s message can name a segment the user cannot
+  see**: the collision query does not filter `is_active`, so a retired segment
+  can be quoted back as the blocker. Pre-existing in `create_segment` and
+  inherited by `update_segment`.
+- **`exclude_id: str = None` should be `Optional[str]`.**
 
 
 ### Test-suite remediation leftovers (2026-08-20)

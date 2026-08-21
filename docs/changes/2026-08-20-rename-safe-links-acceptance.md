@@ -276,6 +276,58 @@ the link-resolution paths, concurrency, UI-contract regression across the 50+
 screens, security, performance, dependency risk, API compatibility, and
 architecture. It is a pass against one failure family, not a clean bill.
 
+### The re-sweep of the fix commits — one high, in the fix itself
+
+The workflow re-sweeps the fix commits because they are the least-reviewed code
+in any change. It found **one high**, and it is the same shape this repo has
+already recorded once: a guard written to protect data made existing data fail
+hard.
+
+`_refuse_case_collision` was called whenever the update carried a `name` key,
+not when the name **changed**. Both segment editors always send the unchanged
+name alongside whatever the user actually edited, so on a database that already
+holds a case-colliding pair, **both rows became completely uneditable**:
+
+```
+colour-only save (name unchanged)    -> RAISED ... 'health' already exists
+deactivate       (name unchanged)    -> RAISED ... 'health' already exists
+description-only (name unchanged)    -> RAISED ... 'health' already exists
+colour after: #4CAF50 (wanted #FF0000)
+```
+
+The message told the user to pick a different name when they had changed no
+name, and there was no way to retire either row. That population is exactly the
+one the guard exists alongside — it can stop new pairs, it can never un-make the
+ones already there, and the legacy migration in this same batch is written for
+databases that hold them.
+
+**Both of my tests for the guard were blind to it**, because both used a clean
+fixture in which a collision cannot pre-exist. The guard's docstring said "a row
+is never a collision with itself, so a segment can keep its own name" —
+`exclude_id` makes it not collide with *itself*, but the pre-existing sibling
+still collided, so "keep its own name" was false exactly where a collision
+already existed. The claim looked proved because nothing tested the case.
+
+Now gated on the case-folded name actually changing. The new test seeds the pair
+by direct `INSERT`, because `create_segment` refuses to make one — which is
+precisely why the earlier tests could not reach it.
+
+The re-sweep's medium was a second hole in my own test: deleting
+`updates["name"] = clean` left **86 tests green**. The collision guard cannot
+cover the strip, because a *padded* name that collides raises before the write is
+reached — only a padded name that does **not** collide exercises it. Now
+asserted against both tables, since the bug is that they diverge.
+
+Its third finding, that `rename_vision_segment` is a **third** unguarded writer
+of `segment_descriptions.name`, is recorded rather than fixed. It could not
+produce a collision through it either — the sync keeps the two tables 1:1, so
+the `vision_segments` check covers the other table by proxy — and a guard there
+would be unfalsifiable today. The falsifiable part is the proxy's weak point:
+the `UPDATE … WHERE id = (SELECT segment_description_id …)` matches nothing when
+that id is NULL, which is the state the migration deliberately leaves for an
+ambiguous row, so the tables diverge silently. That is the better fix and it is
+in `BACKLOG.md`.
+
 ## Files changed
 
 **Changed**
@@ -358,10 +410,13 @@ was redundant, so the branch went instead of the test being kept as decoration.
 - **The finding count is not the reassuring part.** Every fix commit in this
   batch contained a defect found by the next pass, and the highest-severity
   finding overall was created by a fix rather than found in the original code.
-  Across two cold passes and one failure-pattern sweep: **six findings at
-  medium or above, all six inside code this batch wrote**. The last of them
-  disproved a sentence written two commits earlier. Reviewing stopped on the
-  budget's rule, not because the count fell.
+  Across two cold passes, one failure-pattern sweep and one re-sweep of the
+  fixes: **eight findings at medium or above, all eight inside code this batch
+  wrote**, two of them high. One disproved a sentence written two commits
+  earlier; the last was in a guard added three commits earlier and was
+  invisible to both tests written for it. Every round of fixes in this batch
+  produced a defect the next round found. Reviewing stopped on the budget's
+  rule, never because the count fell.
 - **`vps_schema.py` runs against every user database at launch.** The change is
   inside schema initialization, which is the highest-blast-radius code here. It
   is guarded by `_table_exists(conn, "vision_segments_legacy")` and so is inert

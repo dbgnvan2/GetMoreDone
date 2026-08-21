@@ -136,7 +136,9 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   check reports them as needing attention at every launch. The editor now explains
   the refusal and keeps the dialog open with what you typed, rather than saving or
   failing silently. A segment can still keep its own name, change its capitalisation,
-  or take any name not already taken.
+  or take any name not already taken — and if your database already contains such a
+  pair from before this check existed, both segments remain fully editable: you can
+  still change their colour, description, order, or retire one.
 
 - **A plan element's Annual Initiative is found by its id and nothing else.** The
   lookup resolved by id — correct — and then also required the initiative's annual
