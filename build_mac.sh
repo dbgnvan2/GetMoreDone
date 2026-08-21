@@ -16,7 +16,7 @@ $PY -m pip install pyinstaller
 # the python3 fallback above could never work — the venv it referenced was the
 # very thing we had just established was absent.
 # Guarded by tests/test_packaging_resources.py::test_rm1c_build_scripts_do_not_hardcode_venv_pyinstaller
-$PY -m PyInstaller --noconfirm --clean GetMoreDone.spec
+$PY -m PyInstaller --noconfirm --clean daVIPA.spec
 
 # Prove the bundle actually starts before calling the build a success.
 # A temp DB keeps the build from touching the developer's real database.

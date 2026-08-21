@@ -44,7 +44,7 @@ def test_rm6a_install_doc_exists():
 
 
 REQUIRED_INSTALL_TOPICS = {
-    "download per OS": ("GetMoreDone-mac.zip", "GetMoreDone-win64.zip"),
+    "download per OS": ("daVIPA-mac.zip", "daVIPA-win64.zip"),
     "run from source": ("start.sh", "requirements.txt"),
     "optional Google setup": ("credentials.json",),
     "optional music folder": ("Settings",),
@@ -111,10 +111,15 @@ def test_rm5d_readme_also_carries_the_gatekeeper_step():
 
 def test_rm5d_gatekeeper_command_targets_the_real_app_name():
     """The command must name the bundle the release actually produces."""
-    spec = (REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8")
-    bundle = re.search(r'name="(GetMoreDone\.app)"', spec)
-    assert bundle, "could not find the .app name in GetMoreDone.spec"
-    assert bundle.group(1) in INSTALL.read_text(encoding="utf-8")
+    spec = (REPO_ROOT / "daVIPA.spec").read_text(encoding="utf-8")
+    # Whatever the spec calls the bundle, not a pinned literal. Hardcoding the
+    # name here made the test assert the rename had NOT happened, which is the
+    # opposite of "names the bundle the release actually produces".
+    bundle = re.search(r'name="([^"]+\.app)"', spec)
+    assert bundle, "could not find the .app name in daVIPA.spec"
+    assert bundle.group(1) in INSTALL.read_text(encoding="utf-8"), (
+        f"INSTALL.md does not mention {bundle.group(1)}, the bundle the spec builds"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -184,7 +189,7 @@ def test_rm6c_standalone_build_doc_has_no_stale_spec_claim():
     assert "add a `.spec` file later" not in text, (
         "docs/STANDALONE_BUILD.md still says the spec file could be added later"
     )
-    assert "GetMoreDone.spec" in text
+    assert "daVIPA.spec" in text
 
 
 def test_rm6c_standalone_build_doc_does_not_recommend_onefile():

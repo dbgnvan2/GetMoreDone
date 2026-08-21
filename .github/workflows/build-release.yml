@@ -4,7 +4,7 @@ name: Build binaries
 #
 # Every OS job proves its own bundle starts before anything is published. That
 # step (R-M4.A) is the automated guard against finding F1: for the whole life of
-# this workflow it produced binaries that died on launch because GetMoreDone.spec
+# this workflow it produced binaries that died on launch because daVIPA.spec
 # never bundled themes/, and nothing here ever ran them.
 #
 # R-M4.C sources the release body from CHANGELOG.md, and R-M4.D puts LICENSE,
@@ -47,10 +47,10 @@ jobs:
       - name: Build (PyInstaller)
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean GetMoreDone.spec
+          python -m PyInstaller --noconfirm --clean daVIPA.spec
 
       - name: Verify the packaged bundle starts
-        # R-M4.A. GetMoreDone.exe is built console=False (windowed subsystem),
+        # R-M4.A. daVIPA.exe is built console=False (windowed subsystem),
         # so `& app.exe` returns IMMEDIATELY without waiting and leaves
         # $LASTEXITCODE unset — the first version of this step threw
         # "(exit )" while the selftest was still running and went on to pass
@@ -60,7 +60,7 @@ jobs:
         env:
           GETMOREDONE_DB: ${{ runner.temp }}\selftest.db
         run: |
-          $proc = Start-Process -FilePath "dist\GetMoreDone\GetMoreDone.exe" `
+          $proc = Start-Process -FilePath "dist\daVIPA\daVIPA.exe" `
             -ArgumentList "--selftest" -Wait -PassThru `
             -RedirectStandardOutput selftest-out.txt `
             -RedirectStandardError selftest-err.txt
@@ -70,41 +70,41 @@ jobs:
 
       - name: Stage licence files beside the executable (R-M4.D)
         # The spec also bundles these into _internal/, but a user who unzips
-        # sees only GetMoreDone.exe and _internal/ — a licence buried in there
+        # sees only daVIPA.exe and _internal/ — a licence buried in there
         # is not "included" in any useful sense. These land at the folder root.
         # Unlike the macOS case there is no nesting: the spec's copies go to
         # _internal/, so these target paths do not already exist.
         shell: pwsh
         run: |
-          Copy-Item LICENSE dist\GetMoreDone\
-          Copy-Item THIRD_PARTY_NOTICES.md dist\GetMoreDone\
-          Copy-Item -Recurse -Force licenses dist\GetMoreDone\licenses
+          Copy-Item LICENSE dist\daVIPA\
+          Copy-Item THIRD_PARTY_NOTICES.md dist\daVIPA\
+          Copy-Item -Recurse -Force licenses dist\daVIPA\licenses
 
       - name: Zip Windows build
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\GetMoreDone\* -DestinationPath GetMoreDone-win64.zip
+          Compress-Archive -Path dist\daVIPA\* -DestinationPath daVIPA-win64.zip
 
       - name: Checksum (SHA-256)
         # R-M4.B. Same two-space format as `shasum -a 256`, so `sha256sum -c`
         # verifies either platform's file.
         shell: pwsh
         run: |
-          $hash = (Get-FileHash -Algorithm SHA256 GetMoreDone-win64.zip).Hash.ToLower()
-          "$hash  GetMoreDone-win64.zip" | Out-File -Encoding ascii -NoNewline GetMoreDone-win64.zip.sha256
+          $hash = (Get-FileHash -Algorithm SHA256 daVIPA-win64.zip).Hash.ToLower()
+          "$hash  daVIPA-win64.zip" | Out-File -Encoding ascii -NoNewline daVIPA-win64.zip.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: GetMoreDone-win64
+          name: daVIPA-win64
           # Default is 'warn': a path set matching nothing would log a warning
           # and leave the job green with no artifact attached. Note this fires
           # only on a TOTAL miss — one of the two files missing still uploads a
           # partial artifact. The checksum step would fail the job first.
           if-no-files-found: error
           path: |
-            GetMoreDone-win64.zip
-            GetMoreDone-win64.zip.sha256
+            daVIPA-win64.zip
+            daVIPA-win64.zip.sha256
 
   build-macos:
     runs-on: macos-latest
@@ -124,7 +124,7 @@ jobs:
 
       - name: Build (PyInstaller)
         run: |
-          python -m PyInstaller --noconfirm --clean GetMoreDone.spec
+          python -m PyInstaller --noconfirm --clean daVIPA.spec
 
       # ------------------------------------------------------------------
       # Code signing and notarisation (macOS). Entirely optional: with no
@@ -183,7 +183,7 @@ jobs:
           # Sign inside-out rather than with --deep: Apple documents --deep as
           # unsuitable for real bundles, and a PyInstaller app is full of
           # nested .so/.dylib files that each need their own signature.
-          APP="dist/GetMoreDone.app"
+          APP="dist/daVIPA.app"
           find "$APP" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 \
             | xargs -0 -I{} codesign --force --timestamp --options runtime \
                 --entitlements packaging/entitlements.plist \
@@ -205,7 +205,7 @@ jobs:
           NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
         run: |
           printf '%s' "$NOTARY_KEY_B64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
-          ditto -c -k --keepParent "dist/GetMoreDone.app" "$RUNNER_TEMP/notarize.zip"
+          ditto -c -k --keepParent "dist/daVIPA.app" "$RUNNER_TEMP/notarize.zip"
 
           # --wait makes a rejection fail this step rather than pass silently.
           xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
@@ -215,7 +215,7 @@ jobs:
             --wait
 
           # Staple the ticket into the bundle so it validates offline.
-          xcrun stapler staple "dist/GetMoreDone.app"
+          xcrun stapler staple "dist/daVIPA.app"
           rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/notarize.zip"
 
       - name: Verify the signature and notarisation
@@ -223,7 +223,7 @@ jobs:
         # Reconcile against the artifact rather than trusting the previous
         # steps' exit codes (P6). spctl is what Gatekeeper itself runs.
         run: |
-          APP="dist/GetMoreDone.app"
+          APP="dist/daVIPA.app"
           codesign --verify --deep --strict --verbose=2 "$APP"
           xcrun stapler validate "$APP"
           spctl --assess --type execute --verbose=4 "$APP"
@@ -239,9 +239,9 @@ jobs:
         env:
           GETMOREDONE_DB: ${{ runner.temp }}/selftest.db
         run: |
-          ./dist/GetMoreDone.app/Contents/MacOS/GetMoreDone --selftest
+          ./dist/daVIPA.app/Contents/MacOS/daVIPA --selftest
 
-      # No staging step here on purpose. GetMoreDone.spec already bundles
+      # No staging step here on purpose. daVIPA.spec already bundles
       # LICENSE, THIRD_PARTY_NOTICES.md and licenses/ into Contents/Resources.
       # Copying them again produced Resources/licenses/licenses/ — `cp -R src
       # dest` copies *into* dest when dest already exists. R-M4.D is satisfied
@@ -249,24 +249,24 @@ jobs:
 
       - name: Zip macOS app
         run: |
-          ditto -c -k --sequesterRsrc --keepParent "dist/GetMoreDone.app" "GetMoreDone-mac.zip"
+          ditto -c -k --sequesterRsrc --keepParent "dist/daVIPA.app" "daVIPA-mac.zip"
 
       - name: Checksum (SHA-256)
         run: |
-          shasum -a 256 GetMoreDone-mac.zip > GetMoreDone-mac.zip.sha256
+          shasum -a 256 daVIPA-mac.zip > daVIPA-mac.zip.sha256
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: GetMoreDone-mac
+          name: daVIPA-mac
           # Default is 'warn': a path set matching nothing would log a warning
           # and leave the job green with no artifact attached. Note this fires
           # only on a TOTAL miss — one of the two files missing still uploads a
           # partial artifact. The checksum step would fail the job first.
           if-no-files-found: error
           path: |
-            GetMoreDone-mac.zip
-            GetMoreDone-mac.zip.sha256
+            daVIPA-mac.zip
+            daVIPA-mac.zip.sha256
 
   publish:
     # D1/BI1 — ONE release call, after BOTH builds have succeeded.
@@ -299,13 +299,13 @@ jobs:
       - name: Download the Windows build
         uses: actions/download-artifact@v8
         with:
-          name: GetMoreDone-win64
+          name: daVIPA-win64
           path: release-assets
 
       - name: Download the macOS build
         uses: actions/download-artifact@v8
         with:
-          name: GetMoreDone-mac
+          name: daVIPA-mac
           path: release-assets
 
       - name: Verify the downloaded archives against their checksums
@@ -322,8 +322,8 @@ jobs:
         # two-space format both build jobs write.
         working-directory: release-assets
         run: |
-          sha256sum -c GetMoreDone-win64.zip.sha256
-          sha256sum -c GetMoreDone-mac.zip.sha256
+          sha256sum -c daVIPA-win64.zip.sha256
+          sha256sum -c daVIPA-mac.zip.sha256
 
       - name: Extract release notes from CHANGELOG (R-M4.C)
         # Generated once now, rather than once per OS job. The two copies were
@@ -348,7 +348,7 @@ jobs:
           # consumer must be just as loud (P5).
           fail_on_unmatched_files: true
           files: |
-            release-assets/GetMoreDone-win64.zip
-            release-assets/GetMoreDone-win64.zip.sha256
-            release-assets/GetMoreDone-mac.zip
-            release-assets/GetMoreDone-mac.zip.sha256
+            release-assets/daVIPA-win64.zip
+            release-assets/daVIPA-win64.zip.sha256
+            release-assets/daVIPA-mac.zip
+            release-assets/daVIPA-mac.zip.sha256

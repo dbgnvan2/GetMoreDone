@@ -715,9 +715,9 @@ def test_rm2c_bundled_lgpl_text_exists_and_is_verbatim():
 def test_rm2c_spec_bundles_the_licence_files():
     """A notice that ships only in the repo does not reach the person who
     downloaded a binary (R-M4.D)."""
-    spec = (REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8")
+    spec = (REPO_ROOT / "daVIPA.spec").read_text(encoding="utf-8")
     for required in ("licenses", "LICENSE", "THIRD_PARTY_NOTICES.md"):
-        assert required in spec, f"GetMoreDone.spec does not bundle {required}"
+        assert required in spec, f"daVIPA.spec does not bundle {required}"
 
 
 def test_rm2c_notices_paths_match_the_real_bundle_layout():
@@ -755,8 +755,8 @@ def test_rm2d_no_audio_files_tracked():
 
 
 def test_rm2d_spec_does_not_bundle_an_audio_folder():
-    spec = (REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8")
+    spec = (REPO_ROOT / "daVIPA.spec").read_text(encoding="utf-8")
     code = "\n".join(
         line for line in spec.splitlines() if not line.strip().startswith("#")
     )
-    assert '"audio"' not in code, "GetMoreDone.spec bundles an audio folder (D3 says none ships)"
+    assert '"audio"' not in code, "daVIPA.spec bundles an audio folder (D3 says none ships)"

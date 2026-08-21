@@ -177,9 +177,9 @@ def test_filter_datas_reports_both_halves():
 
 def test_spec_applies_the_filter():
     """Built-but-not-wired guard (P21): the module could exist and never run."""
-    spec = (REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8")
+    spec = (REPO_ROOT / "daVIPA.spec").read_text(encoding="utf-8")
     code = "\n".join(l for l in spec.splitlines() if not l.strip().startswith("#"))
-    assert "filter_datas" in code, "GetMoreDone.spec never applies the packaging filter"
+    assert "filter_datas" in code, "daVIPA.spec never applies the packaging filter"
     assert "a.datas" in code
 
 

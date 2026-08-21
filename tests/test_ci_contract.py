@@ -578,10 +578,10 @@ def test_rm3e_run_step_parser_actually_finds_run_blocks():
 
 RELEASE_WORKFLOW = WORKFLOW_DIR / "build-release.yml"
 
-# Where each OS job's packaged executable lands, per GetMoreDone.spec.
+# Where each OS job's packaged executable lands, per daVIPA.spec.
 PACKAGED_EXECUTABLES = {
-    "build-macos": "dist/GetMoreDone.app/Contents/MacOS/GetMoreDone",
-    "build-windows": "GetMoreDone.exe",
+    "build-macos": "dist/daVIPA.app/Contents/MacOS/daVIPA",
+    "build-windows": "daVIPA.exe",
 }
 
 # BI1 — the single job that creates the public GitHub Release.
@@ -589,12 +589,12 @@ PUBLISH_JOB = "publish"
 
 # The artifact each OS job uploads, and the archive inside it.
 BUILD_ARTIFACTS = {
-    "build-windows": "GetMoreDone-win64",
-    "build-macos": "GetMoreDone-mac",
+    "build-windows": "daVIPA-win64",
+    "build-macos": "daVIPA-mac",
 }
 RELEASE_ARCHIVES_BY_JOB = {
-    "build-windows": "GetMoreDone-win64.zip",
-    "build-macos": "GetMoreDone-mac.zip",
+    "build-windows": "daVIPA-win64.zip",
+    "build-macos": "daVIPA-mac.zip",
 }
 RELEASE_ARCHIVES = tuple(RELEASE_ARCHIVES_BY_JOB.values())
 
@@ -687,7 +687,7 @@ def test_rm4a_selftest_runs_before_anything_is_published():
 
 
 def test_rm4a_windows_job_waits_for_the_windowed_exe_and_reads_its_exit_code():
-    """GetMoreDone.exe is console=False, so `& app.exe` does not wait for it.
+    """daVIPA.exe is console=False, so `& app.exe` does not wait for it.
 
     Observed on run 32191324517: the step threw "Packaged build failed its
     selftest (exit )" — $LASTEXITCODE unset — while the selftest was still
@@ -818,15 +818,15 @@ REQUIRED_ARCHIVE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md", "licenses")
 def test_rm4d_licence_files_reach_every_archive():
     """Two routes, one requirement.
 
-    macOS relies on GetMoreDone.spec, which bundles the files into
+    macOS relies on daVIPA.spec, which bundles the files into
     Contents/Resources. Windows adds a copy at the folder root as well, because
-    a user who unzips sees only GetMoreDone.exe and _internal/ — a licence
+    a user who unzips sees only daVIPA.exe and _internal/ — a licence
     buried in there is not "included" in any useful sense.
     """
-    spec = _code_only((REPO_ROOT / "GetMoreDone.spec").read_text(encoding="utf-8"))
+    spec = _code_only((REPO_ROOT / "daVIPA.spec").read_text(encoding="utf-8"))
     for required in REQUIRED_ARCHIVE_FILES:
         assert required in spec, (
-            f"GetMoreDone.spec must bundle {required} — it is the only route "
+            f"daVIPA.spec must bundle {required} — it is the only route "
             "that puts it inside the macOS archive (R-M4.D)"
         )
 
@@ -1111,8 +1111,8 @@ def test_bi1_uploaded_artifact_names_match_what_publish_downloads():
     """
     jobs = _job_blocks(RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     for job, artifact in BUILD_ARTIFACTS.items():
-        # Line-anchored: `name: GetMoreDone-win64` is a SUBSTRING of
-        # `name: GetMoreDone-win64-x86`, so a suffix rename on one side only
+        # Line-anchored: `name: daVIPA-win64` is a SUBSTRING of
+        # `name: daVIPA-win64-x86`, so a suffix rename on one side only
         # stayed green — and on a real tag that is download-artifact failing
         # after both builds have run. Third instance of this class in this
         # batch; see LEARNINGS.md.
@@ -1302,8 +1302,8 @@ def test_bi1_download_path_matches_the_release_file_prefix():
     for archive in RELEASE_ARCHIVES:
         for suffix in ("", ".sha256"):
             expected = f"{download_dir}/{archive}{suffix}"
-            # Line-anchored, not a substring. "…/GetMoreDone-mac.zip" IS a
-            # substring of "…/GetMoreDone-mac.zip.sha256", so the substring
+            # Line-anchored, not a substring. "…/daVIPA-mac.zip" IS a
+            # substring of "…/daVIPA-mac.zip.sha256", so the substring
             # form passed a files: block containing ONLY the two checksums —
             # which satisfies fail_on_unmatched_files: true and publishes a
             # public, permanent Release with correct notes and no downloadable
@@ -1343,7 +1343,7 @@ def test_bi1_checksum_files_are_written_in_the_format_the_verifier_reads():
     The publish job runs GNU ``sha256sum -c`` on files written by PowerShell on
     Windows and ``shasum`` on macOS. Drop ``-NoNewline`` from the Windows step
     and PowerShell emits CRLF; ``sha256sum`` then parses the filename as
-    ``GetMoreDone-win64.zip\r`` and the publish job fails — on a real tag,
+    ``daVIPA-win64.zip\r`` and the publish job fails — on a real tag,
     after both builds have run. Nothing asserted the format, only that the
     verification was called.
     """
@@ -1369,7 +1369,7 @@ def test_bi1_checksum_files_are_written_in_the_format_the_verifier_reads():
     mac_archive = RELEASE_ARCHIVES_BY_JOB["build-macos"]
     assert f"shasum -a 256 {mac_archive} >" in macos, (
         f"the macOS checksum step must be `shasum -a 256 {mac_archive} >` — a "
-        "bare filename, not a path. `shasum -a 256 dist/GetMoreDone-mac.zip` "
+        "bare filename, not a path. `shasum -a 256 dist/daVIPA-mac.zip` "
         "writes the path into the .sha256, and the publish job's sha256sum -c "
         "then looks for release-assets/dist/... and fails on a real tag."
     )

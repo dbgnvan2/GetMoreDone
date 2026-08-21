@@ -78,7 +78,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="GetMoreDone",
+    name="daVIPA",
     icon=EXE_ICON,
     debug=False,
     bootloader_ignore_signals=False,
@@ -103,12 +103,12 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name="GetMoreDone",
+    name="daVIPA",
 )
 
 app = BUNDLE(
     coll,
-    name="GetMoreDone.app",
+    name="daVIPA.app",
     icon=str(PROJECT_ROOT / "assets" / "icons" / "davipa.icns"),
     bundle_identifier=None,
 )

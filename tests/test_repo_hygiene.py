@@ -210,6 +210,6 @@ def test_rm7b_ignore_rules_do_not_exclude_a_bundled_resource():
     # check-ignore exits 0 when it found ignored paths, 1 when it found none.
     ignored = [line for line in result.stdout.splitlines() if line.strip()]
     assert not ignored, (
-        f"GetMoreDone.spec bundles files that .gitignore excludes, so they are "
+        f"daVIPA.spec bundles files that .gitignore excludes, so they are "
         f"missing from every clone and every CI build: {ignored}"
     )

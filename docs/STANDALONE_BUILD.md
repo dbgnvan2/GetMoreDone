@@ -21,7 +21,7 @@ Examples:
 ## 2) Build with PyInstaller
 
 There are two supported ways:
-- Use the provided build scripts (`build_mac.sh`, `build_windows.ps1`) which call `GetMoreDone.spec`
+- Use the provided build scripts (`build_mac.sh`, `build_windows.ps1`) which call `daVIPA.spec`
 - Or run PyInstaller commands manually
 
 ### Prereqs
@@ -40,9 +40,9 @@ From repo root:
 ```
 
 Result:
-- `dist/GetMoreDone.app`
+- `dist/daVIPA.app`
 
-(Manual equivalent uses `pyinstaller --clean GetMoreDone.spec`.)
+(Manual equivalent uses `pyinstaller --clean daVIPA.spec`.)
 
 ### Windows (recommended)
 
@@ -53,13 +53,13 @@ From repo root (PowerShell):
 ```
 
 Result:
-- `dist\GetMoreDone\GetMoreDone.exe`
+- `dist\GetMoreDone\daVIPA.exe`
 
-(Manual equivalent uses `pyinstaller --clean GetMoreDone.spec`.)
+(Manual equivalent uses `pyinstaller --clean daVIPA.spec`.)
 
 ## 3) Notes / gotchas
 
-- `GetMoreDone.spec` is the supported build definition and is checked in. It is the only supported path — both build scripts and the release workflow use it. If a frozen build fails on a missing module, add it to `hiddenimports` there; if it fails on a missing *file*, add the folder to `datas` (that omission is what made every pre-0.1.0 binary crash on launch).
+- `daVIPA.spec` is the supported build definition and is checked in. It is the only supported path — both build scripts and the release workflow use it. If a frozen build fails on a missing module, add it to `hiddenimports` there; if it fails on a missing *file*, add the folder to `datas` (that omission is what made every pre-0.1.0 binary crash on launch).
 - **Do not switch to `--onefile`.** Beyond the slower startup, pygame is LGPL and one-folder packaging is what keeps its libraries separately replaceable, as that licence requires. See `THIRD_PARTY_NOTICES.md`; `tests/test_packaging_resources.py` enforces it.
 
 ## 4) Verifying a build
@@ -68,7 +68,7 @@ Both build scripts run the packaged app's selftest and fail if it does not
 start. To check a build by hand:
 
 ```bash
-./dist/GetMoreDone.app/Contents/MacOS/GetMoreDone --selftest
+./dist/daVIPA.app/Contents/MacOS/GetMoreDone --selftest
 ```
 
 It prints one line per check and exits non-zero on failure. On Windows the

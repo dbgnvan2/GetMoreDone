@@ -22,8 +22,8 @@ take the archive for your system:
 
 | System | File | Unpacks to |
 |---|---|---|
-| macOS | `GetMoreDone-mac.zip` | `GetMoreDone.app` |
-| Windows | `GetMoreDone-win64.zip` | a `GetMoreDone` folder containing `GetMoreDone.exe` |
+| macOS | `daVIPA-mac.zip` | `daVIPA.app` |
+| Windows | `daVIPA-win64.zip` | a `GetMoreDone` folder containing `daVIPA.exe` |
 
 Each release also carries a `.sha256` file — see
 [Verify your download](#verify-your-download).
@@ -41,7 +41,7 @@ developer cannot be verified". The app is not damaged — macOS attaches a quara
 flag to anything downloaded from a browser, and with no paid signing certificate
 there is nothing for it to check the app against.
 
-Unpack the zip and drag `GetMoreDone.app` to your Applications folder, then use
+Unpack the zip and drag `daVIPA.app` to your Applications folder, then use
 whichever of these suits you.
 
 ### macOS 15 (Sequoia) and later — System Settings
@@ -70,7 +70,7 @@ dialog that appears.
 If you would rather not click through any of that, remove the quarantine flag directly:
 
 ```bash
-xattr -d com.apple.quarantine /Applications/GetMoreDone.app
+xattr -d com.apple.quarantine /Applications/daVIPA.app
 ```
 
 Then open the app normally. You need this once per download, so again after installing
@@ -79,7 +79,7 @@ a new version.
 To check whether a copy is even flagged:
 
 ```bash
-xattr -p com.apple.quarantine /Applications/GetMoreDone.app
+xattr -p com.apple.quarantine /Applications/daVIPA.app
 ```
 
 No output means no quarantine — it will open with no ceremony. Note that this is why a
@@ -100,10 +100,10 @@ no binary to check.
 
 ## Windows: first launch
 
-Unpack `GetMoreDone-win64.zip` anywhere you like — your user folder is fine —
-and run `GetMoreDone.exe` from inside the unpacked `GetMoreDone` folder.
+Unpack `daVIPA-win64.zip` anywhere you like — your user folder is fine —
+and run `daVIPA.exe` from inside the unpacked `GetMoreDone` folder.
 
-Keep the folder together. `GetMoreDone.exe` needs the `_internal` folder beside
+Keep the folder together. `daVIPA.exe` needs the `_internal` folder beside
 it; moving the .exe out on its own will stop it working.
 
 SmartScreen may warn that the publisher is unrecognised, for the same reason
@@ -146,16 +146,16 @@ Each release archive ships with a `.sha256` file next to it. To check an archive
 matches:
 
 ```bash
-shasum -a 256 -c GetMoreDone-mac.zip.sha256
+shasum -a 256 -c daVIPA-mac.zip.sha256
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 GetMoreDone-win64.zip
+Get-FileHash -Algorithm SHA256 daVIPA-win64.zip
 ```
 
-and compare the result with the contents of `GetMoreDone-win64.zip.sha256`.
+and compare the result with the contents of `daVIPA-win64.zip.sha256`.
 
 ---
 
@@ -217,7 +217,7 @@ separate — set `GETMOREDONE_DB` to a path of your choosing.
 
 ## Uninstalling
 
-1. Delete the app: `GetMoreDone.app` on macOS, or the unpacked folder on Windows.
+1. Delete the app: `daVIPA.app` on macOS, or the unpacked folder on Windows.
 2. Delete your data folder from the table above — **this permanently deletes
    every item you have entered**, so copy `getmoredone.db` somewhere first if you
    might want it back.

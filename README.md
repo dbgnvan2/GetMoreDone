@@ -37,8 +37,8 @@ Grab the archive for your system from the
 
 | System | File |
 |---|---|
-| macOS | `GetMoreDone-mac.zip` |
-| Windows | `GetMoreDone-win64.zip` |
+| macOS | `daVIPA-mac.zip` |
+| Windows | `daVIPA-win64.zip` |
 
 **macOS needs one extra step on first launch.** The build is unsigned, so macOS
 blocks it. On **macOS 15 (Sequoia) and later**, let it get blocked, then go to
@@ -48,7 +48,7 @@ the app and choosing Open no longer works — Apple removed that in macOS 15.
 Or skip the clicking on any version:
 
 ```bash
-xattr -d com.apple.quarantine /Applications/GetMoreDone.app
+xattr -d com.apple.quarantine /Applications/daVIPA.app
 ```
 
 Full instructions, checksum verification, and where your data is stored are in

@@ -8,7 +8,7 @@ python -m pip install pyinstaller
 
 # Run PyInstaller as a module of the active interpreter, so the build uses the
 # same environment the dependencies were just installed into.
-python -m PyInstaller --noconfirm --clean GetMoreDone.spec
+python -m PyInstaller --noconfirm --clean daVIPA.spec
 
 # Prove the bundle actually starts before calling the build a success.
 # A temp DB keeps the build from touching the developer's real database.

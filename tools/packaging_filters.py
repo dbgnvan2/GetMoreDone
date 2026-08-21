@@ -5,7 +5,7 @@ Purpose: keep out of the download anything an end user running the app does not
 Spec:    docs/spec_2026-08-18_downloadable_release.md#r-m1a
 Tests:   tests/test_packaging_filters.py
 
-Imported by ``GetMoreDone.spec`` to filter PyInstaller's collected ``datas``.
+Imported by ``daVIPA.spec`` to filter PyInstaller's collected ``datas``.
 The logic lives here rather than inline in the spec because a spec file cannot
 be imported or unit-tested — and dropping the wrong file here silently breaks a
 feature in the packaged app only, where nobody sees it until a user does.

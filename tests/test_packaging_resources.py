@@ -6,7 +6,7 @@ Spec:    docs/spec_2026-08-18_downloadable_release.md#r-m1
 Tests:   this file
 
 The load-bearing test here is ``test_rm1a_frozen_mode_resource_root_finds_bundled_themes``.
-It materialises a temp directory laid out exactly as ``GetMoreDone.spec`` bundles
+It materialises a temp directory laid out exactly as ``daVIPA.spec`` bundles
 resources, points ``sys._MEIPASS`` at it, and then asks the real resolver for a
 theme. That is finding F1: the spec bundled only ``assets``, so every binary the
 release workflow ever produced died with ``FileNotFoundError`` inside
@@ -32,7 +32,7 @@ from src.getmoredone import paths, theme
 pytestmark = pytest.mark.meta
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SPEC_FILE = REPO_ROOT / "GetMoreDone.spec"
+SPEC_FILE = REPO_ROOT / "daVIPA.spec"
 
 
 # --------------------------------------------------------------------------
@@ -40,7 +40,7 @@ SPEC_FILE = REPO_ROOT / "GetMoreDone.spec"
 # --------------------------------------------------------------------------
 
 def _analysis_datas() -> list[tuple[Path, str]]:
-    """Return the ``datas`` entries from GetMoreDone.spec as (source, dest) pairs.
+    """Return the ``datas`` entries from daVIPA.spec as (source, dest) pairs.
 
     The spec cannot simply be imported — it references PyInstaller globals such
     as ``SPECPATH``, ``Analysis`` and ``COLLECT``. So the ``datas`` keyword is
@@ -55,14 +55,14 @@ def _analysis_datas() -> list[tuple[Path, str]]:
             for kw in node.keywords:
                 if kw.arg == "datas":
                     datas_node = kw.value
-    assert datas_node is not None, "GetMoreDone.spec has no Analysis(datas=...) keyword"
+    assert datas_node is not None, "daVIPA.spec has no Analysis(datas=...) keyword"
 
     namespace = {"PROJECT_ROOT": REPO_ROOT, "Path": Path, "str": str}
     try:
         raw = eval(ast.unparse(datas_node), {"__builtins__": {}}, namespace)  # noqa: S307
     except NameError as exc:
         pytest.fail(
-            f"GetMoreDone.spec datas= uses a name this test cannot evaluate ({exc}). "
+            f"daVIPA.spec datas= uses a name this test cannot evaluate ({exc}). "
             "Extend the namespace in _analysis_datas() rather than deleting this test."
         )
     return [(Path(src), str(dest)) for src, dest in raw]
@@ -97,7 +97,7 @@ def test_rm1a1_spec_bundles_themes_dir():
     """themes/ must reach the frozen bundle — this is finding F1."""
     dests = {dest.strip("/") for _src, dest in _analysis_datas()}
     assert "themes" in dests, (
-        "GetMoreDone.spec does not bundle themes/. Every frozen build will "
+        "daVIPA.spec does not bundle themes/. Every frozen build will "
         f"crash on launch loading its color theme. Bundled: {sorted(dests)}"
     )
 
@@ -105,7 +105,7 @@ def test_rm1a1_spec_bundles_themes_dir():
 def test_rm1a1_bundled_data_sources_exist_in_the_repo():
     """A datas entry pointing at a missing folder bundles nothing, silently."""
     missing = [str(src) for src, _dest in _analysis_datas() if not src.exists()]
-    assert not missing, f"GetMoreDone.spec bundles paths that do not exist: {missing}"
+    assert not missing, f"daVIPA.spec bundles paths that do not exist: {missing}"
 
 
 def test_rm1a1_every_selectable_theme_resolves_to_existing_file():
@@ -198,7 +198,7 @@ def test_rm1a3_selftest_does_not_require_bundled_audio(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------
 
 def _materialise_frozen_bundle(tmp_path: Path) -> Path:
-    """Build a temp dir laid out exactly as GetMoreDone.spec bundles resources."""
+    """Build a temp dir laid out exactly as daVIPA.spec bundles resources."""
     meipass = tmp_path / "_MEIPASS"
     meipass.mkdir()
     for src, dest in _analysis_datas():
@@ -231,7 +231,7 @@ def test_rm1a_frozen_mode_resource_root_finds_bundled_themes(tmp_path, monkeypat
     ]
     assert not missing, (
         "Frozen build cannot find these themes — the app crashes on launch: "
-        f"{missing}. Add the folder to datas= in GetMoreDone.spec."
+        f"{missing}. Add the folder to datas= in daVIPA.spec."
     )
 
 
@@ -293,9 +293,9 @@ def test_rm1c_build_scripts_invoke_pyinstaller_through_the_chosen_interpreter():
 def test_rm1d_spec_uses_onefolder_not_onefile():
     """LGPL relinking (pygame) requires one-folder output, not --onefile."""
     text = _spec_text()
-    assert "COLLECT(" in text, "GetMoreDone.spec must use COLLECT (one-folder mode)"
+    assert "COLLECT(" in text, "daVIPA.spec must use COLLECT (one-folder mode)"
     assert "onefile" not in _without_comments(text).lower(), (
-        "GetMoreDone.spec must not build --onefile: pygame is LGPL and the user "
+        "daVIPA.spec must not build --onefile: pygame is LGPL and the user "
         "must be able to relink it."
     )
 
@@ -304,6 +304,6 @@ def test_rm1d_spec_records_why_onefile_is_prohibited():
     """A bare absence is easy to undo by accident; the reason must be written down."""
     text = _spec_text().lower()
     assert "lgpl" in text, (
-        "GetMoreDone.spec should carry a comment explaining that one-folder "
+        "daVIPA.spec should carry a comment explaining that one-folder "
         "packaging is an LGPL requirement, so nobody 'optimises' it to --onefile."
     )
