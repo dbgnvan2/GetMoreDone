@@ -18,7 +18,7 @@ would look exactly like a passing suite.
 import customtkinter as ctk
 import pytest
 
-from conftest import reapply_transparency, wrap_deiconify
+from conftest import reapply_transparency, wrap_reapplying_transparency
 
 
 class _FakeWindow:
@@ -70,7 +70,7 @@ def test_reapply_transparency_survives_a_destroyed_window():
     assert window.calls == [("-alpha", 0.0)]
 
 
-def test_the_deiconify_wrapper_reapplies_after_calling_through():
+def test_the_wrapper_reapplies_after_calling_through():
     """It must do BOTH: map the window, then take the opacity back off.
 
     Silencing deiconify hung tests/test_item_editor_sash.py — the window never
@@ -87,7 +87,7 @@ def test_the_deiconify_wrapper_reapplies_after_calling_through():
         window.alpha = 1.0          # what an X11 re-map does to the opacity
         return "deiconified"
 
-    wrapped = wrap_deiconify(fake_original)
+    wrapped = wrap_reapplying_transparency(fake_original)
     window = _FakeWindow(alpha=0.0)
 
     assert wrapped(window) == "deiconified", "the return value was swallowed"
@@ -101,7 +101,8 @@ def test_the_deiconify_wrapper_reapplies_after_calling_through():
 
 
 @pytest.mark.parametrize("cls_name", ["CTk", "CTkToplevel"])
-def test_deiconify_is_wrapped_to_reapply_transparency(cls_name):
+@pytest.mark.parametrize("call", ["deiconify", "update_idletasks", "update"])
+def test_the_mapping_calls_are_wrapped_to_reapply_transparency(cls_name, call):
     """The guard has to be installed, not merely defined (P21).
 
     ``deiconify`` is wrapped rather than silenced: silencing it hung
@@ -111,9 +112,9 @@ def test_deiconify_is_wrapped_to_reapply_transparency(cls_name):
     """
     cls = getattr(ctk, cls_name)
 
-    assert getattr(cls.deiconify, "_gmd_reapplies_transparency", False) is True, (
-        f"{cls_name}.deiconify is not wrapped — a window that deiconifies will "
-        "come back opaque on any platform that drops opacity on re-map"
+    assert getattr(getattr(cls, call), "_gmd_reapplies_transparency", False) is True, (
+        f"{cls_name}.{call} is not wrapped — X11 drops the opacity on every "
+        "map, so a window settled through it comes back visible"
     )
 
 
@@ -224,16 +225,27 @@ def test_a_remapped_window_is_made_transparent_again(mapped_windows):
     try:
         window.geometry("400x300")
         window.update_idletasks()
-        window.attributes("-alpha", 1.0)     # exactly what an X11 re-map leaves
-        window.update_idletasks()
 
+        # The state an X11 map leaves behind, forced by hand. Checked for the
+        # settle path and the deiconify path separately, because they are
+        # different wrappers and CI failed on each of them in turn: fixing
+        # deiconify simply revealed that the FIRST map had already done it.
+        window.attributes("-alpha", 1.0)
+        window.update_idletasks()
+        alpha_after_settle = float(window.attributes("-alpha"))
+
+        window.attributes("-alpha", 1.0)
         window.deiconify()
         window.update_idletasks()
-
         alpha = float(window.attributes("-alpha"))
         width = window.winfo_width()
     finally:
         window.destroy()
+
+    assert alpha_after_settle == 0.0, (
+        f"a window left opaque by its map stayed opaque through "
+        f"update_idletasks (alpha={alpha_after_settle})"
+    )
 
     assert alpha == 0.0, (
         f"a re-mapped window was left visible (alpha={alpha}) — it will appear "
