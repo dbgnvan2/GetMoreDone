@@ -2053,6 +2053,51 @@ def test_rn_create_segment_refuses_a_case_only_duplicate(tmp_path):
         vps.close()
 
 
+def test_rn_update_segment_refuses_a_case_only_duplicate(tmp_path):
+    """The guard is on the class, not on one door into it (P5).
+
+    `create_segment` refuses a case-only duplicate. `update_segment` had no
+    collision check at all, so RENAMING an existing segment created exactly
+    the state creating one could not — and the editor's Save passes the typed
+    name straight through, so it is reachable from the running app, not only
+    from a script.
+
+    Once the pair exists, `resolve_segment_id_exact` returns None for BOTH
+    spellings, so every link resolution refuses forever and the migration
+    reports the rows as needing a human at every launch. It is worth removing
+    at the source rather than coping with downstream, which is the whole
+    argument for the sibling guard.
+
+    A segment must still be able to keep its own name — re-saving without a
+    rename, or changing only the case of its own name, is not a collision.
+    """
+    vps = make_vps(tmp_path, name="updatecasedupe.db")
+    try:
+        existing = vps.get_all_segments(active_only=False)[0]["name"]
+        other = vps.create_segment("Utterly Distinct", "d", "#123456", 93)
+
+        with pytest.raises(ValueError, match="already exists"):
+            vps.update_segment(other, name=existing.upper())
+        with pytest.raises(ValueError, match="already exists"):
+            vps.update_segment(other, name=existing.lower())
+        # Whitespace must not be a way around it either.
+        with pytest.raises(ValueError, match="already exists"):
+            vps.update_segment(other, name=f"  {existing}  ")
+
+        names = [seg["name"] for seg in vps.get_all_segments(active_only=False)]
+        assert sum(1 for n in names if n.lower() == existing.lower()) == 1, (
+            f"a case-duplicate reached the table: {names}"
+        )
+
+        # The row may still keep, re-case, or genuinely change its own name.
+        assert vps.update_segment(other, name="Utterly Distinct") is True
+        assert vps.update_segment(other, name="UTTERLY DISTINCT") is True
+        assert vps.update_segment(other, name="Something Else") is True
+        assert vps.update_segment(other, description="no name key at all") is True
+    finally:
+        vps.close()
+
+
 def test_rn_renaming_a_segment_does_not_create_a_second_vision_segment(tmp_path):
     """RN-INV2 — renaming never causes a duplicate.
 

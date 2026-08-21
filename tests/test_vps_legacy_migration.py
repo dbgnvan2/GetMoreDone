@@ -128,8 +128,10 @@ def _seed_legacy_schema_with_case_colliding_segments(db_path: str):
 
     ``segment_descriptions.name`` is UNIQUE, but SQLite's UNIQUE is
     case-SENSITIVE, so 'Health' and 'health' are both legal and older
-    databases can hold the pair. ``create_segment`` refuses to make a new one
-    now; it cannot un-make the ones already there.
+    databases can hold the pair. ``create_segment`` and ``update_segment``
+    both refuse to make a new one now — but neither can un-make the ones
+    already there, and this migration reads databases written long before
+    either guard existed.
 
     The legacy ``vision_segments`` row points at ONE of them by id, so which
     is meant is not in doubt.

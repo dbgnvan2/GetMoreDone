@@ -112,6 +112,54 @@ def test_bc3_the_editor_seeds_its_colour_from_the_segment(vps):
         root.destroy()
 
 
+def test_rn_the_editor_refuses_a_case_only_duplicate_and_keeps_the_edit(vps, monkeypatch):
+    """P25 — the guard has to reach the surface a person actually uses.
+
+    `update_segment` refusing is worth nothing if Save swallows the refusal or
+    closes the dialog anyway. This drives the editor's own save_segment with a
+    colliding name and asserts three things: the table is unchanged, the user
+    is told why, and the dialog is still open with their typing in it.
+    """
+    import customtkinter as ctk
+    from src.getmoredone.screens import vps_segment_editor
+
+    existing = vps.get_all_segments(active_only=False)[0]["name"]
+    segment_id = vps.create_segment("Utterly Distinct", "d", "#0a1b2c", 95)
+    segment = dict(vps.get_segment(segment_id))
+
+    errors = []
+    monkeypatch.setattr(
+        vps_segment_editor.messagebox,
+        "showerror",
+        lambda title, message: errors.append((title, message)),
+    )
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        dialog = VPSSegmentEditorDialog(root, vps, segment)
+        dialog.name_entry.delete(0, "end")
+        dialog.name_entry.insert(0, existing.upper())
+
+        dialog.save_segment()
+
+        assert errors, "the editor saved or failed silently — the user was told nothing"
+        assert "already exists" in errors[-1][1], (
+            f"the refusal reason did not reach the user: {errors[-1]}")
+
+        names = [seg["name"] for seg in vps.get_all_segments(active_only=False)]
+        assert sum(1 for n in names if n.lower() == existing.lower()) == 1, (
+            f"a case-duplicate reached the table through the editor: {names}")
+        assert vps.get_segment(segment_id)["name"] == "Utterly Distinct", (
+            "the segment was renamed despite the refusal")
+
+        assert dialog.winfo_exists(), "the dialog closed and discarded the edit"
+        assert dialog.name_entry.get() == existing.upper(), (
+            "the user's typing was thrown away")
+    finally:
+        root.destroy()
+
+
 # -------------------------------------------------------- colour validation
 
 
