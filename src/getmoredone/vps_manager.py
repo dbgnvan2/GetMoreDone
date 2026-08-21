@@ -1310,6 +1310,40 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         self.db.conn.commit()
         return segment_id
 
+    def _find_case_collision(self, name: str, exclude_id: Optional[str] = None):
+        """Another life segment whose name differs from this one only by case.
+
+        Purpose: one definition of "these two names collide", used both to
+                 refuse a rename and to ask whether a row already collides.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+        Tests:   tests/test_rename_safe_links.py::test_rn_a_recase_that_creates_a_collision_is_still_refused
+                 tests/test_rename_safe_links.py::test_rn_a_strip_that_creates_a_collision_is_still_refused
+
+        **SQLite's ``LOWER()``, deliberately.** It folds ASCII only, so
+        ``LOWER('CAFÉ')`` is ``'cafÉ'`` while Python's ``'CAFÉ'.lower()`` is
+        ``'café'``. ``resolve_segment_id_exact`` — the thing that actually
+        breaks when two names collide — uses SQLite's, so this must too.
+        Asking the question in Python instead opened a hole in exactly the
+        cases the two disagree about: a non-ASCII re-case, or a stored name
+        with whitespace on it.
+
+        **Does not strip.** Callers hand it the value they mean: an already
+        cleaned candidate name, or a stored name verbatim. Stripping here
+        would answer "does the stored name collide?" about a name that is not
+        the one stored — ``'Kappa '`` does not collide with ``'kappa'``, and
+        trimming it in Python to claim it does re-creates the very mismatch
+        this method exists to remove.
+        """
+        # ONE string literal, deliberately. Python concatenates adjacent
+        # literals at compile time, so splitting this across two lines makes it
+        # invisible to RN-M4's scan — which regexes the SOURCE, where the two
+        # halves are still two strings. Written that way, this query hid from
+        # the guard whose whole job is to see it.
+        return self.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE LOWER(name) = LOWER(?) AND id IS NOT ?",
+            (name or "", exclude_id),
+        ).fetchone()
+
     def _refuse_case_collision(self, name: str, exclude_id: str = None) -> None:
         """Refuse a life-segment name that differs from another only by case.
 
@@ -1331,18 +1365,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         the update path: a row is never a collision with itself, so a segment
         can keep, re-case, or change its own name.
         """
-        clean = (name or "").strip()
-        if exclude_id:
-            collision = self.db.conn.execute(
-                "SELECT name FROM segment_descriptions "
-                "WHERE LOWER(name) = LOWER(?) AND id <> ?",
-                (clean, exclude_id),
-            ).fetchone()
-        else:
-            collision = self.db.conn.execute(
-                "SELECT name FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
-                (clean,),
-            ).fetchone()
+        collision = self._find_case_collision(name, exclude_id=exclude_id)
         if collision:
             raise ValueError(
                 f"A life segment called '{collision['name']}' already exists. "
@@ -1372,18 +1395,23 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             clean = (updates["name"] or "").strip()
             if not clean:
                 raise ValueError("A life segment needs a name.")
-            # Only when the name actually CHANGES, case-insensitively. Checking
-            # on the presence of a `name` key froze every row of a pre-existing
-            # collision: both segment editors send the unchanged name along
-            # with whatever the user did change, so colour, description, order
-            # and the active flag all raised — and the message told the user to
-            # pick a different name when they had changed none. The guard can
-            # stop new pairs; it can never un-make the ones already there, and
-            # bricking those is worse than the ambiguity it prevents.
+            # Refuse only a save that makes things WORSE: the new name
+            # collides and the old one did not.
             #
-            # Case-folded, so re-casing a row's OWN name still passes here and
-            # is then checked against its siblings by _refuse_case_collision.
-            if clean.lower() != (old_name or "").strip().lower():
+            # Not "the name changed". Checking the presence of a `name` key
+            # froze every row of a pre-existing collision — both segment
+            # editors send the unchanged name alongside whatever the user did
+            # change, so colour, description, order and the active flag all
+            # raised. Checking whether the name changed, in Python, opened the
+            # opposite hole: Python's fold and SQLite's disagree on non-ASCII
+            # and on whitespace, so a re-case could create a collision while
+            # being called "unchanged".
+            #
+            # Asking BOTH questions with _find_case_collision keeps one
+            # definition of collision, the same one resolve_segment_id_exact
+            # uses. A row that already collides can still be edited freely; a
+            # row that does not cannot be renamed into one.
+            if self._find_case_collision(old_name, exclude_id=segment_id) is None:
                 self._refuse_case_collision(clean, exclude_id=segment_id)
             # Stripped before the check AND before the write. The two used to
             # diverge: vision_segments got the stripped spelling and
@@ -1414,8 +1442,17 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
                 (segment_id,),
             ).fetchone()
             if not vision_seg:
+                # "a row the migration could not link" means one whose id is
+                # NULL. Without that condition the fallback adopted a row that
+                # belongs to a DIFFERENT segment description: on a collided
+                # pair, renaming A matched B's vision row by the shared name
+                # and relabelled it, so B was spelled one way in
+                # segment_descriptions and another in vision_segments, and the
+                # derived-field sync then pushed B's wrong name onto B's
+                # vision elements. Nobody renamed B.
                 vision_seg = self.db.conn.execute(
-                    "SELECT id FROM vision_segments WHERE LOWER(name) = LOWER(?)",
+                    "SELECT id FROM vision_segments "
+                    "WHERE LOWER(name) = LOWER(?) AND segment_description_id IS NULL",
                     (old_name,),
                 ).fetchone()
             if vision_seg:
