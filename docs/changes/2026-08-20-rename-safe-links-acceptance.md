@@ -393,6 +393,49 @@ The repo treats written claims as evidence, and three of mine did not hold:
 - `6fb9543`'s "both writes or neither" was true only for `IntegrityError` when
   written. `565b7e5` makes it true as stated.
 
+### The red build, which was nobody's backlog item
+
+CI had been failing for **five consecutive runs** — since before this batch —
+on one assertion, on all three Python versions:
+
+```
+tests/test_tk_offscreen.py:134: deiconify() made the window visible again
+assert 1.0 == 0.0
+```
+
+Not caused by this batch (`1179 passed, 1 failed` before it, `1213 passed,
+1 failed` after) and not in its scope, but `CLAUDE.md` is explicit that a red
+build nobody acts on is worse than no CI, and it had been ignored across five
+pushes.
+
+The cause is a claim in a comment that was true on one platform. The guard set
+alpha at window creation and did not silence `deiconify`, explaining that
+silencing was "unnecessary: the alpha above is applied at creation, so a window
+that deiconifies is mapped and still fully transparent". On macOS alpha is a
+window property that survives a re-map. **On X11 it is
+`_NET_WM_WINDOW_OPACITY`, which the re-map drops** — so `deiconify` restored
+full opacity and put a window on screen. The comment was the claim; CI was the
+measurement, and the suite was green on the author's machine the whole time.
+
+`deiconify` is now wrapped rather than silenced — silencing it hung
+`test_item_editor_sash.py`, because the window never maps and its geometry
+never resolves — so the wrapper calls through and re-applies the alpha
+afterwards. `wrap_deiconify` is a named factory rather than a closure inside
+the fixture, so a test can build one over a stub and prove it does **both**;
+an earlier version asserted only that the wrapper was installed, and deleting
+the re-apply left every test green.
+
+**The more useful fix is the test.** The failing assertion could only ever fire
+on X11, so it was a check that ran on one of the two platforms the suite
+targets. `test_a_remapped_window_is_made_transparent_again` forces the alpha
+back to 1.0 by hand — the same *state* the X11 re-map produces — so the same
+regression now fails on macOS too, instead of waiting five pushes for CI.
+
+Verified with real windows this time, on the user's explicit go-ahead: all four
+mapped-window tests pass, the sash test does not hang, and the **full suite
+runs 1219 passed, 2 skipped, exit 0**. A `conftest.py` change touches every
+test, which is the one case where a full local run earns its cost.
+
 ## Files changed
 
 **Changed**

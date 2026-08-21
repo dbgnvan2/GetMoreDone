@@ -128,6 +128,13 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The test suite no longer flashes a window onto the screen on Linux.** Test
+  windows are made fully transparent so they can be laid out and measured without
+  being seen, but on Linux the transparency was lost whenever a window was
+  re-shown — so a window appeared and took focus. It is now re-applied at that
+  moment. This affected continuous integration, not the released app, and it is
+  why the build had been failing since 20 August.
+
 - **Renaming a life segment to a name another one already has, differing only in
   capitalisation, is now refused.** Creating one that way was already refused;
   renaming was not, so the same state could be reached through the segment editor.
