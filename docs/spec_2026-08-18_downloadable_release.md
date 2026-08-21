@@ -10,7 +10,7 @@
 ## 1. Goal
 
 A person who has never seen GetMoreDone can visit
-`https://github.com/dbgnvan2/GetMoreDone`, either download a build for their OS
+`https://github.com/dbgnvan2/daVIPA`, either download a build for their OS
 or clone and run from source, and reach a working **Today** screen — legally,
 and without hitting a crash.
 

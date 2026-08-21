@@ -7,6 +7,40 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **The app is now called daVIPA.** Same app, same data, new name — with the tagline
+  *Vision · Planning · Action*. The window title, the sidebar and the app icon all
+  follow it, and the downloads are now `daVIPA-mac.zip` and `daVIPA-win64.zip`.
+
+  **Your existing items and settings are untouched and stay exactly where they are.**
+  The folder they live in still reads `GetMoreDone` — on purpose and permanently.
+  Renaming it would leave the app looking for your database in a place it had never
+  written one, and everything would appear to be gone. The name on the outside
+  changed; where your data lives did not.
+
+### Added
+
+- **A daVIPA colour theme**, selectable in Settings alongside the existing nine. It is
+  built from the palette measured off the new app icon: a deep indigo ground, indigo
+  and violet for surfaces and buttons, and crimson kept for things that are a signal
+  rather than a surface — a ticked checkbox, a switch that is on. Every text-and-background
+  pairing in it was checked for legibility; the weakest is comfortably past the accessibility
+  standard and most are far past it.
+- **The Windows app finally has its own icon.** Every Windows build until now shipped the
+  generic one that PyInstaller supplies by default.
+
+### Fixed
+
+- **Choosing a theme now gives you that theme.** Selecting one that had been added
+  recently silently reverted to Apple Grey on the next start, because the list of valid
+  themes existed in two places and only one of them had been updated. There is now one
+  list.
+- **The main window's background now matches the theme you chose.** It had been painted
+  in the theme from the *previous* launch — the window is created before the theme is
+  applied, so it was always one behind. This affected every theme, and showed as a window
+  background that did not match its own sidebar.
+
 ### Added
 
 - **File an Action Item under a Project from the item editor.** A new **Set Project**
@@ -383,5 +417,5 @@ published release.
 - No auto-update. New versions are downloaded manually.
 - No bundled music. Point Settings at a folder of your own.
 
-[Unreleased]: https://github.com/dbgnvan2/GetMoreDone/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/dbgnvan2/GetMoreDone/releases/tag/v0.2.0
+[Unreleased]: https://github.com/dbgnvan2/daVIPA/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/dbgnvan2/daVIPA/releases/tag/v0.2.0
