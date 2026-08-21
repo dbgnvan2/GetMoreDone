@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>GetMoreDone</string>
+	<string>daVIPA</string>
 	<key>CFBundleDisplayName</key>
-	<string>GetMoreDone</string>
+	<string>daVIPA</string>
 	<key>CFBundleExecutable</key>
-	<string>GetMoreDone</string>
+	<string>daVIPA</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.davegalloway.getmoredone.launcher</string>
 	<key>CFBundleVersion</key>

@@ -1,9 +1,9 @@
 #!/bin/bash
 #
-# GetMoreDone double-click launcher.
+# daVIPA double-click launcher.
 #
-# This executable lives inside "GetMoreDone Launcher.app". It locates the
-# project repository (its own location, four levels up from this script),
+# This executable lives inside "daVIPA Launcher.app". It locates the
+# project repository (its own location, three levels up from this script),
 # then hands off to start.sh, which creates/updates the venv and runs the app.
 #
 # Because it runs the live source via start.sh, no rebuild is ever needed

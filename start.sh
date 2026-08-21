@@ -1,7 +1,7 @@
 #!/bin/bash
-# GetMoreDone startup script
+# daVIPA startup script
 
-echo "🚀 Starting GetMoreDone..."
+echo "🚀 Starting daVIPA..."
 
 # Check if virtual environment exists, create if not
 if [ ! -d "venv" ]; then
@@ -41,6 +41,6 @@ if [ -z "${GETMOREDONE_DB:-}" ]; then
     export GETMOREDONE_DB="${HOME}/Library/Application Support/GetMoreDone/getmoredone.db"
 fi
 
-echo "✅ Launching GetMoreDone..."
+echo "✅ Launching daVIPA..."
 echo "   DB: ${GETMOREDONE_DB}"
 "$VENV_PY" run.py

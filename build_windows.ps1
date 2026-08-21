@@ -12,7 +12,7 @@ python -m PyInstaller --noconfirm --clean daVIPA.spec
 
 # Prove the bundle actually starts before calling the build a success.
 # A temp DB keeps the build from touching the developer's real database.
-# GetMoreDone.exe is built console=False (windowed subsystem): `& app.exe`
+# daVIPA.exe is built console=False (windowed subsystem): `& app.exe`
 # returns immediately without waiting and never sets $LASTEXITCODE. Use
 # Start-Process -Wait -PassThru for a real exit code, and redirect the output
 # because a windowed process has no console to write to.
@@ -20,7 +20,7 @@ $SelftestDb = Join-Path ([System.IO.Path]::GetTempPath()) ("gmd-selftest-" + [gu
 $SelftestOut = Join-Path ([System.IO.Path]::GetTempPath()) ("gmd-selftest-" + [guid]::NewGuid() + ".log")
 $env:GETMOREDONE_DB = $SelftestDb
 try {
-    $proc = Start-Process -FilePath "dist\GetMoreDone\GetMoreDone.exe" `
+    $proc = Start-Process -FilePath "dist\daVIPA\daVIPA.exe" `
         -ArgumentList "--selftest" -Wait -PassThru `
         -RedirectStandardOutput $SelftestOut
     if (Test-Path $SelftestOut) { Get-Content $SelftestOut }
@@ -30,4 +30,4 @@ try {
     Remove-Item Env:\GETMOREDONE_DB -ErrorAction SilentlyContinue
 }
 
-Write-Host "Built: dist\GetMoreDone\GetMoreDone.exe"
+Write-Host "Built: dist\daVIPA\daVIPA.exe"

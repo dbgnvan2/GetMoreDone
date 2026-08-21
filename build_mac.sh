@@ -22,6 +22,6 @@ $PY -m PyInstaller --noconfirm --clean daVIPA.spec
 # A temp DB keeps the build from touching the developer's real database.
 SELFTEST_DB="$(mktemp -t gmd-selftest)"
 trap 'rm -f "$SELFTEST_DB"' EXIT
-GETMOREDONE_DB="$SELFTEST_DB" ./dist/GetMoreDone.app/Contents/MacOS/GetMoreDone --selftest
+GETMOREDONE_DB="$SELFTEST_DB" ./dist/daVIPA.app/Contents/MacOS/daVIPA --selftest
 
-echo "Built: dist/GetMoreDone.app"
+echo "Built: dist/daVIPA.app"
