@@ -308,6 +308,23 @@ architecture. It is a pass against one failure family, not a clean bill.
 - The full suite was **not** run locally, by instruction. CI runs it on three
   Python versions.
 
+**End-to-end against a copy of the real database**, with the app object and all
+13 screens built headlessly — transparent, withdrawn windows, so nothing
+appeared on screen and nothing took focus:
+
+- `GetMoreDoneApp()` constructs; **all 13 screens build**; **zero WARNING+ log
+  lines**.
+- The migration is a **byte-for-byte no-op** on that copy, over two successive
+  `initialize_schema()` runs, and the breakage report is zero on all three
+  counts.
+- One real downstream effect appears only on a launch, and is worth expecting:
+  `[VSP] Backfilled segment ids on 6 action item(s)`. Those are the six
+  completed Q1 items under the two merged plan elements; they now resolve to
+  **Health** (`seg-1`) through their APE link, where before the merge they had
+  no segment at all. The second launch prints nothing, so it settles.
+- Their `who` and `title` still read "Wellness". A real segment rename does not
+  touch either field, so neither did this.
+
 **Every test proved able to fail, by mutation with the verbatim original:**
 
 | Test | Mutation that makes it red |
