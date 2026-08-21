@@ -1293,17 +1293,7 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         clean = (name or "").strip()
         if not clean:
             raise ValueError("A life segment needs a name.")
-
-        collision = self.db.conn.execute(
-            "SELECT name FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
-            (clean,),
-        ).fetchone()
-        if collision:
-            raise ValueError(
-                f"A life segment called '{collision['name']}' already exists. "
-                "Two segments whose names differ only by case cannot be told "
-                "apart when resolving links, so pick a different name."
-            )
+        self._refuse_case_collision(clean)
 
         name = clean
         segment_id = f"seg-{uuid4().hex[:8]}"
@@ -1319,6 +1309,46 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
         self._create_or_get_vision_segment(name)
         self.db.conn.commit()
         return segment_id
+
+    def _refuse_case_collision(self, name: str, exclude_id: str = None) -> None:
+        """Refuse a life-segment name that differs from another only by case.
+
+        Purpose: keep the ambiguity out of the table rather than coping with it
+                 in every resolver downstream.
+        Spec:    docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+        Tests:   tests/test_rename_safe_links.py::test_rn_create_segment_refuses_a_case_only_duplicate
+                 tests/test_rename_safe_links.py::test_rn_update_segment_refuses_a_case_only_duplicate
+
+        ``segment_descriptions.name`` is UNIQUE, but SQLite's UNIQUE is
+        case-SENSITIVE, so 'Health' and 'health' are both legal. Once both
+        exist, ``resolve_segment_id_exact`` returns None for BOTH spellings —
+        every link resolution refuses forever and the migration reports the
+        rows as needing a human at every launch.
+
+        This lived inside ``create_segment`` and nowhere else, so RENAMING a
+        segment created the state creating one could not (P5 — a guard applied
+        to one door into a class). ``exclude_id`` is what makes it usable on
+        the update path: a row is never a collision with itself, so a segment
+        can keep, re-case, or change its own name.
+        """
+        clean = (name or "").strip()
+        if exclude_id:
+            collision = self.db.conn.execute(
+                "SELECT name FROM segment_descriptions "
+                "WHERE LOWER(name) = LOWER(?) AND id <> ?",
+                (clean, exclude_id),
+            ).fetchone()
+        else:
+            collision = self.db.conn.execute(
+                "SELECT name FROM segment_descriptions WHERE LOWER(name) = LOWER(?)",
+                (clean,),
+            ).fetchone()
+        if collision:
+            raise ValueError(
+                f"A life segment called '{collision['name']}' already exists. "
+                "Two segments whose names differ only by case cannot be told "
+                "apart when resolving links, so pick a different name."
+            )
 
     def update_segment(self, segment_id: str, **kwargs) -> bool:
         """Update a segment's fields."""
@@ -1337,6 +1367,18 @@ class VPSManager(VPSPlanningMixin, VPSTaxonomyMixin):
             return False
 
         old_name = current["name"]
+
+        if "name" in updates:
+            clean = (updates["name"] or "").strip()
+            if not clean:
+                raise ValueError("A life segment needs a name.")
+            # Stripped before the check AND before the write. The two used to
+            # diverge: vision_segments got the stripped spelling and
+            # segment_descriptions the raw one, so one segment could be held
+            # in two tables under two different names.
+            self._refuse_case_collision(clean, exclude_id=segment_id)
+            updates["name"] = clean
+
         updates['updated_at'] = datetime.now().isoformat()
 
         set_clause = ', '.join(f"{k} = ?" for k in updates.keys())

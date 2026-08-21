@@ -284,10 +284,11 @@ def backfill_initiative_ape_links(conn: sqlite3.Connection) -> Dict[str, Any]:
     demoted, which the heal cannot report at all.
 
     RN-M1.B.2: a user who has already renamed may have TWO initiatives matching
-    one APE (that is RN-F4's duplicate). The oldest by ``created_at`` is
-    linked, the other is left NULL, and **both are reported**. Dropping or
-    merging the second is a tie-break decision this migration does not own
-    (spec §9).
+    one APE (that is RN-F4's duplicate). The oldest **of the preferred
+    candidates** is linked; every other candidate is left NULL and **all of
+    them are reported**, including the ones demoted by the plan-year
+    tie-break, which the preference alone would have hidden. Dropping or
+    merging the second is a decision this migration does not own (spec §9).
     """
     if not (_table_exists(conn, "annual_initiatives")
             and _table_exists(conn, "annual_plan_elements")):
