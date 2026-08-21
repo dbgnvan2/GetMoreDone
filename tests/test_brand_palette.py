@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from src.getmoredone import brand, theme
+from src.getmoredone.app_settings import AppSettings
 
 THEMES_DIR = Path(__file__).resolve().parents[1] / "themes"
 DAVIPA_THEME = THEMES_DIR / "davipa.json"
@@ -200,3 +201,69 @@ def test_every_text_on_fill_pairing_clears_aa(section, text_key, fill_key):
             f"{section}.{text_key} on {fill_key} in {mode} mode is "
             f"{ratio:.2f}:1, below AA's 4.5:1"
         )
+
+
+# --------------------------------------------------------------------------
+# Picking a theme has to actually give you that theme
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", theme.THEME_NAMES)
+def test_settings_accepts_every_theme_the_picker_offers(name):
+    """One list of theme names, not two.
+
+    app_settings held its own hardcoded copy. Adding a theme put it in the
+    Settings picker and wrote it to settings.json — and this rewrote it to
+    "apple_grey" on the next load, because the new name was not in the copy.
+    Picking daVIPA silently gave you Apple Grey, with nothing logged.
+    """
+    assert AppSettings._normalize_theme_name(name) == name, (
+        f"the Settings picker offers {name!r} but loading it returns "
+        f"{AppSettings._normalize_theme_name(name)!r} — two lists have drifted"
+    )
+
+
+def test_settings_still_rejects_a_name_that_is_not_a_theme():
+    """The normalisation is not simply gone: junk still falls back."""
+    assert AppSettings._normalize_theme_name("not-a-theme") == theme.DEFAULT_THEME_NAME
+    assert AppSettings._normalize_theme_name(None) == theme.DEFAULT_THEME_NAME
+    assert AppSettings._normalize_theme_name("  DAVIPA  ") == "davipa"
+
+
+def test_the_window_background_matches_the_theme_that_was_picked(tmp_path, monkeypatch):
+    """The root is a widget, so the theme must be applied before it exists.
+
+    CustomTkinter colours each widget as it is CREATED. apply_theme_settings
+    ran after super().__init__(), so the main window kept the theme from the
+    PREVIOUS launch — one behind whatever the user chose. Every theme was
+    affected; it showed as a window background that never matched its own
+    sidebar.
+    """
+    import json
+
+    import customtkinter as ctk
+
+    monkeypatch.setenv("GETMOREDONE_DB", str(tmp_path / "themed.db"))
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(
+        json.dumps({"theme_name": "davipa", "appearance_mode": "dark"})
+    )
+    monkeypatch.setattr(
+        AppSettings, "get_settings_path", classmethod(lambda cls: settings_file)
+    )
+
+    from src.getmoredone.app import GetMoreDoneApp
+
+    expected = json.loads(theme.theme_path_for("davipa").read_text())
+    app = GetMoreDoneApp()
+    try:
+        assert app.settings.theme_name == "davipa", (
+            "the app did not keep the theme the settings file asked for"
+        )
+        assert app.cget("fg_color") == expected["CTk"]["fg_color"], (
+            f"the window is {app.cget('fg_color')}, not the picked theme's "
+            f"{expected['CTk']['fg_color']}"
+        )
+        assert app.sidebar.cget("fg_color") == expected["CTkFrame"]["fg_color"]
+    finally:
+        app.destroy()
