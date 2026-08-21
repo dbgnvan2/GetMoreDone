@@ -20,7 +20,7 @@ import ast
 import collections
 import logging
 import re
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -2094,6 +2094,110 @@ def test_rn_update_segment_refuses_a_case_only_duplicate(tmp_path):
         assert vps.update_segment(other, name="UTTERLY DISTINCT") is True
         assert vps.update_segment(other, name="Something Else") is True
         assert vps.update_segment(other, description="no name key at all") is True
+    finally:
+        vps.close()
+
+
+def _seed_case_colliding_pair(vps) -> tuple:
+    """Two life segments whose names differ only by case, already in the table.
+
+    The guard cannot un-make these — `segment_descriptions.name` is UNIQUE but
+    SQLite's UNIQUE is case-SENSITIVE, so databases written before the guard
+    existed can hold the pair. Inserted directly, because create_segment now
+    refuses to make one, which is the point.
+    """
+    now = datetime.now().isoformat()
+    for seg_id, name, order in (("seg-pair-a", "Kappa", 90), ("seg-pair-b", "kappa", 91)):
+        vps.db.conn.execute(
+            """
+            INSERT INTO segment_descriptions
+            (id, name, description, color_hex, order_index, is_active, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+            """,
+            (seg_id, name, "", "#4CAF50", order, now, now),
+        )
+    vps.db.conn.commit()
+    return "seg-pair-a", "seg-pair-b"
+
+
+def test_rn_a_pre_existing_collision_does_not_freeze_the_two_segments(tmp_path):
+    """The guard refuses a COLLIDING RENAME, not every save of a collided row.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv5
+
+    Checking on the presence of a `name` key rather than on a CHANGE of name
+    made both rows of a pre-existing pair completely uneditable — colour,
+    description, order and the active flag — because both segment editors
+    always send the unchanged name along with whatever the user did change.
+    The message then told the user to pick a different name when they had
+    changed no name, and there was no way to retire either row.
+
+    That population is precisely the one the guard exists alongside: it can
+    stop new pairs, it can never un-make the ones already there. A guard that
+    bricks the data it was written to protect is worse than the ambiguity.
+    """
+    vps = make_vps(tmp_path, name="frozenpair.db")
+    try:
+        first, second = _seed_case_colliding_pair(vps)
+
+        assert vps.update_segment(first, name="Kappa", color_hex="#FF0000") is True, (
+            "a colour-only save of a collided row was refused"
+        )
+        assert vps.update_segment(first, name="Kappa", description="desc") is True
+        assert vps.update_segment(second, name="kappa", is_active=0) is True, (
+            "the collided pair cannot be retired"
+        )
+        # Its own case may still be adjusted; that is not a new collision.
+        assert vps.update_segment(first, name="KAPPA") is True
+
+        stored = vps.db.conn.execute(
+            "SELECT color_hex, description FROM segment_descriptions WHERE id = ?",
+            (first,),
+        ).fetchone()
+        assert stored["color_hex"] == "#FF0000", "the colour never reached the row"
+        assert stored["description"] == "desc"
+
+        # And a genuinely new collision is still refused.
+        other = vps.create_segment("Quite Separate", "d", "#123456", 92)
+        with pytest.raises(ValueError, match="already exists"):
+            vps.update_segment(other, name="KAPPA")
+    finally:
+        vps.close()
+
+
+def test_rn_update_segment_stores_the_stripped_name_in_both_tables(tmp_path):
+    """The name is stripped before the WRITE, not only before the check.
+
+    Spec: docs/spec_2026-08-19_rename_safe_links.md#rn-inv2
+
+    `update_segment` wrote the raw spelling into `segment_descriptions` while
+    handing the stripped one to the vision-segment rename, so one life segment
+    could sit in two tables under two different names — and every join between
+    them is on the name or on an id derived from it.
+
+    The collision guard alone does not cover this: a padded name that collides
+    raises before the write is reached, so only a padded name that does NOT
+    collide exercises the strip.
+    """
+    vps = make_vps(tmp_path, name="stripname.db")
+    try:
+        seg = vps.create_segment("Before Padding", "d", "#123456", 94)
+
+        assert vps.update_segment(seg, name="  Padded Name  ") is True
+
+        stored = vps.db.conn.execute(
+            "SELECT name FROM segment_descriptions WHERE id = ?", (seg,)
+        ).fetchone()["name"]
+        assert stored == "Padded Name", f"stored unstripped: {stored!r}"
+
+        mirrored = vps.db.conn.execute(
+            "SELECT name FROM vision_segments WHERE segment_description_id = ?", (seg,)
+        ).fetchone()
+        assert mirrored is not None, "the vision segment lost its link"
+        assert mirrored["name"] == stored, (
+            f"the two tables hold one segment under two names: "
+            f"{stored!r} vs {mirrored['name']!r}"
+        )
     finally:
         vps.close()
 
