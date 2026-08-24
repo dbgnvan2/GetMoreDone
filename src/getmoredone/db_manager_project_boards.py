@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -750,69 +749,10 @@ class DBManagerProjectBoardsMixin:
             )
         self.db.conn.commit()
 
-
-    def _row_to_project_board(self, row: sqlite3.Row) -> ProjectBoard:
-        """Convert database row to ProjectBoard."""
-        try:
-            importance = row["importance"]
-        except (KeyError, IndexError):
-            importance = None
-
-        try:
-            next_step = row["next_step"]
-        except (KeyError, IndexError):
-            next_step = None
-
-        try:
-            notes = row["notes"]
-        except (KeyError, IndexError):
-            notes = None
-
-        try:
-            completed_at = row["completed_at"]
-        except (KeyError, IndexError):
-            completed_at = None
-
-        return ProjectBoard(
-            id=row["id"],
-            title=row["title"],
-            annual_plan_element_id=row["annual_plan_element_id"],
-            importance=importance,
-            next_step=next_step,
-            notes=notes,
-            display_order=row["display_order"] if "display_order" in row.keys() else None,
-            status=row["status"],
-            completed_at=completed_at,
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-        )
-
-    def _row_to_project_board_link(self, row: sqlite3.Row) -> ProjectBoardLink:
-        """Convert database row to ProjectBoardLink.
-
-        Purpose: Row hydration. Guards link_type and status with try/except for
-                 robustness against in-memory rows missing the column (e.g.,
-                 mid-migration partial caches).
-        Spec:    docs/implementation_plan_2026-06-06_project_notes.md#M1.A.4
-        Tests:   tests/test_project_notes.py::test_link_status_roundtrip
-        """
-        try:
-            link_type = row["link_type"]
-        except (KeyError, IndexError):
-            link_type = "url"
-
-        try:
-            status = row["status"] or "open"
-        except (KeyError, IndexError):
-            status = "open"
-
-        return ProjectBoardLink(
-            id=row["id"],
-            project_board_id=row["project_board_id"],
-            label=row["label"],
-            url=row["url"],
-            link_type=link_type,
-            status=status,
-            created_at=row["created_at"],
-        )
-
+    # The two row mappers that used to live here — _row_to_project_board and
+    # _row_to_project_board_link — were shadowed by identically named methods on
+    # DatabaseManager and never ran. They had drifted: the copy here did not
+    # hydrate start_date/end_date, so a reader following this file would have
+    # concluded a project's dates are lost on load. They are not; the live copy
+    # in db_manager.py reads them. Removed rather than fixed, because two
+    # definitions of the same mapping is the defect.
