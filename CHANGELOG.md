@@ -56,8 +56,8 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **Save & Close** (records the session and the time, task stays open), **Cancel**
   (returns without a note — your time and your typed notes are still kept), and
   **Complete & Carry Forward →** (completes today's item and opens tomorrow's copy).
-  **Only "Done — deliverable complete" finishes a task** and counts it towards the
-  project's reward phase.
+  Two of them close a task — Done, and Complete & Carry Forward — but **only "Done —
+  deliverable complete" counts one towards a project's reward phase.**
 
 - **The end of a break no longer ends the session.** It used to stop the timer
   and offer Finished/Continue, which quietly made the timer ringing the thing

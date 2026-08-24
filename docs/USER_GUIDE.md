@@ -535,9 +535,9 @@ there until the bell goes.
 
 Two things follow from that. **Music keeps playing through the end of a break** — it
 used to stop, because the break ending used to stop the whole timer. It now behaves the
-way it does when you Pause: yours to control, from the music buttons. And **Finished /
-Continue are one click further away at the ring** — press Stop first, or press Done if
-the deliverable is actually finished.
+way it does when you Pause: yours to control, from the music buttons. And the **session
+actions are one click further away at the ring** — press Stop to reach them, or press
+Done if the deliverable is actually finished.
 
 Music area:
 - **▶ Play** — What: Starts music from your configured folder. Why: Focus support.
@@ -562,10 +562,23 @@ three say what they do:
   day, and opens the editor on it. Why: Ending today's block on work that continues
   tomorrow, without losing the history of what you did today.
 
-**Only "Done — deliverable complete" completes an item as finished work** and counts it
-towards the project's reward phase. The old buttons were called *Finished* and
-*Continue*, and both quietly completed the item and closed the window — which looked from
-the outside like pressing them did nothing at all.
+Two of these five buttons close a task, and they are not the same thing:
+
+| Button | Task closed? | Counts towards the reward phase? |
+|---|---|---|
+| **Done — deliverable complete** | yes | **yes** |
+| **Complete & Carry Forward →** | yes, and reopens it as tomorrow's copy | no |
+| **Save & Close** | no | no |
+| **Cancel** | no | no |
+| **Stop** | no — it just stops the clock | no |
+
+So **"Done" is the only button that counts a completed deliverable** towards a project's
+phase. *Complete & Carry Forward* does close today's item, because the alternative —
+leaving today's item open beside tomorrow's copy — would give you the same task twice.
+
+The old buttons were called *Finished* and *Continue*, and both quietly completed the
+item and closed the window, which looked from the outside like pressing them did nothing
+at all.
 
 Notes:
 - **Pop Out** — What: Opens the notes in a separate window. Why: More space to write.
