@@ -57,6 +57,9 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
     PAUSE_TEXT = "⏸  Pause"
     RESUME_TEXT = "▶  Resume"
     STOP_TEXT = "⏹  Stop"
+    MUSIC_PLAY_TEXT = "▶  Play"
+    MUSIC_PAUSE_TEXT = "⏸  Pause"
+    MUSIC_RESUME_TEXT = "▶  Resume"
     NO_DELIVERABLE_TEXT = "— not set —"
     # Anything that is not "stopped" is a live session: the clock may be
     # counting, or waiting for the user, but there is work in progress.
@@ -321,7 +324,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.music_play_button = ctk.CTkButton(
             music_frame,
-            text="▶  Play",
+            text=self.MUSIC_PLAY_TEXT,
             command=self.play_music,
             **button_style("secondary"),
             width=80
@@ -330,7 +333,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.music_pause_button = ctk.CTkButton(
             music_frame,
-            text="⏸  Pause",
+            text=self.MUSIC_PAUSE_TEXT,
             command=self.pause_music,
             **button_style("secondary"),
             width=80,
@@ -871,7 +874,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
     def finished_action(self):
         """Handle Finished workflow: complete action and close."""
         try:
-            print(f"[DEBUG] Finished button clicked for item: {self.item.id}")
+            print(f"[DEBUG] Completing item (via Done): {self.item.id}")
 
             # Check if window still exists
             if not self.winfo_exists():
@@ -962,12 +965,21 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
             self._save_notes_to_item()
 
+            # A Done whose save failed leaves these set, and this ending is not
+            # a completion — carrying them here wrote deliverable_completed=1
+            # and advanced the project counter while the item stayed open, so
+            # the board claimed a completion the item did not record.
+            self._discard_pending_completion()
+
             dialog = CompletionNoteDialog(self, "Session Note")
             self.wait_window(dialog)
-            note = dialog.result if self.winfo_exists() else None
+            # Read unconditionally: dialog.result is a plain attribute and
+            # needs no live window. Guarding it on winfo_exists() threw the
+            # user's typed note away exactly when the window had closed under
+            # them, and wrote the log anyway with nothing to show for it.
+            note = dialog.result
 
             self.save_work_log(note)
-            notify_weekly_tactic_changes(self.db_manager, self if self.winfo_exists() else None)
 
             self._close_and_return()
         except Exception as e:
@@ -995,8 +1007,8 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 self.next_action_window = None
 
             self._save_notes_to_item()
+            self._discard_pending_completion()
             self.save_work_log(None)
-            notify_weekly_tactic_changes(self.db_manager, self)
 
             self._close_and_return()
         except Exception as e:
@@ -1005,14 +1017,26 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             traceback.print_exc()
             self._show_error_dialog(f"Failed to close the session: {e}")
 
+    def _discard_pending_completion(self):
+        """Forget a Done that never landed. This ending is not a completion.
+
+        Tests: tests/test_reward_protocol_timer.py::test_save_and_close_after_a_failed_done_does_not_count_a_completion
+        """
+        self._pending_reward = None
+        self._done_pressed = False
+        self._savor_shown = False
+
     def _save_notes_to_item(self):
         """Persist the notes box onto the action item, if it says anything."""
         try:
             notes = self.next_steps_text.get("1.0", "end-1c").strip()
         except (tk.TclError, AttributeError):
             return
-        if notes and notes != (self.item.description or ""):
-            self.item.description = notes
+        # `or None` rather than a truthiness guard on `notes`: clearing the box
+        # is an edit like any other, and refusing to persist it meant the only
+        # change the window would not save was a deletion.
+        if notes != (self.item.description or ""):
+            self.item.description = notes or None
             self.db_manager.update_action_item(self.item)
             notify_weekly_tactic_changes(self.db_manager, self)
 
@@ -1407,14 +1431,6 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self.status_label.configure(
                 text=display_text, text_color=resolved_color, font=ctk.CTkFont(size=11))
 
-    def _update_status_with_track(self):
-        """Show the playing track, in the music area.
-
-        Tests: tests/test_reward_protocol_timer.py::test_music_information_stays_in_the_music_area
-        """
-        if self.current_track_name:
-            self._set_music_status(f"♫ {self.current_track_name}", "muted")
-
     def _play_system_beep(self):
         """Play system beep/alert sound."""
         play_system_beep()
@@ -1445,7 +1461,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self.current_track_name = None
             self.music_is_playing = False
             self.music_play_button.configure(state="normal")
-            self.music_pause_button.configure(state="disabled", text="⏸ Pause")
+            self.music_pause_button.configure(state="disabled", text=self.MUSIC_PAUSE_TEXT)
             return False
 
         music_file = selection.track
@@ -1459,7 +1475,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self._set_music_status(msg, "warning")
             self.music_is_playing = False
             self.music_play_button.configure(state="normal")
-            self.music_pause_button.configure(state="disabled", text="⏸ Pause")
+            self.music_pause_button.configure(state="disabled", text=self.MUSIC_PAUSE_TEXT)
             print(f"[INFO] {msg} Install with: pip install pygame")
             return False
 
@@ -1479,7 +1495,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 self.current_track_name = None
                 self.music_is_playing = False
                 self.music_play_button.configure(state="normal")
-                self.music_pause_button.configure(state="disabled", text="⏸ Pause")
+                self.music_pause_button.configure(state="disabled", text=self.MUSIC_PAUSE_TEXT)
                 self._set_music_status(
                     f"Couldn't play {Path(music_file).name} — "
                     "try converting to MP3, WAV, or OGG.",
@@ -1492,8 +1508,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self.current_track_name = Path(music_file).name
             self.music_is_playing = True
             self.music_play_button.configure(state="disabled")
-            self.music_pause_button.configure(state="normal", text="⏸ Pause")
-            self._update_status_with_track()
+            self.music_pause_button.configure(state="normal", text=self.MUSIC_PAUSE_TEXT)
 
             if selection.status == "fallback_only":
                 self._set_music_status(
@@ -1509,7 +1524,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self.current_track_name = None
             self.music_is_playing = False
             self.music_play_button.configure(state="normal")
-            self.music_pause_button.configure(state="disabled", text="⏸ Pause")
+            self.music_pause_button.configure(state="disabled", text=self.MUSIC_PAUSE_TEXT)
             self._set_music_status(f"Error playing music: {e}", "error")
             print(f"[ERROR] Error playing music: {e}")
             import traceback
@@ -1527,7 +1542,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 # Update button states
                 self.music_play_button.configure(state="normal")
                 self.music_pause_button.configure(
-                    state="disabled", text="⏸ Pause")
+                    state="disabled", text=self.MUSIC_PAUSE_TEXT)
                 self._set_music_status("")
                 print("[DEBUG] Music stopped")
         except ImportError:
@@ -1574,7 +1589,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self._resume_music()
             # Update button states
             self.music_play_button.configure(state="disabled")
-            self.music_pause_button.configure(state="normal", text="⏸ Pause")
+            self.music_pause_button.configure(state="normal", text=self.MUSIC_PAUSE_TEXT)
             print("[INFO] Music play button pressed - music resumed")
 
     def pause_music(self):
@@ -1585,13 +1600,13 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 if pygame.mixer.music.get_busy():
                     # Music is playing, pause it
                     self._pause_music()
-                    self.music_pause_button.configure(text="▶ Resume")
+                    self.music_pause_button.configure(text=self.MUSIC_RESUME_TEXT)
                     self.music_play_button.configure(state="normal")
                     print("[INFO] Music pause button pressed - music paused")
                 else:
                     # Music is paused, resume it
                     self._resume_music()
-                    self.music_pause_button.configure(text="⏸ Pause")
+                    self.music_pause_button.configure(text=self.MUSIC_PAUSE_TEXT)
                     self.music_play_button.configure(state="disabled")
                     print("[INFO] Music pause button pressed - music resumed")
         except ImportError:

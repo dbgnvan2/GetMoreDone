@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import random
+from datetime import datetime
 from typing import Optional
 
 from ..models import ProjectBoard
@@ -90,7 +91,12 @@ class TimerRewardMixin(TimerCelebrationMixin):
                  thing not on screen.
         Tests:   tests/test_reward_protocol_timer.py::test_the_deliverable_is_shown_on_the_timer_window
         """
-        text = self.session_deliverable or self.item.deliverable
+        # item.deliverable, never session_deliverable. The snapshot is frozen
+        # at Start and stays truthy for the rest of the session, so reading it
+        # first meant every mid-session edit re-rendered the old text and the
+        # Edit button looked broken in the one state it is useful in. The
+        # snapshot's job is work_logs.deliverable_snapshot, not the display.
+        text = self.item.deliverable
         if text:
             self.deliverable_label.configure(
                 text=text, text_color=status_text_color("body"))
@@ -107,11 +113,23 @@ class TimerRewardMixin(TimerCelebrationMixin):
         work_logs.deliverable_snapshot is frozen at start (RP-4.5g). It changes
         the item, and the label, from here on.
         """
-        if not self.ask_for_deliverable(required=False):
-            return
+        # The clock stops while the modal is open. wait_window pumps the Tk
+        # event loop, so a still-scheduled tick fires underneath it — the same
+        # hazard done_action documents and solves, at a sibling call site that
+        # did not have the guard (P5).
+        resume = self.timer_state in (self.RUNNING, self.IN_BREAK)
+        if resume:
+            self._cancel_pending_timer()
+        try:
+            if not self.ask_for_deliverable():
+                return
+        finally:
+            if resume and self.timer_state in (self.RUNNING, self.IN_BREAK):
+                self.last_tick_time = datetime.now()
+                self.tick()
         self.refresh_deliverable_label()
 
-    def ask_for_deliverable(self, required: bool = True) -> bool:
+    def ask_for_deliverable(self) -> bool:
         """Prompt for the deliverable. False means the user backed out.
 
         Purpose: RP-4.2 — one prompt, used both at Start when there is nothing
@@ -126,6 +144,9 @@ class TimerRewardMixin(TimerCelebrationMixin):
             board_title=board.title if board else None,
             phase=phase_for(board.savor_count) if board else None,
             savor_count=board.savor_count if board else None,
+            # Reached from Edit, the session is already running, and offering
+            # to "Start" one is an answer to a question nobody asked.
+            confirm_text="Start" if self.timer_state == self.STOPPED else "Save",
         )
         self.wait_window(dialog)
 

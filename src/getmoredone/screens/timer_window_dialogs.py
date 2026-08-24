@@ -475,7 +475,7 @@ class DeliverableDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, item_title: str, deliverable: Optional[str] = None,
                  board_title: Optional[str] = None, phase: Optional[str] = None,
-                 savor_count: Optional[int] = None):
+                 savor_count: Optional[int] = None, confirm_text: str = "Start"):
         super().__init__(parent)
 
         self.result: Optional[str] = None
@@ -523,9 +523,10 @@ class DeliverableDialog(ctk.CTkToplevel):
         button_frame = ctk.CTkFrame(self)
         button_frame.pack(pady=12, padx=16, fill="x")
 
-        ctk.CTkButton(
-            button_frame, text="Start", command=self.confirm, **button_style("primary"),
-        ).pack(side="left", expand=True, padx=5)
+        self.confirm_button = ctk.CTkButton(
+            button_frame, text=confirm_text, command=self.confirm, **button_style("primary"),
+        )
+        self.confirm_button.pack(side="left", expand=True, padx=5)
 
         ctk.CTkButton(
             button_frame, text="Cancel", command=self.cancel, **button_style("secondary"),
