@@ -37,6 +37,7 @@ def _stub(manager, item_id, item, texts):
         title_entry=_entry("Edited title"),
         description_text=_entry(""),
         next_action_text=_entry(""),
+        deliverable_entry=_entry(""),
         start_date_entry=_entry("2026-02-25"),
         due_date_entry=_entry("2026-02-25"),
         is_meeting_var=SimpleNamespace(get=lambda: False),

@@ -46,6 +46,7 @@ def _fill(dialog, board_id=None, tactic_id=None):
     dialog.title_entry.insert(0, "Fully populated task")
     dialog.description_text.insert("1.0", "A description")
     dialog.next_action_text.insert("1.0", "The next action")
+    dialog.deliverable_entry.insert(0, "Draft section 2's opening paragraph")
     dialog.start_date_entry.insert(0, "2026-02-25")
     dialog.due_date_entry.insert(0, "2026-02-27")
     dialog.is_meeting_var.set(True)
@@ -171,3 +172,55 @@ def test_bp3_the_pending_tactic_is_consumed_by_the_insert(tmp_path, root):
         assert dialog._follow_chosen_tactic is False
     finally:
         vps.close()
+
+
+def test_rp41_deliverable_from_form_reaches_the_saved_item(tmp_path, root):
+    """RP-4.1 — the Deliverable box's value arrives in the database row.
+
+    Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#41-deliverable-field-on-the-item-step-1--scope
+    Tests: this test
+
+    The boundary is asserted, not the widget. A control that renders and is
+    never read looks identical in a presence test and does nothing in the app.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        dialog = ItemEditorDialog(root, manager, vps_manager=vps)
+        dialog.who_var.set("Self")
+        dialog.title_entry.insert(0, "Scoped task")
+        dialog.deliverable_entry.insert(0, "Draft section 2's opening paragraph")
+
+        assert dialog.save_item() is True, dialog.error_label.cget("text")
+
+        stored = manager.db.conn.execute(
+            "SELECT deliverable FROM action_items WHERE title = 'Scoped task'"
+        ).fetchone()
+        assert stored["deliverable"] == "Draft section 2's opening paragraph"
+    finally:
+        vps.db_manager.close()
+
+
+def test_rp41_a_blank_deliverable_is_stored_as_null_not_empty_string(tmp_path, root):
+    """An untouched box means "no deliverable", not a deliverable of "".
+
+    An empty string would satisfy any later `if item.deliverable:` check
+    written as a NULL test, and the reward path would run with nothing to
+    show the user.
+    """
+    vps = make_vps(tmp_path)
+    try:
+        manager = vps.db_manager
+        dialog = ItemEditorDialog(root, manager, vps_manager=vps)
+        dialog.who_var.set("Self")
+        dialog.title_entry.insert(0, "Unscoped task")
+        dialog.deliverable_entry.insert(0, "   ")
+
+        assert dialog.save_item() is True, dialog.error_label.cget("text")
+
+        stored = manager.db.conn.execute(
+            "SELECT deliverable FROM action_items WHERE title = 'Unscoped task'"
+        ).fetchone()
+        assert stored["deliverable"] is None
+    finally:
+        vps.db_manager.close()

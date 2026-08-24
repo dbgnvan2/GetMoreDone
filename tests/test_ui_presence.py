@@ -48,6 +48,9 @@ def test_item_editor_ui_elements_presence(mock_app, mock_db):
     assert hasattr(dialog, "title_entry"), "Missing Title entry"
     assert hasattr(dialog, "description_text"), "Missing Description text"
     assert hasattr(dialog, "next_action_text"), "Missing Next Action text"
+    # RP-4.1 — the reward protocol's scope field.
+    # Spec: docs/spec_2026-08-23_dopamine_reward_protocol.md#41-deliverable-field-on-the-item-step-1--scope
+    assert hasattr(dialog, "deliverable_entry"), "Missing Deliverable entry"
     assert hasattr(dialog, "planned_minutes_entry"), "Missing Planned Minutes entry"
 
     # PL9 — the Action Plan block: where this item sits in the plan.

@@ -545,17 +545,23 @@ def _reload_dialog(fresh, snapshot, current):
     desc = _FakeWidget(current["description"])
     nxt = _FakeWidget(current["next_action"])
     pm = _FakeWidget(current["planned_minutes"])
+    # RP-4.1: the timer's start dialog can write the deliverable, so it is one
+    # of the fields the reload has to consider. Callers that predate it pass no
+    # "deliverable" key and get an empty one.
+    dlv = _FakeWidget(current.get("deliverable", ""))
     dialog = SimpleNamespace(
         item_id="id1",
         item=None,
         db_manager=SimpleNamespace(get_action_item=lambda i: fresh),
         description_text=desc,
         next_action_text=nxt,
+        deliverable_entry=dlv,
         planned_minutes_entry=pm,
         _pre_timer_field_values=snapshot,
         _current_timer_field_values=lambda: {
             "description": desc.get().strip(),
             "next_action": nxt.get().strip(),
+            "deliverable": dlv.get().strip(),
             "planned_minutes": pm.get().strip(),
         },
     )
