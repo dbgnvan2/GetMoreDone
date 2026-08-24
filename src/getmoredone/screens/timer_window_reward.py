@@ -29,6 +29,7 @@ from typing import Optional
 
 from ..models import ProjectBoard
 from ..reward_protocol import RewardDecision, decide_reward, phase_for
+from ..theme import status_text_color
 from .timer_window_celebration import TimerCelebrationMixin
 from .timer_window_dialogs import DeliverableDialog, SavorDialog
 from .week_collision_notice import notify_weekly_tactic_changes
@@ -81,50 +82,54 @@ class TimerRewardMixin(TimerCelebrationMixin):
             )
         return boards[0]
 
-    def prepare_reward_session(self) -> bool:
-        """Confirm the deliverable before starting. False means do not start.
+    def refresh_deliverable_label(self):
+        """Show what this session is for, on the window it is for.
 
-        Purpose: RP-4.2 — an item with no project has no board to count
-                 towards, so it runs the timer exactly as it always did.
-        Tests:   tests/test_reward_protocol_timer.py::test_rp42_linked_start_captures_the_session_deliverable
-                 tests/test_reward_protocol_timer.py::test_rp42c_unlinked_item_starts_with_no_reward_protocol
+        Purpose: the deliverable was captured in a dialog and then never shown
+                 again, so the one thing the reward is contingent on was the one
+                 thing not on screen.
+        Tests:   tests/test_reward_protocol_timer.py::test_the_deliverable_is_shown_on_the_timer_window
         """
-        self.session_deliverable = None
-        self.session_board_id = None
-        self.session_phase = None
-        self._pending_reward = None
-        self._done_pressed = False
-        self._savor_shown = False
+        text = self.session_deliverable or self.item.deliverable
+        if text:
+            self.deliverable_label.configure(
+                text=text, text_color=status_text_color("body"))
+        else:
+            self.deliverable_label.configure(
+                text=self.NO_DELIVERABLE_TEXT, text_color=status_text_color("muted"))
 
-        try:
-            board = self.resolve_reward_board()
-        except Exception as exc:
-            # A transient database error is not a reason to refuse to let
-            # someone work (P1). Fall through to an ordinary untracked session
-            # rather than leaving Start doing nothing at all.
-            logger.exception(
-                "[reward_protocol] could not resolve the project for %s; starting "
-                "an untracked session: %s", self.item.id, exc,
-            )
-            return True
+    def edit_deliverable(self):
+        """Change what this session is for, from the timer itself.
 
-        if board is None:
-            return True
+        Tests: tests/test_reward_protocol_timer.py::test_editing_the_deliverable_updates_the_item_and_the_label
 
-        phase = phase_for(board.savor_count)
+        Editing mid-session does not rewrite what the session was started for:
+        work_logs.deliverable_snapshot is frozen at start (RP-4.5g). It changes
+        the item, and the label, from here on.
+        """
+        if not self.ask_for_deliverable(required=False):
+            return
+        self.refresh_deliverable_label()
+
+    def ask_for_deliverable(self, required: bool = True) -> bool:
+        """Prompt for the deliverable. False means the user backed out.
+
+        Purpose: RP-4.2 — one prompt, used both at Start when there is nothing
+                 to run a session against and by the Edit button.
+        Tests:   tests/test_reward_protocol_timer.py::test_a_blank_deliverable_is_prompted_for_on_every_item
+        """
+        board = self.resolve_reward_board_safely()
         dialog = DeliverableDialog(
             self,
             item_title=self.item.title,
             deliverable=self.item.deliverable,
-            board_title=board.title,
-            phase=phase,
-            savor_count=board.savor_count,
+            board_title=board.title if board else None,
+            phase=phase_for(board.savor_count) if board else None,
+            savor_count=board.savor_count if board else None,
         )
         self.wait_window(dialog)
 
         if not dialog.result:
-            # Cancelled. Not "start without one": a reward-tracked session with
-            # no deliverable has nothing for the reward to be contingent on.
             return False
 
         if dialog.result != (self.item.deliverable or None):
@@ -155,13 +160,58 @@ class TimerRewardMixin(TimerCelebrationMixin):
                         "[reward_protocol] the deliverable saved, but reporting "
                         "the weekly-tactic cascade failed: %s", exc,
                     )
+        return True
 
-        self.session_deliverable = dialog.result
-        self.session_board_id = board.id
-        # Informational only — what the phase was when the session began. The
-        # phase written to the work log is the one decided at Done, which is
-        # what the spec's reward sequence specifies.
-        self.session_phase = phase
+    def resolve_reward_board_safely(self):
+        """resolve_reward_board, but a database hiccup is not fatal.
+
+        A transient error is not a reason to refuse to let someone work (P1);
+        the session runs untracked instead.
+        """
+        try:
+            return self.resolve_reward_board()
+        except Exception as exc:
+            logger.exception(
+                "[reward_protocol] could not resolve the project for %s; treating "
+                "the session as untracked: %s", self.item.id, exc,
+            )
+            return None
+
+    def prepare_reward_session(self) -> bool:
+        """Settle what this session is for before the clock starts.
+
+        Purpose: RP-4.2 — every session has a deliverable, and one that has
+                 already been named is not asked for again; it is on screen.
+        Tests:   tests/test_reward_protocol_timer.py::test_rp42_linked_start_captures_the_session_deliverable
+                 tests/test_reward_protocol_timer.py::test_a_blank_deliverable_is_prompted_for_on_every_item
+
+        False means do not start. Reward *counting* is still project-only — an
+        item with no project gets a deliverable and no phase, no savor and no
+        counter — but naming what you are about to do is not the reward
+        protocol, it is the point of starting a timer at all.
+        """
+        self.session_deliverable = None
+        self.session_board_id = None
+        self.session_phase = None
+        self._pending_reward = None
+        self._done_pressed = False
+        self._savor_shown = False
+
+        if not self.item.deliverable:
+            # Only when there is nothing to run a session against. Asking every
+            # time re-types an answer the user can already see on the window.
+            if not self.ask_for_deliverable():
+                return False
+
+        self.session_deliverable = self.item.deliverable
+        board = self.resolve_reward_board_safely()
+        if board is not None:
+            self.session_board_id = board.id
+            # Informational only — what the phase was when the session began.
+            # The phase written to the work log is the one decided at Done.
+            self.session_phase = phase_for(board.savor_count)
+
+        self.refresh_deliverable_label()
         return True
 
     # -- done ----------------------------------------------------------------

@@ -50,6 +50,14 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
     # without appearing here.
     # Tests: tests/test_reward_protocol_timer.py::test_rp44_states_tuple_matches_what_the_code_assigns
     STATES = (STOPPED, RUNNING, PAUSED, IN_BREAK, AWAITING_CHOICE)
+
+    # Transport labels, recorder-style. Constants because three call sites
+    # relabel the pause button and they must all agree.
+    START_TEXT = "▶  Start"
+    PAUSE_TEXT = "⏸  Pause"
+    RESUME_TEXT = "▶  Resume"
+    STOP_TEXT = "⏹  Stop"
+    NO_DELIVERABLE_TEXT = "— not set —"
     # Anything that is not "stopped" is a live session: the clock may be
     # counting, or waiting for the user, but there is work in progress.
     # Sliced rather than written out, so a state added to STATES joins this
@@ -102,6 +110,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         # Window setup
         self.setup_window()
         self.create_widgets()
+        self.refresh_deliverable_label()
         self.update_display()
 
         # Handle window close as Stop
@@ -145,7 +154,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         # Main container
         main_frame = ctk.CTkFrame(self)
         main_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        main_frame.grid_rowconfigure(7, weight=1)  # Next steps section expands
+        main_frame.grid_rowconfigure(5, weight=1)  # Next steps section expands
         main_frame.grid_columnconfigure(0, weight=1)
 
         # Action title
@@ -158,50 +167,76 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.title_label.grid(row=0, column=0, pady=(
             10, 20), padx=10, sticky="ew")
 
-        # Time display frame
-        time_frame = ctk.CTkFrame(main_frame)
-        time_frame.grid(row=1, column=0, pady=10, padx=10, sticky="ew")
-        time_frame.grid_columnconfigure(1, weight=1)
+        # === TIMER AREA ==========================================================
+        # Everything about the timer lives in one frame: what the session is for,
+        # the clock, the transport, and the status line. The transport used to
+        # sit in a frame of its own outside this one, so "the timer" was two
+        # boxes with a gap down the middle.
+        self.timer_frame = ctk.CTkFrame(main_frame)
+        self.timer_frame.grid(row=1, column=0, pady=10, padx=10, sticky="ew")
+        self.timer_frame.grid_columnconfigure(1, weight=1)
+
+        # Deliverable — what this session is for. First, because it is the thing
+        # the whole protocol is contingent on, and it was previously captured in
+        # a dialog and then never shown again.
+        ctk.CTkLabel(self.timer_frame, text="Deliverable:",
+                     font=ctk.CTkFont(size=12, weight="bold")).grid(
+            row=0, column=0, padx=5, pady=(8, 3), sticky="nw")
+        self.deliverable_label = ctk.CTkLabel(
+            self.timer_frame,
+            text=self.NO_DELIVERABLE_TEXT,
+            font=ctk.CTkFont(size=12),
+            text_color=status_text_color("muted"),
+            wraplength=260,
+            justify="left",
+            anchor="w",
+        )
+        self.deliverable_label.grid(row=0, column=1, padx=5, pady=(8, 3), sticky="ew")
+        self.deliverable_edit_button = ctk.CTkButton(
+            self.timer_frame, text="Edit", width=54,
+            command=self.edit_deliverable, **button_style("secondary"),
+        )
+        self.deliverable_edit_button.grid(row=0, column=2, padx=5, pady=(8, 3))
 
         # Time Block
-        ctk.CTkLabel(time_frame, text="Time Block:", font=ctk.CTkFont(size=12)).grid(
-            row=0, column=0, padx=5, pady=3, sticky="w"
-        )
-        self.time_block_value = ctk.CTkEntry(time_frame, width=60)
-        self.time_block_value.insert(0, str(self.time_block_minutes))
-        self.time_block_value.grid(row=0, column=1, padx=5, pady=3, sticky="w")
-        ctk.CTkLabel(time_frame, text="min").grid(
-            row=0, column=2, padx=5, pady=3, sticky="w")
-
-        # Time To Finish (countdown)
-        ctk.CTkLabel(time_frame, text="Time To Finish:", font=ctk.CTkFont(size=12)).grid(
+        ctk.CTkLabel(self.timer_frame, text="Time Block:", font=ctk.CTkFont(size=12)).grid(
             row=1, column=0, padx=5, pady=3, sticky="w"
         )
+        self.time_block_value = ctk.CTkEntry(self.timer_frame, width=60)
+        self.time_block_value.insert(0, str(self.time_block_minutes))
+        self.time_block_value.grid(row=1, column=1, padx=5, pady=3, sticky="w")
+        ctk.CTkLabel(self.timer_frame, text="min").grid(
+            row=1, column=2, padx=5, pady=3, sticky="w")
+
+        # Time To Finish (countdown)
+        ctk.CTkLabel(self.timer_frame, text="Time To Finish:", font=ctk.CTkFont(size=12)).grid(
+            row=2, column=0, padx=5, pady=3, sticky="w"
+        )
         self.time_remaining_label = ctk.CTkLabel(
-            time_frame,
+            self.timer_frame,
             text=self.format_time(self.work_seconds_remaining),
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color=status_text_color("success")
         )
         self.time_remaining_label.grid(
-            row=1, column=1, columnspan=2, padx=5, pady=3, sticky="w")
+            row=2, column=1, columnspan=2, padx=5, pady=3, sticky="w")
 
         # Wrap/Break
-        ctk.CTkLabel(time_frame, text="Wrap/Break:", font=ctk.CTkFont(size=12)).grid(
-            row=2, column=0, padx=5, pady=3, sticky="w"
+        ctk.CTkLabel(self.timer_frame, text="Wrap/Break:", font=ctk.CTkFont(size=12)).grid(
+            row=3, column=0, padx=5, pady=3, sticky="w"
         )
-        ctk.CTkLabel(time_frame, text=f"{self.break_minutes} min").grid(
-            row=2, column=1, columnspan=2, padx=5, pady=3, sticky="w"
+        ctk.CTkLabel(self.timer_frame, text=f"{self.break_minutes} min").grid(
+            row=3, column=1, columnspan=2, padx=5, pady=3, sticky="w"
         )
 
-        # Timer controls
-        controls_frame = ctk.CTkFrame(main_frame)
-        controls_frame.grid(row=2, column=0, pady=10, padx=10, sticky="ew")
+        # Transport — the recorder row, inside the timer area.
+        controls_frame = ctk.CTkFrame(self.timer_frame, fg_color="transparent")
+        controls_frame.grid(row=4, column=0, columnspan=3, pady=(8, 4), padx=5, sticky="ew")
         controls_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
         self.start_button = ctk.CTkButton(
             controls_frame,
-            text="Start",
+            text=self.START_TEXT,
             command=self.start_timer,
             **button_style("primary"),
         )
@@ -209,7 +244,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.pause_button = ctk.CTkButton(
             controls_frame,
-            text="Pause",
+            text=self.PAUSE_TEXT,
             command=self.pause_timer,
             **button_style("secondary"),
             state="disabled"
@@ -218,7 +253,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.stop_button = ctk.CTkButton(
             controls_frame,
-            text="Stop",
+            text=self.STOP_TEXT,
             command=self.stop_timer,
             **button_style("danger"),
             state="disabled"
@@ -231,20 +266,20 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#44-done-button-new--deliverable-complete
         # Tests: tests/test_reward_protocol_timer.py::test_rp44_done_button_visibility_across_every_timer_state
         self.done_button = ctk.CTkButton(
-            controls_frame,
+            self.timer_frame,
             text="Done — deliverable complete",
             command=self.done_action,
             **button_style("primary"),
         )
-        self.done_button.grid(row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="ew")
+        self.done_button.grid(row=5, column=0, columnspan=3, padx=10, pady=(0, 5), sticky="ew")
         self.done_button.grid_remove()  # nothing to finish until a session starts
 
         # RP-4.3 — break end offers a neutral choice instead of dropping into
         # the completion flow. The reward must never fire on the ring.
         # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#43-break-end-is-neutral-in-tick-line-537551
         # Tests: tests/test_reward_protocol_timer.py::test_rp43_break_end_does_not_auto_stop
-        self.break_choice_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
-        self.break_choice_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="ew")
+        self.break_choice_frame = ctk.CTkFrame(self.timer_frame, fg_color="transparent")
+        self.break_choice_frame.grid(row=6, column=0, columnspan=3, padx=10, pady=(0, 5), sticky="ew")
         self.break_choice_frame.grid_columnconfigure((0, 1), weight=1)
         self.break_choice_frame.grid_remove()
 
@@ -264,32 +299,38 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         )
         self.continue_focus_button.grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
-        # Music controls (separate row)
+        # Timer status, inside the timer area it describes.
+        self.status_label = ctk.CTkLabel(
+            self.timer_frame,
+            text="Ready to start",
+            font=ctk.CTkFont(size=11),
+            text_color=palette["muted_text"]
+        )
+        self.status_label.grid(row=7, column=0, columnspan=3, pady=(2, 8), padx=10)
+
+        # === MUSIC AREA ==========================================================
         music_frame = ctk.CTkFrame(main_frame)
-        music_frame.grid(row=3, column=0, pady=10, padx=10, sticky="ew")
+        music_frame.grid(row=2, column=0, pady=10, padx=10, sticky="ew")
         music_frame.grid_columnconfigure((0, 1, 2), weight=1)
 
-        # Music label
         ctk.CTkLabel(
             music_frame,
             text="🎵 Music:",
             font=ctk.CTkFont(size=12, weight="bold")
         ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-        # Music play button
         self.music_play_button = ctk.CTkButton(
             music_frame,
-            text="▶ Play",
+            text="▶  Play",
             command=self.play_music,
             **button_style("secondary"),
             width=80
         )
         self.music_play_button.grid(row=0, column=1, padx=5, pady=5)
 
-        # Music pause button
         self.music_pause_button = ctk.CTkButton(
             music_frame,
-            text="⏸ Pause",
+            text="⏸  Pause",
             command=self.pause_music,
             **button_style("secondary"),
             width=80,
@@ -297,8 +338,9 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         )
         self.music_pause_button.grid(row=0, column=2, padx=5, pady=5)
 
-        # Music status line — surfaces why music did/didn't start (no folder,
-        # no playable files, now playing) instead of only printing to console.
+        # Everything about music, including the track name. The track used to be
+        # appended to the *timer's* status line, which put music information in
+        # the timer area and made "Working..." grow a second line.
         self.music_status_label = ctk.CTkLabel(
             music_frame,
             text="",
@@ -310,42 +352,43 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.music_status_label.grid(
             row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="w")
 
-        # Status label
-        self.status_label = ctk.CTkLabel(
-            main_frame,
-            text="Ready to start",
-            font=ctk.CTkFont(size=11),
-            text_color=palette["muted_text"]
-        )
-        self.status_label.grid(row=4, column=0, pady=5, padx=10)
-
-        # Completion controls (hidden until stopped)
+        # === SESSION ACTIONS =====================================================
+        # The timer window is a session — a child record of the action item.
+        # These end it. Only "Done" above ever completes the action item itself.
         self.completion_frame = ctk.CTkFrame(main_frame)
         self.completion_frame.grid(
-            row=5, column=0, pady=10, padx=10, sticky="ew")
+            row=3, column=0, pady=10, padx=10, sticky="ew")
         self.completion_frame.grid_columnconfigure((0, 1), weight=1)
         self.completion_frame.grid_remove()  # Hidden initially
 
         self.finished_button = ctk.CTkButton(
             self.completion_frame,
-            text="Finished",
-            command=self.finished_action,
-            **button_style("secondary"),
+            text="Save & Close",
+            command=self.save_and_close_action,
+            **button_style("primary"),
         )
         self.finished_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
 
+        self.cancel_button = ctk.CTkButton(
+            self.completion_frame,
+            text="Cancel",
+            command=self.cancel_action,
+            **button_style("secondary"),
+        )
+        self.cancel_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
         self.continue_button = ctk.CTkButton(
             self.completion_frame,
-            text="Continue",
+            text="Complete & Carry Forward →",
             command=self.continue_action,
-            **button_style("primary"),
+            **button_style("secondary"),
         )
-        self.continue_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.continue_button.grid(row=1, column=0, columnspan=2, padx=5, pady=(0, 5), sticky="ew")
 
         # Next Steps section
         next_steps_header = ctk.CTkFrame(main_frame, fg_color="transparent")
         next_steps_header.grid(
-            row=6, column=0, pady=(20, 5), padx=10, sticky="ew")
+            row=4, column=0, pady=(20, 5), padx=10, sticky="ew")
         next_steps_header.grid_columnconfigure(0, weight=1)
 
         next_steps_label = ctk.CTkLabel(
@@ -381,7 +424,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             wrap="word"
         )
         self.next_steps_text.grid(
-            row=7, column=0, pady=5, padx=10, sticky="nsew")
+            row=5, column=0, pady=5, padx=10, sticky="nsew")
 
         # Populate next steps (keep editable, don't disable)
         description = self.item.description or ""
@@ -530,7 +573,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         # Update UI
         self.start_button.configure(state="disabled")
-        self.pause_button.configure(state="normal", text="Pause")
+        self.pause_button.configure(state="normal", text=self.PAUSE_TEXT)
         self.stop_button.configure(state="normal")
         self.time_block_value.configure(state="disabled")
         self.break_choice_frame.grid_remove()
@@ -542,8 +585,9 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self._sync_done_button()
         self._update_status_label("Working...", "green")
 
-        # Start music playback
-        self._start_music()
+        # Music does not start itself. It used to begin with every session,
+        # which decides for the user that this is a session with music in it.
+        # The Play button in the music area is the only thing that starts it.
 
         # Start timer loop
         self.tick()
@@ -553,7 +597,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         if self.timer_state in (self.RUNNING, self.IN_BREAK):
             self.timer_state = self.PAUSED
             self.pause_timestamp = datetime.now()
-            self.pause_button.configure(text="Resume")
+            self.pause_button.configure(text=self.RESUME_TEXT)
             self._update_status_label("Paused", "orange")
 
             # Music continues independently - user controls it separately
@@ -582,7 +626,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 return
 
             self.timer_state = self.RUNNING if self.work_seconds_remaining > 0 else self.IN_BREAK
-            self.pause_button.configure(text="Pause")
+            self.pause_button.configure(text=self.PAUSE_TEXT)
             status_text = "Working..." if self.timer_state == self.RUNNING else "Break time!"
             status_color = "green" if self.timer_state == self.RUNNING else "blue"
             self._update_status_label(status_text, status_color)
@@ -606,7 +650,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         # Update UI
         self.start_button.configure(state="normal")
-        self.pause_button.configure(state="disabled", text="Pause")
+        self.pause_button.configure(state="disabled", text=self.PAUSE_TEXT)
         self.stop_button.configure(state="disabled")
         self.time_block_value.configure(state="normal")
         self.break_choice_frame.grid_remove()
@@ -706,7 +750,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         # The two buttons below own the choice while it is open; leaving the
         # main Pause button live as well would offer the same action twice
         # under two different names.
-        self.pause_button.configure(state="disabled", text="Pause")
+        self.pause_button.configure(state="disabled", text=self.PAUSE_TEXT)
         self._sync_done_button()
         self.break_choice_frame.grid()
 
@@ -715,7 +759,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.break_choice_frame.grid_remove()
         self.timer_state = self.PAUSED
         self.pause_timestamp = datetime.now()
-        self.pause_button.configure(state="normal", text="Resume")
+        self.pause_button.configure(state="normal", text=self.RESUME_TEXT)
         self._sync_done_button()
         self._update_status_label("Resting — Resume starts another block", "orange")
 
@@ -750,7 +794,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         # state is a lie without it: pressing something marked "Pause" while
         # already paused takes the resume branch. Reached from the break-end
         # choice it was disabled as well, leaving no resume control at all.
-        self.pause_button.configure(state="normal", text="Resume")
+        self.pause_button.configure(state="normal", text=self.RESUME_TEXT)
         self._update_status_label("Recording...", "green")
 
     def completion_failed(self):
@@ -786,7 +830,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.pause_timestamp = None
         # The break banner left the status label bold and oversized.
         self.status_label.configure(font=ctk.CTkFont(size=11))
-        self.pause_button.configure(state="normal", text="Pause")
+        self.pause_button.configure(state="normal", text=self.PAUSE_TEXT)
         self.stop_button.configure(state="normal")
         self._sync_done_button()
         self._update_status_label("Working...", "green")
@@ -894,6 +938,91 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             # Before the modal, because the label outlives it.
             self.completion_failed()
             self._show_error_dialog(f"Failed to complete action: {e}")
+
+    def save_and_close_action(self):
+        """Record the session and go back to the action item, leaving it open.
+
+        Purpose: the timer window is a session — a child record of the action
+                 item — and this is what saving one looks like. It does not
+                 complete the action item; only "Done" does that.
+        Tests:   tests/test_reward_protocol_timer.py::test_save_and_close_records_the_session_without_completing_the_item
+
+        This replaces "Finished", which completed the action item outright. From
+        the user's side that read as the button doing nothing: the window closed
+        and the item vanished off Today, with no step in between that looked
+        like saving anything.
+        """
+        try:
+            if not self.winfo_exists():
+                return
+
+            if self.next_action_window and self.next_action_window.winfo_exists():
+                self.next_action_window.destroy()
+                self.next_action_window = None
+
+            self._save_notes_to_item()
+
+            dialog = CompletionNoteDialog(self, "Session Note")
+            self.wait_window(dialog)
+            note = dialog.result if self.winfo_exists() else None
+
+            self.save_work_log(note)
+            notify_weekly_tactic_changes(self.db_manager, self if self.winfo_exists() else None)
+
+            self._close_and_return()
+        except Exception as e:
+            print(f"[ERROR] Save & Close failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self._show_error_dialog(f"Failed to save the session: {e}")
+
+    def cancel_action(self):
+        """Go back without recording a session note, keeping the time and notes.
+
+        Purpose: the escape hatch that still tells the truth. Time spent is a
+                 fact whether or not the user wants to write anything about it,
+                 and notes typed into this window are edits to the action item
+                 rather than part of the session record — discarding either
+                 silently would be the window lying about what Cancel did.
+        Tests:   tests/test_reward_protocol_timer.py::test_cancel_still_logs_the_time_and_keeps_the_notes
+        """
+        try:
+            if not self.winfo_exists():
+                return
+
+            if self.next_action_window and self.next_action_window.winfo_exists():
+                self.next_action_window.destroy()
+                self.next_action_window = None
+
+            self._save_notes_to_item()
+            self.save_work_log(None)
+            notify_weekly_tactic_changes(self.db_manager, self)
+
+            self._close_and_return()
+        except Exception as e:
+            print(f"[ERROR] Cancel failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self._show_error_dialog(f"Failed to close the session: {e}")
+
+    def _save_notes_to_item(self):
+        """Persist the notes box onto the action item, if it says anything."""
+        try:
+            notes = self.next_steps_text.get("1.0", "end-1c").strip()
+        except (tk.TclError, AttributeError):
+            return
+        if notes and notes != (self.item.description or ""):
+            self.item.description = notes
+            self.db_manager.update_action_item(self.item)
+            notify_weekly_tactic_changes(self.db_manager, self)
+
+    def _close_and_return(self):
+        """Save window settings, tell the opener to refresh, and close."""
+        if self.winfo_exists():
+            self.save_window_settings()
+        if self.on_close_callback:
+            self.on_close_callback()
+        self._cleanup_and_destroy()
 
     def continue_action(self):
         """Handle Continue workflow: update current, duplicate, complete, show Next Action screen, present editor."""
@@ -1263,11 +1392,13 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             print(f"Error flashing window: {e}")
 
     def _update_status_label(self, text: str, color: str):
-        """Update status label with optional track name."""
-        if self.current_track_name:
-            display_text = f"{text}\n♫ {self.current_track_name}"
-        else:
-            display_text = text
+        """Update the timer's status line. Timer information only.
+
+        The track name used to be appended here, which put music information in
+        the timer area and made every status a two-line string. It lives in the
+        music area's own status label now.
+        """
+        display_text = text
         resolved_color = status_text_color(color)
         # Reset font to normal unless it's a break notification
         if "BREAK" in text.upper():
@@ -1277,17 +1408,12 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 text=display_text, text_color=resolved_color, font=ctk.CTkFont(size=11))
 
     def _update_status_with_track(self):
-        """Update the current status to include track information."""
-        # Get current status text and color
-        current_text = self.status_label.cget("text")
-        current_color = self.status_label.cget("text_color")
+        """Show the playing track, in the music area.
 
-        # Remove any existing track info
-        if "\n♫" in current_text:
-            current_text = current_text.split("\n♫")[0]
-
-        # Update with track name
-        self._update_status_label(current_text, current_color)
+        Tests: tests/test_reward_protocol_timer.py::test_music_information_stays_in_the_music_area
+        """
+        if self.current_track_name:
+            self._set_music_status(f"♫ {self.current_track_name}", "muted")
 
     def _play_system_beep(self):
         """Play system beep/alert sound."""
