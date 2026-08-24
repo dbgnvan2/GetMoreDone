@@ -93,6 +93,38 @@ mutation-checked.
 `CELEBRATION_TYPES`, delete the asset, the generator and the exemption. The visual
 celebrations are unaffected.
 
+## Review
+
+Two cold passes over the full range (the diff and the range, no narrative): a
+failure-pattern sweep and a correctness / UI-contract / test-quality pass. They ran
+independently and **converged on four of the same defects**, which is the evidence
+worth having — a reviewer agreeing with itself is close to none.
+
+Combined: 2 high, 8 medium, 9 low. Everything medium and above fixed in `9f7b5f3` /
+`1685ce8`; the low findings are in `BACKLOG.md`. The three that mattered most:
+
+- **Done never stopped the clock**, so the break alarm fired over the savor prompt and
+  `focus_force` pulled focus off the modal. The test for it called
+  `_cancel_pending_timer()` on the line before `done_action()` — it was doing the fix's
+  job and hiding its absence.
+- **Start → Stop → Start showed Done, Finished and Continue together.** Two of the three
+  end the work with no reward protocol at all, so a user reaching for the familiar
+  button lost the feature silently.
+- **The reward sequence could veto the record.** A dialog, a canvas and an audio player
+  ran unguarded before the only code that writes anything.
+
+A third cold pass over the fix commits alone followed, since fixes are written last and
+fastest and are the least-reviewed code in any change.
+
+Fifteen more mutations on the fixes, all red. Two started green and were fixed: a helper
+cancelled the tick before asserting the code cancels it, and one defensive line is
+unreachable through the UI and needed a direct test rather than a click sequence.
+
+**`BACKLOG.md` contained a wrong entry** and it is corrected rather than deleted. It
+described `continue_action`'s inline WorkLog as duplication that "correctly carries no
+reward columns"; `deliverable_snapshot` is not reward-fired, so Continue recorded nothing
+about what the session was for while Finished recorded it.
+
 ## Risks / Known gaps
 
 - **Break end is the risky change.** It alters a control that worked, for every item,
@@ -105,6 +137,11 @@ celebrations are unaffected.
 - **Three items need a human, not a test** — whether the savor step reads right, whether
   the confetti and balloons look like a celebration, and whether `tada.wav` sounds like
   "Ta-DA!". Listed in `docs/spec_coverage.md` under "Human review required".
+- **Music now keeps playing through the end of a break.** It used to stop, because
+  break end stopped the whole timer. This matches Pause's long-standing behaviour and
+  is now documented in both the CHANGELOG and the user guide — it was an undocumented
+  side effect of the break-end change until the cold pass enumerated what `stop_timer`
+  used to do.
 - The deliverable is offered in the full item editor only; `screens/inline_editors.py`
   does not gain it. Deliberate (plan §3 D7) — the timer always captures one where it
   matters.

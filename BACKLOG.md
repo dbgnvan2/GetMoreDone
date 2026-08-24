@@ -9,10 +9,16 @@ Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy
 Graded below medium and kept out of the change, per the review-sweep rules — a
 cosmetic fix is new unreviewed surface and buys none of the safety it costs.
 
-- **`continue_action` builds its own `WorkLog` inline** (`screens/timer_window.py`)
-  instead of calling `save_work_log`, so there are two writers of the same row
-  shape. It correctly carries no reward columns — the reward fires on Done, not
-  on Continue — but the duplication is how the two drift (P5).
+- ~~`continue_action` builds its own `WorkLog` inline~~ — **fixed, and this entry
+  was wrong.** It said the inline row "correctly carries no reward columns".
+  That is true of `deliverable_completed`, `savor_delivered` and `phase`, but
+  `deliverable_snapshot` is not reward-fired: the sibling Stop → Finished path
+  writes it with `deliverable_completed=0`, so the identical session ended the
+  other way recorded nothing about what it was for. The duplicate item it
+  creates was also missing `deliverable` entirely. Both fixed in `9f7b5f3`;
+  `continue_action` now routes through `save_work_log`. Kept here rather than
+  deleted, because a backlog entry that mischaracterises a gap is worse than no
+  entry — it reads as a decision already taken.
 - **`tests/test_timer.py`'s `db_manager` fixture uses `tempfile`, not `tmp_path`.**
   Explicit, so it does not reach the user's real database, but it leaks the file
   if a test raises between `yield` and `unlink`.
@@ -28,6 +34,41 @@ cosmetic fix is new unreviewed surface and buys none of the safety it costs.
   surface, so this affects rows created before that.
 - **The Deliverable field is not on `screens/inline_editors.py`.** A recorded
   decision, not an oversight — the timer captures one at start where it matters.
+
+### reward protocol: low findings from the two cold review passes (2026-08-24)
+
+Graded low and deferred. Everything medium or above from those passes was fixed
+in `9f7b5f3`.
+
+- **A project deleted mid-session writes a row indistinguishable from an
+  unlinked one** (`timer_window_reward.py`). Both produce `phase=NULL`,
+  `savor_delivered=0`, `celebration_type=NULL`. Only a log line — gone on the
+  next launch — separates "the protocol could not run" from "there was no
+  protocol". A distinguishable `phase` value would make the audit trail able to
+  answer the question it exists for.
+- **`finished_action`'s window-already-destroyed branch returns without
+  `_cleanup_and_destroy`**, so `cancel_celebration()` is skipped. Latent, not
+  live: the only route into that branch comes through `on_window_close`, which
+  has already cancelled.
+- **The sibling `after` chains are still untracked** — `_flash_window` schedules
+  four callbacks out to +1300 ms, and `save_notes` (in both the timer and the
+  pop-out notes window) schedules a +2000 ms button reset. None is registered
+  and none is cancelled on destroy. Pre-existing, but P5-shaped: the celebration
+  hardened one member of the class and left the siblings.
+- **The celebration is largely occluded.** `CompletionNoteDialog` opens
+  milliseconds later, topmost and centred on the same window, so ~1.5 s of
+  confetti animates behind it. Fixing it means either delaying the dialog or
+  drawing the celebration somewhere else — both bigger than the finding.
+- **`test_rp45f_celebration_length_is_short` takes `host` and `monkeypatch` and
+  uses neither**, building a real Toplevel for a constant comparison.
+- **The Deliverable placeholder is 60 characters** in a single-line entry in the
+  narrow left column of the item editor. May clip; not verified either way,
+  since it needs a real window manager.
+- **The savor copy lives in Python source** (`timer_window_dialogs.py`), with
+  tests pinning the literals. Global rule 9 says content requiring editorial
+  judgement belongs in a config file. The same applies to `WIRING_THRESHOLD` and
+  the two probabilities — defensible as constants today, but they are the knobs
+  a user will eventually want.
 
 
 ### rename-safe links: low-severity findings (2026-08-20)

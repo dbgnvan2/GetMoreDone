@@ -527,6 +527,12 @@ Neither of these completes anything. That is the point: the reward has to fire o
 finishing a deliverable, never on the timer ringing, or what gets reinforced is sitting
 there until the bell goes.
 
+Two things follow from that. **Music keeps playing through the end of a break** — it
+used to stop, because the break ending used to stop the whole timer. It now behaves the
+way it does when you Pause: yours to control, from the music buttons. And **Finished /
+Continue are one click further away at the ring** — press Stop first, or press Done if
+the deliverable is actually finished.
+
 Music controls:
 - **Play** — What: Starts music from your configured folder. Why: Focus support.
 - **Pause** — What: Pauses music. Why: Quiet when needed.

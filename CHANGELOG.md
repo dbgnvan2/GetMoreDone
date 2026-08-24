@@ -40,6 +40,12 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   focus**, and neither completes anything. Stop still works exactly as before,
   and Finished/Continue still appear after you press it.
 
+  Two consequences worth knowing. **Music now keeps playing through the end of a
+  break** — it used to stop, because the break ending stopped the whole timer.
+  That matches how Pause has always behaved (music is yours to control from the
+  music buttons). And Finished/Continue are one click further away at the ring:
+  press Stop first, or use **Done** if the deliverable is finished.
+
 ## [0.3.0] - 2026-08-21
 
 ### Changed
