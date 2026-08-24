@@ -37,6 +37,15 @@ DELIVERABLE = "Draft section 2's opening paragraph"
 # implementation, so a state added without a visibility decision fails here.
 ALL_TIMER_STATES = ("stopped", "running", "paused", "in_break", "awaiting_choice")
 
+# The modules TimerWindow is composed from. One literal, used by both the state
+# scan and the test that pins the family — written twice, changing the scan's
+# pattern left the test that exists to catch that green.
+TIMER_WINDOW_GLOB = "timer_window*.py"
+
+
+def _timer_window_modules():
+    return sorted(pathlib.Path(tw.__file__).parent.glob(TIMER_WINDOW_GLOB))
+
 
 class FakeDeliverableDialog:
     """Stands in for the modal. ``result`` is whatever the test wants back."""
@@ -893,9 +902,8 @@ def test_rp44_states_tuple_matches_what_the_code_assigns(root, manager, quiet):
     # A state assigned in timer_window_celebration.py or a future mixin would be
     # invisible to a hand-listed pair, and `assert assigned` would still pass on
     # the values the scanned modules happen to supply.
-    screens = pathlib.Path(tw.__file__).parent
-    modules = sorted(screens.glob("timer_window*.py"))
-    assert len(modules) >= 4, f"expected the timer_window* family, found {modules}"
+    modules = _timer_window_modules()
+    assert modules, f"the {TIMER_WINDOW_GLOB} scan found nothing"
 
     assigned = set()
     for module in modules:
@@ -1309,12 +1317,109 @@ def test_rp44_the_state_scan_covers_the_whole_timer_window_family():
     catches nothing right now. What can be checked is that the glob resolves to
     the family it claims, so a typo in the pattern fails loudly instead of
     quietly scanning one file.
+
+    It reads TIMER_WINDOW_GLOB rather than repeating the pattern. Written out
+    twice, changing the scan's copy left this test — the one that exists to
+    catch exactly that — perfectly green. An exact set, not a count floor: a
+    floor is what hides the narrowing it was written to catch.
     """
-    screens = pathlib.Path(tw.__file__).parent
-    modules = {m.name for m in screens.glob("timer_window*.py")}
+    modules = {m.name for m in _timer_window_modules()}
     assert modules == {
         "timer_window.py",
         "timer_window_reward.py",
         "timer_window_celebration.py",
         "timer_window_dialogs.py",
     }, f"the timer_window family has changed: {sorted(modules)}"
+
+
+def test_rp45_a_failed_completion_does_not_leave_the_window_claiming_success(root, manager, quiet):
+    """The status label outlives the error modal, so it must not assert a lie.
+
+    halt_for_completion runs before anything is persisted. If the save then
+    raises, the item is still open and no work log exists, while the timer reads
+    a green "Recording..." — the one artefact left on screen after the user
+    dismisses the error.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    errors = []
+    try:
+        timer.fire_celebration = lambda kind: None
+        timer._show_error_dialog = lambda message: errors.append(message)
+        timer.db_manager.create_work_log = lambda log: (_ for _ in ()).throw(
+            RuntimeError("database is locked"))
+
+        timer.start_timer()
+        timer.work_seconds_elapsed = 25 * 60
+        timer.done_action()
+
+        assert errors, "the failure was not reported to the user at all"
+        assert manager.get_action_item(item.id).status == "open"
+        assert manager.get_work_logs(item.id) == []
+        assert manager.get_project_board(board.id).savor_count == 0
+
+        status = timer.status_label.cget("text")
+        assert "complete" not in status.lower() and "recording" not in status.lower(), (
+            f"the window still reads {status!r} for a completion that did not happen"
+        )
+    finally:
+        timer.destroy()
+
+
+def test_rp45_halting_for_completion_leaves_a_usable_resume_control(root, manager, quiet):
+    """PAUSED must look paused, from either route into it.
+
+    The other two transitions into PAUSED both relabel this button. Without it
+    the timer sits paused behind a control marked "Pause" that resumes — and
+    reached from the break-end choice the button was disabled as well, so a
+    completion that failed left no way to carry on.
+    """
+    item, _board = _linked(manager)
+
+    for enter_from in ("running", "awaiting_choice"):
+        timer = _timer(root, manager, item)
+        try:
+            timer.fire_celebration = lambda kind: None
+            if enter_from == "running":
+                timer.start_timer()
+                timer._cancel_pending_timer()
+            else:
+                _run_to_break_end(timer)
+                assert timer.pause_button.cget("state") == "disabled", "precondition"
+
+            timer.halt_for_completion()
+
+            assert timer.timer_state == "paused"
+            assert timer.pause_button.cget("state") == "normal", (
+                f"entering from {enter_from}: paused with no resume control"
+            )
+            assert timer.pause_button.cget("text") == "Resume", (
+                f"entering from {enter_from}: the button says "
+                f"{timer.pause_button.cget('text')!r} while the timer is paused"
+            )
+        finally:
+            timer.destroy()
+
+
+def test_rp42_a_cascade_report_failure_does_not_stop_the_timer_starting(root, manager, quiet):
+    """The notify is guarded on its own, which is what "two guards" means.
+
+    Left bare, an exception here propagates out of prepare_reward_session and
+    out of start_timer, which has no handler — so the Start button does nothing
+    and says nothing.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(twr, "notify_weekly_tactic_changes",
+                       lambda *a, **k: (_ for _ in ()).throw(RuntimeError("report failed")))
+            timer.start_timer()
+            timer._cancel_pending_timer()
+
+        assert timer.timer_state == "running", "a failed cascade report blocked Start"
+        # The deliverable write happened before the report, so it must survive.
+        assert manager.get_action_item(item.id).deliverable == DELIVERABLE
+        assert timer.session_board_id == board.id
+    finally:
+        timer.destroy()
