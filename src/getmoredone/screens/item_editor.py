@@ -306,6 +306,23 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         self.next_action_text.grid(row=row_l, column=0, columnspan=2, sticky="nsew", padx=10, pady=(0, 10))
         row_l += 1
 
+        # RP-4.1 — Deliverable: the crisp "done = ..." for this item. A single
+        # line on purpose; the moment it needs a paragraph it has stopped being
+        # a checkable artifact.
+        # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#41-deliverable-field-on-the-item-step-1--scope
+        # Tests: tests/test_ui_presence.py::test_item_editor_ui_elements_presence
+        #        tests/test_item_editor_new_item_builder.py::test_rp41_deliverable_from_form_reaches_the_saved_item
+        ctk.CTkLabel(left_col, text="Deliverable:").grid(
+            row=row_l, column=0, sticky="nw", padx=10, pady=(5, 0))
+        row_l += 1
+        self.deliverable_entry = ctk.CTkEntry(
+            left_col,
+            placeholder_text="What does 'done' look like? A checkable artifact, not time spent.",
+        )
+        self.deliverable_entry.grid(
+            row=row_l, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+        row_l += 1
+
         # Planned Minutes
         planned_frame = ctk.CTkFrame(left_col, fg_color="transparent")
         planned_frame.grid(row=row_l, column=0, columnspan=2, sticky="w", pady=5)
@@ -855,6 +872,9 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
         if self.item.next_action:
             self.next_action_text.insert("1.0", self.item.next_action)
 
+        if self.item.deliverable:
+            self.deliverable_entry.insert(0, self.item.deliverable)
+
         if self.item.start_date:
             self.start_date_entry.insert(0, self.item.start_date)
 
@@ -1319,10 +1339,19 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
                     on_close=self._on_timer_closed)
 
     def _current_timer_field_values(self) -> dict:
-        """Snapshot of the editor fields the timer can also change."""
+        """Snapshot of the editor fields the timer can also change.
+
+        ``deliverable`` belongs here because the timer's start dialog writes it
+        (RP-4.2). Left out, an editor open behind the timer would still show the
+        old blank box, and saving from it would wipe the deliverable the user
+        had just typed into the timer.
+
+        Tests: tests/test_reward_protocol_timer.py::test_rp41_editor_picks_up_a_deliverable_written_by_the_timer
+        """
         return {
             "description": self.description_text.get("1.0", "end").strip(),
             "next_action": self.next_action_text.get("1.0", "end").strip(),
+            "deliverable": self.deliverable_entry.get().strip(),
             "planned_minutes": self.planned_minutes_entry.get().strip(),
         }
 
@@ -1377,6 +1406,10 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
                 self.next_action_text.delete("1.0", "end")
                 if fresh.next_action:
                     self.next_action_text.insert("1.0", fresh.next_action)
+            if current["deliverable"] == snap.get("deliverable"):
+                self.deliverable_entry.delete(0, "end")
+                if fresh.deliverable:
+                    self.deliverable_entry.insert(0, fresh.deliverable)
             if current["planned_minutes"] == snap.get("planned_minutes"):
                 self.planned_minutes_entry.delete(0, "end")
                 if fresh.planned_minutes is not None:

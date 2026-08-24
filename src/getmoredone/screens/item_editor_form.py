@@ -48,6 +48,10 @@ class ItemEditorFormMixin:
             )
         item.description = self.description_text.get("1.0", "end").strip() or None
         item.next_action = self.next_action_text.get("1.0", "end").strip() or None
+        # RP-4.1 — read back through the same builder both save paths use, so
+        # the field cannot reach one of them and not the other.
+        # Tests: tests/test_item_editor_new_item_builder.py::test_rp41_deliverable_from_form_reaches_the_saved_item
+        item.deliverable = self.deliverable_entry.get().strip() or None
         item.start_date = self.start_date_entry.get().strip() or None
         item.due_date = self.due_date_entry.get().strip() or None
         item.is_meeting = self.is_meeting_var.get()
