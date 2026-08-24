@@ -7,6 +7,39 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The timer now rewards finishing a thing, not running out of time.** Give an
+  action a **Deliverable** — the crisp "done = ..." for it, a checkable artifact
+  rather than a time-box. "Draft section 2's opening paragraph", not "work on
+  the report for 25 minutes". The field is on the item editor, and the timer
+  asks for one when you start a session on an action that belongs to a Project.
+
+- **A "Done — deliverable complete" button on the timer**, available the whole
+  time a session is running rather than only when the clock stops. Pressing it
+  is what completes the work, so the reward attaches to what you made instead
+  of to how long you sat there.
+
+- **A savor step after a completed deliverable.** It shows you what you set out
+  to do, says it is done, and asks you to look at it for five seconds. Early on
+  in a project it appears every time; after fifteen completed deliverables it
+  drops to roughly two in five, because a signal that arrives every single time
+  stops carrying information. There is no "good job" in it anywhere — the words
+  point at the artifact and at the effort, which is the whole idea.
+
+- **An occasional celebration** — confetti, balloons or a chime — on about one
+  completion in five, at random, in every phase. It is never guaranteed and
+  never replaces the savor step; the moment a surprise becomes predictable it
+  is just a cue.
+
+### Changed
+
+- **The end of a break no longer ends the session.** It used to stop the timer
+  and offer Finished/Continue, which quietly made the timer ringing the thing
+  that decided your work was over. Now it asks: **Pause (rest)** or **Continue
+  focus**, and neither completes anything. Stop still works exactly as before,
+  and Finished/Continue still appear after you press it.
+
 ## [0.3.0] - 2026-08-21
 
 ### Changed

@@ -1,3 +1,58 @@
+## Recent Changes (2026-08-24)
+
+### Reward-contingent task chunking (the dopamine protocol)
+
+- ✅ **The timer's reward now fires on a completed deliverable, not on the clock.** New
+  one-line **Deliverable** field on an action item ("Draft section 2's opening paragraph",
+  never "work on the report for 25 min"), a **Done — deliverable complete** button available
+  for the whole session, and a **savor** step that names what you set out to do and asks you
+  to look at it. Phase-gated: every completion below 15 on a Project, ~40% above it. A
+  **celebration** (confetti / balloons / a chime) fires on ~20% at random in either phase,
+  always after the savor and never instead of it. New pure `src/getmoredone/reward_protocol.py`
+  makes the decision; `screens/timer_window_reward.py` runs it; `screens/timer_window_celebration.py`
+  draws it. Spec: `docs/spec_2026-08-23_dopamine_reward_protocol.md`.
+- ✅ **Break end is neutral.** `tick()` used to call `stop_timer()` when the break ran out,
+  which showed Finished/Continue and so made the timer ringing the thing that ended the work —
+  the exact coupling the feature exists to break. It now offers **Pause (rest)** / **Continue
+  focus**. That needed a fifth state (`awaiting_choice`): at break end both countdowns are zero,
+  and `pause_timer`'s resume rule reads exactly those two numbers, so "just pause instead of
+  stop" makes Resume drop into a zero-second break that re-fires break-over every tick forever.
+  Stop and Finished/Continue are untouched and pinned by `test_rp43c`.
+- ✅ **Two deliberate departures from the spec.** The work log is written once (§4.5 step 4 saves
+  one and step 5 defers to a flow that already saves one). The `savor_count` increment moved
+  inside `save_work_log` — written as the spec lists it, a window closed between the two leaves
+  a project claiming a completion nothing recorded.
+- ✅ **`savor_delivered` records the dialog, not the decision.** Derived from `decision.show_savor`
+  it is a restatement of the decision and cannot disagree with it, so it could never reveal a
+  savor that was decided on and then not shown — which is the only thing the column is for.
+  Found by mutation: suppressing the savor dialog entirely left the fifteen-completion test green.
+- ✅ **Two dead row mappers deleted.** `DatabaseManager` shadows `_row_to_project_board` and
+  `_row_to_project_board_link` on `DBManagerProjectBoardsMixin`; the mixin's copies had not run
+  since the day they were duplicated, and had drifted — the dead one does not hydrate
+  `start_date`/`end_date`, so the file named after project boards implied a project's dates are
+  lost on load. They are not. `savor_count` went on the live copy at `db_manager.py:2048`.
+- ⚠️ **A `.gitignore` bug that would have shipped a missing asset.** A bare `audio/` pattern
+  matches a directory of that name at *any* depth, so `assets/audio/tada.wav` was excluded from
+  git — present on this machine, absent from every clone and CI build. Caught by
+  `test_repo_hygiene.py::test_rm7b_ignore_rules_do_not_exclude_a_bundled_resource`, not by me.
+  Now anchored as `/audio/`.
+- ✅ **Tests** — `test_reward_protocol.py` (11), `test_reward_protocol_schema.py` (15),
+  `test_reward_protocol_timer.py` (26), `test_reward_celebration.py` (18). 19 mutations run
+  against verbatim originals, all red. Full suite: **1438 passed, 7 skipped** (exit 0).
+- ⚠️ **A signed-off spec decision was amended.** `spec_2026-08-18_downloadable_release.md`
+  D3 says "no audio ships" — users point Settings at their own music folder. The
+  celebration needs a sound and the spec forbids fetching one, so `assets/audio/tada.wav`
+  now ships. D3 is about not distributing somebody else's copyright; a 30 KB sound this
+  repo generates from a committed script is not that. The guard was narrowed, not
+  deleted: `GENERATED_AUDIO` names the exempt paths, each must name a generator that
+  exists and is committed, and the bytes are proved to be its output. Any other tracked
+  audio still fails. Revert is small if that call is wrong.
+- ⚠️ **Not seen in the packaged app.** `/Applications/daVIPA.app` was running and holds the
+  single-instance lock; it was not killed. The savor copy, the overlays and the chime still
+  need a human to look at and listen to once.
+
+---
+
 ## Recent Changes (2026-08-12)
 
 ### Today: drag-to-top pin + inline date "From today" offset ladder

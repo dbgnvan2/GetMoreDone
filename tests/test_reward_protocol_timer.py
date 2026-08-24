@@ -266,6 +266,12 @@ def test_rp43_break_end_does_not_auto_stop(root, manager, quiet):
             "never fire on elapsed time"
         )
         assert _is_visible(timer.done_button), "Done is still the way to complete"
+        # Disabled, not removed: the rest/continue pair owns the choice while it
+        # is open, and offering the same action twice under two names is how a
+        # user ends up in a state neither button was written for. The control
+        # itself stays, as the UI-regression policy requires.
+        assert timer.pause_button.cget("state") == "disabled"
+        assert timer.stop_button.cget("state") == "normal", "Stop must still work"
     finally:
         timer.destroy()
 
@@ -284,6 +290,10 @@ def test_rp43a_continue_focus_starts_a_fresh_cycle(root, manager, quiet):
         assert timer.break_seconds_remaining == timer.break_minutes * 60
         assert not _is_visible(timer.break_choice_frame)
         assert not _is_visible(timer.completion_frame)
+        assert timer.pause_button.cget("state") == "normal", (
+            "Pause was left disabled after the choice closed"
+        )
+        assert timer.pause_button.cget("text") == "Pause"
     finally:
         timer.destroy()
 
@@ -302,6 +312,10 @@ def test_rp43b_resume_after_rest_does_not_re_enter_a_zero_second_break(root, man
         timer.rest_action()
         assert timer.timer_state == "paused"
         assert not _is_visible(timer.break_choice_frame)
+        assert timer.pause_button.cget("state") == "normal", (
+            "resting left no way to start working again"
+        )
+        assert timer.pause_button.cget("text") == "Resume"
 
         timer.pause_timer()             # Resume
         timer._cancel_pending_timer()

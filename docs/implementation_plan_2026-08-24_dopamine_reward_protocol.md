@@ -74,7 +74,7 @@ rate 10pp, twice the tolerance).
 
 | ID | Criterion | Test |
 |---|---|---|
-| RP-4.1 | `ActionItem.deliverable` renders in the item editor (`deliverable_text` widget) and its value reaches the saved item (P25: the boundary is asserted, not the widget) | `tests/test_ui_presence.py::test_rp41_item_editor_has_deliverable_field`, `tests/test_item_editor_new_item_builder.py::test_rp41_deliverable_from_form_reaches_the_saved_item` |
+| RP-4.1 | `ActionItem.deliverable` renders in the item editor (`deliverable_entry` widget) and its value reaches the saved item (P25: the boundary is asserted, not the widget) | `tests/test_ui_presence.py::test_item_editor_ui_elements_presence`, `tests/test_item_editor_new_item_builder.py::test_rp41_deliverable_from_form_reaches_the_saved_item` |
 | RP-4.2 | Project-linked item: `start_timer` opens `DeliverableDialog` prefilled from `item.deliverable`, and on save stores `session_deliverable` / `session_board_id` / `session_phase` | `tests/test_reward_protocol_timer.py::test_rp42_linked_start_captures_the_session_deliverable` |
 | RP-4.2a | Empty deliverable is **required**: the dialog refuses to save blank and shows the spec's hint verbatim | `…::test_rp42a_deliverable_dialog_refuses_blank_and_shows_the_hint` |
 | RP-4.2b | Cancelling the dialog **aborts the start** — `timer_state` stays `"stopped"`, no music, no tick scheduled | `…::test_rp42b_cancelling_the_deliverable_dialog_does_not_start_the_timer` |

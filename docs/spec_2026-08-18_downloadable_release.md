@@ -28,7 +28,7 @@ and without hitting a crash.
 |---|---|
 | D1 | **License is proprietary + source-available.** No cost to use today; copyright retained by Dave Galloway; redistribution and commercial use reserved so the app can be sold later. |
 | D2 | **macOS build ships unsigned.** Gatekeeper workaround is documented rather than paid for. |
-| D3 | **No audio ships.** Users point Settings at their own music folder. |
+| D3 | **No audio ships.** Users point Settings at their own music folder. *Amended 2026-08-24:* one generated UI sound ships — `assets/audio/tada.wav`, made by `tools/generate_tada_wav.py` and committed with it. The ban is on distributing audio this project does not own; a sound it generates from a committed script is not that. See R-M2.D. |
 
 ## 4. Known blocking findings (discovered during spec research)
 
@@ -90,7 +90,15 @@ Fixes F2, F3, F4. Implements D1, D3.
 - **R-M2.C** — `THIRD_PARTY_NOTICES.md` lists every runtime dependency with its
   license, and carries the pygame LGPL notice and relink statement required by
   R-M1.D.
-- **R-M2.D** — No audio file is committed or bundled. `audio/` remains ignored.
+- **R-M2.D** — No audio file is committed or bundled, **except** the generated
+  UI sounds listed in `tests/test_release_licensing.py::GENERATED_AUDIO`. Each
+  must name a real generator script, itself committed, and the committed bytes
+  must be provably that script's output. `audio/` remains ignored — the rule is
+  now written `/audio/`, because a bare `audio/` also matched `assets/audio/` and
+  silently excluded a bundled resource from every clone.
+  - Tests: `tests/test_release_licensing.py::test_rm2d_no_audio_files_tracked`,
+    `::test_rm2d_every_exempt_audio_file_has_its_generator`,
+    `tests/test_reward_celebration.py::test_rp7_committed_tada_wav_is_this_scripts_output`
 
 ### R-M3 — Continuous verification on a blank machine
 

@@ -436,6 +436,11 @@ Main fields:
   title now lives in, and saves from, this one box.)
 - **Description** — What: Longer notes. Why: Store context or details.
 - **Next Action** — What: Short, action-focused notes, often one per line. Why: Break a task into next steps.
+- **Deliverable** — What: The crisp "done = ..." for this item, in one line. A checkable
+  artifact, not a time-box: *"Draft section 2's opening paragraph"*, never *"work on the
+  report for 25 min"*. Why: It is what the Timer's reward protocol is contingent on. If
+  you leave it blank here, the Timer asks for one when you start a session on an item
+  that belongs to a Project — so it is only ever optional, never skipped where it counts.
 - **Planned Minutes** — What: Time estimate. Why: Better scheduling and stats.
 
 Action Plan (top left):
@@ -510,6 +515,17 @@ Controls:
 - **Start** — What: Starts the timer. Why: Begin the session.
 - **Pause / Resume** — What: Pause or resume the countdown. Why: Handle interruptions.
 - **Stop** — What: Stops the timer and shows completion actions. Why: End the session cleanly.
+- **Done — deliverable complete** — What: Marks the deliverable finished and closes out the
+  session. Available the whole time a session is running, not only when the clock stops.
+  Why: Finishing the thing is what ends the work; the clock running out is not.
+
+At the end of a break the timer no longer stops on its own. It asks:
+- **Pause (rest)** — What: Stops the clock and waits. Resume starts a fresh focus block.
+- **Continue focus** — What: Straight into another block, no interruption.
+
+Neither of these completes anything. That is the point: the reward has to fire on
+finishing a deliverable, never on the timer ringing, or what gets reinforced is sitting
+there until the bell goes.
 
 Music controls:
 - **Play** — What: Starts music from your configured folder. Why: Focus support.
@@ -522,6 +538,29 @@ Completion actions:
 Notes:
 - **Pop Out** — What: Opens the notes in a separate window. Why: More space to write.
 - **Save Notes** — What: Saves edits to the item description. Why: Keep notes synced.
+
+### The reward protocol (items filed under a Project)
+
+Starting a timer on an item that belongs to a Project asks you to confirm its
+**Deliverable** first, prefilled from the item. Cancelling does not start the timer —
+a tracked session with no deliverable has nothing to be contingent on. Items **not**
+filed under a Project run the timer exactly as they always have, with none of this.
+
+When you press **Done**:
+
+1. **Savor.** A short prompt naming what you set out to do, confirming it is done, and
+   asking you to look at it for five seconds and notice the effort. Early in a project
+   this appears on *every* completed deliverable — that is how the association gets
+   built. After fifteen completed deliverables on that Project it drops to roughly two
+   in five, because something that happens every single time stops telling you anything.
+2. **Celebration.** About one completion in five, at random, in either phase: confetti,
+   balloons, or a short chime. Never guaranteed, and never *instead of* the savor step.
+3. The Project's completed-deliverable count goes up — every time, whether or not the
+   savor prompt appeared — and the session is written to your work log along with which
+   deliverable it was for and what the protocol did.
+
+Nothing here says "well done". The words point at the thing you made and at the effort
+of making it, which is what the whole design is for.
 
 ---
 

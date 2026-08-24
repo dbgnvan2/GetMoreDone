@@ -4,6 +4,32 @@ Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy
 
 ## Deferred — found by review, deliberately not fixed
 
+### reward protocol: below-medium findings and deferred scope (2026-08-24)
+
+Graded below medium and kept out of the change, per the review-sweep rules — a
+cosmetic fix is new unreviewed surface and buys none of the safety it costs.
+
+- **`continue_action` builds its own `WorkLog` inline** (`screens/timer_window.py`)
+  instead of calling `save_work_log`, so there are two writers of the same row
+  shape. It correctly carries no reward columns — the reward fires on Done, not
+  on Continue — but the duplication is how the two drift (P5).
+- **`tests/test_timer.py`'s `db_manager` fixture uses `tempfile`, not `tmp_path`.**
+  Explicit, so it does not reach the user's real database, but it leaks the file
+  if a test raises between `yield` and `unlink`.
+- **Two dead `.gitignore` lines**, `./audio/` and `./venv/`. A pattern containing
+  a slash is anchored to the file's own directory, so both look for a directory
+  literally named `.` and neither has ever matched anything. Left alone while
+  fixing the `audio/` rule beside them, rather than widening that diff.
+- **Spec §7.2 — phase generalisation.** A new project in a familiar category
+  ideally starts part-way into Phase 1 (partial transfer). Out of scope for v1;
+  would be a manual `phase_override` or a `savor_count` seed.
+- **Spec §7.1 — multi-board savor counting.** An item filed under several boards
+  counts towards the oldest link only. In practice filing is exclusive on every
+  surface, so this affects rows created before that.
+- **The Deliverable field is not on `screens/inline_editors.py`.** A recorded
+  decision, not an oversight — the timer captures one at start where it matters.
+
+
 ### rename-safe links: low-severity findings (2026-08-20)
 
 From the third review round, not fixed in-loop:
