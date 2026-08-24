@@ -64,6 +64,20 @@ in `9f7b5f3`.
 - **The Deliverable placeholder is 60 characters** in a single-line entry in the
   narrow left column of the item editor. May clip; not verified either way,
   since it needs a real window manager.
+- **`save_work_log`'s early return leaves the flags set.** Every other exit
+  clears them. Not reachable today — Done is hidden when the timer is stopped,
+  and Start clears them anyway — but the asymmetry is what turns into a bug when
+  a new caller appears.
+- **A transient database error at Start silently downgrades a tracked session.**
+  `prepare_reward_session` catches, logs, and returns True with
+  `session_board_id` still None, so the whole session runs with no deliverable
+  dialog, no snapshot and no counter. Deliberate — the alternative is a Start
+  button that does nothing — but it is the transient-becomes-terminal shape
+  (P1), and only a log line records it.
+- **Four of the newer timer tests have no `try/finally: timer.destroy()`**,
+  unlike the rest of the file; they lean on the `root` fixture to clean up. One
+  also restores a patched method on a plain line rather than in a `finally`, and
+  names the good method `broken`.
 - **The savor copy lives in Python source** (`timer_window_dialogs.py`), with
   tests pinning the literals. Global rule 9 says content requiring editorial
   judgement belongs in a config file. The same applies to `WIRING_THRESHOLD` and
