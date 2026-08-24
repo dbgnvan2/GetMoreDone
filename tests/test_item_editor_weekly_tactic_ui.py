@@ -171,6 +171,7 @@ def _stamp_stub(value):
         title_entry=entry("Task"),
         description_text=entry(""),
         next_action_text=entry(""),
+        deliverable_entry=entry(""),
         start_date_entry=entry("2026-02-25"),
         due_date_entry=entry("2026-02-25"),
         is_meeting_var=SimpleNamespace(get=lambda: False),

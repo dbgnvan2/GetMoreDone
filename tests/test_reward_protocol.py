@@ -18,6 +18,8 @@ import ast
 import inspect
 import random
 
+import pytest
+
 from src.getmoredone import reward_protocol
 from src.getmoredone.reward_protocol import (
     CELEBRATION_PROBABILITY,
@@ -189,11 +191,8 @@ def test_rp3_reward_decision_is_immutable():
     import dataclasses
 
     decision = decide_reward(0, random.Random(1))
-    try:
+    with pytest.raises(dataclasses.FrozenInstanceError):
         decision.show_savor = False
-    except dataclasses.FrozenInstanceError:
-        return
-    raise AssertionError("RewardDecision should be frozen")
 
 
 def test_rp3_module_exposes_the_names_the_spec_declares():
