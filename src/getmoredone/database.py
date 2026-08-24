@@ -184,6 +184,9 @@ class Database:
                 category          TEXT,
 
                 planned_minutes   INTEGER,
+                -- RP-2.1: the crisp "done = ..." definition of this task. A
+                -- checkable artifact, not a time-box.
+                deliverable       TEXT,
                 status            TEXT NOT NULL DEFAULT 'open',
                 completed_at      TEXT,
                 item_type         TEXT NOT NULL DEFAULT 'daily',
@@ -285,6 +288,14 @@ class Database:
                 ended_at     TEXT,
                 minutes      INTEGER NOT NULL,
                 note         TEXT,
+                -- RP-2.2: the reward-protocol audit trail. deliverable_snapshot
+                -- is the deliverable as it stood at session start, so editing
+                -- the action's deliverable afterwards cannot rewrite history.
+                deliverable_snapshot  TEXT,
+                deliverable_completed INTEGER NOT NULL DEFAULT 0,
+                savor_delivered       INTEGER NOT NULL DEFAULT 0,
+                celebration_type      TEXT,
+                phase                 TEXT,
                 created_at   TEXT NOT NULL
             )
         """)
@@ -351,6 +362,10 @@ class Database:
                 next_step              TEXT,
                 notes                  TEXT,
                 display_order          INTEGER,
+                -- RP-2.3: cumulative completed deliverables on this board. The
+                -- phase is derived from it (reward_protocol.phase_for) rather
+                -- than stored, so the two can never disagree.
+                savor_count            INTEGER NOT NULL DEFAULT 0,
                 status                 TEXT NOT NULL DEFAULT 'active'
                                         CHECK(status IN ('active', 'pending', 'completed')),
                 completed_at           TEXT,
@@ -576,6 +591,34 @@ class Database:
                 ADD COLUMN today_pin_rank INTEGER
             """)
 
+        # RP-2.1a — the reward protocol's deliverable. Nullable: an item that
+        # never runs the reward path does not need one, and back-filling a
+        # guess would be inventing the very thing the user is meant to write.
+        # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#21-action_items--add-deliverable
+        # Tests: tests/test_reward_protocol_schema.py::test_rp21a_migration_adds_deliverable_to_legacy_db_and_is_idempotent
+        if 'deliverable' not in columns:
+            conn.execute("""
+                ALTER TABLE action_items
+                ADD COLUMN deliverable TEXT
+            """)
+
+        # RP-2.2a — the work_logs audit trail. Each ALTER is guarded
+        # individually rather than as a block: a DB half-migrated by an
+        # interrupted earlier run has some of these and not others, and an
+        # all-or-nothing guard would skip the rest of them forever.
+        # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#22-work_logs--add-reward-protocol-audit-columns
+        # Tests: tests/test_reward_protocol_schema.py::test_rp22a_migration_backfills_work_log_defaults_on_existing_rows
+        work_log_columns = [row[1] for row in conn.execute("PRAGMA table_info(work_logs)").fetchall()]
+        for column, definition in (
+            ('deliverable_snapshot', 'TEXT'),
+            ('deliverable_completed', 'INTEGER NOT NULL DEFAULT 0'),
+            ('savor_delivered', 'INTEGER NOT NULL DEFAULT 0'),
+            ('celebration_type', 'TEXT'),
+            ('phase', 'TEXT'),
+        ):
+            if column not in work_log_columns:
+                conn.execute(f"ALTER TABLE work_logs ADD COLUMN {column} {definition}")
+
         cursor = conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_boards'"
         )
@@ -616,6 +659,18 @@ class Database:
                 conn.execute("""
                     ALTER TABLE project_boards
                     ADD COLUMN completed_at TEXT
+                """)
+
+            # RP-2.3 — the phase counter. DEFAULT 0 rather than a back-fill from
+            # existing work_logs: those rows pre-date the protocol and none of
+            # them recorded a savored completion, so counting them would start
+            # every existing project part-way through Phase 1 on a fiction.
+            # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#23-project_boards--add-the-phase-counter
+            # Tests: tests/test_reward_protocol_schema.py::test_rp23_savor_count_column_and_migration
+            if 'savor_count' not in columns:
+                conn.execute("""
+                    ALTER TABLE project_boards
+                    ADD COLUMN savor_count INTEGER NOT NULL DEFAULT 0
                 """)
 
         cursor = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'project_board_links'")

@@ -206,17 +206,18 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
     def _write_new_action_item(self, item: ActionItem) -> str:
         self.db.conn.execute("""
             INSERT INTO action_items (
-                id, who, contact_id, parent_id, weekly_tactic_id, title, description, next_action, start_date, due_date,
+                id, who, contact_id, parent_id, weekly_tactic_id, title, description, next_action, deliverable,
+                start_date, due_date,
                 original_due_date, is_meeting, meeting_start_time,
                 importance, urgency, size, value, priority_score,
                 "group", category, planned_minutes, status, completed_at,
                 week_action_id, annual_plan_element_id, item_type, segment_description_id, is_habit, percent_complete,
                 today_pin_rank, weekly_tactic_start_date,
                 created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             item.id, item.who, item.contact_id, item.parent_id, item.weekly_tactic_id, item.title, item.description,
-            item.next_action,
+            item.next_action, item.deliverable,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
@@ -405,6 +406,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         self.db.conn.execute("""
             UPDATE action_items SET
                 who = ?, contact_id = ?, parent_id = ?, weekly_tactic_id = ?, title = ?, description = ?, next_action = ?,
+                deliverable = ?,
                 start_date = ?, due_date = ?, original_due_date = ?, is_meeting = ?, meeting_start_time = ?,
                 importance = ?, urgency = ?, size = ?, value = ?,
                 priority_score = ?, "group" = ?, category = ?,
@@ -415,6 +417,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             WHERE id = ?
         """, (
             item.who, item.contact_id, item.parent_id, item.weekly_tactic_id, item.title, item.description, item.next_action,
+            item.deliverable,
             item.start_date, item.due_date, item.original_due_date, 1 if item.is_meeting else 0,
             item.meeting_start_time,
             item.importance, item.urgency, item.size, item.value,
@@ -1285,14 +1288,28 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
     # ==================== WORK LOGS ====================
 
     def create_work_log(self, log: WorkLog) -> str:
-        """Create a work log entry."""
+        """Create a work log entry.
+
+        Purpose: RP-2.4 — persist the session, including the reward-protocol
+                 audit trail when the session ran through the reward path.
+        Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#22-work_logs--add-reward-protocol-audit-columns
+        Tests:   tests/test_reward_protocol_schema.py::test_rp24_work_log_reward_fields_round_trip
+        """
         self.db.conn.execute("""
             INSERT INTO work_logs (
-                id, item_id, started_at, ended_at, minutes, note, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                id, item_id, started_at, ended_at, minutes, note,
+                deliverable_snapshot, deliverable_completed, savor_delivered,
+                celebration_type, phase,
+                created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             log.id, log.item_id, log.started_at, log.ended_at,
-            log.minutes, log.note, log.created_at
+            log.minutes, log.note,
+            log.deliverable_snapshot,
+            1 if log.deliverable_completed else 0,
+            1 if log.savor_delivered else 0,
+            log.celebration_type, log.phase,
+            log.created_at
         ))
         self.db.conn.commit()
         return log.id
@@ -1931,6 +1948,11 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         except (KeyError, IndexError):
             weekly_tactic_start_date = None
 
+        try:
+            deliverable = row["deliverable"]
+        except (KeyError, IndexError):
+            deliverable = None
+
         return ActionItem(
             id=row["id"],
             who=row["who"],
@@ -1941,6 +1963,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             title=row["title"],
             description=row["description"],
             next_action=next_action,
+            deliverable=deliverable,
             start_date=row["start_date"],
             due_date=row["due_date"],
             original_due_date=original_due_date,
@@ -2080,6 +2103,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             display_order=row["display_order"] if "display_order" in row.keys() else None,
             status=row["status"],
             completed_at=completed_at,
+            savor_count=row["savor_count"] if "savor_count" in keys else 0,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -2130,7 +2154,20 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
         )
 
     def _row_to_work_log(self, row: sqlite3.Row) -> WorkLog:
-        """Convert database row to WorkLog."""
+        """Convert database row to WorkLog.
+
+        The five reward columns are read defensively, in the style the rest of
+        this file already uses: a row selected before the migration ran, or by
+        a query that does not project them, must not blow up here.
+
+        Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#22-work_logs--add-reward-protocol-audit-columns
+        Tests: tests/test_reward_protocol_schema.py::test_rp24_work_log_reward_fields_round_trip
+        """
+        keys = row.keys()
+
+        def optional(name, default=None):
+            return row[name] if name in keys else default
+
         return WorkLog(
             id=row["id"],
             item_id=row["item_id"],
@@ -2138,6 +2175,11 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
             ended_at=row["ended_at"],
             minutes=row["minutes"],
             note=row["note"],
+            deliverable_snapshot=optional("deliverable_snapshot"),
+            deliverable_completed=bool(optional("deliverable_completed", 0)),
+            savor_delivered=bool(optional("savor_delivered", 0)),
+            celebration_type=optional("celebration_type"),
+            phase=optional("phase"),
             created_at=row["created_at"]
         )
 

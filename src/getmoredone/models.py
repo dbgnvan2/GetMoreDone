@@ -31,6 +31,12 @@ class ActionItem:
     title: str
     description: Optional[str] = None
     next_action: Optional[str] = None
+    # RP-2.1: the crisp "done = ..." definition of this task — a checkable
+    # artifact, not a time-box. "Draft section 2's opening paragraph", not
+    # "work on the report for 25 min". Optional; the reward path requires it.
+    # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#21-action_items--add-deliverable
+    # Tests: tests/test_reward_protocol_schema.py::test_rp25_deliverable_round_trips_on_create_and_update
+    deliverable: Optional[str] = None
     contact_id: Optional[int] = None  # References contacts.id
     parent_id: Optional[str] = None  # References action_items.id for hierarchical relationships
     # WT-D11: the Weekly Tactic link has its own column so it no longer shares
@@ -153,6 +159,13 @@ class ProjectBoard:
     display_order: Optional[int] = None
     status: str = "active"
     completed_at: Optional[str] = None
+    # RP-2.3: cumulative completed deliverables on this board. Advanced on every
+    # "Done", whether or not the savor prompt was shown — the prompt is
+    # phase-gated, the counter is not. The phase is derived from this by
+    # reward_protocol.phase_for rather than stored alongside it.
+    # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#23-project_boards--add-the-phase-counter
+    # Tests: tests/test_reward_protocol_schema.py::test_rp23a_savor_count_round_trips_through_get_project_board
+    savor_count: int = 0
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
@@ -232,13 +245,33 @@ class TimeBlock:
 
 @dataclass
 class WorkLog:
-    """Represents actual work performed on an action item."""
+    """Represents actual work performed on an action item.
+
+    The five reward-protocol fields are an audit trail, not a control surface:
+    they record what the protocol actually did for this session so the history
+    can be read back later. Nothing reads them to decide anything.
+
+    Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#22-work_logs--add-reward-protocol-audit-columns
+    Tests: tests/test_reward_protocol_schema.py::test_rp24_work_log_reward_fields_round_trip
+    """
 
     item_id: str
     started_at: str  # ISO datetime
     minutes: int
     ended_at: Optional[str] = None  # ISO datetime
     note: Optional[str] = None
+    # The deliverable as it stood at session start. Snapshotted rather than
+    # joined to action_items.deliverable, so editing the action afterwards
+    # cannot rewrite what this session was actually for.
+    deliverable_snapshot: Optional[str] = None
+    # 1 only when the user pressed "Done". A session ended with Stop then
+    # Finished is a real session, but it is not a completed deliverable.
+    deliverable_completed: bool = False
+    # 1 only when the savor step was actually shown, which in Phase 2 is most
+    # of the time it was not.
+    savor_delivered: bool = False
+    celebration_type: Optional[str] = None  # None | 'confetti' | 'balloon' | 'tada'
+    phase: Optional[str] = None  # None | 'wiring' | 'maintaining'
     id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
 

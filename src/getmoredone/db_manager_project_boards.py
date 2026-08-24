@@ -352,6 +352,67 @@ class DBManagerProjectBoardsMixin:
         ).fetchall()
         return [row["project_board_id"] for row in rows]
 
+    def get_project_boards_for_item(self, item_id: str) -> List[ProjectBoard]:
+        """The boards an action item is filed under, oldest link first.
+
+        Purpose: RP-5.3 — the reward protocol needs the board itself (for its
+                 savor_count), not just its id, and it needs a defined order
+                 because ``project_board_items`` is many-to-many.
+        Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#7-open-decisions
+        Tests:   tests/test_reward_protocol_schema.py::test_rp63_first_linked_board_by_created_at_wins
+
+        Filing became exclusive on every surface, so in practice this returns
+        zero or one board. Rows created before that can still sit on several,
+        which is why it returns a list and the caller takes the first (spec §7.1
+        MVP rule) rather than this silently picking one.
+        """
+        rows = self.db.conn.execute(
+            """
+            SELECT pb.*
+            FROM project_boards pb
+            JOIN project_board_items pbi ON pbi.project_board_id = pb.id
+            WHERE pbi.item_id = ?
+            ORDER BY pbi.created_at, pb.id
+            """,
+            (item_id,),
+        ).fetchall()
+        return [self._row_to_project_board(row) for row in rows]
+
+    def increment_project_savor_count(self, board_id: str) -> Optional[int]:
+        """Advance a board's completed-deliverable counter by one.
+
+        Purpose: RP-2.3 / RP-4.5c — the counter moves on every "Done", whether
+                 or not the savor prompt was shown. The prompt is phase-gated;
+                 the counter is not.
+        Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#3-config--decision-logic
+        Tests:   tests/test_reward_protocol_schema.py::test_rp23_savor_count_column_and_migration
+                 tests/test_reward_protocol_timer.py::test_rp45c_counter_advances_even_when_savor_is_not_shown
+
+        Returns the new count, or None when no such board exists — a caller that
+        was handed a stale board id learns about it rather than believing a
+        completion was recorded (P2: the drop is surfaced, not silent).
+
+        The increment is computed by SQL rather than read-modify-written in
+        Python, so it cannot be based on a stale in-memory ``savor_count``.
+        ``updated_at`` is deliberately left alone: a completion is not an edit
+        of the project, and moving it would reorder the board lists.
+        """
+        cursor = self.db.conn.execute(
+            "UPDATE project_boards SET savor_count = savor_count + 1 WHERE id = ?",
+            (board_id,),
+        )
+        if cursor.rowcount == 0:
+            self.db.conn.commit()
+            logging.getLogger(__name__).warning(
+                "[reward_protocol] cannot advance savor_count: no project board %s", board_id
+            )
+            return None
+        self.db.conn.commit()
+        row = self.db.conn.execute(
+            "SELECT savor_count FROM project_boards WHERE id = ?", (board_id,)
+        ).fetchone()
+        return row["savor_count"] if row else None
+
     def get_items_on_multiple_project_boards(self) -> List[dict]:
         """Action items filed under more than one Project, worst first.
 
