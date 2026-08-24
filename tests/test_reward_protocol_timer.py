@@ -1557,7 +1557,12 @@ def test_starting_the_timer_does_not_start_the_music(root, manager, quiet, monke
 
 
 def test_music_information_stays_in_the_music_area(root, manager, quiet):
-    """The track used to be appended to the timer's own status line."""
+    """The track used to be appended to the timer's own status line.
+
+    Asserted through _set_music_status, which is the real path — a helper that
+    only wrote the same thing a line later was removed rather than left looking
+    load-bearing because a test called it directly.
+    """
     item, _board = _linked(manager)
     timer = _timer(root, manager, item)
     try:
@@ -1568,8 +1573,27 @@ def test_music_information_stays_in_the_music_area(root, manager, quiet):
             "the timer's status line is carrying music information"
         )
 
-        timer._update_status_with_track()
+        timer._set_music_status(f"♫ {timer.current_track_name}", "success")
         assert "Chief O'Neill" in timer.music_status_label.cget("text")
+        assert timer.status_label.cget("text") == "Working...", (
+            "setting the music status leaked into the timer's status line"
+        )
+    finally:
+        timer.destroy()
+
+
+def test_the_music_buttons_are_labelled_consistently(root, manager, quiet):
+    """Nine relabel sites used a different spacing from the constructor."""
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        assert timer.music_play_button.cget("text") == "▶  Play"
+        assert timer.music_pause_button.cget("text") == "⏸  Pause"
+        # Every relabel goes through the constants, so a fresh window and one
+        # that has been through a play/pause cycle read the same.
+        timer.music_play_button.configure(text=timer.MUSIC_PLAY_TEXT)
+        timer.music_pause_button.configure(text=timer.MUSIC_RESUME_TEXT)
+        assert timer.music_pause_button.cget("text") == "▶  Resume"
     finally:
         timer.destroy()
 
@@ -1677,4 +1701,154 @@ def test_only_done_completes_the_action_item(root, manager, quiet):
     assert outcomes["cancel"] == ("open", 0)
     assert outcomes["done"] == ("completed", 1), (
         "Done is the only ending that completes the item and counts it"
+    )
+
+
+def test_editing_the_deliverable_mid_session_updates_the_label(root, manager, quiet):
+    """The one state the Edit button is useful in, and the one it was broken in.
+
+    refresh_deliverable_label read `session_deliverable or item.deliverable`,
+    and the snapshot is frozen at Start and stays truthy — so after Start every
+    edit re-rendered the old text and the button looked broken. The original
+    test edited *before* Start, where the snapshot is None and the fallback
+    hides it.
+    """
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    try:
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        assert timer.deliverable_label.cget("text") == "First idea"
+
+        FakeDeliverableDialog.next_result = "Second idea"
+        timer.edit_deliverable()
+        timer._cancel_pending_timer()
+
+        assert timer.deliverable_label.cget("text") == "Second idea", (
+            "the label still shows the old deliverable after an edit"
+        )
+        assert manager.get_action_item(item.id).deliverable == "Second idea"
+        # The snapshot is what the session was started for, and does not move.
+        assert timer.session_deliverable == "First idea"
+    finally:
+        timer.destroy()
+
+
+def test_editing_the_deliverable_does_not_leave_the_clock_running(root, manager, quiet):
+    """The edit modal pumps the event loop, same as the savor dialog does."""
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    seen = {}
+
+    class Recording(FakeDeliverableDialog):
+        def __init__(self, parent, **kwargs):
+            seen["pending_tick"] = timer.update_timer_id
+            super().__init__(parent, **kwargs)
+
+    try:
+        timer.start_timer()
+        assert timer.update_timer_id is not None, "precondition: a tick is scheduled"
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(twr, "DeliverableDialog", Recording)
+            timer.edit_deliverable()
+        timer._cancel_pending_timer()
+
+        assert seen["pending_tick"] is None, (
+            "the clock was still ticking while the edit dialog was open"
+        )
+        assert timer.timer_state == "running", "editing stopped the session"
+    finally:
+        timer.destroy()
+
+
+def test_save_and_close_after_a_failed_done_does_not_count_a_completion(root, manager, quiet):
+    """A Done whose save failed must not be cashed in by a different ending.
+
+    save_work_log keeps the reward flags on failure so a retry records the
+    completion. Save & Close is not that retry: it wrote
+    deliverable_completed=1 and advanced the project counter while leaving the
+    item open, so the board claimed a completion the item did not record.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        timer._show_error_dialog = lambda message: None
+        timer.start_timer()
+        timer.work_seconds_elapsed = 25 * 60
+
+        real = manager.create_work_log
+        calls = []
+
+        def flaky(log):
+            calls.append(log)
+            if len(calls) == 1:
+                raise RuntimeError("database is locked")
+            return real(log)
+
+        manager.create_work_log = flaky
+        timer.done_action()                      # fails; flags stay set
+        assert timer._done_pressed is True, "precondition: the Done is still pending"
+
+        timer.stop_timer()
+        timer.save_and_close_action()
+
+        assert manager.get_action_item(item.id).status == "open"
+        assert manager.get_project_board(board.id).savor_count == 0, (
+            "Save & Close counted a completion for an item it left open"
+        )
+        logs = manager.get_work_logs(item.id)
+        assert len(logs) == 1
+        assert logs[0].deliverable_completed is False
+        assert logs[0].phase is None
+    finally:
+        timer.destroy()
+
+
+def test_save_and_close_keeps_the_note_when_the_window_closes_under_it(root, manager, quiet):
+    """dialog.result is a plain attribute; it needs no live window to read.
+
+    Guarding it on winfo_exists() threw the typed note away in exactly the case
+    where the window had gone — and wrote the log anyway, so nothing signalled
+    the loss.
+    """
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+
+    class ClosesTheWindow:
+        def __init__(self, parent, title):
+            self.result = "the note I typed"
+            parent.destroy()
+
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(tw, "CompletionNoteDialog", ClosesTheWindow)
+        timer.save_and_close_action()
+
+    logs = manager.get_work_logs(item.id)
+    assert len(logs) == 1
+    assert logs[0].note == "the note I typed", (
+        "the note was discarded because the window had already closed"
+    )
+
+
+def test_clearing_the_notes_box_clears_the_description(root, manager, quiet):
+    """The one edit the window refused to save was a deletion."""
+    item, _board = _linked(manager)
+    item.description = "something I no longer want"
+    manager.update_action_item(item)
+
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.next_steps_text.delete("1.0", "end")
+
+    timer.cancel_action()
+
+    assert manager.get_action_item(item.id).description is None, (
+        "blanking the notes box left the old description in place"
     )
