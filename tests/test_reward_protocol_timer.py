@@ -16,6 +16,7 @@ window nothing will ever destroy does not return.
 
 from __future__ import annotations
 
+import pathlib
 import random
 from datetime import datetime
 from types import SimpleNamespace
@@ -244,10 +245,14 @@ def _run_to_break_end(timer):
     timer.work_seconds_remaining = 1
     timer.tick()                    # work hits zero -> in_break
     assert timer.timer_state == "in_break"
-    timer._cancel_pending_timer()
+    # The handle the in_break tick just scheduled is left in place on purpose:
+    # cancelling it here would make "enter_break_choice cancels the tick" true
+    # whether or not it does. Nothing fires it — no mainloop runs in the suite.
     timer.break_seconds_remaining = 1
     timer.tick()                    # break hits zero
-    timer._cancel_pending_timer()
+    # Deliberately NOT cancelled here: enter_break_choice is supposed to do it,
+    # and cancelling by hand first makes any assertion about a pending tick
+    # true whatever the code does.
 
 
 def test_rp43_break_end_does_not_auto_stop(root, manager, quiet):
@@ -266,6 +271,10 @@ def test_rp43_break_end_does_not_auto_stop(root, manager, quiet):
             "never fire on elapsed time"
         )
         assert _is_visible(timer.done_button), "Done is still the way to complete"
+        assert timer.update_timer_id is None, (
+            "the clock is still scheduled while the timer waits for a choice; the "
+            "next tick would re-fire the break-over branch"
+        )
         # Disabled, not removed: the rest/continue pair owns the choice while it
         # is open, and offering the same action twice under two names is how a
         # user ends up in a state neither button was written for. The control
@@ -605,9 +614,11 @@ def test_rp44_done_runs_the_reward_sequence_and_then_the_completion_flow(root, m
     timer.fire_celebration = lambda kind: fired.append(kind)
 
     timer.start_timer()
-    timer._cancel_pending_timer()
     timer.work_seconds_elapsed = 25 * 60
 
+    # No _cancel_pending_timer() here on purpose. It used to sit on this line,
+    # which is exactly what production was missing: done_action left the clock
+    # running under the modal dialogs. The test was doing the fix's job.
     timer.done_action()
 
     assert FakeSavorDialog.shown == [DELIVERABLE], "Phase 1 must savor every completion"
@@ -762,5 +773,365 @@ def test_rp45_savor_delivered_records_the_dialog_not_the_decision(root, manager,
         timer.save_work_log()
 
         assert manager.get_work_logs(item.id)[0].savor_delivered is False
+    finally:
+        timer.destroy()
+
+
+# --- the awaiting_choice exits, which nothing covered -----------------------
+
+def test_rp43_stopping_at_the_break_choice_puts_the_buttons_away(root, manager, quiet):
+    """awaiting_choice -> Stop. Neither reviewer's sequence, and no test's either.
+
+    test_rp43c asserts the same thing after start -> stop, where the frame was
+    never shown, so the assertion could not fail. Deleting the grid_remove in
+    stop_timer left the whole file green.
+    """
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    try:
+        _run_to_break_end(timer)
+        assert _is_visible(timer.break_choice_frame), "precondition: the choice is showing"
+
+        timer.stop_timer()
+
+        assert timer.timer_state == "stopped"
+        assert not _is_visible(timer.break_choice_frame), (
+            "Stop at the break choice left 'Pause (rest)' and 'Continue focus' on "
+            "screen beside Finished/Continue"
+        )
+        assert _is_visible(timer.completion_frame)
+    finally:
+        timer.destroy()
+
+
+def test_rp44_restarting_never_shows_done_beside_finished_and_continue(root, manager, quiet):
+    """Start -> Stop -> Start. Three buttons that end the work, two of them wrong.
+
+    Finished and Continue complete the session without the reward protocol:
+    no savor, no celebration, no counter, deliverable_completed=0. Offered
+    beside Done during a running session, a user reaching for the button they
+    already know silently loses the feature.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        timer.stop_timer()
+        assert _is_visible(timer.completion_frame), "precondition: Stop offers them"
+
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        assert _is_visible(timer.done_button)
+        assert not _is_visible(timer.completion_frame), (
+            "a restarted session shows Done, Finished and Continue at once"
+        )
+    finally:
+        timer.destroy()
+
+
+def test_rp43a_starting_after_a_finished_cycle_gives_a_whole_block(root, manager, quiet):
+    """Both countdowns are zero after a full cycle; Start must not replay the ring.
+
+    Without the reset, Start ran a zero-length block: the break alarm and the
+    break-over alarm both fire within a second and the user is dumped straight
+    back at the choice they just left.
+    """
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    try:
+        _run_to_break_end(timer)
+        timer.stop_timer()
+        assert (timer.work_seconds_remaining, timer.break_seconds_remaining) == (0, 0)
+
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        _assert_fresh_work_block(timer)
+        assert timer.break_seconds_remaining == timer.break_minutes * 60
+        assert timer.timer_state == "running"
+        assert not _is_visible(timer.break_choice_frame), (
+            "Start left the rest/continue buttons on screen during a running session"
+        )
+    finally:
+        timer.destroy()
+
+
+def test_rp43_closing_the_window_at_the_break_choice_is_treated_as_stop(root, manager, quiet):
+    """on_window_close spelled its states out as a literal list and missed the new one."""
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    _run_to_break_end(timer)
+    assert timer.timer_state == TimerWindow.AWAITING_CHOICE
+
+    stopped = []
+    timer.stop_timer = lambda: stopped.append(True)
+    timer._cleanup_and_destroy = lambda: None
+    timer.save_window_settings = lambda: None
+
+    timer.on_window_close()
+
+    assert stopped == [True], (
+        "closing at the break choice skipped stop_timer; on_window_close promises "
+        "to treat a close as Stop"
+    )
+    timer.destroy()
+
+
+def test_rp44_states_tuple_matches_what_the_code_assigns(root, manager, quiet):
+    """TimerWindow.STATES must list every value the module assigns to timer_state.
+
+    Three separate membership tests read this set. AWAITING_CHOICE was added to
+    two of them and missed in the third, and nothing noticed. A hand-written
+    tuple with a comment claiming it would catch that is not a guard — so this
+    parses the modules and reconciles them, and asserts an exact set.
+    """
+    import ast
+
+    assigned = set()
+    for module in (tw, twr):
+        tree = ast.parse(pathlib.Path(module.__file__).read_text())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            targets = [
+                x for x in node.targets
+                if isinstance(x, ast.Attribute) and x.attr == "timer_state"
+            ]
+            if not targets:
+                continue
+            for value in ast.walk(node.value):
+                if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                    assigned.add(value.value)
+                elif isinstance(value, ast.Attribute) and value.attr.isupper():
+                    resolved = getattr(TimerWindow, value.attr, None)
+                    assert isinstance(resolved, str), (
+                        f"timer_state is assigned TimerWindow.{value.attr}, which is "
+                        f"not a string constant"
+                    )
+                    assigned.add(resolved)
+
+    assert assigned, "found no assignments to timer_state — the scan is broken"
+    assert assigned == set(TimerWindow.STATES), (
+        f"TimerWindow.STATES is {sorted(TimerWindow.STATES)} but the code assigns "
+        f"{sorted(assigned)}. Every membership test over the states reads STATES, so "
+        "a value missing from it is a state some guard silently does not cover."
+    )
+    # ACTIVE_STATES is STATES[1:], which is only correct while STOPPED is first.
+    assert TimerWindow.STATES[0] == TimerWindow.STOPPED
+    assert set(TimerWindow.ACTIVE_STATES) == set(TimerWindow.STATES) - {TimerWindow.STOPPED}
+    assert set(ALL_TIMER_STATES) == set(TimerWindow.STATES), (
+        "this file's ALL_TIMER_STATES has drifted from the implementation"
+    )
+
+
+# --- done_action's guarantees ------------------------------------------------
+
+def test_rp44_done_stops_the_clock_before_the_savor_dialog(root, manager, quiet):
+    """The alarm must not go off while the savor prompt is asking for five seconds.
+
+    Both dialogs are entered through wait_window, which pumps the Tk event loop,
+    so a tick that is still scheduled keeps firing underneath them — the
+    break-start sound over the savor moment, and _flash_window's focus_force
+    pulling focus off the modal onto the window behind it.
+    """
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    timer.fire_celebration = lambda kind: None
+
+    timer.start_timer()
+    assert timer.update_timer_id is not None, "precondition: a tick is scheduled"
+
+    state_when_savor_opened = {}
+
+    class Recording(FakeSavorDialog):
+        def __init__(self, parent, snapshot):
+            state_when_savor_opened["pending_tick"] = timer.update_timer_id
+            state_when_savor_opened["state"] = timer.timer_state
+            super().__init__(parent, snapshot)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(twr, "SavorDialog", Recording)
+        timer.done_action()
+
+    assert state_when_savor_opened["pending_tick"] is None, (
+        "the clock was still ticking while the savor dialog was open"
+    )
+    assert state_when_savor_opened["state"] == "stopped"
+
+
+def test_rp45_a_failing_reward_sequence_still_records_the_session(root, manager, quiet):
+    """The reward is decoration; it may never prevent the work being recorded.
+
+    Unguarded, a TclError from a grab clash or a canvas built on a resizing
+    window meant the user pressed Done, saw nothing, and lost the work log, the
+    completion and the count together.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    timer.start_timer()
+    timer.work_seconds_elapsed = 25 * 60
+
+    def boom():
+        raise RuntimeError("the celebration canvas exploded")
+
+    timer.run_reward_sequence = boom
+    timer.done_action()
+
+    assert manager.get_action_item(item.id).status == "completed", (
+        "a failure in the reward sequence lost the completion"
+    )
+    logs = manager.get_work_logs(item.id)
+    assert len(logs) == 1, "the session was not recorded"
+    assert logs[0].deliverable_completed is True
+    # The protocol did not run, so nothing claims it did — and nothing counted.
+    assert logs[0].phase is None
+    assert manager.get_project_board(board.id).savor_count == 0
+
+
+def test_rp45d_a_failed_save_clears_the_flags_so_a_retry_cannot_double_count(root, manager, quiet):
+    """The flags were reset after the writes, so an exception left them set.
+
+    finished_action catches, shows "Failed to complete action", and returns with
+    timer_state unchanged — so Done is still on screen. A second press then
+    wrote a second completed-deliverable row for the same work.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        timer.prepare_reward_session()
+        timer.start_timestamp = datetime.now()
+        timer._done_pressed = True
+        timer._pending_reward = timer.run_reward_sequence()
+
+        broken = timer.db_manager.create_work_log
+        timer.db_manager.create_work_log = lambda log: (_ for _ in ()).throw(
+            RuntimeError("database is locked"))
+        with pytest.raises(RuntimeError):
+            timer.save_work_log()
+        timer.db_manager.create_work_log = broken
+
+        assert timer._done_pressed is False, "a failed save left the Done flag set"
+        assert timer._pending_reward is None
+        assert manager.get_work_logs(item.id) == []
+        assert manager.get_project_board(board.id).savor_count == 0
+    finally:
+        timer.destroy()
+
+
+def test_rp45d_a_second_save_writes_no_second_work_log(root, manager, quiet):
+    """Tightened: the counter was checked, the duplicate row it also writes was not."""
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        _complete_once(timer)
+        assert len(manager.get_work_logs(item.id)) == 1
+        assert manager.get_project_board(board.id).savor_count == 1
+
+        timer.save_work_log()
+
+        assert len(manager.get_work_logs(item.id)) == 1, (
+            "a second save wrote a duplicate session row"
+        )
+        assert manager.get_project_board(board.id).savor_count == 1
+    finally:
+        timer.destroy()
+
+
+def test_rp42_a_database_error_at_start_does_not_block_the_timer(root, manager, quiet):
+    """A locked database must not turn Start into a button that does nothing.
+
+    prepare_reward_session is the first statement of start_timer and was
+    unguarded, so a transient sqlite error raised into Tk's handler: no dialog,
+    no status change, just a traceback on a console the user cannot see.
+    """
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.db_manager.get_project_boards_for_item = lambda item_id: (
+            _ for _ in ()).throw(RuntimeError("database is locked"))
+
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        assert timer.timer_state == "running", "a transient DB error blocked the timer"
+        assert timer.session_board_id is None, (
+            "the session must not claim a project it could not read"
+        )
+    finally:
+        timer.destroy()
+
+
+# --- Continue records the same session facts as Finished --------------------
+
+def test_rp45_continue_records_the_deliverable_and_carries_it_forward(root, manager, quiet):
+    """Continue and Finished are two endings of one session and must agree.
+
+    deliverable_snapshot is not reward-fired: Stop -> Finished writes it with
+    deliverable_completed=0. Continue built its own WorkLog inline and dropped
+    it, so the identical session recorded nothing about what it was for. The
+    duplicate it creates was also missing the field entirely.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+
+    class NoNextSteps:
+        def __init__(self, parent):
+            self.result = None
+
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(tw, "NextStepsDialog", NoNextSteps)
+        mp.setattr("src.getmoredone.screens.item_editor.ItemEditorDialog",
+                   lambda *a, **k: None)
+        timer.continue_action()
+
+    log = manager.get_work_logs(item.id)[0]
+    assert log.deliverable_snapshot == DELIVERABLE, (
+        "Continue recorded nothing about what the session was for, while the "
+        "same session ended with Finished records it"
+    )
+    # The reward fires on Done, not on Continue — so these stay empty.
+    assert log.deliverable_completed is False
+    assert log.phase is None
+    assert manager.get_project_board(board.id).savor_count == 0
+
+    duplicate = [i for i in manager.get_all_items()
+                 if i.id != item.id and i.title == item.title]
+    assert duplicate, "Continue did not create the follow-on item"
+    assert duplicate[0].deliverable == DELIVERABLE, (
+        "the follow-on item lost the deliverable; Continue means the same work "
+        "goes on, so what 'done' looks like has not changed"
+    )
+
+
+def test_rp43_starting_a_session_never_leaves_the_break_choice_showing(root, manager, quiet):
+    """start_timer hides the rest/continue pair whatever state it was left in.
+
+    Unreachable through the UI today — Start is only enabled once stop_timer has
+    run, and that hides the frame too — so the line in start_timer is belt and
+    braces and no click sequence can prove it. Driven directly instead, because
+    an untested defensive line is indistinguishable from a dead one, and the
+    invariant it protects ("a running session never shows the break-end choice")
+    is real: it would go wrong the moment Start becomes reachable from
+    awaiting_choice.
+    """
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.break_choice_frame.grid()
+        assert _is_visible(timer.break_choice_frame), "precondition"
+
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        assert not _is_visible(timer.break_choice_frame)
+        assert timer.timer_state == "running"
     finally:
         timer.destroy()
