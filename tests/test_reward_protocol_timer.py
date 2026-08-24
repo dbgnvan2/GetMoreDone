@@ -180,12 +180,28 @@ def test_rp42_linked_start_captures_the_session_deliverable(root, manager, quiet
         timer.destroy()
 
 
-def test_rp42_the_dialog_is_prefilled_from_the_item(root, manager, quiet):
-    """An item that already has a deliverable does not make the user retype it."""
+def test_rp42_an_item_that_has_a_deliverable_is_not_asked_again(root, manager, quiet):
+    """No dialog when there is nothing to ask — the answer is on the window."""
     item, _board = _linked(manager, deliverable="Existing deliverable")
     timer = _timer(root, manager, item)
     try:
         timer.prepare_reward_session()
+
+        assert FakeDeliverableDialog.calls == [], (
+            "the user was asked to retype a deliverable the window already shows"
+        )
+        assert timer.session_deliverable == "Existing deliverable"
+        assert timer.deliverable_label.cget("text") == "Existing deliverable"
+    finally:
+        timer.destroy()
+
+
+def test_rp42_the_edit_prompt_is_prefilled_and_carries_the_project_context(root, manager, quiet):
+    """When it does open, it opens with what is already there."""
+    item, _board = _linked(manager, deliverable="Existing deliverable")
+    timer = _timer(root, manager, item)
+    try:
+        timer.edit_deliverable()
         assert FakeDeliverableDialog.calls[0]["deliverable"] == "Existing deliverable"
         assert FakeDeliverableDialog.calls[0]["phase"] == "wiring"
         assert FakeDeliverableDialog.calls[0]["savor_count"] == 0
@@ -230,15 +246,19 @@ def test_rp42b_cancelling_does_not_save_an_edited_time_block(root, manager, quie
 
 
 def test_rp42c_unlinked_item_starts_with_no_reward_protocol(root, manager, quiet):
-    """RP-4.2c — no project means no dialog and no protocol; the timer is unchanged."""
+    """RP-4.2c — no project means no phase, no savor and no counter.
+
+    It no longer means no deliverable. Naming what you are about to do is the
+    point of starting a timer; the *reward* is what stays project-only.
+    """
     item = _item(manager)
     timer = _timer(root, manager, item)
     try:
         timer.start_timer()
 
-        assert FakeDeliverableDialog.calls == [], "an unlinked item was asked for a deliverable"
-        assert timer.session_board_id is None
-        assert timer.session_deliverable is None
+        assert timer.session_board_id is None, "an unlinked item claimed a project"
+        assert timer.session_phase is None
+        assert timer.session_deliverable == DELIVERABLE
         assert timer.timer_state == "running"
     finally:
         timer._cancel_pending_timer()
@@ -311,7 +331,7 @@ def test_rp43a_continue_focus_starts_a_fresh_cycle(root, manager, quiet):
         assert timer.pause_button.cget("state") == "normal", (
             "Pause was left disabled after the choice closed"
         )
-        assert timer.pause_button.cget("text") == "Pause"
+        assert timer.pause_button.cget("text") == "⏸  Pause"
     finally:
         timer.destroy()
 
@@ -333,7 +353,7 @@ def test_rp43b_resume_after_rest_does_not_re_enter_a_zero_second_break(root, man
         assert timer.pause_button.cget("state") == "normal", (
             "resting left no way to start working again"
         )
-        assert timer.pause_button.cget("text") == "Resume"
+        assert timer.pause_button.cget("text") == "▶  Resume"
 
         timer.pause_timer()             # Resume
         timer._cancel_pending_timer()
@@ -365,9 +385,13 @@ def test_rp43c_stop_and_completion_frame_survive_the_break_change(root, manager,
         timer.stop_timer()
 
         assert timer.timer_state == "stopped"
-        assert _is_visible(timer.completion_frame), "Stop no longer offers Finished/Continue"
-        assert timer.finished_button.cget("text") == "Finished"
-        assert timer.continue_button.cget("text") == "Continue"
+        assert _is_visible(timer.completion_frame), "Stop no longer offers the session actions"
+        # Renamed for what they do. "Finished" completed the action item and
+        # closed, which from the user's side looked like the button doing
+        # nothing: the window went away and the item left Today.
+        assert timer.finished_button.cget("text") == "Save & Close"
+        assert timer.cancel_button.cget("text") == "Cancel"
+        assert timer.continue_button.cget("text") == "Complete & Carry Forward →"
         assert timer.start_button.cget("state") == "normal"
         assert not _is_visible(timer.break_choice_frame)
     finally:
@@ -408,7 +432,9 @@ def test_rp44a_done_on_unlinked_item_skips_the_reward_protocol(root, manager, qu
         assert log.phase is None
         assert log.savor_delivered is False
         assert log.celebration_type is None
-        assert log.deliverable_snapshot is None
+        # It has a snapshot now — every session names what it is for — but none
+        # of the reward columns, because there is no project to count towards.
+        assert log.deliverable_snapshot == DELIVERABLE
         # The user still said it was done, and that is what the column records.
         assert log.deliverable_completed is True
     finally:
@@ -1393,7 +1419,7 @@ def test_rp45_halting_for_completion_leaves_a_usable_resume_control(root, manage
             assert timer.pause_button.cget("state") == "normal", (
                 f"entering from {enter_from}: paused with no resume control"
             )
-            assert timer.pause_button.cget("text") == "Resume", (
+            assert timer.pause_button.cget("text") == "▶  Resume", (
                 f"entering from {enter_from}: the button says "
                 f"{timer.pause_button.cget('text')!r} while the timer is paused"
             )
@@ -1423,3 +1449,232 @@ def test_rp42_a_cascade_report_failure_does_not_stop_the_timer_starting(root, ma
         assert timer.session_board_id == board.id
     finally:
         timer.destroy()
+
+
+# --- what the window shows, and who starts the music ------------------------
+
+def test_the_deliverable_is_shown_on_the_timer_window(root, manager, quiet):
+    """It was captured in a dialog and then never shown again.
+
+    The one thing the reward is contingent on was the one thing not on screen.
+    """
+    item, _board = _linked(manager, deliverable="Draft section 2")
+    timer = _timer(root, manager, item)
+    try:
+        # Before Start, straight from the item — the window opens knowing.
+        assert timer.deliverable_label.cget("text") == "Draft section 2"
+
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        assert timer.deliverable_label.cget("text") == "Draft section 2"
+    finally:
+        timer.destroy()
+
+
+def test_an_item_with_no_deliverable_says_so_rather_than_showing_nothing(root, manager, quiet):
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    try:
+        assert timer.deliverable_label.cget("text") == TimerWindow.NO_DELIVERABLE_TEXT
+    finally:
+        timer.destroy()
+
+
+def test_a_blank_deliverable_is_prompted_for_on_every_item(root, manager, quiet):
+    """Not just project-linked ones. An unlinked session still names its target."""
+    item = _item(manager)                      # no project, no deliverable
+    timer = _timer(root, manager, item)
+    try:
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        assert len(FakeDeliverableDialog.calls) == 1, (
+            "an item with no deliverable started a session without being asked"
+        )
+        assert manager.get_action_item(item.id).deliverable == DELIVERABLE
+        assert timer.deliverable_label.cget("text") == DELIVERABLE
+    finally:
+        timer.destroy()
+
+
+def test_backing_out_of_the_prompt_does_not_start_an_unlinked_timer(root, manager, quiet):
+    """Cancel means do not start, on every item — not only project-linked ones."""
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    try:
+        FakeDeliverableDialog.next_result = None
+        timer.start_timer()
+
+        assert timer.timer_state == "stopped"
+        assert timer.update_timer_id is None
+    finally:
+        timer.destroy()
+
+
+def test_editing_the_deliverable_updates_the_item_and_the_label(root, manager, quiet):
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    try:
+        FakeDeliverableDialog.next_result = "Second idea"
+        timer.edit_deliverable()
+
+        assert timer.deliverable_label.cget("text") == "Second idea"
+        assert manager.get_action_item(item.id).deliverable == "Second idea"
+    finally:
+        timer.destroy()
+
+
+def test_backing_out_of_an_edit_changes_nothing(root, manager, quiet):
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    try:
+        FakeDeliverableDialog.next_result = None
+        timer.edit_deliverable()
+
+        assert timer.deliverable_label.cget("text") == "First idea"
+        assert manager.get_action_item(item.id).deliverable == "First idea"
+    finally:
+        timer.destroy()
+
+
+def test_starting_the_timer_does_not_start_the_music(root, manager, quiet, monkeypatch):
+    """Music is the user's to start. It used to begin with every session."""
+    item, _board = _linked(manager)
+    started = []
+    monkeypatch.setattr(TimerWindow, "_start_music",
+                        lambda self: started.append(True) or True)
+    timer = _timer(root, manager, item)
+    try:
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        assert started == [], "starting the timer started the music"
+
+        timer.play_music()
+        assert started == [True], "the Play button no longer starts the music"
+    finally:
+        timer.destroy()
+
+
+def test_music_information_stays_in_the_music_area(root, manager, quiet):
+    """The track used to be appended to the timer's own status line."""
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.current_track_name = "Chief O'Neill's Favourite"
+        timer._update_status_label("Working...", "green")
+
+        assert timer.status_label.cget("text") == "Working...", (
+            "the timer's status line is carrying music information"
+        )
+
+        timer._update_status_with_track()
+        assert "Chief O'Neill" in timer.music_status_label.cget("text")
+    finally:
+        timer.destroy()
+
+
+def test_the_transport_controls_live_inside_the_timer_area(root, manager, quiet):
+    """Start, Pause and Stop belong to the timer, not to a frame beside it."""
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        for button, label in ((timer.start_button, "▶  Start"),
+                              (timer.pause_button, "⏸  Pause"),
+                              (timer.stop_button, "⏹  Stop")):
+            assert button.cget("text") == label
+            # The transport row's parent is a frame inside the timer frame.
+            assert button.master.master is timer.timer_frame, (
+                f"{label} is not inside the timer area"
+            )
+        for widget in (timer.done_button, timer.break_choice_frame,
+                       timer.status_label, timer.deliverable_label,
+                       timer.time_remaining_label, timer.time_block_value):
+            assert widget.master is timer.timer_frame
+        # Music, and only music, in the music area.
+        assert timer.music_status_label.master is timer.music_play_button.master
+        assert timer.music_status_label.master is not timer.timer_frame
+    finally:
+        timer.destroy()
+
+
+# --- the session actions ----------------------------------------------------
+
+def test_save_and_close_records_the_session_without_completing_the_item(root, manager, quiet):
+    """The timer window is a child record of the action item, not its ending."""
+    item, board = _linked(manager)
+    closed = []
+    timer = TimerWindow(root, manager, item, on_close=lambda: closed.append(True),
+                        rng=random.Random(1))
+    FakeCompletionNoteDialog.next_result = "got the opening paragraph down"
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+
+    timer.save_and_close_action()
+
+    assert manager.get_action_item(item.id).status == "open", (
+        "Save & Close completed the action item; only Done should do that"
+    )
+    logs = manager.get_work_logs(item.id)
+    assert len(logs) == 1
+    assert logs[0].minutes == 25
+    assert logs[0].note == "got the opening paragraph down"
+    assert logs[0].deliverable_snapshot == DELIVERABLE
+    assert logs[0].deliverable_completed is False, "no deliverable was declared complete"
+    assert manager.get_project_board(board.id).savor_count == 0, (
+        "Save & Close advanced the reward counter"
+    )
+    assert closed == [True], "the opener was not told to refresh"
+
+
+def test_cancel_still_logs_the_time_and_keeps_the_notes(root, manager, quiet):
+    """Time spent is a fact, and notes typed here are edits to the item.
+
+    Discarding either would make Cancel a button that quietly threw work away.
+    """
+    item, board = _linked(manager)
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.next_steps_text.insert("1.0", "half way through the second para")
+
+    timer.cancel_action()
+
+    logs = manager.get_work_logs(item.id)
+    assert len(logs) == 1, "Cancel threw the session away"
+    assert logs[0].minutes == 25
+    assert logs[0].note is None, "Cancel should not invent a session note"
+    assert manager.get_action_item(item.id).status == "open"
+    assert manager.get_action_item(item.id).description == "half way through the second para", (
+        "Cancel discarded notes the user had typed"
+    )
+    assert manager.get_project_board(board.id).savor_count == 0
+
+
+def test_only_done_completes_the_action_item(root, manager, quiet):
+    """The three ways out of a session, and which of them ends the work."""
+    outcomes = {}
+    for label, drive in (
+        ("save", lambda t: t.save_and_close_action()),
+        ("cancel", lambda t: t.cancel_action()),
+        ("done", lambda t: t.done_action()),
+    ):
+        item, board = _linked(manager)
+        timer = TimerWindow(root, manager, item, rng=random.Random(1))
+        timer.fire_celebration = lambda kind: None
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        timer.work_seconds_elapsed = 25 * 60
+        drive(timer)
+        outcomes[label] = (
+            manager.get_action_item(item.id).status,
+            manager.get_project_board(board.id).savor_count,
+        )
+
+    assert outcomes["save"] == ("open", 0)
+    assert outcomes["cancel"] == ("open", 0)
+    assert outcomes["done"] == ("completed", 1), (
+        "Done is the only ending that completes the item and counts it"
+    )
