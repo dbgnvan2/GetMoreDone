@@ -96,7 +96,18 @@ class TimerRewardMixin(TimerCelebrationMixin):
         self._done_pressed = False
         self._savor_shown = False
 
-        board = self.resolve_reward_board()
+        try:
+            board = self.resolve_reward_board()
+        except Exception as exc:
+            # A transient database error is not a reason to refuse to let
+            # someone work (P1). Fall through to an ordinary untracked session
+            # rather than leaving Start doing nothing at all.
+            logger.exception(
+                "[reward_protocol] could not resolve the project for %s; starting "
+                "an untracked session: %s", self.item.id, exc,
+            )
+            return True
+
         if board is None:
             return True
 
@@ -118,8 +129,17 @@ class TimerRewardMixin(TimerCelebrationMixin):
 
         if dialog.result != (self.item.deliverable or None):
             self.item.deliverable = dialog.result
-            self.db_manager.update_action_item(self.item)
-            notify_weekly_tactic_changes(self.db_manager, self)
+            try:
+                self.db_manager.update_action_item(self.item)
+                notify_weekly_tactic_changes(self.db_manager, self)
+            except Exception as exc:
+                # Same reasoning: the session can still run and still be
+                # counted; only the persisted copy of the deliverable is lost,
+                # and the snapshot below keeps the session's own record of it.
+                logger.exception(
+                    "[reward_protocol] could not save the deliverable on %s; the "
+                    "session still records it: %s", self.item.id, exc,
+                )
 
         self.session_deliverable = dialog.result
         self.session_board_id = board.id
@@ -139,8 +159,31 @@ class TimerRewardMixin(TimerCelebrationMixin):
         Tests:   tests/test_reward_protocol_timer.py::test_rp45_savor_precedes_celebration
                  tests/test_reward_protocol_timer.py::test_rp44a_done_on_unlinked_item_skips_the_reward_protocol
         """
+        # Stop the clock first. Both dialogs below are entered through
+        # wait_window, which pumps the Tk event loop, so the tick kept running
+        # underneath them: the break alarm would sound over the savor prompt
+        # and _flash_window's focus_force would pull focus off it. Every
+        # pre-existing route into finished_action came through stop_timer, so
+        # this combination could not arise before Done existed.
+        if self.timer_state != self.STOPPED:
+            self.stop_timer()
+
         self._done_pressed = True
-        self._pending_reward = self.run_reward_sequence()
+
+        # Guarded, because everything in the reward sequence is decoration —
+        # a dialog, a canvas, an audio player — and none of it may be allowed
+        # to prevent the session being recorded. Unguarded, a TclError from a
+        # grab clash meant the user pressed Done, saw nothing happen, and lost
+        # the work log, the completion and the count.
+        try:
+            self._pending_reward = self.run_reward_sequence()
+        except Exception as exc:
+            self._pending_reward = None
+            logger.exception(
+                "[reward_protocol] the reward sequence failed; completing the "
+                "session without it: %s", exc,
+            )
+
         self.finished_action()
 
     def run_reward_sequence(self) -> Optional[RewardDecision]:

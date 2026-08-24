@@ -36,7 +36,26 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
     # they are resting or starting another focus block. It needs its own name
     # because both countdowns are zero at that moment, and the resume rule in
     # pause_timer reads exactly those two numbers.
+    STOPPED = "stopped"
+    RUNNING = "running"
+    PAUSED = "paused"
+    IN_BREAK = "in_break"
     AWAITING_CHOICE = "awaiting_choice"
+
+    # Every state, in one place. Membership tests spelled out as list literals
+    # are how AWAITING_CHOICE got added to tick() and _sync_done_button() and
+    # missed in on_window_close(): three enumerations of the same set, and only
+    # two were updated. A test reconciles this tuple against every value the
+    # module actually assigns to timer_state, so a sixth state cannot be added
+    # without appearing here.
+    # Tests: tests/test_reward_protocol_timer.py::test_rp44_states_tuple_matches_what_the_code_assigns
+    STATES = (STOPPED, RUNNING, PAUSED, IN_BREAK, AWAITING_CHOICE)
+    # Anything that is not "stopped" is a live session: the clock may be
+    # counting, or waiting for the user, but there is work in progress.
+    # Sliced rather than written out, so a state added to STATES joins this
+    # automatically and there is only ever one list to update. STOPPED is first
+    # in STATES and a test pins that, since the slice depends on it.
+    ACTIVE_STATES = STATES[1:]
 
     def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem,
                  on_close: Optional[Callable] = None,
@@ -492,7 +511,15 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         except ValueError:
             pass
 
-        self.timer_state = "running"
+        # A cycle that ran all the way out leaves both countdowns at zero.
+        # Starting from there replayed the entire ring inside one second: two
+        # alarms and straight back to the break-end choice. Same condition the
+        # resume guard uses, so the two cannot disagree about what "exhausted"
+        # means.
+        if self.work_seconds_remaining <= 0 and self.break_seconds_remaining <= 0:
+            self._reset_countdowns()
+
+        self.timer_state = self.RUNNING
         self.start_timestamp = datetime.now()
         self.last_tick_time = datetime.now()
 
@@ -502,6 +529,11 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.stop_button.configure(state="normal")
         self.time_block_value.configure(state="disabled")
         self.break_choice_frame.grid_remove()
+        # Finished/Continue belong to a stopped session. Left showing, a
+        # Start -> Stop -> Start put them on screen beside "Done", and two of
+        # the three end the work without the reward protocol ever running —
+        # a user reaching for the familiar button silently loses the feature.
+        self.completion_frame.grid_remove()
         self._sync_done_button()
         self._update_status_label("Working...", "green")
 
@@ -651,7 +683,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                  happened to inherit.
         Tests:   tests/test_reward_protocol_timer.py::test_rp44_done_button_visibility_across_every_timer_state
         """
-        if self.timer_state == "stopped":
+        if self.timer_state == self.STOPPED:
             self.done_button.grid_remove()
         else:
             self.done_button.grid()
@@ -687,6 +719,11 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.break_choice_frame.grid_remove()
         self.begin_new_focus_cycle()
 
+    def _reset_countdowns(self):
+        """Both countdowns back to a full block. The only place that does it."""
+        self.work_seconds_remaining = self.work_minutes * 60
+        self.break_seconds_remaining = self.break_minutes * 60
+
     def begin_new_focus_cycle(self):
         """Reset both countdowns and start working again.
 
@@ -695,9 +732,8 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         Tests:   tests/test_reward_protocol_timer.py::test_rp43a_continue_focus_starts_a_fresh_cycle
                  tests/test_reward_protocol_timer.py::test_rp43b_resume_after_rest_does_not_re_enter_a_zero_second_break
         """
-        self.work_seconds_remaining = self.work_minutes * 60
-        self.break_seconds_remaining = self.break_minutes * 60
-        self.timer_state = "running"
+        self._reset_countdowns()
+        self.timer_state = self.RUNNING
         self.pause_timestamp = None
         # The break banner left the status label bold and oversized.
         self.status_label.configure(font=ctk.CTkFont(size=11))
@@ -837,8 +873,10 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             db_manager = self.db_manager
             item = self.item
             on_close_callback = self.on_close_callback
-            start_timestamp = self.start_timestamp
-            work_seconds_elapsed = self.work_seconds_elapsed
+            # start_timestamp / work_seconds_elapsed used to be captured here
+            # because the window can be destroyed by the dialog below. They no
+            # longer are: save_work_log reads them off self, and destroying a Tk
+            # window does not clear the Python attributes on it.
 
             # Prompt for completion note (for work log)
             completion_dialog = CompletionNoteDialog(self, "Completion Note")
@@ -875,6 +913,11 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 who=item.who,
                 title=item.title,
                 description=item.description,  # Will be updated later from Next Action dialog
+                # Carried deliberately: Continue means the same piece of work
+                # goes on tomorrow, so what "done" looks like has not changed.
+                # It was omitted here at first simply because this list is
+                # written out field by field and the new one was not added.
+                deliverable=item.deliverable,
                 contact_id=item.contact_id,
                 parent_id=new_parent_id,  # Set parent_id based on logic above
                 start_date=item.start_date,  # Will be updated later from Next Action dialog
@@ -892,17 +935,17 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             print(
                 f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
-            # Step 4: Save Current Action Item as completed (with work log)
-            if start_timestamp:
-                work_log = WorkLog(
-                    item_id=item.id,
-                    started_at=start_timestamp.isoformat(),
-                    ended_at=datetime.now().isoformat(),
-                    minutes=work_seconds_elapsed // 60,
-                    note=completion_note
-                )
-                db_manager.create_work_log(work_log)
-                print(f"[DEBUG] Step 4: Work log saved")
+            # Step 4: Save Current Action Item as completed (with work log).
+            # Routed through save_work_log rather than building a second WorkLog
+            # here. Two writers of the same row had already drifted: this one
+            # dropped deliverable_snapshot, so the identical session ended with
+            # Continue recorded nothing about what it was for while Stop ->
+            # Finished recorded it. The reward columns stay empty either way —
+            # the reward fires on Done, not on Continue — but that is now a
+            # property of _pending_reward being unset, not of a separate
+            # INSERT that forgot the field.
+            self.save_work_log(completion_note)
+            print(f"[DEBUG] Step 4: Work log saved")
 
             db_manager.complete_action_item(item.id)
             notify_weekly_tactic_changes(db_manager)
@@ -1015,19 +1058,54 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             phase=decision.phase if decision else None,
         )
 
-        self.db_manager.create_work_log(work_log)
+        # One transaction, because these two writes are one fact. Committed
+        # separately, a failure between them leaves a row saying
+        # deliverable_completed=1, phase='wiring' while the counter the phase is
+        # derived from never moved — and nothing afterwards can tell, because
+        # the counter is the only source of truth for the phase.
+        try:
+            with self.db_manager.transaction():
+                self.db_manager.create_work_log(work_log)
 
-        if decision is not None and self.session_board_id:
-            self.db_manager.increment_project_savor_count(self.session_board_id)
+                if decision is not None and self.session_board_id:
+                    counted = self.db_manager.increment_project_savor_count(
+                        self.session_board_id)
+                    if counted is None:
+                        # The board went away mid-session. The session still
+                        # happened and is still worth keeping, so this is not
+                        # raised — but it is said out loud rather than left to
+                        # look like a completion that counted.
+                        print("[WARN] project %s no longer exists; the session was "
+                              "logged but not counted towards it"
+                              % self.session_board_id)
 
-        # Consumed: a second call for the same session must not count twice.
-        self._pending_reward = None
-        self._done_pressed = False
-        self._savor_shown = False
+            # The session is now recorded, so there is no longer one to record.
+            # Cleared only on success: after a failed write the timestamp is the
+            # only thing that would let a retry save the work at all.
+            #
+            # This is what makes "one session, one row" true. Clearing just the
+            # reward flags stopped a second call double-*counting* while leaving
+            # it free to write a second work_logs row, which is the same defect
+            # one field along.
+            self.start_timestamp = None
+        finally:
+            # In a finally, not after the writes. Left until after, an exception
+            # here returns through finished_action's handler with the flags
+            # still set and the Done button still showing, and the next press
+            # writes a second completed-deliverable row for the same work.
+            self._pending_reward = None
+            self._done_pressed = False
+            self._savor_shown = False
 
     def on_window_close(self):
-        """Handle window close event - treat as Stop."""
-        if self.timer_state in ["running", "paused", "in_break"]:
+        """Handle window close event - treat as Stop.
+
+        Reads ACTIVE_STATES rather than spelling the values out. The literal
+        list this replaced predated AWAITING_CHOICE and was never updated, so
+        closing the window at the break-end choice quietly skipped the "treat
+        as Stop" this docstring promises.
+        """
+        if self.timer_state in self.ACTIVE_STATES:
             self.stop_timer()
 
         self.save_window_settings()
