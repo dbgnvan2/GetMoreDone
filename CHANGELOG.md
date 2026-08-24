@@ -34,6 +34,31 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The timer window is now three clear areas.** The **timer** (deliverable, clock,
+  and ▶ Start / ⏸ Pause / ⏹ Stop laid out like a recorder), the **music** (play, pause,
+  and the track name — which used to be appended to the timer's own status line), and
+  the **session actions**.
+
+- **The deliverable is on the timer window.** It was typed into a dialog at the start and
+  then never shown again — the one thing the reward depends on was the one thing you
+  could not see. It now sits at the top with an **Edit** button. If an item has no
+  deliverable, starting the timer asks for one; if it has one already, you are not asked
+  to retype it.
+
+- **Music no longer starts by itself.** Starting the timer used to start the music,
+  which decided for you that this was a session with music in it. Only the Play button
+  starts it now.
+
+- **Finished and Continue are gone, and what replaced them says what it does.** Both of
+  them quietly completed the action item and closed the window, which looked from the
+  outside like nothing had happened — the window vanished and the task left Today. A
+  session is now a record of work *on* a task, and it ends one of three ways:
+  **Save & Close** (records the session and the time, task stays open), **Cancel**
+  (returns without a note — your time and your typed notes are still kept), and
+  **Complete & Carry Forward →** (completes today's item and opens tomorrow's copy).
+  **Only "Done — deliverable complete" finishes a task** and counts it towards the
+  project's reward phase.
+
 - **The end of a break no longer ends the session.** It used to stop the timer
   and offer Finished/Continue, which quietly made the timer ringing the thing
   that decided your work was over. Now it asks: **Pause (rest)** or **Continue

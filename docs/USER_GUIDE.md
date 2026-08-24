@@ -508,13 +508,19 @@ the Scheduler.
 
 The Timer supports focused work sessions and time tracking.
 
-Controls:
+The window has three areas: the **timer**, the **music**, and the **session actions**.
+
+Timer area:
+- **Deliverable** — What: What this session is for, shown at the top with an **Edit**
+  button. Why: It is what the reward is contingent on, so it is on screen the whole time
+  rather than typed once into a dialog and never seen again. If the item has no
+  deliverable, starting the timer asks for one; if it already has one, you are not asked
+  again — you can see it, and edit it if it changes.
 - **Time Block** — What: Total minutes for the session. Why: Set a time boundary.
 - **Time To Finish** — What: Countdown of work time. Why: Keep pace.
 - **Wrap/Break** — What: Break duration. Why: Account for wrap-up time.
-- **Start** — What: Starts the timer. Why: Begin the session.
-- **Pause / Resume** — What: Pause or resume the countdown. Why: Handle interruptions.
-- **Stop** — What: Stops the timer and shows completion actions. Why: End the session cleanly.
+- **▶ Start / ⏸ Pause / ⏹ Stop** — What: The transport, laid out like a recorder and
+  sitting inside the timer area. Why: They belong to the clock they drive.
 - **Done — deliverable complete** — What: Marks the deliverable finished and closes out the
   session. Available the whole time a session is running, not only when the clock stops.
   Why: Finishing the thing is what ends the work; the clock running out is not.
@@ -533,13 +539,33 @@ way it does when you Pause: yours to control, from the music buttons. And **Fini
 Continue are one click further away at the ring** — press Stop first, or press Done if
 the deliverable is actually finished.
 
-Music controls:
-- **Play** — What: Starts music from your configured folder. Why: Focus support.
-- **Pause** — What: Pauses music. Why: Quiet when needed.
+Music area:
+- **▶ Play** — What: Starts music from your configured folder. Why: Focus support.
+  **Music never starts on its own.** Starting the timer used to start the music too,
+  which decided for you that this was a session with music in it.
+- **⏸ Pause** — What: Pauses music. Why: Quiet when needed.
+- The track name and any reason music could not start appear here, in the music area —
+  not on the timer's own status line.
 
-Completion actions:
-- **Finished** — What: Completes the item and logs work. Why: Close the loop on finished work.
-- **Continue** — What: Completes current item, creates a new one, and prompts for next steps and dates. Why: Continue work into the next day without losing history.
+Session actions (after **Stop**):
+
+A timer session is a *record of work on* an action item, not the item's ending. These
+three say what they do:
+
+- **Save & Close** — What: Prompts for a session note, records the session and the time,
+  and returns you to the action item, which stays **open**. Why: The ordinary ending —
+  you did some work, it is written down, the task is not finished.
+- **Cancel** — What: Returns without asking for a note. **Your time is still logged and
+  any notes you typed are still saved** — those are facts about what happened, and a
+  button that threw them away quietly would be lying about the word "Cancel".
+- **Complete & Carry Forward →** — What: Completes this item, creates a copy for the next
+  day, and opens the editor on it. Why: Ending today's block on work that continues
+  tomorrow, without losing the history of what you did today.
+
+**Only "Done — deliverable complete" completes an item as finished work** and counts it
+towards the project's reward phase. The old buttons were called *Finished* and
+*Continue*, and both quietly completed the item and closed the window — which looked from
+the outside like pressing them did nothing at all.
 
 Notes:
 - **Pop Out** — What: Opens the notes in a separate window. Why: More space to write.
