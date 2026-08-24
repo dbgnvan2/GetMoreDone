@@ -113,12 +113,47 @@ Combined: 2 high, 8 medium, 9 low. Everything medium and above fixed in `9f7b5f3
 - **The reward sequence could veto the record.** A dialog, a canvas and an audio player
   ran unguarded before the only code that writes anything.
 
-A third cold pass over the fix commits alone followed, since fixes are written last and
-fastest and are the least-reviewed code in any change.
+Then a third cold pass over the fix commits alone, because fixes are written last and
+fastest and are the least-reviewed code in any change. It found three more, **two of them
+introduced by the fix commit itself** — which is the whole argument for running it:
 
-Fifteen more mutations on the fixes, all red. Two started green and were fixed: a helper
-cancelled the tick before asserting the code cancels it, and one defensive line is
-unreachable through the UI and needed a direct test rather than a click sequence.
+- `stop_timer` was too big a hammer for `done_action`, and it landed on the moment the
+  feature exists to protect. Behind the savor prompt the window turned red and read
+  "Stopped", the music cut, Done vanished, and Finished and Continue appeared beside it.
+  `halt_for_completion` now cancels the clock and nothing else.
+- The exhausted-cycle guard was copied verbatim from `pause_timer`'s resume rule, so it
+  required *both* countdowns to be zero and missed Stop-taken-during-the-break — the same
+  zero-length-block defect the fix claimed to have removed, one step earlier.
+- Clearing the reward flags in a `finally` looked safer than clearing them on success and
+  was the opposite: with atomic writes a failed attempt leaves nothing behind, so a retry
+  with the flags intact writes one correct row, while clearing them made the retry record
+  the work as an ordinary session and stalled that project's phase by one for good.
+
+A fourth cold pass over that round's fixes found one medium — again introduced by the
+previous fix. `halt_for_completion` set a green "Deliverable complete" *before* anything
+was persisted, and nothing took it back on failure, so a save that raised left a
+dismissable error modal and, behind it, a timer reading green about a deliverable still
+open with no work log. It also entered PAUSED without relabelling the pause button,
+leaving the timer paused behind a control marked "Pause" that resumes — and disabled
+entirely when reached from the break-end choice.
+
+**Stopped there.** The severity trend across the four passes was high → high → medium →
+medium, and this repo's rules bound the loop for a reason: a fix pass introduces defects
+at roughly the rate it removes them, so re-sweeping without a bound trades one class for
+another while the count drifts down and reads as progress. The rule is to stop when a
+pass yields nothing above medium and to run a further pass only after a *high*. Pass four
+produced no high.
+
+**Every round of fixes introduced a defect the next pass caught** — three rounds, three
+times. That is the measured behaviour the sweep rules describe, and the reason the cold
+passes are mandatory rather than optional.
+
+Mutation totals: 19 on the feature, 15 on fix round one, 9 on round two, 6 on round
+three. All red. Seven started green across the four rounds and each was fixed or pinned
+rather than noted — two tests that were performing the fix they existed to check, two
+defensive lines unreachable from any click sequence, and a guard that repeated a glob
+pattern instead of reading it, so changing the pattern left the test written to catch
+exactly that perfectly green.
 
 **`BACKLOG.md` contained a wrong entry** and it is corrected rather than deleted. It
 described `continue_action`'s inline WorkLog as duplication that "correctly carries no

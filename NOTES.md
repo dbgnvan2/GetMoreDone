@@ -39,6 +39,18 @@
 - ✅ **Tests** — `test_reward_protocol.py` (11), `test_reward_protocol_schema.py` (15),
   `test_reward_protocol_timer.py` (26), `test_reward_celebration.py` (18). 19 mutations run
   against verbatim originals, all red. Full suite: **1438 passed, 7 skipped** (exit 0).
+- ✅ **Four cold review passes, three rounds of fixes, and every round introduced a defect
+  the next pass caught.** Highest-value catches: Done never stopped the clock (the break
+  alarm fired over the savor prompt, and the test for it was hand-cancelling the tick on
+  the line before, doing the fix's job); Start → Stop → Start put Done, Finished and
+  Continue on screen together, two of which end the work with no reward protocol at all;
+  and the reward sequence ran unguarded ahead of the only code that persists anything, so
+  a TclError meant the user pressed Done, saw nothing, and lost the session. Then the
+  fixes' own defects: `stop_timer` was too big a hammer and turned the window red and cut
+  the music behind the savor prompt; the exhausted-cycle guard was copied from
+  `pause_timer` and missed stop-during-break; and the status label claimed success on a
+  completion that had failed. Stopped after pass four on the repo's own rule — the trend
+  was high → high → medium → medium and unbounded re-sweeping does not converge.
 - ⚠️ **A signed-off spec decision was amended.** `spec_2026-08-18_downloadable_release.md`
   D3 says "no audio ships" — users point Settings at their own music folder. The
   celebration needs a sound and the spec forbids fetching one, so `assets/audio/tada.wav`
