@@ -5,6 +5,7 @@ Provides a countdown timer with pause/resume and completion workflows.
 
 import customtkinter as ctk
 import tkinter as tk
+import random
 from datetime import datetime, timedelta, date
 from typing import Optional, Callable
 from pathlib import Path
@@ -18,12 +19,28 @@ from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.music_library import select_track
 from ..utils.icon_loader import load_music_note_icon
 from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow, NextStepsDialog
+from .timer_window_reward import TimerRewardMixin
 
 
-class TimerWindow(ctk.CTkToplevel):
-    """Floating timer window for action items."""
+class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
+    """Floating timer window for action items.
 
-    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem, on_close: Optional[Callable] = None):
+    The reward protocol (RP-4) lives in TimerRewardMixin; this class owns the
+    widgets and the clock.
+
+    Spec: docs/spec_2026-08-23_dopamine_reward_protocol.md#4-ux-flow-hook-points-into-screenstimer_windowpy
+    """
+
+    # RP-4.3 / spec decision D2. Break end no longer stops the timer, so there
+    # is a fifth state: the break is over and the user has not yet said whether
+    # they are resting or starting another focus block. It needs its own name
+    # because both countdowns are zero at that moment, and the resume rule in
+    # pause_timer reads exactly those two numbers.
+    AWAITING_CHOICE = "awaiting_choice"
+
+    def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem,
+                 on_close: Optional[Callable] = None,
+                 rng: Optional[random.Random] = None):
         super().__init__(parent)
 
         self.db_manager = db_manager
@@ -52,6 +69,10 @@ class TimerWindow(ctk.CTkToplevel):
 
         # Track pop-out window for note synchronization
         self.next_action_window = None
+
+        # RP-4: reward-protocol session state (deliverable snapshot, board,
+        # phase, and the decision made at Done).
+        self.init_reward_session(rng)
 
         # Music playback
         self.music_player = None
@@ -184,6 +205,45 @@ class TimerWindow(ctk.CTkToplevel):
             state="disabled"
         )
         self.stop_button.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+
+        # RP-4.4 — "Done" means the deliverable is finished, and it is
+        # available at any point in a session rather than only when the timer
+        # rings. Completion is the contingency; elapsed time is not.
+        # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#44-done-button-new--deliverable-complete
+        # Tests: tests/test_reward_protocol_timer.py::test_rp44_done_button_visibility_across_every_timer_state
+        self.done_button = ctk.CTkButton(
+            controls_frame,
+            text="Done — deliverable complete",
+            command=self.done_action,
+            **button_style("primary"),
+        )
+        self.done_button.grid(row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="ew")
+        self.done_button.grid_remove()  # nothing to finish until a session starts
+
+        # RP-4.3 — break end offers a neutral choice instead of dropping into
+        # the completion flow. The reward must never fire on the ring.
+        # Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#43-break-end-is-neutral-in-tick-line-537551
+        # Tests: tests/test_reward_protocol_timer.py::test_rp43_break_end_does_not_auto_stop
+        self.break_choice_frame = ctk.CTkFrame(controls_frame, fg_color="transparent")
+        self.break_choice_frame.grid(row=2, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="ew")
+        self.break_choice_frame.grid_columnconfigure((0, 1), weight=1)
+        self.break_choice_frame.grid_remove()
+
+        self.rest_button = ctk.CTkButton(
+            self.break_choice_frame,
+            text="Pause (rest)",
+            command=self.rest_action,
+            **button_style("secondary"),
+        )
+        self.rest_button.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+
+        self.continue_focus_button = ctk.CTkButton(
+            self.break_choice_frame,
+            text="Continue focus",
+            command=self.continue_focus_action,
+            **button_style("secondary"),
+        )
+        self.continue_focus_button.grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
         # Music controls (separate row)
         music_frame = ctk.CTkFrame(main_frame)
@@ -405,7 +465,19 @@ class TimerWindow(ctk.CTkToplevel):
         return f"{minutes:02d}:{secs:02d}"
 
     def start_timer(self):
-        """Start the countdown timer."""
+        """Start the countdown timer.
+
+        RP-4.2: a project-linked item confirms its deliverable first, and a
+        cancelled confirmation starts nothing. That check comes before the
+        time-block edit is saved, so cancelling leaves the item exactly as it
+        was rather than half-updated.
+
+        Spec:  docs/spec_2026-08-23_dopamine_reward_protocol.md#42-timer-start--confirm-deliverable-in-start_timer-line-407
+        Tests: tests/test_reward_protocol_timer.py::test_rp42b_cancelling_the_deliverable_dialog_does_not_start_the_timer
+        """
+        if not self.prepare_reward_session():
+            return
+
         # Update time block if edited
         try:
             new_time_block = int(self.time_block_value.get())
@@ -429,6 +501,8 @@ class TimerWindow(ctk.CTkToplevel):
         self.pause_button.configure(state="normal", text="Pause")
         self.stop_button.configure(state="normal")
         self.time_block_value.configure(state="disabled")
+        self.break_choice_frame.grid_remove()
+        self._sync_done_button()
         self._update_status_label("Working...", "green")
 
         # Start music playback
@@ -462,6 +536,14 @@ class TimerWindow(ctk.CTkToplevel):
                                   self.pause_timestamp).total_seconds()
                 # Note: pause duration is already excluded from work time in tick()
 
+            # RP-4.3b — after a rest taken at break end both countdowns are
+            # zero. The rule below would call that "in_break", and a
+            # zero-second break re-fires the break-over branch on the very next
+            # tick, forever. A fresh cycle is what "resume" means there.
+            if self.work_seconds_remaining <= 0 and self.break_seconds_remaining <= 0:
+                self.begin_new_focus_cycle()
+                return
+
             self.timer_state = "running" if self.work_seconds_remaining > 0 else "in_break"
             self.pause_button.configure(text="Pause")
             status_text = "Working..." if self.timer_state == "running" else "Break time!"
@@ -490,6 +572,8 @@ class TimerWindow(ctk.CTkToplevel):
         self.pause_button.configure(state="disabled", text="Pause")
         self.stop_button.configure(state="disabled")
         self.time_block_value.configure(state="normal")
+        self.break_choice_frame.grid_remove()
+        self._sync_done_button()
         self._update_status_label("Stopped", "red")
 
         # Show completion buttons
@@ -538,7 +622,9 @@ class TimerWindow(ctk.CTkToplevel):
             self.break_seconds_remaining -= 1
 
             if self.break_seconds_remaining <= 0:
-                # Break finished, auto-stop
+                # RP-4.3 — the break ending is not a completion. It used to call
+                # stop_timer(), which showed Finished/Continue and so made the
+                # timer ringing the thing that ended the work. Now it asks.
                 self.break_seconds_remaining = 0
                 self._update_status_label("⏰ BREAK OVER! ⏰", "red")
                 self.status_label.configure(
@@ -547,7 +633,7 @@ class TimerWindow(ctk.CTkToplevel):
                 self.play_sound(is_break_start=False)
                 # Flash the window
                 self._flash_window()
-                self.stop_timer()
+                self.enter_break_choice()
                 return
 
         # Update display
@@ -555,6 +641,73 @@ class TimerWindow(ctk.CTkToplevel):
 
         # Schedule next tick
         self.update_timer_id = self.after(1000, self.tick)
+
+    def _sync_done_button(self):
+        """Show "Done" for every state except stopped.
+
+        Purpose: RP-4.4 — one rule, applied at every transition, rather than a
+                 show call on start and a hide call on stop. Written the other
+                 way, a state added later silently gets whichever visibility it
+                 happened to inherit.
+        Tests:   tests/test_reward_protocol_timer.py::test_rp44_done_button_visibility_across_every_timer_state
+        """
+        if self.timer_state == "stopped":
+            self.done_button.grid_remove()
+        else:
+            self.done_button.grid()
+
+    def enter_break_choice(self):
+        """Break over: rest, or another focus block? Neither completes anything.
+
+        Purpose: RP-4.3 — the reward must never fire on the timer ringing.
+        Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#43-break-end-is-neutral-in-tick-line-537551
+        Tests:   tests/test_reward_protocol_timer.py::test_rp43_break_end_does_not_auto_stop
+        """
+        self.timer_state = self.AWAITING_CHOICE
+        self._cancel_pending_timer()
+
+        # The two buttons below own the choice while it is open; leaving the
+        # main Pause button live as well would offer the same action twice
+        # under two different names.
+        self.pause_button.configure(state="disabled", text="Pause")
+        self._sync_done_button()
+        self.break_choice_frame.grid()
+
+    def rest_action(self):
+        """Stop the clock and wait. Resume starts a fresh focus block."""
+        self.break_choice_frame.grid_remove()
+        self.timer_state = "paused"
+        self.pause_timestamp = datetime.now()
+        self.pause_button.configure(state="normal", text="Resume")
+        self._sync_done_button()
+        self._update_status_label("Resting — Resume starts another block", "orange")
+
+    def continue_focus_action(self):
+        """Straight into another focus block, no completion flow in between."""
+        self.break_choice_frame.grid_remove()
+        self.begin_new_focus_cycle()
+
+    def begin_new_focus_cycle(self):
+        """Reset both countdowns and start working again.
+
+        Purpose: RP-4.3a — shared by "Continue focus" and by resuming after a
+                 rest, so the two cannot drift into meaning different things.
+        Tests:   tests/test_reward_protocol_timer.py::test_rp43a_continue_focus_starts_a_fresh_cycle
+                 tests/test_reward_protocol_timer.py::test_rp43b_resume_after_rest_does_not_re_enter_a_zero_second_break
+        """
+        self.work_seconds_remaining = self.work_minutes * 60
+        self.break_seconds_remaining = self.break_minutes * 60
+        self.timer_state = "running"
+        self.pause_timestamp = None
+        # The break banner left the status label bold and oversized.
+        self.status_label.configure(font=ctk.CTkFont(size=11))
+        self.pause_button.configure(state="normal", text="Pause")
+        self.stop_button.configure(state="normal")
+        self._sync_done_button()
+        self._update_status_label("Working...", "green")
+        self.last_tick_time = datetime.now()
+        self.update_display()
+        self.tick()
 
     def update_display(self):
         """Update time display and title bar."""
@@ -826,19 +979,51 @@ class TimerWindow(ctk.CTkToplevel):
             self._show_error_dialog(f"Failed to continue action: {e}")
 
     def save_work_log(self, note: Optional[str] = None):
-        """Save work log entry to database."""
+        """Save work log entry to database, with the reward-protocol audit trail.
+
+        Purpose: RP-4.5b / RP-4.5d — record what the protocol did for this
+                 session, and advance the board counter in the same breath.
+        Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#45-reward-sequence-on-done
+        Tests:   tests/test_reward_protocol_timer.py::test_rp45b_done_writes_every_reward_column
+                 tests/test_reward_protocol_timer.py::test_rp45d_counter_never_advances_without_a_work_log
+
+        The counter is advanced here rather than as its own step in done_action.
+        Spec §4.5 lists it before the save; done that way, a window closed
+        between the two leaves a project claiming a completion that no work log
+        records, and nothing can tell afterwards which of the two happened.
+        """
         if not self.start_timestamp:
+            # No session to log. The counter stays put too — a completion that
+            # was not recorded must not be counted either.
+            if self._done_pressed:
+                print("[WARN] Done pressed with no session start; "
+                      "nothing logged and savor_count not advanced")
             return
+
+        decision = self._pending_reward
 
         work_log = WorkLog(
             item_id=self.item.id,
             started_at=self.start_timestamp.isoformat(),
             ended_at=datetime.now().isoformat(),
             minutes=self.work_seconds_elapsed // 60,  # Convert to minutes
-            note=note
+            note=note,
+            deliverable_snapshot=self.session_deliverable,
+            deliverable_completed=self._done_pressed,
+            savor_delivered=self._savor_shown,
+            celebration_type=decision.celebration if decision else None,
+            phase=decision.phase if decision else None,
         )
 
         self.db_manager.create_work_log(work_log)
+
+        if decision is not None and self.session_board_id:
+            self.db_manager.increment_project_savor_count(self.session_board_id)
+
+        # Consumed: a second call for the same session must not count twice.
+        self._pending_reward = None
+        self._done_pressed = False
+        self._savor_shown = False
 
     def on_window_close(self):
         """Handle window close event - treat as Stop."""
@@ -854,6 +1039,11 @@ class TimerWindow(ctk.CTkToplevel):
 
     def _cleanup_and_destroy(self):
         """Clean up resources and destroy window safely."""
+        # A celebration may still be animating: the completion dialog opens on
+        # top of it and this runs moments later. Its scheduled frames have to
+        # be cancelled before the window they draw on goes away.
+        self.cancel_celebration()
+
         # Stop music if playing
         self._stop_music()
 

@@ -15,6 +15,23 @@ from ..theme import button_style, status_text_color
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
 
+def _center_on(dialog, parent, width: int, height: int) -> None:
+    """Put ``dialog`` over ``parent``, or leave it where Tk put it.
+
+    Swallows the failure on purpose: the parent may already be destroyed by the
+    time a dialog opens over it, and a window that is merely mis-positioned must
+    not become an error the user sees.
+    """
+    try:
+        dialog.update_idletasks()
+        if parent.winfo_exists():
+            x = parent.winfo_x() + (parent.winfo_width() - width) // 2
+            y = parent.winfo_y() + (parent.winfo_height() - height) // 2
+            dialog.geometry(f"+{x}+{y}")
+    except Exception as e:
+        print(f"[DEBUG] Could not center dialog on parent: {e}")
+
+
 class CompletionNoteDialog(ctk.CTkToplevel):
     """Simple dialog for entering completion notes."""
 
@@ -414,4 +431,178 @@ class NextStepsDialog(ctk.CTkToplevel):
             'start_date': tomorrow,
             'due_date': tomorrow
         }
+        self.destroy()
+
+
+# --- Reward protocol dialogs -------------------------------------------------
+#
+# Spec: docs/spec_2026-08-23_dopamine_reward_protocol.md#4-ux-flow-hook-points-into-screenstimer_windowpy
+#
+# The copy below is the feature, not decoration around it, so it lives in named
+# constants and the tests pin the literal strings. In particular the savor copy
+# contains no "well done" and no "good job": it points at the artifact and at
+# the felt sense of having closed something, because a verbal pat is exactly the
+# cheap reward this protocol is trying to stop training.
+
+DELIVERABLE_HINT = "What does 'done' look like? A checkable artifact, not time spent."
+DELIVERABLE_BLANK_ERROR = "Name the artifact before you start — that is what the session is for."
+
+SAVOR_TITLE = "Deliverable complete"
+SAVOR_WHAT = "You set out to: {deliverable}. It's done."
+SAVOR_HOW = (
+    "Pause 5 seconds. Look at what you just made. Notice the physical sense of "
+    "'closed.' You did something hard and leaned in — feel the effort, not just "
+    "the finish."
+)
+SAVOR_BUTTON = "Finished"
+
+
+class DeliverableDialog(ctk.CTkToplevel):
+    """Confirm what "done" means for this session, before the clock starts.
+
+    Purpose: RP-4.2 — capture the deliverable up front so the reward can be
+             contingent on completing it rather than on the timer ringing.
+    Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#42-timer-start--confirm-deliverable-in-start_timer-line-407
+    Tests:   tests/test_reward_celebration.py::test_rp42a_deliverable_dialog_refuses_blank_and_shows_the_hint
+
+    ``result`` is the confirmed text, or None when the user cancelled. Cancel
+    means "do not start", not "start without one" — a reward-tracked session
+    with no deliverable has nothing to be contingent on.
+    """
+
+    HINT = DELIVERABLE_HINT
+    BLANK_ERROR = DELIVERABLE_BLANK_ERROR
+
+    def __init__(self, parent, item_title: str, deliverable: Optional[str] = None,
+                 board_title: Optional[str] = None, phase: Optional[str] = None,
+                 savor_count: Optional[int] = None):
+        super().__init__(parent)
+
+        self.result: Optional[str] = None
+
+        self.title("Deliverable")
+        self.geometry("480x280")
+        self.transient(parent)
+        self.attributes('-topmost', True)
+        self.grab_set()
+        _center_on(self, parent, 480, 280)
+
+        ctk.CTkLabel(
+            self, text=item_title, font=ctk.CTkFont(size=14, weight="bold"),
+            wraplength=440, justify="left",
+        ).pack(pady=(14, 4), padx=16, anchor="w")
+
+        if board_title:
+            # Factual, not encouraging: which project this counts towards and
+            # where it currently sits. No progress bar — the count is a fact
+            # about the past, not a target to chase.
+            context = f"{board_title} · {savor_count} completed · phase: {phase}"
+            ctk.CTkLabel(
+                self, text=context, font=ctk.CTkFont(size=11),
+                text_color=status_text_color("muted"), wraplength=440, justify="left",
+            ).pack(padx=16, anchor="w")
+
+        ctk.CTkLabel(
+            self, text=self.HINT, font=ctk.CTkFont(size=12),
+            text_color=status_text_color("muted"), wraplength=440, justify="left",
+        ).pack(pady=(10, 4), padx=16, anchor="w")
+
+        self.entry = ctk.CTkEntry(self, placeholder_text="Draft section 2's opening paragraph")
+        self.entry.pack(pady=4, padx=16, fill="x")
+        if deliverable:
+            self.entry.insert(0, deliverable)
+        self.entry.focus()
+        self.entry.bind("<Return>", lambda _event: self.confirm())
+
+        self.error_label = ctk.CTkLabel(
+            self, text="", font=ctk.CTkFont(size=11),
+            text_color=status_text_color("danger"), wraplength=440, justify="left",
+        )
+        self.error_label.pack(padx=16, anchor="w")
+
+        button_frame = ctk.CTkFrame(self)
+        button_frame.pack(pady=12, padx=16, fill="x")
+
+        ctk.CTkButton(
+            button_frame, text="Start", command=self.confirm, **button_style("primary"),
+        ).pack(side="left", expand=True, padx=5)
+
+        ctk.CTkButton(
+            button_frame, text="Cancel", command=self.cancel, **button_style("secondary"),
+        ).pack(side="left", expand=True, padx=5)
+
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+    def confirm(self):
+        """Accept the deliverable, or refuse to close while it is blank."""
+        text = self.entry.get().strip()
+        if not text:
+            self.error_label.configure(text=self.BLANK_ERROR)
+            return
+        self.result = text
+        self.destroy()
+
+    def cancel(self):
+        """Close without a deliverable; the caller must not start the timer."""
+        self.result = None
+        self.destroy()
+
+
+class SavorDialog(ctk.CTkToplevel):
+    """The savor step: attention on the artifact and the effort, briefly.
+
+    Purpose: RP-4.5 — aim the felt "good" signal at what was made and at the
+             effort of making it, so wanting attaches to the work itself.
+    Spec:    docs/spec_2026-08-23_dopamine_reward_protocol.md#45-reward-sequence-on-done
+    Tests:   tests/test_reward_celebration.py::test_rp45e_savor_dialog_copy_is_verbatim
+
+    ``acknowledged`` records whether the user pressed the button rather than
+    closing the window. It does not gate anything — a session that showed the
+    savor step showed it either way — but it keeps the two events distinct.
+    """
+
+    WHAT = SAVOR_WHAT
+    HOW = SAVOR_HOW
+    BUTTON = SAVOR_BUTTON
+
+    def __init__(self, parent, snapshot: str):
+        super().__init__(parent)
+
+        self.acknowledged = False
+
+        self.title(SAVOR_TITLE)
+        self.geometry("460x300")
+        self.transient(parent)
+        self.attributes('-topmost', True)
+        self.grab_set()
+        _center_on(self, parent, 460, 300)
+
+        ctk.CTkLabel(
+            self, text=SAVOR_TITLE, font=ctk.CTkFont(size=16, weight="bold"),
+        ).pack(pady=(18, 10), padx=18)
+
+        self.what_label = ctk.CTkLabel(
+            self, text=self.WHAT.format(deliverable=snapshot),
+            font=ctk.CTkFont(size=14), wraplength=420, justify="left",
+        )
+        self.what_label.pack(pady=(0, 12), padx=18, anchor="w")
+
+        self.how_label = ctk.CTkLabel(
+            self, text=self.HOW, font=ctk.CTkFont(size=12),
+            text_color=status_text_color("muted"), wraplength=420, justify="left",
+        )
+        self.how_label.pack(pady=(0, 14), padx=18, anchor="w")
+
+        ctk.CTkButton(
+            self, text=self.BUTTON, command=self.acknowledge, **button_style("primary"),
+        ).pack(pady=(0, 16), padx=18)
+
+        self.protocol("WM_DELETE_WINDOW", self.close_unacknowledged)
+
+    def acknowledge(self):
+        self.acknowledged = True
+        self.destroy()
+
+    def close_unacknowledged(self):
+        self.acknowledged = False
         self.destroy()
