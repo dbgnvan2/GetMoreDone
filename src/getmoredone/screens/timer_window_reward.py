@@ -129,11 +129,17 @@ class TimerRewardMixin(TimerCelebrationMixin):
 
         if dialog.result != (self.item.deliverable or None):
             self.item.deliverable = dialog.result
-            # Two guards, not one. Sharing a single except made a failure to
-            # report the weekly-tactic cascade come out as "could not save the
-            # deliverable" — one message for two unrelated facts (P13). The
-            # notify stays inside twelve lines of the call it reports on, which
-            # is what tests/test_weekly_tactic_surfaces.py checks for.
+            # Two guards, not one, and both of them real.
+            #
+            # A shared except made a failed cascade report come out as "could
+            # not save the deliverable" — one message for two unrelated facts
+            # (P13). But splitting them and leaving the notify bare is not two
+            # guards either: an exception there propagates out of start_timer,
+            # which has no handler, and the timer silently fails to start.
+            #
+            # The comments live up here rather than inside the block because
+            # tests/test_weekly_tactic_surfaces.py requires the notify within
+            # twelve lines of the call it reports on, and prose counts.
             try:
                 self.db_manager.update_action_item(self.item)
             except Exception as exc:
@@ -142,7 +148,13 @@ class TimerRewardMixin(TimerCelebrationMixin):
                     "session still records it: %s", self.item.id, exc,
                 )
             else:
-                notify_weekly_tactic_changes(self.db_manager, self)
+                try:
+                    notify_weekly_tactic_changes(self.db_manager, self)
+                except Exception as exc:
+                    logger.exception(
+                        "[reward_protocol] the deliverable saved, but reporting "
+                        "the weekly-tactic cascade failed: %s", exc,
+                    )
 
         self.session_deliverable = dialog.result
         self.session_board_id = board.id

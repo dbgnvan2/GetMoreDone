@@ -746,7 +746,27 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
         self.pause_timestamp = datetime.now()
         self._cancel_pending_timer()
         self.break_choice_frame.grid_remove()
-        self._update_status_label("Deliverable complete", "green")
+        # The other two routes into PAUSED both relabel this button, and the
+        # state is a lie without it: pressing something marked "Pause" while
+        # already paused takes the resume branch. Reached from the break-end
+        # choice it was disabled as well, leaving no resume control at all.
+        self.pause_button.configure(state="normal", text="Resume")
+        self._update_status_label("Recording...", "green")
+
+    def completion_failed(self):
+        """Take back what the window is claiming when the completion did not land.
+
+        Purpose: the status label is what survives after the user dismisses the
+                 error modal, so it must not be the thing still asserting the
+                 work was recorded.
+        Tests:   tests/test_reward_protocol_timer.py::test_rp45_a_failed_completion_does_not_leave_the_window_claiming_success
+
+        halt_for_completion runs before anything is persisted, so between it and
+        a successful save the window is describing an intention. If the save
+        raises, that intention has to be withdrawn — otherwise the item is still
+        open, the work log does not exist, and the timer reads green.
+        """
+        self._update_status_label("Not saved — try Done again", "red")
 
     def _reset_countdowns(self):
         """Both countdowns back to a full block. The only place that does it."""
@@ -871,6 +891,8 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             print(f"[ERROR] Finished action failed: {e}")
             import traceback
             traceback.print_exc()
+            # Before the modal, because the label outlives it.
+            self.completion_failed()
             self._show_error_dialog(f"Failed to complete action: {e}")
 
     def continue_action(self):
@@ -969,10 +991,14 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             # here. Two writers of the same row had already drifted: this one
             # dropped deliverable_snapshot, so the identical session ended with
             # Continue recorded nothing about what it was for while Stop ->
-            # Finished recorded it. The reward columns stay empty either way —
-            # the reward fires on Done, not on Continue — but that is now a
-            # property of _pending_reward being unset, not of a separate
-            # INSERT that forgot the field.
+            # Finished recorded it.
+            #
+            # The reward columns are normally empty here, because Continue does
+            # not set _pending_reward. One case fills them and should: Done was
+            # pressed, the save failed, and the user ended the session with
+            # Continue instead of retrying Done. The flags survive a failed save
+            # precisely so that retry records the completion, and ending by
+            # Continue is still that same completed deliverable.
             self.save_work_log(completion_note)
             print(f"[DEBUG] Step 4: Work log saved")
 
