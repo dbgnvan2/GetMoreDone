@@ -129,17 +129,20 @@ class TimerRewardMixin(TimerCelebrationMixin):
 
         if dialog.result != (self.item.deliverable or None):
             self.item.deliverable = dialog.result
+            # Two guards, not one. Sharing a single except made a failure to
+            # report the weekly-tactic cascade come out as "could not save the
+            # deliverable" — one message for two unrelated facts (P13). The
+            # notify stays inside twelve lines of the call it reports on, which
+            # is what tests/test_weekly_tactic_surfaces.py checks for.
             try:
                 self.db_manager.update_action_item(self.item)
-                notify_weekly_tactic_changes(self.db_manager, self)
             except Exception as exc:
-                # Same reasoning: the session can still run and still be
-                # counted; only the persisted copy of the deliverable is lost,
-                # and the snapshot below keeps the session's own record of it.
                 logger.exception(
                     "[reward_protocol] could not save the deliverable on %s; the "
                     "session still records it: %s", self.item.id, exc,
                 )
+            else:
+                notify_weekly_tactic_changes(self.db_manager, self)
 
         self.session_deliverable = dialog.result
         self.session_board_id = board.id
@@ -159,14 +162,19 @@ class TimerRewardMixin(TimerCelebrationMixin):
         Tests:   tests/test_reward_protocol_timer.py::test_rp45_savor_precedes_celebration
                  tests/test_reward_protocol_timer.py::test_rp44a_done_on_unlinked_item_skips_the_reward_protocol
         """
-        # Stop the clock first. Both dialogs below are entered through
+        # Halt the clock first. Both dialogs below are entered through
         # wait_window, which pumps the Tk event loop, so the tick kept running
-        # underneath them: the break alarm would sound over the savor prompt
-        # and _flash_window's focus_force would pull focus off it. Every
-        # pre-existing route into finished_action came through stop_timer, so
-        # this combination could not arise before Done existed.
+        # underneath them: the break alarm would sound over the savor prompt and
+        # _flash_window's focus_force would pull focus off it. Every pre-existing
+        # route into finished_action came through stop_timer, so this
+        # combination could not arise before Done existed.
+        #
+        # halt_for_completion and not stop_timer: the latter also dresses the
+        # window as a finished session — red "Stopped", music cut, Finished and
+        # Continue on screen — behind a prompt asking the user to sit with what
+        # they just made.
         if self.timer_state != self.STOPPED:
-            self.stop_timer()
+            self.halt_for_completion()
 
         self._done_pressed = True
 
