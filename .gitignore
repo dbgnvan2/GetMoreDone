@@ -1,5 +1,8 @@
 venv/
-audio/
+# Anchored: a bare "audio/" matches any directory of that name at any
+# depth, which silently excluded assets/audio/ — a bundled resource. The
+# rule is meant for the user's music library at the repo root.
+/audio/
 __pycache/
 .DS_Store
 ./audio/
@@ -13,7 +16,7 @@ __pycache/
 # Ignore folders anywhere in the directory tree
 **/__pycache__/
 venv/
-audio/
+/audio/
 data/
 
 # Ignore specific file types anywhere
