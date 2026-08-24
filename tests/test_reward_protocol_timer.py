@@ -889,9 +889,17 @@ def test_rp44_states_tuple_matches_what_the_code_assigns(root, manager, quiet):
     """
     import ast
 
+    # Every module the class is composed from, not just the two obvious ones.
+    # A state assigned in timer_window_celebration.py or a future mixin would be
+    # invisible to a hand-listed pair, and `assert assigned` would still pass on
+    # the values the scanned modules happen to supply.
+    screens = pathlib.Path(tw.__file__).parent
+    modules = sorted(screens.glob("timer_window*.py"))
+    assert len(modules) >= 4, f"expected the timer_window* family, found {modules}"
+
     assigned = set()
-    for module in (tw, twr):
-        tree = ast.parse(pathlib.Path(module.__file__).read_text())
+    for module in modules:
+        tree = ast.parse(module.read_text())
         for node in ast.walk(tree):
             if not isinstance(node, ast.Assign):
                 continue
@@ -958,7 +966,10 @@ def test_rp44_done_stops_the_clock_before_the_savor_dialog(root, manager, quiet)
     assert state_when_savor_opened["pending_tick"] is None, (
         "the clock was still ticking while the savor dialog was open"
     )
-    assert state_when_savor_opened["state"] == "stopped"
+    # Not "stopped": halting for the completion flow deliberately does not dress
+    # the window as a finished session (see the sibling test below). What matters
+    # is that nothing is counting down, which is what the assertion above says.
+    assert state_when_savor_opened["state"] != "running"
 
 
 def test_rp45_a_failing_reward_sequence_still_records_the_session(root, manager, quiet):
@@ -988,37 +999,6 @@ def test_rp45_a_failing_reward_sequence_still_records_the_session(root, manager,
     # The protocol did not run, so nothing claims it did — and nothing counted.
     assert logs[0].phase is None
     assert manager.get_project_board(board.id).savor_count == 0
-
-
-def test_rp45d_a_failed_save_clears_the_flags_so_a_retry_cannot_double_count(root, manager, quiet):
-    """The flags were reset after the writes, so an exception left them set.
-
-    finished_action catches, shows "Failed to complete action", and returns with
-    timer_state unchanged — so Done is still on screen. A second press then
-    wrote a second completed-deliverable row for the same work.
-    """
-    item, board = _linked(manager)
-    timer = _timer(root, manager, item)
-    try:
-        timer.fire_celebration = lambda kind: None
-        timer.prepare_reward_session()
-        timer.start_timestamp = datetime.now()
-        timer._done_pressed = True
-        timer._pending_reward = timer.run_reward_sequence()
-
-        broken = timer.db_manager.create_work_log
-        timer.db_manager.create_work_log = lambda log: (_ for _ in ()).throw(
-            RuntimeError("database is locked"))
-        with pytest.raises(RuntimeError):
-            timer.save_work_log()
-        timer.db_manager.create_work_log = broken
-
-        assert timer._done_pressed is False, "a failed save left the Done flag set"
-        assert timer._pending_reward is None
-        assert manager.get_work_logs(item.id) == []
-        assert manager.get_project_board(board.id).savor_count == 0
-    finally:
-        timer.destroy()
 
 
 def test_rp45d_a_second_save_writes_no_second_work_log(root, manager, quiet):
@@ -1135,3 +1115,206 @@ def test_rp43_starting_a_session_never_leaves_the_break_choice_showing(root, man
         assert timer.timer_state == "running"
     finally:
         timer.destroy()
+
+
+def test_rp45_the_window_behind_the_savor_prompt_is_not_dressed_as_finished(root, manager, quiet):
+    """The savor step asks for attention; the window behind it must not fight that.
+
+    done_action used stop_timer to cancel the tick, which also turned the status
+    red and read "Stopped", cut the music, hid Done, and put Finished and
+    Continue — the two endings this protocol exists to route around — on screen
+    beside the prompt. Cancelling the clock never needed any of that.
+    """
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    timer.fire_celebration = lambda kind: None
+    music = {"stopped": False}
+    timer._stop_music = lambda: music.__setitem__("stopped", True)
+
+    seen = {}
+
+    class Recording(FakeSavorDialog):
+        def __init__(self, parent, snapshot):
+            seen.update(
+                completion=_is_visible(timer.completion_frame),
+                done=_is_visible(timer.done_button),
+                status=timer.status_label.cget("text"),
+                pending_tick=timer.update_timer_id,
+                music_stopped=music["stopped"],
+            )
+            super().__init__(parent, snapshot)
+
+    timer.start_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(twr, "SavorDialog", Recording)
+        timer.done_action()
+
+    assert seen["pending_tick"] is None, "the clock was still ticking — the whole point"
+    assert seen["completion"] is False, (
+        "Finished and Continue were on screen behind the savor prompt"
+    )
+    assert seen["status"] != "Stopped", (
+        f"the window read {seen['status']!r} behind the savor prompt"
+    )
+    assert seen["music_stopped"] is False, "the music cut at the savor moment"
+    assert seen["done"] is True, (
+        "Done vanished, so a completion that then fails has no way to be retried"
+    )
+
+
+def test_rp43a_starting_after_a_stop_during_the_break_gives_a_whole_block(root, manager, quiet):
+    """work=0, break=300 — the case the first version of the guard missed.
+
+    It required *both* countdowns to be zero, copied from pause_timer's resume
+    rule. Resuming mid-break should re-enter the break; Start should not. Start
+    gave a zero-length work block whose first tick fired the BREAK TIME alarm
+    and dropped the user back into the break they had just left.
+    """
+    item = _item(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        timer.work_seconds_remaining = 1
+        timer.tick()                       # into the break
+        timer._cancel_pending_timer()
+        assert timer.timer_state == "in_break"
+        timer.stop_timer()
+        assert (timer.work_seconds_remaining, timer.break_seconds_remaining) == (
+            0, timer.break_minutes * 60), "precondition: stopped during the break"
+
+        timer.start_timer()
+        timer._cancel_pending_timer()
+
+        assert timer.timer_state == "running", (
+            f"Start dropped straight back into {timer.timer_state!r}"
+        )
+        _assert_fresh_work_block(timer)
+    finally:
+        timer.destroy()
+
+
+def test_rp45d_a_failed_counter_update_rolls_the_work_log_back(root, manager, quiet):
+    """The two writes are one fact, so half of it must never survive.
+
+    The failure test this replaces patched create_work_log, so nothing was
+    written and nothing was rolled back — the atomicity the transaction was
+    added for had no coverage at all. This is the case that matters: the log
+    succeeds, the counter fails, and both must vanish.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        timer.prepare_reward_session()
+        timer.start_timestamp = datetime.now()
+        timer.work_seconds_elapsed = 25 * 60
+        timer._done_pressed = True
+        timer._pending_reward = timer.run_reward_sequence()
+
+        manager.increment_project_savor_count = lambda board_id: (
+            _ for _ in ()).throw(RuntimeError("database is locked"))
+        with pytest.raises(RuntimeError):
+            timer.save_work_log()
+
+        assert manager.get_work_logs(item.id) == [], (
+            "the work log survived a failed counter update; the row now claims a "
+            "completed deliverable the counter never counted"
+        )
+        assert manager.get_project_board(board.id).savor_count == 0
+    finally:
+        timer.destroy()
+
+
+def test_rp45d_a_failed_save_keeps_the_facts_a_retry_needs(root, manager, quiet):
+    """A retry after a failed write must record the completion, not a plain session.
+
+    The flags used to be cleared in a finally. Since the writes are atomic a
+    failed attempt leaves nothing behind, so clearing them bought no safety and
+    cost the session's facts: the retry wrote the same work with no
+    deliverable_completed, no phase, and the counter never advancing.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        timer.prepare_reward_session()
+        timer.start_timestamp = datetime.now()
+        timer.work_seconds_elapsed = 25 * 60
+        timer._done_pressed = True
+        timer._pending_reward = timer.run_reward_sequence()
+
+        real = manager.create_work_log
+        calls = []
+
+        def flaky(log):
+            calls.append(log)
+            if len(calls) == 1:
+                raise RuntimeError("database is locked")
+            return real(log)
+
+        manager.create_work_log = flaky
+        with pytest.raises(RuntimeError):
+            timer.save_work_log()
+
+        timer.save_work_log()          # the retry
+
+        logs = manager.get_work_logs(item.id)
+        assert len(logs) == 1, "the retry wrote a duplicate, or nothing"
+        assert logs[0].deliverable_completed is True, (
+            "the retry recorded the completed deliverable as an ordinary session"
+        )
+        assert logs[0].phase == "wiring"
+        assert manager.get_project_board(board.id).savor_count == 1, (
+            "the retry left the project's phase permanently short by one"
+        )
+    finally:
+        timer.destroy()
+
+
+def test_rp45d_a_saved_session_leaves_nothing_behind(root, manager, quiet):
+    """After a successful save the session state is fully consumed.
+
+    No click sequence reaches this: finished_action destroys the window on
+    success, and prepare_reward_session clears all four at the next Start. So
+    the clears are defensive, and a mutation removing the three flags leaves the
+    rest of the file green — which is exactly why the invariant is asserted
+    directly rather than left looking covered.
+
+    It matters because _pending_reward and _done_pressed are what label a row a
+    completed deliverable. Left set on an object that saves again, they would
+    stamp a different session with this one's phase and advance the counter for
+    work that did not earn it.
+    """
+    item, _board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        _complete_once(timer)
+
+        assert timer.start_timestamp is None
+        assert timer._pending_reward is None
+        assert timer._done_pressed is False
+        assert timer._savor_shown is False
+    finally:
+        timer.destroy()
+
+
+def test_rp44_the_state_scan_covers_the_whole_timer_window_family():
+    """The AST scan's own domain, asserted rather than assumed.
+
+    All five states happen to be assigned in timer_window.py today, so scanning
+    only that file still passes — the widened glob is future-proofing and
+    catches nothing right now. What can be checked is that the glob resolves to
+    the family it claims, so a typo in the pattern fails loudly instead of
+    quietly scanning one file.
+    """
+    screens = pathlib.Path(tw.__file__).parent
+    modules = {m.name for m in screens.glob("timer_window*.py")}
+    assert modules == {
+        "timer_window.py",
+        "timer_window_reward.py",
+        "timer_window_celebration.py",
+        "timer_window_dialogs.py",
+    }, f"the timer_window family has changed: {sorted(modules)}"
