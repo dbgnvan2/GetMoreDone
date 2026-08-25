@@ -19,10 +19,11 @@ from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.music_library import select_track
 from ..utils.icon_loader import load_music_note_icon
 from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow, NextStepsDialog
+from ..utils.after_tracker import TrackedAfterMixin
 from .timer_window_reward import TimerRewardMixin
 
 
-class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
+class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
     """Floating timer window for action items.
 
     The reward protocol (RP-4) lives in TimerRewardMixin; this class owns the
@@ -454,7 +455,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
             # Visual feedback - briefly change button color
             self.save_notes_button.configure(text="✓ Saved")
-            self.after(2000, lambda: self.save_notes_button.configure(
+            self.tracked_after(2000, lambda: self.save_notes_button.configure(
                 text="Save Notes"))
         except Exception as e:
             print(f"[ERROR] Failed to save notes: {e}")
@@ -1399,21 +1400,21 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
             def flash_on():
                 self.configure(fg_color=status_text_color("warning"))
-                self.after(300, flash_off)
+                self.tracked_after(300, flash_off)
 
             def flash_off():
                 self.configure(fg_color=original_bg)
-                self.after(300, flash_on2)
+                self.tracked_after(300, flash_on2)
 
             def flash_on2():
                 self.configure(fg_color=status_text_color("warning"))
-                self.after(300, flash_off2)
+                self.tracked_after(300, flash_off2)
 
             def flash_off2():
                 self.configure(fg_color=original_bg)
 
             # Start the flash sequence
-            self.after(100, flash_on)
+            self.tracked_after(100, flash_on)
 
             # Also try to raise the window to front
             self.lift()

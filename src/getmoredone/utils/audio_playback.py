@@ -100,3 +100,39 @@ def play_system_beep(platform_name: str | None = None) -> bool:
             return True
 
     return terminal_bell()
+
+
+def release_audio_device() -> bool:
+    """Give the sound card back. Returns whether there was anything to release.
+
+    Purpose: pygame.mixer.init() opens the audio device and nothing ever closed
+             it, so the device stayed held for the whole life of the process —
+             a finite OS resource acquired and never returned (P30), invisible
+             because nothing about it is on screen.
+    Tests:   tests/test_audio_playback.py::test_release_audio_device_closes_the_mixer
+
+    Called once at application shutdown rather than when a timer window closes:
+    the mixer is process-global, so releasing it per-window would cut the music
+    of any other timer still open.
+
+    Unloads before quitting. quit() alone leaves the loaded track's file handle
+    held until the interpreter exits.
+    """
+    try:
+        import pygame
+    except ImportError:
+        return False
+
+    try:
+        if not pygame.mixer.get_init():
+            return False
+        try:
+            pygame.mixer.music.stop()
+            pygame.mixer.music.unload()
+        except Exception:
+            pass          # nothing loaded, or too old to have unload()
+        pygame.mixer.quit()
+        return True
+    except Exception as exc:
+        print(f"[DEBUG] Could not release the audio device: {exc}")
+        return False

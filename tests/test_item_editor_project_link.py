@@ -68,6 +68,9 @@ def _save_stub(manager, monkeypatch, item=None, project_choice=..., texts=None):
     stub.description_text = entry("")
     stub.next_action_text = entry("")
     stub.deliverable_entry = entry("")
+    # The dialog schedules a +2000ms error-label reset through the tracker,
+    # so a stand-in for it needs the method.
+    stub.tracked_after = lambda ms, fn: None
     stub.start_date_entry = entry("2026-02-25")
     stub.due_date_entry = entry("2026-02-25")
     stub.is_meeting_var = SimpleNamespace(get=lambda: False)

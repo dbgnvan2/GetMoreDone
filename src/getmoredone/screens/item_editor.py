@@ -10,6 +10,7 @@ import tkinter as tk
 from datetime import datetime, timedelta, date
 from typing import Optional, TYPE_CHECKING, Dict, Any, Tuple, List
 
+from ..utils.after_tracker import TrackedAfterMixin
 from ..models import ActionItem, PriorityFactors, ItemLink, Status
 from .week_collision_notice import notify_weekly_tactic_changes
 from .. import week_calendar
@@ -62,7 +63,7 @@ def _get_weekly_debug_logger() -> logging.Logger:
     return logger
 
 
-class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
+class ItemEditorDialog(TrackedAfterMixin, ItemEditorContactsMixin, ItemEditorFormMixin,
                        ItemEditorNotesMixin, ctk.CTkToplevel):
     """Dialog for creating/editing action items."""
 
@@ -1268,7 +1269,7 @@ class ItemEditorDialog(ItemEditorContactsMixin, ItemEditorFormMixin,
             # Clear error message on successful save
             self.error_label.configure(text="✓ Saved")
             # Reset the message after 2 seconds
-            self.after(2000, lambda: self.error_label.configure(text=""))
+            self.tracked_after(2000, lambda: self.error_label.configure(text=""))
             return True
 
         except Exception as e:

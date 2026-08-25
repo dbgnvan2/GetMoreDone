@@ -11,6 +11,7 @@ from typing import Optional
 from . import branding
 from .app_settings import AppSettings
 from .db_manager import DatabaseManager
+from .utils.audio_playback import release_audio_device
 from .paths import app_data_dir_path
 from .screens.project_link_notice import describe_outstanding_multi_links
 from .theme import apply_theme_settings, button_style
@@ -476,6 +477,11 @@ class GetMoreDoneApp(ctk.CTk):
         """Handle window closing."""
         self.db_manager.close()
         self.vps_manager.close()
+        # The audio device, which pygame.mixer.init() opened and nothing ever
+        # closed. Here rather than in the timer window, because the mixer is
+        # process-global and a per-window release would cut the music of any
+        # other timer still open.
+        release_audio_device()
         self.destroy()
 
 

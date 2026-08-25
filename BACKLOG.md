@@ -4,6 +4,18 @@ Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy
 
 ## Deferred — found by review, deliberately not fixed
 
+### test_rm3d's importability probe is order-dependent (2026-08-24)
+
+`test_rm3d_every_test_file_is_importable_on_its_own` strips the repo root from
+`sys.path` before importing each test file, then walks them alphabetically. A
+file that imports `conftest` to re-establish the path only passes if an earlier
+file already put the root back — so the guarantee holds for most files by
+ordering luck rather than by each file being self-contained. Found by adding
+`tests/test_after_tracker.py`, which sorts first and therefore failed where
+`tests/test_connection_leak.py`, doing exactly the same thing, passed. The
+probe should re-insert nothing and every file should bootstrap its own path, or
+the probe should reset `sys.path` to a known state between files.
+
 ### Below-medium from the window-leak sweep (2026-08-24)
 
 - **`_init` runs twice for every CTk/CTkToplevel.** `CTk.__init__` calls
@@ -31,10 +43,36 @@ Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy
   explicitly, but the other three endings persist them, and the label names the
   timer rather than the notes. A dirty-check confirmation would close it.
 
-### What else may be leaking (2026-08-24, from the window-leak fix)
+### ~~What else may be leaking~~ — FIXED 2026-08-24
 
-The window leak was a resource hidden rather than released (P30). The same
-question asked of every other finite resource this app takes:
+All four are closed. Kept rather than deleted, because the reasoning is the
+useful part: the window leak was a resource hidden rather than released (P30),
+and these are the same question asked of every other finite resource.
+
+- ~~**`pygame.mixer.init()` is never matched by `mixer.quit()`.**~~ Fixed:
+  `utils/audio_playback.release_audio_device()`, called from
+  `daVIPAApp.on_closing`. At app shutdown rather than when a timer window
+  closes — the mixer is process-global, so a per-window release would cut the
+  music of any other timer still open. Unloads before quitting; `quit()` alone
+  leaves the loaded track's file handle held.
+- ~~**24 uncancelled `after(...)` callbacks.**~~ Fixed: `utils/after_tracker.
+  TrackedAfterMixin` gives a window `tracked_after`, and its `destroy()`
+  cancels whatever is still pending. Applied to the four sites that schedule
+  seconds into the future on a window the user can close first — the timer's
+  flash chain and save-notes reset, `NextActionWindow`'s reset, and the item
+  editor's error-label reset. A test parses for any *discarded* `self.after`
+  handle of a second or more, which is the real signal; the timer tick keeps
+  its handle in `update_timer_id` and is cancelled by a different mechanism.
+- ~~**11 test sites holding an open SQLite connection.**~~ Fixed by a net
+  rather than 11 edits, for the same reason as the window sweeper: it covers
+  the helpers, the failure paths, and the twelfth. conftest registers every
+  `DatabaseManager` and `VPSManager` at construction and closes any left open
+  at the end of the test, with a session-scoped assertion that none outlives
+  the run.
+- ~~**`VPSManager` teardown unaudited.**~~ Covered by the same net; five
+  functions built one without closing it.
+
+Original text follows for the reasoning:
 
 - **`pygame.mixer.init()` is never matched by `mixer.quit()`.** One call, in
   `screens/timer_window.py:1490`; `quit` appears nowhere in `src/`. The audio

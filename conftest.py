@@ -310,6 +310,96 @@ def _isolate_weekly_tactic_log(tmp_path_factory):
             logger.addHandler(restored)
 
 
+# Every DatabaseManager / VPSManager built during the run, weakly held.
+#
+# The same question the window leak forced (P30): who gives this back, and when?
+# Each one holds an open SQLite connection and its file descriptor. Twelve test
+# functions build one and never close it — several of them helpers called from
+# many tests, so the real count is higher than twelve.
+#
+# A net rather than twelve edits, for the same reason as the window sweeper: it
+# covers the helpers, the failure paths, and the thirteenth one somebody adds.
+_LIVE_CONNECTIONS = weakref.WeakSet()
+
+
+def close_connections_created_since(snapshot):
+    """Close every manager not in ``snapshot``. Returns how many.
+
+    Tests: tests/test_connection_leak.py::test_a_manager_left_open_is_closed_at_teardown
+    """
+    closed = 0
+    for manager in list(_LIVE_CONNECTIONS):
+        if manager in snapshot:
+            continue
+        try:
+            manager.close()
+            closed += 1
+        except Exception:
+            pass          # already closed, or its Database went first
+    return closed
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _track_open_connections():
+    """Register every manager at construction so teardown can close it."""
+    from src.getmoredone.db_manager import DatabaseManager
+    from src.getmoredone.vps_manager import VPSManager
+
+    patched = []
+    for cls in (DatabaseManager, VPSManager):
+        original = cls.__init__
+
+        def _init(self, *args, __original=original, **kwargs):
+            __original(self, *args, **kwargs)
+            try:
+                _LIVE_CONNECTIONS.add(self)
+            except TypeError:
+                pass
+
+        patched.append((cls, original))
+        cls.__init__ = _init
+
+    try:
+        yield
+    finally:
+        for cls, original in reversed(patched):
+            cls.__init__ = original
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _no_connection_may_outlive_the_run(_track_open_connections):
+    """P30 — assert the release, not the concealment.
+
+    Tests: tests/test_connection_leak.py proves the sweeper this depends on.
+
+    Would have caught the twelve unclosed managers on the run that introduced
+    them, instead of leaving them to be found by counting file descriptors.
+    """
+    yield
+    survivors = []
+    for manager in list(_LIVE_CONNECTIONS):
+        try:
+            manager.db.conn.execute("SELECT 1")
+            survivors.append(type(manager).__name__)
+        except Exception:
+            pass          # closed, which is what we want
+    assert not survivors, (
+        f"{len(survivors)} database connection(s) outlived the run: "
+        f"{sorted(set(survivors))}. Each holds a file descriptor until the "
+        "process exits."
+    )
+
+
+@pytest.fixture(autouse=True)
+def _close_connections_left_open_by_this_test(_track_open_connections):
+    """Function-scoped net under every test that opens a database."""
+    before = set(_LIVE_CONNECTIONS)
+    try:
+        yield
+    finally:
+        close_connections_created_since(before)
+
+
 # Set while a test has explicitly asked for a mapped window (see the
 # ``mapped_windows`` fixture). Everything else is withdrawn on creation.
 _WINDOWS_MAY_BE_MAPPED = False

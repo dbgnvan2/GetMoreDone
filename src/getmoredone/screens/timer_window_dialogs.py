@@ -11,6 +11,7 @@ from ..date_utils import increment_date
 from ..models import ActionItem
 from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, status_text_color
+from ..utils.after_tracker import TrackedAfterMixin
 
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
@@ -139,7 +140,7 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class NextActionWindow(ctk.CTkToplevel):
+class NextActionWindow(TrackedAfterMixin, ctk.CTkToplevel):
     """Floating window for viewing/editing action item notes independently."""
 
     def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem, parent_window=None):
@@ -262,7 +263,7 @@ class NextActionWindow(ctk.CTkToplevel):
 
             # Visual feedback - briefly change button color
             self.save_button.configure(text="✓ Saved")
-            self.after(2000, lambda: self.save_button.configure(
+            self.tracked_after(2000, lambda: self.save_button.configure(
                 text="Save Notes"))
         except Exception as e:
             print(f"[ERROR] Failed to save notes: {e}")
