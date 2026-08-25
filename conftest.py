@@ -79,6 +79,37 @@ def _user_data_fingerprint():
     return fingerprint
 
 
+def remove_test_db_dir(path) -> bool:
+    """Delete the temp directory sessionstart made. Returns whether it went.
+
+    Purpose: ``tempfile.mkdtemp`` does not clean up after itself and nothing
+             here did either, so every run left one behind for good.
+    Tests:   tests/test_settings_isolation.py::test_the_temp_database_directory_is_removed_at_the_end_of_a_run
+             tests/test_settings_isolation.py::test_remove_test_db_dir_refuses_a_directory_it_did_not_make
+
+    Refuses anything not named like one of ours. This runs at the end of every
+    test session on a developer's machine, and a mis-set attribute pointing at
+    a real directory would take it with no way back — the guard is cheap and
+    the failure it prevents is not recoverable.
+    """
+    import shutil
+
+    if not path:
+        return False
+    target = Path(path)
+    if not target.name.startswith("gmd-test-db-"):
+        print(f"[WARN] refusing to remove {target}: not a gmd-test-db- directory")
+        return False
+    try:
+        shutil.rmtree(target)
+        return True
+    except OSError as exc:
+        # A leftover directory is untidy; a run that goes red at the last hook
+        # over one is worse, and the message would land on top of the report.
+        print(f"[WARN] could not remove {target}: {exc}")
+        return False
+
+
 def pytest_sessionstart(session):
     """Stamp the user's real data files so an escape is detected, not assumed.
 
@@ -103,6 +134,12 @@ def pytest_sessionstart(session):
         handle = tempfile.mkdtemp(prefix="gmd-test-db-")
         os.environ["GETMOREDONE_DB"] = str(Path(handle) / "test.db")
         session.config._gmd_db_env_set = True
+        # Remembered so sessionfinish can remove it. mkdtemp does not clean up
+        # after itself, and nothing else did either: 1449 of these had
+        # accumulated here since 2026-08-19, one per run, most of them empty.
+        # Same shape as P30 — the directory was isolated, which was mistaken
+        # for it being released.
+        session.config._gmd_db_dir = handle
 
 
 @pytest.hookimpl(trylast=True)
@@ -117,6 +154,7 @@ def pytest_sessionfinish(session, exitstatus):
     """
     if getattr(session.config, "_gmd_db_env_set", False):
         os.environ.pop("GETMOREDONE_DB", None)
+        remove_test_db_dir(getattr(session.config, "_gmd_db_dir", None))
 
     before = getattr(session.config, "_user_data_before", None)
     if before is None:

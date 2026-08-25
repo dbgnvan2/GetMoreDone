@@ -75,7 +75,7 @@ def test_saving_settings_does_not_write_the_real_file(tmp_path):
         assert real.stat().st_mtime_ns == before, "the real settings file was written"
 
 
-def _run_nested_pytest(tmp_path, probe_body):
+def _run_nested_pytest(tmp_path, probe_body, env_extra=None, env_remove=()):
     """Run a throwaway pytest whose conftest carries our two session hooks."""
     repo_root = Path(__file__).resolve().parents[1]
     # Loaded by path under a distinct module name: a nested file called
@@ -101,6 +101,9 @@ def _run_nested_pytest(tmp_path, probe_body):
     (fake_data_dir / "settings.json").write_text('{"stub": true}')
 
     env = dict(os.environ, GETMOREDONE_TEST_GUARD_DIR=str(fake_data_dir))
+    env.update(env_extra or {})
+    for name in env_remove:
+        env.pop(name, None)
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", str(tmp_path)],
         capture_output=True, text=True, cwd=str(tmp_path), timeout=180, env=env,
@@ -138,3 +141,82 @@ def test_the_session_guard_leaves_a_clean_run_alone(tmp_path):
 
     assert result.returncode == 0, f"a clean run was failed:\n{result.stdout}"
     assert "GUARD:" not in result.stdout
+
+
+def test_remove_test_db_dir_refuses_a_directory_it_did_not_make(tmp_path):
+    """The helper runs at the end of every local run; a wrong path is final.
+
+    conftest.remove_test_db_dir is handed an attribute off session.config. If
+    that ever points somewhere real, rmtree takes it with no way back — so the
+    name is checked, not trusted.
+    """
+    import conftest
+
+    precious = tmp_path / "not-ours"
+    precious.mkdir()
+    (precious / "important.txt").write_text("keep me")
+
+    assert conftest.remove_test_db_dir(precious) is False
+    assert (precious / "important.txt").read_text() == "keep me", (
+        "the helper deleted a directory that was not one of its own"
+    )
+
+
+def test_remove_test_db_dir_removes_one_it_did_make(tmp_path):
+    """And it does actually delete the real thing, not merely decline."""
+    import conftest
+
+    ours = tmp_path / "gmd-test-db-abc123"
+    ours.mkdir()
+    (ours / "test.db").write_text("x")
+
+    assert conftest.remove_test_db_dir(ours) is True
+    assert not ours.exists()
+
+
+def test_the_temp_database_directory_is_removed_at_the_end_of_a_run(tmp_path):
+    """The two hooks together, in a nested run.
+
+    tempfile.mkdtemp does not clean up after itself and nothing here did
+    either, so every run left one behind: 1449 had accumulated since
+    2026-08-19, one per run.
+
+    The first version of this test pointed a nested pytest at a directory
+    outside the repo, so the root conftest was never collected, no temp
+    directory was ever made, and "none left behind" passed whether the cleanup
+    ran or not. It went green with the cleanup call deleted. Hence the first
+    assertion: prove the run really made one in the place being watched before
+    concluding anything from its absence.
+    """
+    temp_root = tmp_path / "temp_root"
+    temp_root.mkdir()
+    receipt = tmp_path / "db_path.txt"
+
+    result = _run_nested_pytest(
+        tmp_path,
+        f"""
+        import os
+        from pathlib import Path
+
+        def test_probe():
+            Path({str(receipt)!r}).write_text(os.environ["GETMOREDONE_DB"])
+        """,
+        env_extra={"TMPDIR": str(temp_root), "GETMOREDONE_NO_MAPPED_WINDOWS": "1"},
+        env_remove=("GETMOREDONE_DB",),
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    # The instrument moves: sessionstart made a directory, and made it here.
+    assert receipt.exists(), "the probe never ran"
+    db_path = Path(receipt.read_text())
+    assert temp_root in db_path.parents, (
+        f"the nested run put its database at {db_path}, not under the temp root "
+        f"this test watches — the absence of leftovers there proves nothing"
+    )
+    assert db_path.parent.name.startswith("gmd-test-db-"), db_path
+
+    leftovers = list(temp_root.glob("gmd-test-db-*"))
+    assert leftovers == [], (
+        f"the run left {len(leftovers)} temp database director(ies) behind: "
+        f"{[q.name for q in leftovers]}"
+    )
