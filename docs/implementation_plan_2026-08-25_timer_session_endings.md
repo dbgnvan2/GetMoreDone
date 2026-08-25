@@ -1,7 +1,9 @@
 # Implementation plan — the timer window's three session endings
 
 Date: 2026-08-25
-Status: **awaiting approval — no code written**
+Status: **approved; in progress.** Revised 2026-08-25 after the user tested the
+flow and after step 1 failed to reproduce T1 as written — see "What step 1
+actually found".
 
 ## The report
 
@@ -32,6 +34,31 @@ plus a child dated 2026-08-26 — with no `work_logs` row for it at any point. I
 cannot account for that one from the data alone; it is consistent with a session
 whose log had already been written, or one that never started. That it is
 unaccountable is itself finding **T4** below.
+
+## What step 1 actually found
+
+The plan's first task was to reproduce the close failure and read its traceback
+rather than guess. There is no traceback. `save_and_close_action` destroys the
+window correctly in all three configurations that could be built
+(`tests/test_timer_session_endings.py`, commit `d60ff38`): with the real
+`CompletionNoteDialog`, launched from the Action Item editor with its real
+`on_close`, and with `-topmost` genuinely set past conftest's patch.
+
+A stacked second timer window reproduced the database state and was wrong. The
+user then tested the flow and reported the deciding detail:
+
+> the Next Step Note pops and then is hidden. **No buttons work on the Timer
+> window.** When I "red dot" close the window, the Next Step Note appears.
+
+That is the modal's `grab_set()`, held by a dialog behind the always-on-top
+timer. **T5 is the defect**, and it is also the whole of T1 — Save Related was
+never failing to close, it was never getting past its own modal. T1 is folded
+into T5; what remains of it is the false "safe to ignore" on a failed
+`destroy()`, which is worth removing on its own terms but was never this bug.
+
+The stacked-window finding stands as a real defect in its own right (nothing
+guards a second timer on one item, and they open at identical coordinates) but
+is **not** what was reported. It goes to `BACKLOG.md`, not into this batch.
 
 ## Findings
 
@@ -84,59 +111,61 @@ not holding — the user watched Next Steps open behind the timer today.
 
 ## Decisions taken (from the user, this session)
 
-- `work_logs` stays a write-only table. No new UI. Notes reach the Action Item
-  description already; time reaches the item already.
+- `work_logs` stays a write-only table. No new UI.
+- **The Next Steps dialog is removed** from Complete & Create Follow Up. The
+  follow-up is created with `Add your next steps and set the dates and priority`
+  as its description, and its editor is opened so the user fills it in there.
+  (The user wrote "priorty"; spelled correctly here, as it is on-screen text.)
 - The follow-up **inherits the original Action Item's start and due dates**.
   Confirmed after I raised that this can create a follow-up already past its due
-  date — for this morning's item, both dates land on 2026-08-24 while today is
-  2026-08-25. That is the intended behaviour.
-- The Next Steps dialog **stays**; only its date defaults change.
-- "Return to the original Action Item" applies from **every** entry point —
-  the Action Item editor, Today, Upcoming, All Items.
+  date. That is the intended behaviour.
+- **Complete & Create Follow Up ends on the follow-up's editor.** The original's
+  editor stays open behind it. This supersedes the earlier "return to the
+  original", which the user revised while testing.
+- Button renamed to **"Complete & Create Follow Up"**.
 
 ## Acceptance criteria
 
 | ID | Criterion | Verified by |
 |---|---|---|
-| T1.1 | `save_and_close_action` leaves `winfo_exists()` false, with the **real** `CompletionNoteDialog` opened and dismissed — not a stub | `tests/test_timer_session_endings.py::test_t11_save_related_closes_the_window_after_a_real_modal` |
-| T1.2 | A `destroy()` that fails is reported, not swallowed as "safe to ignore"; the window is not treated as closed | `::test_t12_a_failed_destroy_is_reported_not_swallowed` |
-| T1.3 | `cancel_action` still closes (no regression) | `::test_t13_cancel_still_closes` |
-| T2.1 | `NextStepsDialog` opens with start and due = the original item's dates, not tomorrow | `tests/test_timer_session_endings.py::test_t21_next_steps_defaults_to_the_items_dates` |
-| T2.2 | Skipping the dialog leaves the follow-up on the original's dates — no `+1` shift | `::test_t22_skipped_next_steps_keeps_the_items_dates` |
-| T2.3 | An original whose dates are in the past yields a follow-up with those same past dates, saved without complaint | `::test_t23_a_past_dated_item_yields_a_past_dated_followup` |
-| T3.1 | After Continue, the editor left in front is the **original** item's, from the Action Item editor | `::test_t31_continue_returns_to_the_original_editor` |
-| T3.2 | Same from Today / Upcoming / All Items, where no editor is open behind — one test per surface (P25) | `::test_t32_continue_opens_the_original_editor_from_<screen>` |
-| T3.3 | Continue still writes the work log, completes the original, and creates the child | `::test_t33_continue_writes_log_completes_original_creates_child` |
+| T5.1 | A modal opened over the timer leaves the timer **not** topmost while it is up | `tests/test_timer_session_endings.py::test_t51_a_modal_drops_the_timers_always_on_top` |
+| T5.2 | The timer's topmost is restored once the modal closes | `::test_t52_the_timer_is_topmost_again_afterwards` |
+| T5.3 | Restored even when the modal's handler raises | `::test_t53_topmost_is_restored_when_the_ending_fails` |
+| T5.4 | Every timer modal goes through the same helper — no sibling left unhardened (P5) | `::test_t54_every_timer_modal_suspends_the_parents_topmost` |
+| T1.1 | `save_and_close_action` leaves `winfo_exists()` false (already green; kept as the regression floor) | `::test_t11_save_related_closes_the_window_after_a_real_modal` |
+| T1.2 | A `destroy()` that fails is reported, not swallowed as "safe to ignore" | `::test_t12_a_failed_destroy_is_reported_not_swallowed` |
+| T2.1 | The follow-up carries the original's start and due dates unchanged — no `+1` shift | `::test_t21_the_followup_keeps_the_items_dates` |
+| T2.2 | An original dated in the past yields a follow-up with those same past dates | `::test_t22_a_past_dated_item_yields_a_past_dated_followup` |
+| T2.3 | The follow-up's description is the prompt, not a copy of the original's notes | `::test_t23_the_followup_description_is_the_prompt` |
+| T3.1 | No `NextStepsDialog` is constructed anywhere in the ending | `::test_t31_the_next_steps_dialog_is_gone` |
+| T3.2 | The ending opens the **follow-up's** editor, carrying `vps_manager` | `::test_t32_the_followup_editor_opens_with_a_vps_manager` |
+| T3.3 | The work log is written, the original completed, the child created | `::test_t33_continue_writes_log_completes_original_creates_child` |
 | T4.1 | A session ending that writes no work log logs why | `::test_t41_a_silent_ending_says_so` |
-| T5.1 | Every timer modal ends up above the timer, proven by stacking order, not by the `-topmost` attribute value | `::test_t51_modals_sit_above_the_timer` — **see risk below** |
+| T6.1 | The button reads "Complete & Create Follow Up" | `::test_t61_the_button_says_what_it_does` |
 
 ## Order
 
-1. **Reproduce T1 and read the traceback.** A pytest that builds a real
-   `TimerWindow`, starts and stops it, opens the **real** `CompletionNoteDialog`
-   and dismisses it from an `after()` callback, then asserts the window is gone.
-   Under `pytest`, per the standing rule against standalone window scripts.
-   Nothing else is written until this test is red for the right reason.
-2. **T1 fix**, informed by (1). Includes removing the false "safe to ignore".
+1. ~~Reproduce T1.~~ Done — see above. T1 folded into T5.
+2. **T5** — suspend the timer's `-topmost` for the life of every modal.
+   The existing `raise_above_parent` fights the flag with `lift()`; dropping the
+   flag removes the fight. Both are kept: the drop is the fix, the lift is belt.
 3. **T4** — the silent-ending log. Small, and it makes the rest observable.
-4. **T2** — date defaults. Self-contained.
-5. **T3** — return-to-original. Largest change; needs `vps_manager` plumbed into
-   `TimerWindow` (see adjacent issues).
-6. **T5** — only if (1) shows the stacking is what breaks the close. Otherwise it
-   is a separate batch: it is a different failure family and yesterday's attempt
-   at it already regressed once.
+4. **T2 + T3** — dates, description prompt, dialog removal, editor target.
+5. **T6** — the rename.
+6. **T1.2** — the false "safe to ignore".
 7. Cold review pass over the whole range, then `/csdp`.
 
 ## Risks and things I cannot promise
 
-- **T5 is human-verified.** I asked for screen access to watch the stacking
-  myself and it was declined; the user will test and report. T5.1 below stands
-  only if a behavioural assertion turns out to exist.
-- **T5.1 may not be testable.** Tk on macOS gives no reliable read of window
-  stacking order; `wm attributes -topmost` reports the flag, not the position,
-  and asserting the flag is exactly the mistake that let `b748453` ship looking
-  fixed. If I cannot find a behavioural assertion I will say so and mark T5 as
-  human-verified rather than write a test that cannot fail (P27).
+- **T5 is now testable, where the stacking order was not.** The fix is "the
+  parent is not topmost while a modal is up", and topmost is a flag that can be
+  read back. conftest neuters `attributes('-topmost', ...)` on all four window
+  classes, so the tests set and read it through `window.tk.call("wm", ...)`,
+  past the patch in both directions — otherwise the test would be measuring
+  conftest, which is the mistake that let `b748453` ship looking fixed.
+- **Stacking order itself remains unverifiable from Tk**, so "the dialog is
+  visibly in front" stays human-verified. What is asserted is the mechanism that
+  makes it so.
 - **T2 creates overdue follow-ups by design.** Inheriting the original's dates
   means a follow-up off a late item is born late. Raised and confirmed; recorded
   here so it does not get "fixed" by a later pass that reads it as a bug.
@@ -144,9 +173,18 @@ not holding — the user watched Next Steps open behind the timer today.
   that validation is untouched, and an original with due < start would be
   refused. No such row exists today; the plan does not add a migration for it.
 - ~~**The button label.**~~ Approved: **"Complete & Create Follow Up"**.
+- **`NextStepsDialog` becomes dead code.** Removing the class is a bigger diff
+  than this batch needs and it has its own tests; it is left in place, unused,
+  and logged in `BACKLOG.md`. T3.1 asserts the *ending* no longer builds one.
 
 ## Adjacent issues found, not fixed
 
+- **Nothing guards a second timer window on one item.** All four entry points
+  construct one unconditionally, and `setup_window` puts every timer at the same
+  saved `timer_window_x/y`, so they stack exactly. Two timers on one item can
+  each write a work log for the same stretch of clock. Found while chasing T1,
+  reproduced in `test_t14_two_timers_on_one_item_reproduce_the_reported_symptom`
+  — and it is **not** the reported bug. Backlogged, not fixed here.
 - `TimerWindow` has no `vps_manager`, so the editor it opens
   (`timer_window.py:1226`) is built without one, while every list screen passes
   `self.app.vps_manager`. Weekly-tactic features degrade silently in an editor
