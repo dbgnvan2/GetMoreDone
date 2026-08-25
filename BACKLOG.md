@@ -4,6 +4,33 @@ Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy
 
 ## Deferred — found by review, deliberately not fixed
 
+### What else may be leaking (2026-08-24, from the window-leak fix)
+
+The window leak was a resource hidden rather than released (P30). The same
+question asked of every other finite resource this app takes:
+
+- **`pygame.mixer.init()` is never matched by `mixer.quit()`.** One call, in
+  `screens/timer_window.py:1490`; `quit` appears nowhere in `src/`. The audio
+  device is opened for the life of the process. Strongest sibling of the window
+  bug: a finite OS resource acquired and never returned, invisible because
+  nothing about it is on screen.
+- **24 uncancelled `self.after(...)` callbacks across the screens.**
+  `_flash_window` schedules four out to +1300 ms, `save_notes` a +2000 ms button
+  reset in both the timer and the pop-out notes window. Only the celebration set
+  and `update_timer_id` are tracked and cancelled. A window destroyed inside one
+  of those intervals leaves the callback firing at a dead widget — the "invalid
+  command name" the celebration module's docstring exists to avoid, at every
+  site that was not hardened.
+- **11 test sites build a `DatabaseManager` and never `close()` it**, holding an
+  open SQLite connection and its file handle: `test_defaults_regression`,
+  `test_scheduler_project_attach::_build_screen`, `test_settings_isolation`,
+  `test_today_pin_drag::_make_screen`, `test_today_screen` (×2) and the
+  `test_live_data_guard` self-checks. Harmless at this scale — a few dozen fds —
+  but it is the same shape and would bite on a suite ten times the size.
+- **`VPSManager` is constructed 28 times in tests** and its teardown was not
+  audited. Worth the same check.
+
+
 ### reward protocol: below-medium findings and deferred scope (2026-08-24)
 
 Graded below medium and kept out of the change, per the review-sweep rules — a
