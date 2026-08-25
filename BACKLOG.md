@@ -1,8 +1,30 @@
 # daVIPA Backlog
 
-Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy migration's discarded id closed; §5 and the migration report signed off)
+Last Updated: 2026-08-25 (timer session endings: modal-behind-parent fixed; two findings from that batch deferred below)
 
 ## Deferred — found by review, deliberately not fixed
+
+### Nothing guards a second timer window on one item (2026-08-25)
+
+All four openers — `item_editor`, `today`, `upcoming`, `all_items` — construct a
+`TimerWindow` unconditionally, and `setup_window` positions every one of them at
+the saved `timer_window_x/y`. Two timers on the same item therefore land exactly
+on top of each other and are indistinguishable, and each can write its own work
+log for the same stretch of clock. Reproduced in
+`tests/test_timer_session_endings.py::test_t14_two_timers_on_one_item_reproduce_the_reported_symptom`,
+which asserts the stacking. Found while chasing the 2026-08-25 timer report and
+initially mistaken for its cause; it is a real defect but was **not** what was
+reported, so it is recorded rather than fixed in that batch. Fix is probably a
+per-item registry plus disabling the opener's Timer button while one is live —
+and that is a UI-contract change across four screens, not a one-liner.
+
+### `NextStepsDialog` is dead code (2026-08-25)
+
+Removed from the Complete & Create Follow Up flow, which was its only caller.
+The class and its own tests remain. Deleting it is a larger diff than that batch
+warranted; `test_t31_the_next_steps_dialog_is_gone` asserts the ending no longer
+builds one, so it cannot come back by accident.
+
 
 ### test_rm3d's importability probe is order-dependent (2026-08-24)
 

@@ -560,28 +560,31 @@ three say what they do:
   **nothing recorded**. No session, no time, no note, and no change to the item — not
   even notes you typed into this window. Why: Cancel means nothing happened. If you want
   the time kept, use *Save Related - Close Timer* instead.
-- **Complete & Open Follow Up** — What: Saves the session as a related record, marks the
-  action item **complete**, creates the follow-up item and opens it. Why: Ending today's
-  block on work that continues tomorrow, without losing the history of what you did
-  today.
+- **Complete & Create Follow Up** — What: Saves the session as a related record, marks the
+  action item **complete**, creates the follow-up item and opens it for you to fill in.
+  The follow-up starts with *"Add your next steps and set the dates and priority"* in its
+  description and inherits the original item's start and due dates, so an item that was
+  already late produces a follow-up that is already late — change the dates in the editor
+  it opens. Why: Ending today's block on work that continues, without losing the history
+  of what you did today.
 
 Two of these five buttons close a task, and they are not the same thing:
 
 | Button | Task closed? | Counts towards the reward phase? |
 |---|---|---|
 | **Done — deliverable complete** | yes | **yes** |
-| **Complete & Open Follow Up** | yes, and opens the follow-up item | not normally — see below |
+| **Complete & Create Follow Up** | yes, and opens the follow-up item | not normally — see below |
 | **Save Related - Close Timer** | no | no |
 | **Cancel Timer** | no — nothing is recorded at all | no |
 | **Stop** | no — it just stops the clock | no |
 
 So **"Done" is the only button that counts a completed deliverable** towards a project's
-phase. *Complete & Open Follow Up* does close today's item, because the alternative —
+phase. *Complete & Create Follow Up* does close today's item, because the alternative —
 leaving today's item open beside the follow-up — would give you the same task twice.
 
 One exception, by design: if you press **Done** and saving fails (a locked database, say),
 your completion is remembered so it is not lost. Ending that same session with *Complete &
-Open Follow Up* then records the completion you already declared, and counts it. *Save
+Create Follow Up* then records the completion you already declared, and counts it. *Save
 Related* and *Cancel Timer* deliberately do not — they say the task is still open, so they
 discard the pending completion rather than banking it for a task they are leaving
 unfinished.

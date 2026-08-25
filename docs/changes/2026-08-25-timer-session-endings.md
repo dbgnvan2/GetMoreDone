@@ -1,0 +1,73 @@
+# Handoff Note
+
+- Date: 2026-08-25
+- Agent: Code
+- Topic: timer-session-endings
+
+## Summary
+
+The timer window's session buttons appeared dead. Reported as "Save Related -
+Close Timer appears to do nothing" and "Complete & Open Follow-up does open Next
+Steps, but it's hidden behind the timer window".
+
+The cause is a modal holding `grab_set()` behind its always-on-top parent: it
+takes every click while showing the user nothing, so the timer underneath looks
+unresponsive. The user's own test named it — *"No buttons work on the Timer
+window. When I 'red dot' close the window, the Next Step Note appears."*
+
+`raise_above_parent` had tried to win that fight by re-asserting `-topmost` on
+the dialog and lifting it. That is two windows both claiming the top, and it
+lost: the timer sets `-topmost` at construction and never drops it. The fix
+drops the **parent's** flag for the life of the modal and restores it on the
+dialog's `<Destroy>`, which ends the argument rather than competing in it.
+
+Alongside it, Complete & Create Follow Up was rebuilt to the user's spec: no
+Next Steps dialog, the follow-up carries a prompt in its description and the
+original item's own dates, and its editor is where the flow ends.
+
+## Files changed
+
+- `src/getmoredone/screens/timer_window_dialogs.py` — `suspend_parent_topmost`,
+  wired into all four dialogs that hold a grab (P5).
+- `src/getmoredone/screens/timer_window.py` — Next Steps dialog removed from the
+  ending; follow-up keeps the item's dates and gets `FOLLOW_UP_PROMPT`; button
+  renamed; `vps_manager` carried; a silent ending now logs why; a failed
+  `destroy()` is checked against the window instead of called "safe to ignore".
+- `src/getmoredone/screens/{item_editor,today,upcoming,all_items}.py` —
+  `vps_manager` passed to `TimerWindow` from every opener.
+- `tests/test_timer_session_endings.py` — new, 17 tests.
+- `tests/test_reward_protocol_timer.py`, `tests/test_item_editor.py` — three
+  tests the change invalidated, each with its reason recorded in the commit.
+- `docs/USER_GUIDE.md`, `docs/action-timer-requirements.md`, `BACKLOG.md`,
+  `docs/implementation_plan_2026-08-25_timer_session_endings.md`.
+
+## Verification
+
+- Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest -q`
+- Result: PASS — exit code 0, 1523 passed, 7 skipped.
+- Every new test mutation-checked with the verbatim original: nine mutations
+  across the two source files, all red, all restored green.
+
+## Risks / Known gaps
+
+- **Stacking order itself is not asserted.** Tk gives no reliable read of it, so
+  what the tests prove is the mechanism (the parent is not topmost while a modal
+  is up), not the pixels. That the dialog is *visibly* in front needs a human.
+  This is the one thing to check first in the running app.
+- **conftest silences `grab_set` and `-topmost` for the whole run**, so the
+  symptom cannot occur in a test at all. The T5 tests reach `wm attributes`
+  through `window.tk.call` to get past that patch in both directions; the helper
+  is safe past it because it can only lower the flag or restore what it read,
+  asserted by `test_t53_a_parent_that_was_not_topmost_is_left_alone`.
+- **Follow-ups inherit late dates.** An item already past its due date produces a
+  follow-up already past its due date. Raised, confirmed as intended, pinned by
+  `test_t22_a_past_dated_item_yields_a_past_dated_followup`.
+- Two findings deferred to `BACKLOG.md`: the unguarded second timer window, and
+  `NextStepsDialog` now being dead code.
+
+## Next agent actions
+
+- One **cold** review pass over `fabc273..HEAD` — the diff and the range, not
+  this note. Warm passes are spent: the batch has had two.
+- The three fix commits are the least-reviewed code here; sweep them as their
+  own range.
