@@ -6,13 +6,12 @@ Provides a countdown timer with pause/resume and completion workflows.
 import customtkinter as ctk
 import tkinter as tk
 import random
-from datetime import datetime, timedelta, date
+from datetime import datetime
 from typing import Optional, Callable
 from pathlib import Path
 from ..models import ActionItem, WorkLog
 from ..db_manager import DatabaseManager
 from ..app_settings import AppSettings
-from ..date_utils import increment_date
 from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, semantic_colors, status_text_color
 from ..utils.audio_playback import play_audio_file_async, play_system_beep
