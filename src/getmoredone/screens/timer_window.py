@@ -1340,9 +1340,21 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         try:
             self.destroy()
         except Exception as e:
-            # Ignore errors during destruction (e.g., customtkinter scaling tracker race condition)
-            print(
-                f"[DEBUG] Window destruction completed with minor error (safe to ignore): {e}")
+            # customtkinter's scaling tracker can raise while unregistering a
+            # window that is already going away, and that really is harmless.
+            # What is not harmless is deciding so from the exception alone:
+            # this line used to read "safe to ignore" and carry on regardless
+            # of what had failed, so a window still on screen was reported as
+            # closed. Ask the window, rather than trusting the message (P24).
+            print(f"[DEBUG] Window destruction raised: {e}")
+
+        try:
+            still_open = bool(self.winfo_exists())
+        except Exception:
+            still_open = False  # nothing left to ask is the outcome we wanted
+        if still_open:
+            print("[ERROR] the timer window is still on screen after destroy(); "
+                  "it will go on taking clicks and its session cannot be ended")
 
     def save_window_settings(self):
         """Save window position and size to settings."""
