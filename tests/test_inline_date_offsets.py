@@ -20,6 +20,10 @@ from src.getmoredone.screens.inline_editors import (
 
 
 def _root():
+    # Teardown is owned by conftest's _destroy_windows_left_behind_by_this_test,
+    # which destroys any window created during a test that is still alive at
+    # its end. This helper returns a window to many call sites and had nothing
+    # anywhere to destroy it; that was 29 of the 37 leaked windows in a run.
     try:
         root = ctk.CTk()
     except Exception as exc:  # No display available (headless CI without X).

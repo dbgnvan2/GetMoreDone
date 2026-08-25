@@ -19,6 +19,10 @@ from src.getmoredone.models import ActionItem
 
 
 def _make_dialog():
+    # Teardown is owned by conftest's _destroy_windows_left_behind_by_this_test,
+    # which destroys any window created during a test that is still alive at
+    # its end. This helper returns a window to many call sites and had nothing
+    # anywhere to destroy it; that was 29 of the 37 leaked windows in a run.
     db = MagicMock()
     db.get_defaults.return_value = None
     db.get_all_contacts.return_value = []

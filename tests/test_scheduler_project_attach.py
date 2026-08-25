@@ -32,6 +32,10 @@ def _seed_two_apes(db_path: str):
 
 
 def _build_screen(tmp_path):
+    # Teardown is owned by conftest's _destroy_windows_left_behind_by_this_test,
+    # which destroys any window created during a test that is still alive at
+    # its end. This helper returns a window to many call sites and had nothing
+    # anywhere to destroy it; that was 29 of the 37 leaked windows in a run.
     db_path = str(tmp_path / "sched.db")
     dbm = DatabaseManager(db_path)
     ape_a, ape_b = _seed_two_apes(db_path)
