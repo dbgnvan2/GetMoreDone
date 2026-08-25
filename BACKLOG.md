@@ -1,8 +1,41 @@
 # daVIPA Backlog
 
-Last Updated: 2026-08-25 (timer session endings: modal-behind-parent fixed; two findings from that batch deferred below)
+Last Updated: 2026-08-25 (timer session endings + its csdp sweep: four findings deferred below, five fixed in-batch)
 
 ## Deferred — found by review, deliberately not fixed
+
+### The complete-and-create follow-up is unfiled from its project (2026-08-25)
+
+`continue_action` builds its follow-up with a hand-rolled `ActionItem(...)`
+instead of going through `create_followup_item`, so it never calls
+`inherit_project_links`, never calls `_inherit_weekly_lineage`, and drops
+`next_action`, `week_action_id`, `segment_description_id`, `weekly_tactic_id`,
+`annual_plan_element_id` and `is_habit`. `inherit_project_links`' own docstring
+names this case — "a follow-up (or a **complete-and-create**) of a project task
+used to land with no project at all, because **both copy paths** build the new
+row through a constructor that never mentions `project_board_items`" — and it
+has exactly one caller, inside `create_followup_item`.
+
+The consequence is silent: time that follow-up later and `session_board_id`
+resolves to nothing, so no reward protocol, no savor counter, no phase, with no
+signal. Pre-existing, but the 2026-08-25 batch made the follow-up's editor the
+*endpoint* of the flow, so the user is now dropped straight into the unfiled
+item. Found by the csdp sweep (F4). Not fixed in that batch: it is a db_manager
+change across three inheritance paths, and folding it into an already-large diff
+is the sweeping-fix this repo's rule 10 warns about. Fix is probably to route
+`continue_action` through `create_followup_item` and then override the fields
+that differ, rather than to add three more calls to the inline path.
+
+### `_cleanup_and_destroy` detects a surviving window and tells nobody (2026-08-25)
+
+It now checks `winfo_exists()` after `destroy()` and logs when the window is
+still there — a real improvement over the old "safe to ignore" — but it returns
+nothing, and all four callers proceed identically. In `continue_action` the very
+next step opens the follow-up's editor, which will land *behind* a timer that is
+still on screen and still topmost. `week_collision_notice.py` states the rule
+this breaks: "a return value nobody reads is the same silence as no return value
+at all (P25)." Found by the csdp sweep (F9).
+
 
 ### Nothing guards a second timer window on one item (2026-08-25)
 
