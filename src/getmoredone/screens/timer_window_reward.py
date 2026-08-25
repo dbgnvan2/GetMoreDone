@@ -109,10 +109,26 @@ class TimerRewardMixin(TimerCelebrationMixin):
 
         Tests: tests/test_reward_protocol_timer.py::test_editing_the_deliverable_updates_the_item_and_the_label
 
-        Editing mid-session does not rewrite what the session was started for:
-        work_logs.deliverable_snapshot is frozen at start (RP-4.5g). It changes
-        the item, and the label, from here on.
+        An explicit edit here redefines what *this session* is for, so the
+        snapshot moves with it and the label, the savor prompt and the work log
+        all say the same thing. RP-4.5g is untouched: it protects the snapshot
+        from the deliverable being changed *elsewhere* while the timer runs, and
+        that does not come through this method.
+
+        Left alone, the savor prompt asked the user to sit with a deliverable
+        they had already replaced — the same defect as the stale label, one
+        display site over (P5).
         """
+        try:
+            self._edit_deliverable()
+        except Exception as e:
+            print(f"[ERROR] Editing the deliverable failed: {e}")
+            import traceback
+            traceback.print_exc()
+            self._show_error_dialog(f"Failed to change the deliverable: {e}")
+
+    def _edit_deliverable(self):
+        """The body of edit_deliverable, so the guard above stays readable."""
         # The clock stops while the modal is open. wait_window pumps the Tk
         # event loop, so a still-scheduled tick fires underneath it — the same
         # hazard done_action documents and solves, at a sibling call site that
@@ -121,15 +137,19 @@ class TimerRewardMixin(TimerCelebrationMixin):
         if resume:
             self._cancel_pending_timer()
         try:
-            if not self.ask_for_deliverable():
+            if not self.ask_for_deliverable(confirm_text="Save"):
                 return
         finally:
             if resume and self.timer_state in (self.RUNNING, self.IN_BREAK):
                 self.last_tick_time = datetime.now()
                 self.tick()
+
+        if self.session_deliverable is not None:
+            # A session is running and the user has just redefined it.
+            self.session_deliverable = self.item.deliverable
         self.refresh_deliverable_label()
 
-    def ask_for_deliverable(self) -> bool:
+    def ask_for_deliverable(self, confirm_text: str = "Start") -> bool:
         """Prompt for the deliverable. False means the user backed out.
 
         Purpose: RP-4.2 — one prompt, used both at Start when there is nothing
@@ -144,9 +164,10 @@ class TimerRewardMixin(TimerCelebrationMixin):
             board_title=board.title if board else None,
             phase=phase_for(board.savor_count) if board else None,
             savor_count=board.savor_count if board else None,
-            # Reached from Edit, the session is already running, and offering
-            # to "Start" one is an answer to a question nobody asked.
-            confirm_text="Start" if self.timer_state == self.STOPPED else "Save",
+            # Passed by the caller, not derived from timer_state: Edit is
+            # reachable before Start too, and keying on the state offered to
+            # "Start" a session that pressing the button would not start.
+            confirm_text=confirm_text,
         )
         self.wait_window(dialog)
 

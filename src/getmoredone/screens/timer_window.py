@@ -887,13 +887,11 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 self.next_action_window.destroy()
                 self.next_action_window = None
 
-            # Update action item's notes from the timer window BEFORE showing dialog
-            timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
-            if timer_notes:
-                self.item.description = timer_notes
-                self.db_manager.update_action_item(self.item)
-                notify_weekly_tactic_changes(self.db_manager, self)
-                print(f"[DEBUG] Updated action item notes from timer window")
+            # Through the shared helper, so every ending answers "what does an
+            # empty notes box mean?" the same way. This branch used to guard on
+            # `if timer_notes:`, so clearing the box and pressing Done kept the
+            # old description while clearing it and pressing Cancel removed it.
+            self._save_notes_to_item()
 
             # Prompt for completion note
             dialog = CompletionNoteDialog(self, "Completion Note")
@@ -1064,13 +1062,9 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 self.next_action_window.destroy()
                 self.next_action_window = None
 
-            # Step 2: Update Current Action Item with notes from the timer window
-            timer_notes = self.next_steps_text.get("1.0", "end-1c").strip()
-            if timer_notes:
-                self.item.description = timer_notes
-                self.db_manager.update_action_item(self.item)
-                notify_weekly_tactic_changes(self.db_manager, self)
-                print(f"[DEBUG] Step 2: Current Action Item updated with notes")
+            # Step 2: Update Current Action Item with notes from the timer
+            # window, through the shared helper (see finished_action).
+            self._save_notes_to_item()
 
             # Save references we'll need if window gets destroyed
             parent = self.master
