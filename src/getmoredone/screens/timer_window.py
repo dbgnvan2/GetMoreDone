@@ -18,9 +18,17 @@ from ..theme import button_style, semantic_colors, status_text_color
 from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.music_library import select_track
 from ..utils.icon_loader import load_music_note_icon
-from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow, NextStepsDialog
+from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow
 from ..utils.after_tracker import TrackedAfterMixin
 from .timer_window_reward import TimerRewardMixin
+
+# What a follow-up starts life saying. It is a prompt, not content: the item
+# exists so the user can say what comes next, and its editor opens on it.
+FOLLOW_UP_PROMPT = "Add your next steps and set the dates and priority"
+
+# The button used to read "Complete & Open Follow Up" while opening a Next
+# Steps dialog first. It now does exactly this.
+CONTINUE_BUTTON_TEXT = "Complete & Create Follow Up"
 
 
 class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
@@ -71,12 +79,17 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
     def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem,
                  on_close: Optional[Callable] = None,
-                 rng: Optional[random.Random] = None):
+                 rng: Optional[random.Random] = None,
+                 vps_manager=None):
         super().__init__(parent)
 
         self.db_manager = db_manager
         self.item = item
         self.on_close_callback = on_close
+        # Carried only so the follow-up's editor can be given one. Optional
+        # because three of the four openers are list screens that reach it via
+        # self.app, and a timer with no VSP is still a working timer.
+        self.vps_manager = vps_manager
         self.settings = AppSettings.load()
 
         # Timer state
@@ -383,7 +396,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
         self.continue_button = ctk.CTkButton(
             self.completion_frame,
-            text="Complete & Open Follow Up",
+            text=CONTINUE_BUTTON_TEXT,
             command=self.continue_action,
             **button_style("secondary"),
         )
@@ -1123,7 +1136,10 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             new_item = ActionItem(
                 who=item.who,
                 title=item.title,
-                description=item.description,  # Will be updated later from Next Action dialog
+                # Not item.description: the follow-up is the *next* piece of
+                # work, and copying the finished item's notes into it buries
+                # that under a page the user has to clear first.
+                description=FOLLOW_UP_PROMPT,
                 # Carried deliberately: Continue means the same piece of work
                 # goes on tomorrow, so what "done" looks like has not changed.
                 # It was omitted here at first simply because this list is
@@ -1131,8 +1147,13 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 deliverable=item.deliverable,
                 contact_id=item.contact_id,
                 parent_id=new_parent_id,  # Set parent_id based on logic above
-                start_date=item.start_date,  # Will be updated later from Next Action dialog
-                due_date=item.due_date,  # Will be updated later from Next Action dialog
+                # The Action Item's own dates, carried across unchanged. They
+                # used to be overwritten a few lines later with a +1 shift, so
+                # a follow-up always landed a day out from the work it
+                # continues. A follow-up off a late item is therefore born
+                # late; that is deliberate and was confirmed.
+                start_date=item.start_date,
+                due_date=item.due_date,
                 importance=item.importance,
                 urgency=item.urgency,
                 size=item.size,
@@ -1166,48 +1187,12 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             notify_weekly_tactic_changes(db_manager)
             print(f"[DEBUG] Step 4: Current Action Item saved as completed")
 
-            # Step 5: Present Next Action Screen
-            dialog_parent = parent if not window_exists else self
-            next_action_dialog = NextStepsDialog(dialog_parent)
-
-            if window_exists:
-                self.wait_window(next_action_dialog)
-                window_exists = self.winfo_exists()
-            else:
-                dialog_parent.wait_window(next_action_dialog)
-
-            # Step 6: Next Action Screen closed (save or cancel)
-            next_action_result = next_action_dialog.result
-            print(f"[DEBUG] Step 5-6: Next Action Screen presented and closed")
-
-            if next_action_result:
-                # Update the new item with the next action details
-                new_item.description = next_action_result['note'] or new_item.description
-                new_item.start_date = next_action_result['start_date']
-                new_item.due_date = next_action_result['due_date']
-                db_manager.update_action_item(new_item)
-                notify_weekly_tactic_changes(db_manager)
-                print(f"[DEBUG] New Action Item updated with Next Action details")
-            else:
-                # User cancelled - use default next day dates
-                settings = AppSettings.load()
-                current_start = date.fromisoformat(
-                    item.start_date) if item.start_date else date.today()
-                current_due = date.fromisoformat(
-                    item.due_date) if item.due_date else date.today()
-
-                new_start = increment_date(
-                    current_start, 1, settings.include_saturday, settings.include_sunday)
-                new_due = increment_date(
-                    current_due, 1, settings.include_saturday, settings.include_sunday)
-
-                new_item.start_date = new_start.isoformat()
-                new_item.due_date = new_due.isoformat()
-                db_manager.update_action_item(new_item)
-                notify_weekly_tactic_changes(db_manager)
-                print(
-                    f"[DEBUG] Next Action cancelled - using default next day dates")
-
+            # The Next Steps dialog used to run here, asking for a note and two
+            # dates before the follow-up existed. It was the modal the user
+            # could not reach (T5), and asking for the same fields the editor
+            # is about to show is a second place to type them. The follow-up
+            # now carries FOLLOW_UP_PROMPT in its description and its editor
+            # opens below, which is where those fields get filled in.
             new_item_id = new_item.id
 
             # Close timer if it still exists
@@ -1226,10 +1211,15 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
             # Step 7: Present New Action Item Record
             from .item_editor import ItemEditorDialog
+            # vps_manager was missing here while every list screen passes one,
+            # so an editor reached through the timer lost its weekly-tactic
+            # controls. Pre-existing; fixed with this change because the
+            # follow-up editor is now the endpoint of the flow rather than an
+            # afterthought.
             ItemEditorDialog(parent, db_manager, new_item_id,
+                             vps_manager=self.vps_manager,
                              on_close_callback=on_close_callback)
-            print(f"[DEBUG] Step 7: New Action Item Record presented in editor")
-            # Step 8: User updates and saves (happens in the editor)
+            print(f"[DEBUG] Step 7: Follow-up presented in editor")
         except Exception as e:
             print(f"[ERROR] Continue action failed: {e}")
             import traceback
@@ -1253,9 +1243,15 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         if not self.start_timestamp:
             # No session to log. The counter stays put too — a completion that
             # was not recorded must not be counted either.
-            if self._done_pressed:
-                print("[WARN] Done pressed with no session start; "
-                      "nothing logged and savor_count not advanced")
+            #
+            # Said out loud on every ending, not only after Done. It used to be
+            # silent for the other three, which is why a completion and a
+            # follow-up in the 2026-08-25 database could not be matched to any
+            # work log: the ending that produced them wrote nothing and left no
+            # trace of having decided to (P2).
+            print("[WARN] no session to log for item %s: the timer was never "
+                  "started, or this window already logged its session. "
+                  "done_pressed=%s" % (self.item.id, self._done_pressed))
             return
 
         decision = self._pending_reward

@@ -771,7 +771,8 @@ class TodayScreen(ctk.CTkFrame):
 
         # Open timer window
         from .timer_window import TimerWindow
-        timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh)
+        timer = TimerWindow(self, self.db_manager, item, on_close=self.refresh,
+                            vps_manager=self.app.vps_manager)
 
     def edit_item(self, item_id: str, focus_tab: str | None = None):
         """Open item editor."""
