@@ -1712,8 +1712,20 @@ def test_cancel_timer_cannot_leak_a_pending_completion(root, manager, quiet):
     timer.start_timer()
     timer.work_seconds_elapsed = 25 * 60
 
-    manager.create_work_log = lambda log: (_ for _ in ()).throw(
-        RuntimeError("database is locked"))
+    # Fails once, then works. An unconditional raiser left the work-log
+    # assertion below unfalsifiable: any write would raise, be swallowed by
+    # cancel_action's except, and leave the table empty either way — so it
+    # could not tell "Cancel wrote nothing" from "Cancel could not write".
+    real = manager.create_work_log
+    calls = []
+
+    def flaky(log):
+        calls.append(log)
+        if len(calls) == 1:
+            raise RuntimeError("database is locked")
+        return real(log)
+
+    manager.create_work_log = flaky
     timer.done_action()
     assert timer._done_pressed is True, "precondition: the Done is still pending"
 

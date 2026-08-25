@@ -38,7 +38,12 @@ def raise_above_parent(dialog) -> None:
             # window is meaningless, and doing it anyway is what made a test run
             # hammer the window server: the suite withdraws every window, so
             # this fired hundreds of times against windows nobody could see.
-            if dialog.state() == "withdrawn" or not dialog.winfo_ismapped():
+            # state() only. "not mapped yet" is transient — a toplevel that has
+            # not finished mapping by +10ms on a loaded machine — and treating
+            # it as "never raise" turns a delay into the reported symptom
+            # coming back intermittently, with nothing logged (P1). The test
+            # suite withdraws every window, which state() covers completely.
+            if dialog.state() == "withdrawn":
                 return
             dialog.attributes("-topmost", True)
             dialog.lift()

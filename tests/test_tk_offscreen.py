@@ -327,6 +327,25 @@ def test_topmost_is_silenced_for_the_run():
         root.destroy()
 
 
+def test_topmost_is_silenced_under_its_other_name_too():
+    """wm_attributes is the same function as attributes, under a second name.
+
+    Patching one and testing that one leaves the other as an unguarded way to
+    raise a window over the user's work — and the guard's own test stays green,
+    because it exercises the spelling that was patched.
+    """
+    root = ctk.CTk()
+    try:
+        window = ctk.CTkToplevel(root)
+        window.wm_attributes("-topmost", True)
+        assert window.wm_attributes("-topmost") == 0, (
+            "-topmost took effect through wm_attributes; both spellings must "
+            "be silenced"
+        )
+    finally:
+        root.destroy()
+
+
 def test_alpha_still_passes_through_the_attributes_wrapper():
     """Silencing -topmost must not break the transparency the run depends on.
 
@@ -350,6 +369,12 @@ def test_alpha_still_passes_through_the_attributes_wrapper():
 # with CGWindowList: the count climbed monotonically through the run and only
 # dropped to zero when pytest exited. Tk drives one UI thread, so the
 # WindowServer work those windows keep alive is what made the machine crawl.
+
+
+# The window classes tests are allowed to build — the ones conftest patches,
+# registers in _LIVE_WINDOWS and sweeps at teardown. Anything else reaches Tk
+# without any of that.
+ALLOWED_WINDOW_CLASSES = {"CTk", "CTkToplevel", "Tk", "Toplevel"}
 
 
 def _is_alive(window) -> bool:
@@ -457,30 +482,61 @@ def test_raw_tkinter_windows_are_hidden_and_registered_too():
 
 
 def test_no_helper_builds_a_window_the_suite_cannot_reach():
-    """WL-4 — every window built in tests/ goes through the patched classes.
+    """WL-4 — every window built in tests/ goes through a patched class.
 
-    A helper that reached Tk another way — say `tkinter.Tk` imported under a
-    different name, or a widget class not in the patched list — would be
-    invisible to both the hiding and the sweeping. Parsed rather than grepped,
-    so a name in a comment or a docstring cannot satisfy it.
+    The first version of this asked whether the names it found were in the
+    allowed set, having only collected names that were in the allowed set. A
+    tautology: it stayed green over a file containing nothing but
+    `ctk.CTkInputDialog(...)` and `tkinter.simpledialog.Dialog(...)`.
+
+    Inverted. The candidates come from the toolkit at runtime — every class in
+    customtkinter or tkinter that is a window, plus the dialog helpers that
+    build one through Tcl without a Python class — and the assertion is an
+    exact set, so a test reaching Tk any other way shows up as an extra rather
+    than being quietly filtered out before the comparison.
     """
     import ast
     import pathlib
+    import tkinter
 
-    allowed = {"CTk", "CTkToplevel", "Tk", "Toplevel"}
+    import customtkinter
+
+    window_makers = {"showinfo", "showwarning", "showerror", "askyesno",
+                     "askokcancel", "askretrycancel", "askquestion",
+                     "askstring", "askinteger", "askfloat",
+                     "askopenfilename", "asksaveasfilename", "askdirectory",
+                     "askcolor"}
+    for module in (customtkinter, tkinter):
+        for name, obj in vars(module).items():
+            if isinstance(obj, type) and issubclass(obj, tkinter.Wm):
+                window_makers.add(name)
+
+    assert ALLOWED_WINDOW_CLASSES <= window_makers, (
+        "the allow-list names something the toolkit does not consider a window"
+    )
+
+    # Named with the reason rather than skipped by a pattern, so a file cannot
+    # fall out of coverage quietly. test_source_asserts.py contains
+    # `messagebox.showerror(...)` inside a class of *parsing subjects* — source
+    # that source_asserts.py is pointed at and which nothing ever calls.
+    NOT_EXECUTED = {"test_source_asserts.py"}
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "tests"
     found = set()
-    for path in sorted(pathlib.Path("tests").glob("*.py")):
+    for path in sorted(root.glob("*.py")):
+        if path.name in NOT_EXECUTED:
+            continue
         for node in ast.walk(ast.parse(path.read_text())):
             if not isinstance(node, ast.Call):
                 continue
             fn = node.func
             name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
-            if name in allowed:
+            if name in window_makers:
                 found.add(name)
 
-    assert found, "the scan found no window constructions at all — it is broken"
-    assert found <= allowed, (
-        f"tests build windows the guard does not patch: {sorted(found - allowed)}"
+    assert found == ALLOWED_WINDOW_CLASSES, (
+        "tests build windows the guard does not patch, register or sweep: "
+        f"{sorted(found - ALLOWED_WINDOW_CLASSES)}"
     )
 
 

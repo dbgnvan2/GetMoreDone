@@ -358,6 +358,34 @@ def destroy_windows_created_since(snapshot):
     return destroyed
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _no_window_may_outlive_the_run():
+    """WL-7 — assert the release, not the concealment.
+
+    Purpose: P30 was written from this very bug: a guard that hides a resource
+             gets mistaken for one that frees it. The 37-to-0 result that proved
+             this fix is a manual CGWindowList measurement in a handoff note,
+             which nothing re-runs. This is the automated half.
+    Tests:   this is itself the check; tests/test_tk_offscreen.py proves the
+             registry and the sweeper it depends on.
+
+    It would have caught the original leak on the run that introduced it.
+    """
+    yield
+    survivors = []
+    for window in list(_LIVE_WINDOWS):
+        try:
+            if window.winfo_exists():
+                survivors.append(type(window).__name__)
+        except Exception:
+            pass          # its interpreter is gone, which is what we want
+    assert not survivors, (
+        f"{len(survivors)} window(s) outlived the run: {sorted(set(survivors))}. "
+        "Withdrawing a window hides it; it does not release it, and the "
+        "WindowServer resources are held until the process exits."
+    )
+
+
 @pytest.fixture(autouse=True)
 def _destroy_windows_left_behind_by_this_test():
     """Function-scoped net under every test that builds a window.
@@ -567,6 +595,10 @@ def _keep_tk_windows_off_screen():
         # the machine beachballed while the suite was going. The alpha the
         # wrapper above sets is passed straight through; only -topmost is
         # dropped, and only for the run.
+        # Both spellings. tkinter.Wm.attributes IS tkinter.Wm.wm_attributes —
+        # the same function under two names — so patching one leaves the other
+        # as an unguarded way to raise a window, and the guard's own test would
+        # stay green because it exercises the patched spelling.
         _original_attributes = cls.attributes
 
         def _attributes(self, *args, __original=_original_attributes, **kwargs):
@@ -574,8 +606,9 @@ def _keep_tk_windows_off_screen():
                 return None
             return __original(self, *args, **kwargs)
 
-        patched.append((cls, "attributes", _original_attributes))
-        cls.attributes = _attributes
+        for _name in ("attributes", "wm_attributes"):
+            patched.append((cls, _name, getattr(cls, _name)))
+            setattr(cls, _name, _attributes)
         # deiconify is WRAPPED, not silenced. Silencing it hung
         # tests/test_item_editor_sash.py — verified by bisection — because the
         # window never maps and its geometry never resolves.

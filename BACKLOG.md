@@ -4,6 +4,33 @@ Last Updated: 2026-08-20 (rename-safe links: the year-filter veto and the legacy
 
 ## Deferred — found by review, deliberately not fixed
 
+### Below-medium from the window-leak sweep (2026-08-24)
+
+- **`_init` runs twice for every CTk/CTkToplevel.** `CTk.__init__` calls
+  `tkinter.Tk.__init__` before setting `_window_exists`, and `CTk.withdraw`
+  reads it — so the first withdraw raises `AttributeError` into the swallow.
+  Harmless (the outer one succeeds) and completely invisible.
+- **conftest's restore path does not actually un-patch.** `cls.attributes`
+  resolves to the inherited `Wm.wm_attributes`, so `setattr` on teardown leaves
+  an own attribute on each class. Semantically identical; pre-existing shape,
+  shared by `lift`/`focus_force`/`grab_set`/`deiconify`/`update`.
+- **The sweeper discards its count.** A single long test can still hold many
+  windows at once with no signal (P2).
+- `timer_window.py` still prints `[ERROR] Save & Close failed` after the rename.
+- `test_clearing_the_notes_box_clears_it_on_every_ending` covers 2 endings of 5
+  while its name and docstring say every/four.
+- `test_the_sweeper_survives_a_root_destroyed_with_its_children` relies on
+  `WeakSet` iteration order to reach the exception path.
+- `test_deiconify_puts_the_window_back_out_of_sight` is parametrized over the
+  ctk pair only, not the newly patched `tk.Tk`/`tk.Toplevel`.
+- The `_WINDOWS_MAY_BE_MAPPED` escape in `_deiconify` is only covered by the
+  three `mapped_windows` tests — the ones developers are told to skip locally,
+  so that guard exists only in CI.
+- **Cancel Timer discards typed notes with no in-app signal.** The behaviour is
+  as specified ("Cancel means nothing happened") and the user guide says so
+  explicitly, but the other three endings persist them, and the label names the
+  timer rather than the notes. A dirty-check confirmation would close it.
+
 ### What else may be leaking (2026-08-24, from the window-leak fix)
 
 The window leak was a resource hidden rather than released (P30). The same
