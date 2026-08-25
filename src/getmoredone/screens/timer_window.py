@@ -1104,7 +1104,18 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         self._cleanup_and_destroy()
 
     def continue_action(self):
-        """Handle Continue workflow: update current, duplicate, complete, show Next Action screen, present editor."""
+        """Record the session, create the follow-up, and open it.
+
+        Purpose: end a block of work that continues, without closing the task.
+                 "Complete" here is the timer record; only Done completes an
+                 Action Item.
+        Tests:   tests/test_timer_session_endings.py::test_t33_continue_records_the_session_and_leaves_the_item_open
+                 tests/test_timer_session_endings.py::test_t32_the_followup_editor_opens_with_a_vps_manager
+
+        It used to complete the current item and show a Next Steps dialog
+        first. Both are gone; this docstring said otherwise until the csdp
+        sweep caught it, which is a status claim that had stopped being true.
+        """
         try:
             print(f"[DEBUG] Continue button clicked for item: {self.item.id}")
 
@@ -1283,9 +1294,14 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             # follow-up in the 2026-08-25 database could not be matched to any
             # work log: the ending that produced them wrote nothing and left no
             # trace of having decided to (P2).
+            # No done_pressed in the message. Three of the four endings call
+            # _discard_pending_completion() immediately before this, so the
+            # flag reads False by the time it is printed even when the user
+            # did press Done — a diagnostic that states the opposite of what
+            # happened is worse than no diagnostic (P6).
             print("[WARN] no session to log for item %s: the timer was never "
-                  "started, or this window already logged its session. "
-                  "done_pressed=%s" % (self.item.id, self._done_pressed))
+                  "started, or this window already logged its session"
+                  % self.item.id)
             return
 
         decision = self._pending_reward
