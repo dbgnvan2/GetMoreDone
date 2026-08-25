@@ -88,7 +88,7 @@ class APEAssignmentScreen(ctk.CTkFrame):
         try:
             return int(self.year_var.get().strip())
         except ValueError:
-            messagebox.showerror("Invalid Year", "Enter a valid year.")
+            show_toast(self, "Enter a valid year.", "error")
             return None
 
     def refresh_all(self):

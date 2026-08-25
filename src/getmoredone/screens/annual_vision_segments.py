@@ -87,7 +87,7 @@ class AnnualVisionSegmentsScreen(ctk.CTkFrame):
         try:
             return int(self.year_var.get().strip())
         except ValueError:
-            messagebox.showerror("Invalid Year", "Enter a valid year, e.g. 2026.")
+            show_toast(self, "Enter a valid year, e.g. 2026.", "error")
             return None
 
     def refresh_lists(self):

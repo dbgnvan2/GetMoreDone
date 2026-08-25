@@ -31,7 +31,6 @@ class RescheduleDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""

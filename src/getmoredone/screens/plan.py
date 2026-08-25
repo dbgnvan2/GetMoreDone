@@ -230,7 +230,6 @@ class AddTimeBlockDialog(ctk.CTkToplevel):
 
         self.create_form()
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create form."""

@@ -145,7 +145,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
             self.week_var.set(current_week_start)
             self.load_selected_week()
         else:
-            messagebox.showinfo("Week Not Found", "No weekly items exist for the current week.")
+            show_toast(self, "No weekly items exist for the current week.", "info")
 
     def load_selected_week(self):
         week_start = self.week_var.get().strip()
@@ -200,7 +200,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
 
     def create_action_item_for_selected_weekly(self):
         if not self.selected_weekly_item:
-            messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
+            show_toast(self, "Select a weekly item on the left first.", "warning")
             return
         from ..models import ActionItem
 
@@ -227,7 +227,7 @@ class WeeklyItemsScreen(ctk.CTkFrame):
     def open_selected_weekly_item(self):
         """Open the selected weekly action item in the editor."""
         if not self.selected_weekly_item:
-            messagebox.showwarning("No Weekly Item Selected", "Select a weekly item on the left first.")
+            show_toast(self, "Select a weekly item on the left first.", "warning")
             return
 
         from .item_editor import ItemEditorDialog

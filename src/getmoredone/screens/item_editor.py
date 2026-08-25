@@ -1443,7 +1443,6 @@ class ItemEditorDialog(ctk.CTkToplevel):
             error_dialog.title("Cannot Delete")
             error_dialog.geometry("400x150")
             error_dialog.transient(self)
-            error_dialog.grab_set()
 
             # Center on parent
             error_dialog.update_idletasks()
@@ -1610,10 +1609,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         if not next_action_text:
             import tkinter.messagebox as messagebox
-            messagebox.showwarning(
-                "No Next Actions",
-                "Please add tasks to the Next Action field (one per line) before creating tasks."
-            )
+            show_toast(self, "Please add tasks to the Next Action field (one per line) before creating tasks.", "warning")
             return
 
         # Split into lines and filter out empty lines
@@ -1622,10 +1618,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         if not lines:
             import tkinter.messagebox as messagebox
-            messagebox.showwarning(
-                "No Next Actions",
-                "Please add tasks to the Next Action field (one per line) before creating tasks."
-            )
+            show_toast(self, "Please add tasks to the Next Action field (one per line) before creating tasks.", "warning")
             return
 
         # Get the current item
@@ -1666,10 +1659,7 @@ class ItemEditorDialog(ctk.CTkToplevel):
 
         # Show success message
         import tkinter.messagebox as messagebox
-        messagebox.showinfo(
-            "Tasks Created",
-            f"Created {created_count} child task(s) from Next Action list."
-        )
+        show_toast(self, f"Created {created_count} child task(s) from Next Action list.", "info")
 
         # Refresh the display if there's a callback
         if self.on_close_callback:
@@ -1934,7 +1924,6 @@ class ShowRelatedDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
         # Center on parent
         self.center_on_parent()
@@ -2189,7 +2178,6 @@ class SetParentDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
         # Center on parent
         self.center_on_parent()
@@ -2426,7 +2414,6 @@ class CreateNoteDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
         # Ensure dialog is visible and on top
         self.lift()
@@ -2596,7 +2583,6 @@ class LinkNoteDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form."""
@@ -2890,7 +2876,6 @@ class DeleteConfirmDialog(ctk.CTkToplevel):
 
         # Center on parent
         self.transient(parent)
-        self.grab_set()
 
         # Message
         message = f"Are you sure you want to delete:\n\n{item_title}\n\nThis action cannot be undone."
@@ -2945,7 +2930,6 @@ class DeleteChildrenWarningDialog(ctk.CTkToplevel):
 
         # Center on parent
         self.transient(parent)
-        self.grab_set()
 
         # Message
         message = (

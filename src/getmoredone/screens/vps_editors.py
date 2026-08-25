@@ -44,7 +44,6 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -168,10 +167,7 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
             try:
                 start_year = int(start_year_str)
             except ValueError:
-                messagebox.showerror(
-                    "Validation Error",
-                    "Start year must be a valid integer"
-                )
+                show_toast(self, "Start year must be a valid integer", "error")
                 return
 
         if not end_year_str:
@@ -180,17 +176,11 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
             try:
                 end_year = int(end_year_str)
             except ValueError:
-                messagebox.showerror(
-                    "Validation Error",
-                    "End year must be a valid integer"
-                )
+                show_toast(self, "End year must be a valid integer", "error")
                 return
 
         if end_year <= start_year:
-            messagebox.showerror(
-                "Validation Error",
-                "End year must be greater than start year"
-            )
+            show_toast(self, "End year must be greater than start year", "error")
             return
 
         title = self.title_entry.get().strip()
@@ -231,10 +221,7 @@ class TLVisionEditorDialog(ctk.CTkToplevel):
             self.destroy()
 
         except Exception as e:
-            messagebox.showerror(
-                "Error",
-                f"Failed to save vision: {str(e)}"
-            )
+            show_toast(self, f"Failed to save vision: {str(e)}", "error")
 
 
 class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
@@ -270,7 +257,6 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -428,8 +414,7 @@ class QuarterInitiativeEditorDialog(ctk.CTkToplevel):
                 annual_initiative = self.vps_manager.get_annual_initiative(
                     self.annual_initiative_id)
                 if not annual_initiative:
-                    messagebox.showerror(
-                        "Error", "Annual Initiative not found.")
+                    show_toast(self, "Annual Initiative not found.", "error")
                     return
                 self.vps_manager.create_quarter_initiative(
                     annual_initiative_id=self.annual_initiative_id,
@@ -481,7 +466,6 @@ class AnnualVisionEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -667,7 +651,6 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -768,18 +751,12 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             try:
                 year = int(year_str)
             except ValueError:
-                messagebox.showerror(
-                    "Validation Error",
-                    "Year must be a valid integer"
-                )
+                show_toast(self, "Year must be a valid integer", "error")
                 return
 
         theme = self.theme_entry.get().strip()
         if not theme:
-            messagebox.showerror(
-                "Validation Error",
-                "Theme is required"
-            )
+            show_toast(self, "Theme is required", "error")
             return
 
         objective = self.objective_text.get("1.0", "end-1c").strip()
@@ -811,10 +788,7 @@ class AnnualPlanEditorDialog(ctk.CTkToplevel):
             self.destroy()
 
         except Exception as e:
-            messagebox.showerror(
-                "Error",
-                f"Error saving annual plan: {e}"
-            )
+            show_toast(self, f"Error saving annual plan: {e}", "error")
 
 
 class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
@@ -846,7 +820,6 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
             self.load_initiative_data()
 
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -937,12 +910,12 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
         try:
             year = int(self.year_entry.get().strip())
         except ValueError:
-            messagebox.showerror("Validation Error", "Year must be a valid integer")
+            show_toast(self, "Year must be a valid integer", "error")
             return
 
         title = self.title_entry.get().strip()
         if not title:
-            messagebox.showerror("Validation Error", "Title is required")
+            show_toast(self, "Title is required", "error")
             return
 
         outcome_statement = self.outcome_text.get("1.0", "end-1c").strip()
@@ -971,7 +944,7 @@ class AnnualInitiativeEditorDialog(ctk.CTkToplevel):
 
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save annual initiative: {e}")
+            show_toast(self, f"Failed to save annual initiative: {e}", "error")
 
 
 class MonthTacticEditorDialog(ctk.CTkToplevel):
@@ -1007,7 +980,6 @@ class MonthTacticEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -1198,7 +1170,6 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -1338,8 +1309,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         title = self.title_entry.get().strip()
 
         if not (week_start and week_end and title):
-            messagebox.showerror(
-                "Validation Error", "Week start, week end, and title are required.")
+            show_toast(self, "Week start, week end, and title are required.", "error")
             return None
 
         description = self.description_text.get("1.0", "end-1c").strip()
@@ -1390,7 +1360,7 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             return saved_id
 
         except Exception as e:
-            messagebox.showerror("Error", f"Error saving week action: {e}")
+            show_toast(self, f"Error saving week action: {e}", "error")
             return None
 
     def save_action(self):
@@ -1407,7 +1377,6 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
         dialog.title("Create Next Actions")
         dialog.geometry("500x380")
         dialog.transient(self)
-        dialog.grab_set()
         dialog.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
@@ -1427,16 +1396,12 @@ class WeekActionEditorDialog(ctk.CTkToplevel):
             raw = txt_actions.get("1.0", "end-1c")
             titles = [line.strip() for line in raw.splitlines() if line.strip()][:5]
             if not titles:
-                messagebox.showerror(
-                    "Validation Error", "Please enter at least one action title.")
+                show_toast(self, "Please enter at least one action title.", "error")
                 return
 
             created = self.vps_manager.create_action_items_for_week_action(
                 action_id, titles)
-            messagebox.showinfo(
-                "Next Actions Created",
-                f"Created {len(created)} action item(s)."
-            )
+            show_toast(self, f"Created {len(created)} action item(s).", "info")
             dialog.destroy()
 
         ctk.CTkButton(btn_frame, text="Create", command=on_create).grid(

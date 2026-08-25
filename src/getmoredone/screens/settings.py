@@ -623,7 +623,6 @@ class SettingsScreen(ctk.CTkFrame):
         dialog.title(f"Rename {factor_type.capitalize()}")
         dialog.geometry("500x250")
         dialog.transient(self)
-        dialog.grab_set()
 
         # Center dialog
         dialog.update_idletasks()
@@ -708,7 +707,6 @@ class SettingsScreen(ctk.CTkFrame):
         dialog.title(f"Delete {factor_type.capitalize()}")
         dialog.geometry("500x300")
         dialog.transient(self)
-        dialog.grab_set()
 
         # Center dialog
         dialog.update_idletasks()
@@ -1361,7 +1359,6 @@ class SettingsScreen(ctk.CTkFrame):
             dialog.title("Confirm Cascade Deletion")
             dialog.geometry("600x500")
             dialog.transient(self)
-            dialog.grab_set()
 
             # Warning message
             warning_frame = ctk.CTkFrame(dialog, fg_color="#8B0000")
@@ -1417,18 +1414,14 @@ class SettingsScreen(ctk.CTkFrame):
                     try:
                         # Since we can't delete with children, we need to tell user
                         # to remove records manually
-                        messagebox.showwarning(
-                            "Manual Deletion Required",
-                            f"To delete segment '{segment['name']}':\n\n"
+                        show_toast(self, f"To delete segment '{segment['name']}':\n\n"
                             f"1. Go to VPS Planning screen\n"
                             f"2. Delete all {total} records in this segment\n"
                             f"   (Start with Week Actions, work up to TL Visions)\n"
                             f"3. Return here to delete the empty segment\n\n"
-                            f"This manual process prevents accidental data loss."
-                        )
+                            f"This manual process prevents accidental data loss.", "warning")
                     except Exception as e:
-                        messagebox.showerror(
-                            "Error", f"Deletion failed: {str(e)}")
+                        show_toast(self, f"Deletion failed: {str(e)}", "error")
                 else:
                     status_label.configure(
                         text="❌ Incorrect confirmation text. Type exactly: yes proceed"
@@ -1469,8 +1462,5 @@ class SettingsScreen(ctk.CTkFrame):
             )
 
             if response:
-                messagebox.showinfo(
-                    "Success",
-                    f"Segment '{segment['name']}' has been deleted."
-                )
+                show_toast(self, f"Segment '{segment['name']}' has been deleted.", "info")
                 self.refresh_segments_list()

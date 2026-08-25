@@ -324,7 +324,7 @@ class TimerWindow(ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to save notes: {e}")
+            show_toast(self, f"Failed to save notes: {e}", "error")
 
     def refresh_notes(self):
         """Refresh notes textbox from the current item data."""
@@ -363,8 +363,7 @@ class TimerWindow(ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror(
-                "Error", f"Failed to open Next Action Window: {e}")
+            show_toast(self, f"Failed to open Next Action Window: {e}", "error")
 
     def format_time(self, seconds: int) -> str:
         """Format seconds as MM:SS."""
@@ -616,8 +615,7 @@ class TimerWindow(ctk.CTkToplevel):
             # Show error to user - only if window still exists
             try:
                 import tkinter.messagebox as messagebox
-                messagebox.showerror(
-                    "Error", f"Failed to complete action: {e}")
+                show_toast(self, f"Failed to complete action: {e}", "error")
             except:
                 # Window might be destroyed, just log the error
                 print(f"[ERROR] Could not show error dialog: {e}")
@@ -789,8 +787,7 @@ class TimerWindow(ctk.CTkToplevel):
             # Show error to user - only if window still exists
             try:
                 import tkinter.messagebox as messagebox
-                messagebox.showerror(
-                    "Error", f"Failed to continue action: {e}")
+                show_toast(self, f"Failed to continue action: {e}", "error")
             except:
                 # Window might be destroyed, just log the error
                 print(f"[ERROR] Could not show error dialog: {e}")
@@ -1231,7 +1228,6 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         self.transient(parent)
         # Appear above always-on-top timer window
         self.attributes('-topmost', True)
-        self.grab_set()
 
         # Center on parent if it still exists
         try:
@@ -1412,7 +1408,7 @@ class NextActionWindow(ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to save notes: {e}")
+            show_toast(self, f"Failed to save notes: {e}", "error")
 
     def refresh_notes(self):
         """Refresh notes textbox from the current item data."""
@@ -1458,7 +1454,6 @@ class NextStepsDialog(ctk.CTkToplevel):
         self.transient(parent)
         # Appear above always-on-top timer window
         self.attributes('-topmost', True)
-        self.grab_set()
 
         # Center on parent if it still exists
         try:

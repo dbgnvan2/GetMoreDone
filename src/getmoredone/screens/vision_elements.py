@@ -142,16 +142,16 @@ class VisionElementsScreen(ctk.CTkFrame):
         category = self.category_var.get().strip()
 
         if not segment or not subsegment or not category:
-            messagebox.showerror("Missing Values", "Segment, SubSegment, and Category are required.")
+            show_toast(self, "Segment, SubSegment, and Category are required.", "error")
             return
 
         try:
             self.vps_manager.create_or_get_vision_element(segment, subsegment, category)
             self.update_key_preview()
             self.refresh_all()
-            messagebox.showinfo("Created", "Vision Element created/updated successfully.")
+            show_toast(self, "Vision Element created/updated successfully.", "info")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to create Vision Element:\n{e}")
+            show_toast(self, f"Failed to create Vision Element:\n{e}", "error")
 
     def refresh_list(self):
         rows = self.vps_manager.get_vision_elements()

@@ -280,10 +280,7 @@ class GetMoreDoneApp(ctk.CTk):
             from tkinter import messagebox
 
             traceback.print_exc()
-            messagebox.showerror(
-                "Settings Error",
-                f"Could not open Settings.\n\n{e}\n\nDetails were printed to the console/log.",
-            )
+            show_toast(self, f"Could not open Settings.\n\n{e}\n\nDetails were printed to the console/log.", "error")
 
     def show_vision_elements(self):
         """Show Vision Elements screen."""
@@ -390,11 +387,8 @@ def main():
 
         root = Tk()
         root.withdraw()
-        messagebox.showwarning(
-            "GetMoreDone Already Running",
-            "Another GetMoreDone instance is already open.\n\n"
-            "Please close the other app window before launching this one."
-        )
+        show_toast(self, "Another GetMoreDone instance is already open.\n\n"
+            "Please close the other app window before launching this one.", "warning")
         root.destroy()
         return
 

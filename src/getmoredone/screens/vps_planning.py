@@ -97,7 +97,6 @@ class VPSPlanningScreen(ctk.CTkFrame):
         dialog.title("Select Segments to Display")
         dialog.geometry("400x500")
         dialog.transient(self)
-        dialog.grab_set()
 
         # Title
         title_label = ctk.CTkLabel(
@@ -859,10 +858,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
         if not segments:
             # No segments available
             from tkinter import messagebox
-            messagebox.showinfo(
-                "No Segments",
-                "Please create a life segment first before adding visions."
-            )
+            show_toast(self, "Please create a life segment first before adding visions.", "info")
             return
 
         # If only one segment, use it automatically
@@ -883,7 +879,6 @@ class VPSPlanningScreen(ctk.CTkFrame):
         dialog.title("Select Life Segment")
         dialog.geometry("400x300")
         dialog.transient(self)
-        dialog.grab_set()
 
         # Title
         title_label = ctk.CTkLabel(
@@ -1063,10 +1058,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
             annual_initiative_id = initiative.get('annual_initiative_id')
             if not annual_initiative_id:
                 from tkinter import messagebox
-                messagebox.showerror(
-                    "Missing Annual Initiative Link",
-                    "This quarterly initiative is not linked to an annual initiative."
-                )
+                show_toast(self, "This quarterly initiative is not linked to an annual initiative.", "error")
                 return
             dialog = QuarterInitiativeEditorDialog(
                 self, self.vps_manager, annual_initiative_id,
@@ -1161,10 +1153,7 @@ class VPSPlanningScreen(ctk.CTkFrame):
     def _show_error_has_children(self, entity_type: str):
         """Show error message when deletion fails due to child records."""
         from tkinter import messagebox
-        messagebox.showerror(
-            "Cannot Delete",
-            f"Cannot delete this {entity_type} because it has child records.\n\nPlease delete all child records first."
-        )
+        show_toast(self, f"Cannot delete this {entity_type} because it has child records.\n\nPlease delete all child records first.", "error")
 
     def delete_tl_vision(self, vision_id: str):
         """Delete a TL Vision."""

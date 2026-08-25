@@ -98,9 +98,7 @@ class DatePickerButton(ctk.CTkFrame):
         self.calendar_popup.geometry("300x320")
         self.calendar_popup.resizable(False, False)
 
-        # Make it modal
         self.calendar_popup.transient(self.winfo_toplevel())
-        self.calendar_popup.grab_set()
 
         # Position near the button
         self.update_idletasks()

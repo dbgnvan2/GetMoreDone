@@ -35,7 +35,6 @@ class CalendarEventDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
         # Center on parent
         self.update_idletasks()

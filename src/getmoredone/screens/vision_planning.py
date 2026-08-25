@@ -35,7 +35,6 @@ class VisionSegmentEditorDialog(ctk.CTkToplevel):
             self._load_data()
 
         self.transient(parent)
-        self.grab_set()
 
     def _build_form(self):
         frame = ctk.CTkFrame(self)
@@ -99,16 +98,13 @@ class VisionSegmentEditorDialog(ctk.CTkToplevel):
         subsegment = self.subsegment_entry.get().strip()
         category = self.category_entry.get().strip()
         if not subsegment or not category:
-            messagebox.showerror(
-                "Validation Error", "SubSegment and Category are required.",
-                parent=self)
+            show_toast(self, "SubSegment and Category are required.", "error")
             return
 
         seg_name = self.segment_var.get()
         seg = next((s for s in self._segments if s['name'] == seg_name), None)
         if seg is None:
-            messagebox.showerror(
-                "Validation Error", "Please select a valid Segment.", parent=self)
+            show_toast(self, "Please select a valid Segment.", "error")
             return
 
         try:
@@ -135,7 +131,7 @@ class VisionSegmentEditorDialog(ctk.CTkToplevel):
             self.result = True
             self.destroy()
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save: {e}", parent=self)
+            show_toast(self, f"Failed to save: {e}", "error")
 
 
 class VisionPlanningScreen(ctk.CTkFrame):
@@ -583,7 +579,7 @@ class VisionPlanningScreen(ctk.CTkFrame):
         try:
             year = int(self._avs_year_var.get())
         except ValueError:
-            messagebox.showerror("Error", "Invalid year.", parent=self)
+            show_toast(self, "Invalid year.", "error")
             return
 
         selected_ids = [

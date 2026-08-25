@@ -27,7 +27,7 @@ class EditContactDialog(ctk.CTkToplevel):
             self.title("Edit Contact")
             self.contact = self.db_manager.get_contact(contact_id)
             if not self.contact:
-                messagebox.showerror("Error", "Contact not found")
+                show_toast(self, "Contact not found", "error")
                 self.destroy()
                 return
         else:
@@ -38,7 +38,6 @@ class EditContactDialog(ctk.CTkToplevel):
 
         # Make modal
         self.transient(parent)
-        self.grab_set()
 
         # Configure grid
         self.grid_columnconfigure(0, weight=1)
@@ -154,14 +153,14 @@ class EditContactDialog(ctk.CTkToplevel):
         # Validate
         name = self.name_var.get().strip()
         if not name:
-            messagebox.showerror("Validation Error", "Name is required")
+            show_toast(self, "Name is required", "error")
             return
 
         # Check for duplicate name (if creating new or changing name)
         if not self.contact_id or (self.contact and name != self.contact.name):
             existing = self.db_manager.get_contact_by_name(name)
             if existing:
-                messagebox.showerror("Validation Error", f"A contact with the name '{name}' already exists")
+                show_toast(self, f"A contact with the name '{name}' already exists", "error")
                 return
 
         # Get values
@@ -179,7 +178,7 @@ class EditContactDialog(ctk.CTkToplevel):
                 self.contact.phone = phone
                 self.contact.notes = notes
                 self.db_manager.update_contact(self.contact)
-                messagebox.showinfo("Success", "Contact updated successfully")
+                show_toast(self, "Contact updated successfully", "info")
             else:
                 # Create new contact
                 new_contact = Contact(
@@ -190,12 +189,12 @@ class EditContactDialog(ctk.CTkToplevel):
                     notes=notes
                 )
                 self.db_manager.create_contact(new_contact)
-                messagebox.showinfo("Success", "Contact created successfully")
+                show_toast(self, "Contact created successfully", "info")
 
             self.destroy()
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save contact: {str(e)}")
+            show_toast(self, f"Failed to save contact: {str(e)}", "error")
 
     def delete_contact(self):
         """Delete the contact."""
@@ -214,7 +213,7 @@ class EditContactDialog(ctk.CTkToplevel):
 
         try:
             self.db_manager.delete_contact(self.contact_id)
-            messagebox.showinfo("Success", "Contact deleted successfully")
+            show_toast(self, "Contact deleted successfully", "info")
             self.destroy()
         except Exception as e:
             # If deletion fails (likely due to foreign key constraint), offer to deactivate instead
@@ -227,10 +226,10 @@ class EditContactDialog(ctk.CTkToplevel):
             if deactivate:
                 try:
                     self.db_manager.deactivate_contact(self.contact_id)
-                    messagebox.showinfo("Success", "Contact deactivated successfully")
+                    show_toast(self, "Contact deactivated successfully", "info")
                     self.destroy()
                 except Exception as e2:
-                    messagebox.showerror("Error", f"Failed to deactivate contact: {str(e2)}")
+                    show_toast(self, f"Failed to deactivate contact: {str(e2)}", "error")
 
     def cancel(self):
         """Cancel and close dialog."""

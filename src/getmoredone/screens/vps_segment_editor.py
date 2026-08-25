@@ -40,7 +40,6 @@ class VPSSegmentEditorDialog(ctk.CTkToplevel):
 
         # Make dialog modal
         self.transient(parent)
-        self.grab_set()
 
     def create_form(self):
         """Create the form layout."""
@@ -189,7 +188,7 @@ class VPSSegmentEditorDialog(ctk.CTkToplevel):
         # Get values
         name = self.name_entry.get().strip()
         if not name:
-            messagebox.showerror("Validation Error", "Name is required")
+            show_toast(self, "Name is required", "error")
             return
 
         description = self.description_text.get("1.0", "end-1c").strip()
@@ -197,17 +196,13 @@ class VPSSegmentEditorDialog(ctk.CTkToplevel):
         # Get color from entry field (user might have typed it)
         color_hex = self.color_entry.get().strip()
         if not self.validate_color(color_hex):
-            messagebox.showerror(
-                "Validation Error",
-                "Invalid color code. Must be in format #RRGGBB (e.g., #4A90E2)"
-            )
+            show_toast(self, "Invalid color code. Must be in format #RRGGBB (e.g., #4A90E2)", "error")
             return
 
         try:
             order_index = int(self.order_entry.get().strip())
         except ValueError:
-            messagebox.showerror("Validation Error",
-                                 "Display Order must be a number")
+            show_toast(self, "Display Order must be a number", "error")
             return
 
         is_active = self.active_var.get()
@@ -237,4 +232,4 @@ class VPSSegmentEditorDialog(ctk.CTkToplevel):
             self.destroy()
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save segment: {str(e)}")
+            show_toast(self, f"Failed to save segment: {str(e)}", "error")

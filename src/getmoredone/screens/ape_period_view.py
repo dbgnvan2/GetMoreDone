@@ -111,11 +111,11 @@ class APEPeriodViewScreen(ctk.CTkFrame):
             quarter = int(self.q_var.get().strip())
             month = int(self.m_var.get().strip())
         except ValueError:
-            messagebox.showerror("Invalid Period", "Enter valid numeric Year, Quarter, and Month values.")
+            show_toast(self, "Enter valid numeric Year, Quarter, and Month values.", "error")
             return None
 
         if quarter not in (1, 2, 3, 4) or month < 1 or month > 12:
-            messagebox.showerror("Invalid Period", "Quarter must be 1-4 and Month must be 1-12.")
+            show_toast(self, "Quarter must be 1-4 and Month must be 1-12.", "error")
             return None
 
         return year, quarter, month
@@ -200,12 +200,12 @@ class APEPeriodViewScreen(ctk.CTkFrame):
     def create_week_items_for_selected_ape(self):
         row = self._find_selected_ape()
         if not row:
-            messagebox.showwarning("No APE Selected", "Select an Annual Plan Element first.")
+            show_toast(self, "Select an Annual Plan Element first.", "warning")
             return
 
         selected_weeks = [ws for ws, var in self.week_vars.items() if bool(var.get())]
         if not selected_weeks:
-            messagebox.showwarning("No Weeks Selected", "Check at least one week.")
+            show_toast(self, "Check at least one week.", "warning")
             return
 
         parsed = self._parse_period()
@@ -221,10 +221,7 @@ class APEPeriodViewScreen(ctk.CTkFrame):
             text=f"Created {result['created_count']} week item(s); skipped {result['skipped_count']} existing.",
             text_color="green",
         )
-        messagebox.showinfo(
-            "Week Action Items Created",
-            f"Created {result['created_count']} week item(s).\nSkipped {result['skipped_count']} existing week(s).",
-        )
+        show_toast(self, f"Created {result['created_count']} week item(s).\nSkipped {result['skipped_count']} existing week(s).", "info")
 
     def _apply_row_color(self, index: int, segment_name: str):
         color = self.vps_manager.resolve_segment_color(segment_name, self.segment_colors)
