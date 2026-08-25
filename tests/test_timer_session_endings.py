@@ -356,8 +356,35 @@ def test_t55_every_messagebox_over_the_timer_suspends_its_topmost():
     SHOW = ("showerror", "showwarning", "showinfo", "askyesno")
 
     def _is_show(node):
-        return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr in SHOW)
+        """A messagebox call under either spelling.
+
+        Attribute AND Name: `from tkinter.messagebox import showerror` then a
+        bare `showerror(...)` is a real site, and matching only the dotted form
+        let one through — proved by mutation during the csdp re-sweep. It is
+        the same name-resolution shape as the t31 defect two commits earlier.
+        """
+        if not isinstance(node, ast.Call):
+            return False
+        fn = node.func
+        if isinstance(fn, ast.Attribute):
+            return fn.attr in SHOW
+        return isinstance(fn, ast.Name) and fn.id in SHOW
+
+    def _walk_here(node):
+        """Walk a subtree WITHOUT descending into nested callables.
+
+        ast.walk crosses function boundaries, so a showerror moved into a
+        `def later():` scheduled with after() inside the `with` counted as
+        guarded while running, at runtime, after the context manager had
+        exited and given the flag back. Also proved by mutation.
+        """
+        stack = list(ast.iter_child_nodes(node))
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                continue
+            yield cur
+            stack.extend(ast.iter_child_nodes(cur))
 
     all_sites, guarded, unparented = set(), set(), set()
     for mod in (twin, dlg):
@@ -365,24 +392,43 @@ def test_t55_every_messagebox_over_the_timer_suspends_its_topmost():
         tree = ast.parse(pathlib.Path(mod.__file__).read_text())
         for node in ast.walk(tree):
             if _is_show(node):
-                # Identified by (file, line): one re-parse produces different
-                # node objects, so identity cannot be used across two walks.
+                # Keyed by (file, line): a second parse makes new node objects,
+                # so identity cannot be used across two walks.
                 all_sites.add((name, node.lineno))
                 if not any(k.arg == "parent" for k in node.keywords):
                     unparented.add((name, node.lineno))
-            if isinstance(node, ast.With):
-                names = {n.func.id for n in ast.walk(node)
-                         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-                if "parent_topmost_suspended" in names:
-                    guarded |= {(name, i.lineno) for i in ast.walk(node) if _is_show(i)}
+            if not isinstance(node, ast.With):
+                continue
+            suspended = {
+                ast.unparse(item.context_expr.args[0])
+                for item in node.items
+                if isinstance(item.context_expr, ast.Call)
+                and isinstance(item.context_expr.func, ast.Name)
+                and item.context_expr.func.id == "parent_topmost_suspended"
+                and item.context_expr.args
+            }
+            if not suspended:
+                continue
+            for inner in _walk_here(node):
+                if not _is_show(inner):
+                    continue
+                # The window suspended must be the window the box is attached
+                # to. One site suspended the timer while parenting the box to a
+                # different always-on-top window, and this guard called it
+                # covered because it never compared the two.
+                target = next((ast.unparse(k.value) for k in inner.keywords
+                               if k.arg == "parent"), None)
+                if target is not None and target in suspended:
+                    guarded.add((name, inner.lineno))
 
     assert len(all_sites) == 4, (
         f"the set of messagebox calls changed: {sorted(all_sites)}. A new one "
         "must be wrapped in parent_topmost_suspended and counted here."
     )
     assert all_sites - guarded == set(), (
-        "these messagebox calls open behind the always-on-top timer holding a "
-        f"grab: {sorted(all_sites - guarded)}"
+        "these messagebox calls open behind an always-on-top window holding a "
+        f"grab, or suspend a window other than the one they attach to: "
+        f"{sorted(all_sites - guarded)}"
     )
     assert unparented == set(), (
         f"these messagebox calls pass no parent=, so Tk attaches them to the "
