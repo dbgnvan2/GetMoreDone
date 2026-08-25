@@ -162,6 +162,15 @@ def suspend_parent_topmost(dialog, parent) -> None:
         # apart; only the dialog's own is the end of its life.
         if event is not None and event.widget is not dialog:
             return
+        # One restore per dialog is guaranteed by Tk, not by a flag here.
+        # The csdp re-sweep asked what a dialog "torn down twice" would do —
+        # a stray resume while a second modal is up would drop the depth to
+        # zero and raise the parent over a window still holding grab_set().
+        # It is not reachable: <Destroy> destroys the widget, so a second
+        # event_generate("<Destroy>") on the same dialog raises "bad window
+        # path name" (measured), and this closure has no other caller. A flag
+        # guarding it was written and then removed — unreachable code that no
+        # test could fail against is indistinguishable from dead code.
         _resume_topmost(parent)
 
     try:
@@ -385,7 +394,13 @@ class NextActionWindow(TrackedAfterMixin, ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            with parent_topmost_suspended(self.parent_window):
+            # Both windows: this one is -topmost from its own setup_window and
+            # is what the box is parented to, and the timer behind it is
+            # -topmost too. Suspending only the timer left the box under the
+            # window it was attached to — the one site in this batch where the
+            # suspended window and the parented window were different objects.
+            with parent_topmost_suspended(self.parent_window), \
+                    parent_topmost_suspended(self):
                 messagebox.showerror("Error", f"Failed to save notes: {e}",
                                      parent=self)
 
