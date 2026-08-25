@@ -4,6 +4,21 @@ Last Updated: 2026-08-25 (timer session endings + its csdp sweep: four findings 
 
 ## Deferred — found by review, deliberately not fixed
 
+### A test that fails on a timer ending path hangs the run (2026-08-25)
+
+`conftest.py` withdraws windows and silences `grab_set`, `lift`, `focus_force`
+and `-topmost`, but it does not neutralise `tkinter.messagebox`. The timer's
+endings all wrap their body in `except Exception` and call `_show_error_dialog`,
+so a test that raises inside an ending opens a real blocking modal and the run
+stops until someone clicks it. Measured during the csdp re-sweep: a mutation run
+hung for two minutes for exactly this reason. It is the P30 shape this repo
+already has recorded — a guard that hides windows rather than releasing the
+machinery that shows them. Not fixed in that batch because patching messagebox
+suite-wide changes the behaviour of every test that reaches one, and that
+deserves its own change with its own sweep rather than being appended to this
+one.
+
+
 ### The complete-and-create follow-up is unfiled from its project (2026-08-25)
 
 `continue_action` builds its follow-up with a hand-rolled `ActionItem(...)`
