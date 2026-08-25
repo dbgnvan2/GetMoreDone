@@ -59,7 +59,13 @@ reproduce it and read it, not to guess.
 `NextStepsDialog` defaults both entries to tomorrow
 (`timer_window_dialogs.py:352`), and `continue_action`'s skip branch computes
 `increment_date(..., 1)` (`timer_window.py:1189`). Both children created this
-morning are dated 2026-08-26. Requirement: **today**, start and due.
+morning are dated 2026-08-26. Requirement: **the original Action Item's own
+start and due dates**, carried across unchanged.
+
+Note that `continue_action` already builds `new_item` with
+`start_date=item.start_date, due_date=item.due_date` — and then overwrites both,
+either from the dialog or from the `+1` skip branch. The fix is to stop
+overwriting them, not to compute a new date.
 
 **T3 — Continue lands on the wrong item.**
 `continue_action` step 7 opens the editor for the *new* item
@@ -80,7 +86,10 @@ not holding — the user watched Next Steps open behind the timer today.
 
 - `work_logs` stays a write-only table. No new UI. Notes reach the Action Item
   description already; time reaches the item already.
-- Follow-up **start and due are both today**.
+- The follow-up **inherits the original Action Item's start and due dates**.
+  Confirmed after I raised that this can create a follow-up already past its due
+  date — for this morning's item, both dates land on 2026-08-24 while today is
+  2026-08-25. That is the intended behaviour.
 - The Next Steps dialog **stays**; only its date defaults change.
 - "Return to the original Action Item" applies from **every** entry point —
   the Action Item editor, Today, Upcoming, All Items.
@@ -92,8 +101,9 @@ not holding — the user watched Next Steps open behind the timer today.
 | T1.1 | `save_and_close_action` leaves `winfo_exists()` false, with the **real** `CompletionNoteDialog` opened and dismissed — not a stub | `tests/test_timer_session_endings.py::test_t11_save_related_closes_the_window_after_a_real_modal` |
 | T1.2 | A `destroy()` that fails is reported, not swallowed as "safe to ignore"; the window is not treated as closed | `::test_t12_a_failed_destroy_is_reported_not_swallowed` |
 | T1.3 | `cancel_action` still closes (no regression) | `::test_t13_cancel_still_closes` |
-| T2.1 | `NextStepsDialog` opens with start **and** due = today | `::test_t21_next_steps_defaults_to_today` |
-| T2.2 | Skipping the dialog gives the follow-up start = due = today | `::test_t22_skipped_next_steps_dates_the_followup_today` |
+| T2.1 | `NextStepsDialog` opens with start and due = the original item's dates, not tomorrow | `tests/test_timer_session_endings.py::test_t21_next_steps_defaults_to_the_items_dates` |
+| T2.2 | Skipping the dialog leaves the follow-up on the original's dates — no `+1` shift | `::test_t22_skipped_next_steps_keeps_the_items_dates` |
+| T2.3 | An original whose dates are in the past yields a follow-up with those same past dates, saved without complaint | `::test_t23_a_past_dated_item_yields_a_past_dated_followup` |
 | T3.1 | After Continue, the editor left in front is the **original** item's, from the Action Item editor | `::test_t31_continue_returns_to_the_original_editor` |
 | T3.2 | Same from Today / Upcoming / All Items, where no editor is open behind — one test per surface (P25) | `::test_t32_continue_opens_the_original_editor_from_<screen>` |
 | T3.3 | Continue still writes the work log, completes the original, and creates the child | `::test_t33_continue_writes_log_completes_original_creates_child` |
@@ -119,18 +129,21 @@ not holding — the user watched Next Steps open behind the timer today.
 
 ## Risks and things I cannot promise
 
+- **T5 is human-verified.** I asked for screen access to watch the stacking
+  myself and it was declined; the user will test and report. T5.1 below stands
+  only if a behavioural assertion turns out to exist.
 - **T5.1 may not be testable.** Tk on macOS gives no reliable read of window
   stacking order; `wm attributes -topmost` reports the flag, not the position,
   and asserting the flag is exactly the mistake that let `b748453` ship looking
   fixed. If I cannot find a behavioural assertion I will say so and mark T5 as
   human-verified rather than write a test that cannot fail (P27).
-- **T2 and weekends.** "Today" is taken literally. `increment_date` respects the
-  include_saturday / include_sunday settings; today does not. If you start a
-  timer on a Saturday with weekends off, the follow-up will still be dated
-  Saturday. Say if that is wrong.
-- **The button label.** "Complete & Open Follow Up" will no longer open the
-  follow-up — it returns to the original. Renaming it is a UI-contract change I
-  have not assumed. Proposal: "Complete & Create Follow Up".
+- **T2 creates overdue follow-ups by design.** Inheriting the original's dates
+  means a follow-up off a late item is born late. Raised and confirmed; recorded
+  here so it does not get "fixed" by a later pass that reads it as a bug.
+  `NextStepsDialog.save` rejects due < start (`timer_window_dialogs.py:445`) —
+  that validation is untouched, and an original with due < start would be
+  refused. No such row exists today; the plan does not add a migration for it.
+- ~~**The button label.**~~ Approved: **"Complete & Create Follow Up"**.
 
 ## Adjacent issues found, not fixed
 
