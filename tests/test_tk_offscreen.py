@@ -299,3 +299,46 @@ def test_a_mapped_window_is_invisible_but_still_measurable(mapped_windows):
         "implemented by withdrawing the window, or the tests that need real "
         "measurements silently start asserting on 1."
     )
+
+
+def test_topmost_is_silenced_for_the_run():
+    """Setting -topmost during a test run must do nothing.
+
+    lift, focus_force and grab_set were silenced and this was not, so any code
+    that raised a modal by re-asserting -topmost went straight through. A run
+    then forced hundreds of window-server round-trips and the machine locked up
+    while the suite was going — the exact interruption this module exists to
+    prevent, through the one door left open.
+    """
+    # An explicit root, like every other test here. A bare CTkToplevel() makes
+    # Tk build an implicit default root, and tearing that down invalidates the
+    # image registry for every test that runs afterwards — which showed up as
+    # `image "pyimage31" doesn't exist` in an unrelated screen test, ~300 tests
+    # later and only in a full run.
+    root = ctk.CTk()
+    try:
+        window = ctk.CTkToplevel(root)
+        window.attributes("-topmost", True)
+        assert window.attributes("-topmost") == 0, (
+            "-topmost took effect during a test run; it must be silenced like "
+            "lift, focus_force and grab_set"
+        )
+    finally:
+        root.destroy()
+
+
+def test_alpha_still_passes_through_the_attributes_wrapper():
+    """Silencing -topmost must not break the transparency the run depends on.
+
+    The wrapper intercepts attributes() wholesale, so it would be easy to drop
+    -alpha with it — and every window in the suite would become visible.
+    """
+    root = ctk.CTk()
+    try:
+        window = ctk.CTkToplevel(root)
+        window.attributes("-alpha", 0.0)
+        assert float(window.attributes("-alpha")) == 0.0, (
+            "the attributes wrapper swallowed -alpha; windows would be visible"
+        )
+    finally:
+        root.destroy()

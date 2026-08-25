@@ -484,6 +484,22 @@ def _keep_tk_windows_off_screen():
         _silence(cls, "lift", lambda self, *a, **k: None)
         _silence(cls, "focus_force", lambda self, *a, **k: None)
         _silence(cls, "grab_set", lambda self, *a, **k: None)
+
+        # -topmost was the hole in the three above. Silencing lift() but not
+        # this one meant any code that raised a modal by re-asserting -topmost
+        # still forced hundreds of window-server round-trips during a run, and
+        # the machine beachballed while the suite was going. The alpha the
+        # wrapper above sets is passed straight through; only -topmost is
+        # dropped, and only for the run.
+        _original_attributes = cls.attributes
+
+        def _attributes(self, *args, __original=_original_attributes, **kwargs):
+            if args and args[0] == "-topmost" and len(args) > 1:
+                return None
+            return __original(self, *args, **kwargs)
+
+        patched.append((cls, "attributes", _original_attributes))
+        cls.attributes = _attributes
         # deiconify is WRAPPED, not silenced. Silencing it hung
         # tests/test_item_editor_sash.py — verified by bisection — because the
         # window never maps and its geometry never resolves.
