@@ -32,6 +32,7 @@ for path in (ROOT, ROOT / "src"):
 # ---------------------------------------------------------------------------
 
 import logging
+import weakref
 
 import pytest
 
@@ -314,6 +315,71 @@ def _isolate_weekly_tactic_log(tmp_path_factory):
 _WINDOWS_MAY_BE_MAPPED = False
 
 
+# Every Tk window built during the run, weakly held.
+#
+# The guard below already intercepts every window at construction, so it knew
+# about all of them — it just never owned them. Withdrawing a window hides it;
+# it does not release it. A run leaked 37 live windows (measured with
+# CGWindowList: climbing monotonically through the run, dropping to zero only
+# at exit), because five helpers built a root, withdrew it, and returned it
+# with nothing anywhere to destroy it. Tk drives one UI thread, so the
+# WindowServer work those windows keep alive is what made the machine crawl.
+#
+# Weak, so registration itself can never be the thing keeping a window alive.
+_LIVE_WINDOWS = weakref.WeakSet()
+
+
+def destroy_windows_created_since(snapshot):
+    """Destroy every live window not in ``snapshot``. Returns how many.
+
+    Purpose: WL-1 — make a leak impossible regardless of any one test's
+             hygiene, including a test that fails its assertion before it
+             reaches its own ``destroy()``.
+    Tests:   tests/test_tk_offscreen.py::test_a_leaked_window_is_destroyed_at_teardown
+             tests/test_tk_offscreen.py::test_the_sweeper_leaves_earlier_windows_alone
+
+    Membership is by object identity and deliberately not by ``id()``: ids are
+    recycled after a collection, so an id-based snapshot can mistake a new
+    window for an old one, or the reverse.
+
+    Errors are swallowed. Destroying a root destroys its children, so a child
+    still in the registry raises when its turn comes — the normal case, not a
+    fault.
+    """
+    destroyed = 0
+    for window in list(_LIVE_WINDOWS):
+        if window in snapshot:
+            continue
+        try:
+            window.destroy()
+            destroyed += 1
+        except Exception:
+            pass
+    return destroyed
+
+
+@pytest.fixture(autouse=True)
+def _destroy_windows_left_behind_by_this_test():
+    """Function-scoped net under every test that builds a window.
+
+    Purpose: WL-1 — a window a test creates must not outlive it.
+    Tests:   tests/test_tk_offscreen.py::test_a_leaked_window_is_destroyed_at_teardown
+
+    Every window fixture in this suite is function-scoped, so nothing a later
+    test needs can be swept away here. That was checked before this was written
+    rather than assumed — a module- or session-scoped window fixture would make
+    this actively wrong.
+
+    The snapshot holds strong references for the length of one test, which is
+    what stops a pre-existing window being collected and its identity reused.
+    """
+    before = set(_LIVE_WINDOWS)
+    try:
+        yield
+    finally:
+        destroy_windows_created_since(before)
+
+
 # Setting this makes ``mapped_windows`` skip instead of mapping, for running
 # the suite on a machine someone is working on. It is deliberately an opt-IN
 # with a loud skip reason rather than a default: the three tests it disables
@@ -455,11 +521,21 @@ def _keep_tk_windows_off_screen():
             patched.append((cls, name, getattr(cls, name)))
             setattr(cls, name, replacement)
 
-    for cls in (ctk.CTk, ctk.CTkToplevel):
+    # tk.Tk and tk.Toplevel as well as the ctk pair. customtkinter's classes
+    # subclass them, so patching only the ctk two left raw tkinter windows with
+    # neither the alpha nor the withdraw — tests/test_app_icon.py builds three
+    # of those and each one flashed a real window on screen.
+    for cls in (ctk.CTk, ctk.CTkToplevel, tk.Tk, tk.Toplevel):
         original_init = cls.__init__
 
         def _init(self, *args, __original=original_init, **kwargs):
             __original(self, *args, **kwargs)
+            # Registered before anything else can fail. A window that raises
+            # while being hidden is exactly the one that most needs sweeping.
+            try:
+                _LIVE_WINDOWS.add(self)
+            except TypeError:
+                pass
             # Transparent FIRST, unconditionally. withdraw() happens after the
             # window already exists and has been mapped, so every one of the
             # hundreds of window-building tests flashed a visible frame in the
@@ -481,7 +557,7 @@ def _keep_tk_windows_off_screen():
         cls.__init__ = _init
 
         # The calls that would show a window, raise it, or seize the keyboard.
-        _silence(cls, "lift", lambda self, *a, **k: None)
+        _silence(cls, "lift", lambda self, *a, **k: None)  # noqa: E731
         _silence(cls, "focus_force", lambda self, *a, **k: None)
         _silence(cls, "grab_set", lambda self, *a, **k: None)
 
@@ -522,6 +598,42 @@ def _keep_tk_windows_off_screen():
                 continue
             patched.append((cls, call, original_call))
             setattr(cls, call, wrap_reapplying_transparency(original_call))
+
+        # deiconify additionally RE-WITHDRAWS, which the transparency wrapper
+        # alone did not do.
+        #
+        # Application code calls deiconify: ItemEditorDialog._finalize_dialog_window
+        # does it on every dialog it builds. So a window conftest withdrew at
+        # construction mapped itself again moments later and stayed mapped —
+        # invisible at alpha 0, but a real on-screen window as far as the
+        # WindowServer is concerned. Measured with CGWindowList: 30 of them
+        # alive at once mid-run, `onscreen=True, alpha=0.0`, named "Edit Action
+        # Item" and "New Action Item".
+        #
+        # The withdraw happens AFTER the call through, so the layout the
+        # deiconify was needed for has already resolved. That is the difference
+        # from silencing deiconify outright, which hung test_item_editor_sash
+        # because the geometry never settled.
+        original_deiconify = getattr(cls, "deiconify", None)
+        if original_deiconify is not None:
+            wrapped_deiconify = getattr(cls, "deiconify")
+
+            def _deiconify(self, *args, __wrapped=wrapped_deiconify, **kwargs):
+                result = __wrapped(self, *args, **kwargs)
+                if not _WINDOWS_MAY_BE_MAPPED:
+                    try:
+                        self.withdraw()
+                    except Exception:
+                        pass
+                return result
+
+            # Keeps the marker the installed-ness guard looks for: this
+            # wrapper still reapplies transparency, through the wrapper it
+            # calls. It carries its own marker as well, so the re-withdraw is
+            # checkable in its own right rather than implied.
+            _deiconify._gmd_reapplies_transparency = True
+            _deiconify._gmd_rewithdraws = True
+            setattr(cls, "deiconify", _deiconify)
 
     try:
         yield

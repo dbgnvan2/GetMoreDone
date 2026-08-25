@@ -342,3 +342,175 @@ def test_alpha_still_passes_through_the_attributes_wrapper():
         )
     finally:
         root.destroy()
+
+
+# --- windows must not outlive the test that made them -----------------------
+#
+# Hiding a window is not releasing it. A run leaked 37 live windows, measured
+# with CGWindowList: the count climbed monotonically through the run and only
+# dropped to zero when pytest exited. Tk drives one UI thread, so the
+# WindowServer work those windows keep alive is what made the machine crawl.
+
+
+def _is_alive(window) -> bool:
+    """Whether a window still exists, for roots as well as children.
+
+    A CTk root owns its own Tcl interpreter, and destroying it tears that
+    interpreter down — so winfo_exists() does not return 0 afterwards, it
+    raises "application has been destroyed". Both mean gone.
+    """
+    import tkinter
+
+    try:
+        return bool(window.winfo_exists())
+    except tkinter.TclError:
+        return False
+
+
+def test_a_leaked_window_is_destroyed_at_teardown():
+    """WL-1 — a window a test does not destroy is destroyed for it.
+
+    This is the net beneath every test, including one that fails an assertion
+    before reaching its own destroy() — which is not hypothetical: a failing
+    test in test_ui_presence leaked its root and the next test needing an image
+    died with `image "pyimage31" doesn't exist`.
+    """
+    from conftest import _LIVE_WINDOWS, destroy_windows_created_since
+
+    before = set(_LIVE_WINDOWS)
+    leaked = ctk.CTk()                      # deliberately never destroyed here
+    assert leaked in _LIVE_WINDOWS, "the guard did not register a new window"
+
+    destroyed = destroy_windows_created_since(before)
+
+    assert destroyed >= 1
+    assert not _is_alive(leaked), "the leaked window survived the sweep"
+
+
+def test_the_sweeper_leaves_earlier_windows_alone():
+    """WL-2 — only windows created during this test are swept.
+
+    Every window fixture in this suite is function-scoped, but if one were ever
+    module- or session-scoped this is the assertion that would catch the
+    sweeper tearing down something a later test still needed.
+    """
+    from conftest import _LIVE_WINDOWS, destroy_windows_created_since
+
+    keep = ctk.CTk()
+    try:
+        snapshot = set(_LIVE_WINDOWS)       # taken AFTER `keep` exists
+        transient = ctk.CTkToplevel(keep)
+
+        destroy_windows_created_since(snapshot)
+
+        assert _is_alive(keep), "the sweeper destroyed a pre-existing window"
+        assert not _is_alive(transient)
+    finally:
+        keep.destroy()
+
+
+def test_the_sweeper_survives_a_root_destroyed_with_its_children():
+    """WL-3 — destroying a root destroys its children, so the child's turn raises.
+
+    That is the normal case, not a fault, and it must not break the sweep or
+    stop later windows being cleaned up.
+    """
+    from conftest import _LIVE_WINDOWS, destroy_windows_created_since
+
+    snapshot = set(_LIVE_WINDOWS)
+    root = ctk.CTk()
+    ctk.CTkToplevel(root)                   # will already be gone by its turn
+    unrelated = ctk.CTk()
+
+    destroyed = destroy_windows_created_since(snapshot)
+
+    assert destroyed >= 1
+    assert not _is_alive(root)
+    assert not _is_alive(unrelated), (
+        "a raise while destroying one window stopped the rest being swept"
+    )
+
+
+def test_raw_tkinter_windows_are_hidden_and_registered_too():
+    """WL-5 — tk.Tk and tk.Toplevel, not just the customtkinter pair.
+
+    tests/test_app_icon.py builds three raw tk.Tk roots. They were destroyed,
+    so they never leaked, but the guard patched only ctk.CTk and
+    ctk.CTkToplevel — so those three got neither the alpha nor the withdraw and
+    each one flashed a real window on screen.
+    """
+    import tkinter as tk
+
+    from conftest import _LIVE_WINDOWS
+
+    root = tk.Tk()
+    try:
+        assert root in _LIVE_WINDOWS, "a raw tk.Tk was not registered for cleanup"
+        assert root.state() == "withdrawn", "a raw tk.Tk was left on screen"
+        assert float(root.attributes("-alpha")) == 0.0
+
+        child = tk.Toplevel(root)
+        assert child in _LIVE_WINDOWS, "a raw tk.Toplevel was not registered"
+        assert child.state() == "withdrawn"
+    finally:
+        root.destroy()
+
+
+def test_no_helper_builds_a_window_the_suite_cannot_reach():
+    """WL-4 — every window built in tests/ goes through the patched classes.
+
+    A helper that reached Tk another way — say `tkinter.Tk` imported under a
+    different name, or a widget class not in the patched list — would be
+    invisible to both the hiding and the sweeping. Parsed rather than grepped,
+    so a name in a comment or a docstring cannot satisfy it.
+    """
+    import ast
+    import pathlib
+
+    allowed = {"CTk", "CTkToplevel", "Tk", "Toplevel"}
+    found = set()
+    for path in sorted(pathlib.Path("tests").glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+            if name in allowed:
+                found.add(name)
+
+    assert found, "the scan found no window constructions at all — it is broken"
+    assert found <= allowed, (
+        f"tests build windows the guard does not patch: {sorted(found - allowed)}"
+    )
+
+
+@pytest.mark.parametrize("cls_name", ["CTk", "CTkToplevel"])
+def test_deiconify_puts_the_window_back_out_of_sight(cls_name):
+    """A window that maps itself must not stay mapped.
+
+    Application code calls deiconify — ItemEditorDialog._finalize_dialog_window
+    does it for every dialog it builds — so a window conftest withdrew at
+    construction mapped itself again moments later and stayed that way.
+    Invisible at alpha 0, but a real on-screen window to the WindowServer:
+    measured at 30 alive at once mid-run, `onscreen=True, alpha=0.0`.
+
+    The re-withdraw runs after the call through, so the layout the deiconify
+    was needed for has already resolved. Silencing deiconify outright is what
+    hung test_item_editor_sash, and this is deliberately not that.
+    """
+    cls = getattr(ctk, cls_name)
+    assert getattr(getattr(cls, "deiconify"), "_gmd_rewithdraws", False) is True, (
+        f"{cls_name}.deiconify does not put the window back out of sight"
+    )
+
+
+def test_a_deiconified_window_is_withdrawn_again():
+    """The behaviour, not just the marker."""
+    root = ctk.CTk()
+    try:
+        root.deiconify()
+        assert root.state() == "withdrawn", (
+            "deiconify left the window mapped; it stays that way until destroyed"
+        )
+    finally:
+        root.destroy()
