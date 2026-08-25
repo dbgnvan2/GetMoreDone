@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import customtkinter as ctk
+from contextlib import contextmanager
 from datetime import date, timedelta
 from typing import Optional, TYPE_CHECKING
 
@@ -81,6 +82,57 @@ def _write_topmost(window, value: bool) -> None:
         pass
 
 
+def _suspend_topmost(parent) -> bool:
+    """Lower the parent's always-on-top, counting nesting. True if it took.
+
+    The depth counter is not decoration. Without it, a second modal opening
+    over an already-suspended parent reads -topmost as False, decides there is
+    nothing to do, and registers no restore — and then the FIRST modal's
+    restore raises the parent back over the second one, which is still holding
+    grab_set(). That is the reported bug, rebuilt out of the fix for it.
+    """
+    if parent is None:
+        return False
+    depth = getattr(parent, "_gmd_topmost_depth", 0)
+    if depth == 0:
+        if not _read_topmost(parent):
+            return False
+        parent._gmd_topmost_saved = True
+        _write_topmost(parent, False)
+    parent._gmd_topmost_depth = depth + 1
+    return True
+
+
+def _resume_topmost(parent) -> None:
+    """Give the flag back, but only when the last modal over it has gone."""
+    depth = getattr(parent, "_gmd_topmost_depth", 0)
+    if depth <= 0:
+        return
+    depth -= 1
+    parent._gmd_topmost_depth = depth
+    if depth == 0 and getattr(parent, "_gmd_topmost_saved", False):
+        parent._gmd_topmost_saved = False
+        _write_topmost(parent, True)
+
+
+@contextmanager
+def parent_topmost_suspended(parent):
+    """For a blocking modal with no window of its own to bind to.
+
+    ``tkinter.messagebox`` builds and tears down its own Toplevel inside one
+    call, so there is no <Destroy> to hang a restore on. These are the error
+    dialogs on the failure path of every timer ending — precisely where an
+    invisible modal behind an always-on-top window is worst, because something
+    has already gone wrong and the user is being told nothing.
+    """
+    taken = _suspend_topmost(parent)
+    try:
+        yield
+    finally:
+        if taken:
+            _resume_topmost(parent)
+
+
 def suspend_parent_topmost(dialog, parent) -> None:
     """Drop the parent's always-on-top for as long as ``dialog`` is up.
 
@@ -102,23 +154,21 @@ def suspend_parent_topmost(dialog, parent) -> None:
     Restores on the dialog's own ``<Destroy>``, so an ending that raises
     part-way through still gives the timer its flag back.
     """
-    if parent is None or not _read_topmost(parent):
+    if not _suspend_topmost(parent):
         return
-
-    _write_topmost(parent, False)
 
     def restore(event=None):
         # <Destroy> fires for every descendant widget as the dialog comes
         # apart; only the dialog's own is the end of its life.
         if event is not None and event.widget is not dialog:
             return
-        _write_topmost(parent, True)
+        _resume_topmost(parent)
 
     try:
         dialog.bind("<Destroy>", restore, add="+")
     except Exception:
         # Could not arm the restore, so do not leave the parent demoted.
-        _write_topmost(parent, True)
+        _resume_topmost(parent)
 
 
 def _center_on(dialog, parent, width: int, height: int) -> None:
@@ -335,7 +385,9 @@ class NextActionWindow(TrackedAfterMixin, ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to save notes: {e}")
+            with parent_topmost_suspended(self.parent_window):
+                messagebox.showerror("Error", f"Failed to save notes: {e}",
+                                     parent=self)
 
     def refresh_notes(self):
         """Refresh notes textbox from the current item data."""

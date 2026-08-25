@@ -17,7 +17,8 @@ from ..theme import button_style, semantic_colors, status_text_color
 from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.music_library import select_track
 from ..utils.icon_loader import load_music_note_icon
-from .timer_window_dialogs import CompletionNoteDialog, NextActionWindow
+from .timer_window_dialogs import (
+    CompletionNoteDialog, NextActionWindow, parent_topmost_suspended)
 from ..utils.after_tracker import TrackedAfterMixin
 from .timer_window_reward import TimerRewardMixin
 
@@ -495,14 +496,22 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror("Error", f"Failed to save notes: {e}")
+            with parent_topmost_suspended(self):
+                messagebox.showerror("Error", f"Failed to save notes: {e}",
+                                     parent=self)
 
     def _show_error_dialog(self, message: str):
         """Best-effort error dialog for UI flows that may race window teardown."""
         try:
             import tkinter.messagebox as messagebox
 
-            messagebox.showerror("Error", message)
+            # The timer is always-on-top, so without this the error opens
+            # BEHIND it holding a grab — every button dead and nothing on
+            # screen to say why. This is the handler for all four endings, so
+            # it is the worst possible place for that (P5: the same class as
+            # the four dialogs, and it was left out of the first sweep).
+            with parent_topmost_suspended(self):
+                messagebox.showerror("Error", message, parent=self)
         except tk.TclError as exc:
             print(f"[ERROR] Could not show error dialog: {exc}")
 
@@ -554,8 +563,10 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             import traceback
             traceback.print_exc()
             import tkinter.messagebox as messagebox
-            messagebox.showerror(
-                "Error", f"Failed to open Next Action Window: {e}")
+            with parent_topmost_suspended(self):
+                messagebox.showerror(
+                    "Error", f"Failed to open Next Action Window: {e}",
+                    parent=self)
 
     def format_time(self, seconds: int) -> str:
         """Format seconds as MM:SS."""
