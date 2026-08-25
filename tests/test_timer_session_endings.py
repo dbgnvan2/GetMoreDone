@@ -494,3 +494,29 @@ def test_t61_the_button_says_what_it_does(root, manager, hushed):
 
     assert timer.continue_button.cget("text") == "Complete & Create Follow Up"
     timer.destroy()
+
+
+def test_t12_a_failed_destroy_is_reported_not_swallowed(root, manager, hushed,
+                                                        monkeypatch, capsys):
+    """T1.2 — a window that did not close must not be reported as closed.
+
+    The handler read "Window destruction completed with minor error (safe to
+    ignore)" and carried on whatever had failed. That is a success decided from
+    the reassuring half of the story: the window was still on screen, still
+    taking clicks, and nothing said so. It was not this bug — chasing it cost
+    an afternoon precisely because it could not be ruled out.
+    """
+    item = _item(manager)
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+
+    monkeypatch.setattr(TimerWindow, "destroy",
+                        lambda self: (_ for _ in ()).throw(RuntimeError("nope")))
+    timer._cleanup_and_destroy()
+
+    out = capsys.readouterr().out
+    assert "still on screen after destroy()" in out, (
+        "the window survived and the log did not say so"
+    )
+    assert "safe to ignore" not in out
+    monkeypatch.undo()
+    timer.destroy()
