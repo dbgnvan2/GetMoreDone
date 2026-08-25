@@ -122,23 +122,28 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 - **Complete & Create Follow Up** button available when timer is stopped
 - Clicking it:
   1. Shows "Completion Note" dialog for current work
-  2. Saves work log entry for time block
-  3. Marks current action item as completed
-  4. Creates duplicate action item with:
-     - Same title, who, priority factors, category, group
+  2. Saves work log entry for time block — this is the "Complete" in the
+     button's name. The current action item is **not** completed; only "Done"
+     completes an action item
+  3. Creates duplicate action item with:
+     - Title = "<original title> - Followup", added once however many times an
+       item ends this way
+     - Same who, priority factors, category, group
      - Start date = the original item's start date, unchanged
      - Due date = the original item's due date, unchanged
      - Notes/description = "Add your next steps and set the dates and priority"
      - Status = "open"
      - New unique ID
-  5. Opens the follow-up in the item editor, where those fields are filled in
+  4. Opens the follow-up in the item editor, where those fields are filled in
 - The Completion Note dialog is optional but must be presented
 
 Revised 2026-08-25. The "Next Steps Note" dialog was removed from this flow: it
 asked for a note and two dates before the follow-up existed, duplicating the
 editor that opens immediately afterwards, and it was the modal that opened
 behind the always-on-top timer and took every click. The +1 day shift went with
-it — a follow-up continues the same work and keeps the same dates. See
+it — a follow-up continues the same work and keeps the same dates. The step
+that completed the current action item went too: the button completes the timer
+record, not the task. See
 docs/implementation_plan_2026-08-25_timer_session_endings.md.
 
 **Acceptance Criteria**:

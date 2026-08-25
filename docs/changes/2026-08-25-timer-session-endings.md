@@ -25,14 +25,25 @@ Alongside it, Complete & Create Follow Up was rebuilt to the user's spec: no
 Next Steps dialog, the follow-up carries a prompt in its description and the
 original item's own dates, and its editor is where the flow ends.
 
+Corrected after a first pass: **"Complete" in that button's name is the timer
+record, not the task.** The ending no longer calls `complete_action_item` — only
+"Done" closes an Action Item — and the follow-up is titled
+`"<original> - Followup"`. The correction carried a consequence the user did not
+have to name: the pending state from a failed Done was deliberately carried into
+this ending so it would record the completion, and an ending that now leaves the
+item open must not do that, or the project counter advances for a task that is
+still open. It is discarded here as `save_and_close_action` discards it.
+
 ## Files changed
 
 - `src/getmoredone/screens/timer_window_dialogs.py` — `suspend_parent_topmost`,
   wired into all four dialogs that hold a grab (P5).
 - `src/getmoredone/screens/timer_window.py` — Next Steps dialog removed from the
-  ending; follow-up keeps the item's dates and gets `FOLLOW_UP_PROMPT`; button
-  renamed; `vps_manager` carried; a silent ending now logs why; a failed
-  `destroy()` is checked against the window instead of called "safe to ignore".
+  ending; the Action Item is no longer completed; follow-up keeps the item's
+  dates, gets `FOLLOW_UP_PROMPT` and a `" - Followup"` title suffix applied at
+  most once; a failed Done is not counted by this ending; button renamed;
+  `vps_manager` carried; a silent ending now logs why; a failed `destroy()` is
+  checked against the window instead of called "safe to ignore".
 - `src/getmoredone/screens/{item_editor,today,upcoming,all_items}.py` —
   `vps_manager` passed to `TimerWindow` from every opener.
 - `tests/test_timer_session_endings.py` — new, 17 tests.
@@ -44,8 +55,8 @@ original item's own dates, and its editor is where the flow ends.
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest -q`
-- Result: PASS — exit code 0, 1523 passed, 7 skipped.
-- Every new test mutation-checked with the verbatim original: nine mutations
+- Result: PASS — exit code 0, 1527 passed, 7 skipped.
+- Every new test mutation-checked with the verbatim original: thirteen mutations
   across the two source files, all red, all restored green.
 
 ## Risks / Known gaps
