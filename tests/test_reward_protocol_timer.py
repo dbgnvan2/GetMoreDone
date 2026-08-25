@@ -1589,11 +1589,32 @@ def test_the_music_buttons_are_labelled_consistently(root, manager, quiet):
     try:
         assert timer.music_play_button.cget("text") == "▶  Play"
         assert timer.music_pause_button.cget("text") == "⏸  Pause"
-        # Every relabel goes through the constants, so a fresh window and one
-        # that has been through a play/pause cycle read the same.
-        timer.music_play_button.configure(text=timer.MUSIC_PLAY_TEXT)
-        timer.music_pause_button.configure(text=timer.MUSIC_RESUME_TEXT)
-        assert timer.music_pause_button.cget("text") == "▶  Resume"
+
+        # Driven through the real relabel paths, not by configuring the button
+        # with the constant and asserting the constant back — which is a test
+        # agreeing with itself, and stayed green with all nine relabel sites
+        # reverted to their old one-space literals.
+        #
+        # pygame is stubbed rather than the label logic: pause_music gates on a
+        # live mixer, which the suite never initialises.
+        import pygame
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(pygame.mixer, "get_init", lambda: True)
+            mp.setattr(pygame.mixer.music, "get_busy", lambda: True)
+            mp.setattr(pygame.mixer.music, "pause", lambda: None)
+            timer.music_is_playing = True
+            timer.pause_music()
+            assert timer.music_pause_button.cget("text") == "▶  Resume", (
+                "a paused music button reads differently from a fresh one"
+            )
+
+            mp.setattr(pygame.mixer.music, "get_busy", lambda: False)
+            mp.setattr(pygame.mixer.music, "unpause", lambda: None)
+            timer.pause_music()
+            assert timer.music_pause_button.cget("text") == "⏸  Pause", (
+                "a resumed music button reads differently from a fresh one"
+            )
     finally:
         timer.destroy()
 
@@ -1728,8 +1749,12 @@ def test_editing_the_deliverable_mid_session_updates_the_label(root, manager, qu
             "the label still shows the old deliverable after an edit"
         )
         assert manager.get_action_item(item.id).deliverable == "Second idea"
-        # The snapshot is what the session was started for, and does not move.
-        assert timer.session_deliverable == "First idea"
+        # The snapshot moves too. An explicit edit here redefines what this
+        # session is for, and the label, the savor prompt and the work log must
+        # not disagree about that. RP-4.5g still holds — it protects against the
+        # deliverable being changed *elsewhere*, which does not come through
+        # this method (see test_rp45g_snapshot_survives_a_later_edit...).
+        assert timer.session_deliverable == "Second idea"
     finally:
         timer.destroy()
 
@@ -1852,3 +1877,140 @@ def test_clearing_the_notes_box_clears_the_description(root, manager, quiet):
     assert manager.get_action_item(item.id).description is None, (
         "blanking the notes box left the old description in place"
     )
+
+
+def test_editing_the_deliverable_moves_the_savor_prompt_too(root, manager, quiet):
+    """Label, savor prompt and work log must all name the same deliverable.
+
+    The label was moved off the frozen snapshot and the savor prompt was not,
+    so an edit mid-session left the prompt asking the user to sit with a
+    deliverable they had already replaced — the same defect one display site
+    over.
+    """
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    timer.fire_celebration = lambda kind: None
+
+    timer.start_timer()
+    FakeDeliverableDialog.next_result = "Second idea"
+    timer.edit_deliverable()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+
+    assert timer.deliverable_label.cget("text") == "Second idea"
+
+    timer.done_action()
+
+    assert FakeSavorDialog.shown == ["Second idea"], (
+        f"the savor prompt named {FakeSavorDialog.shown} after the user changed "
+        "the deliverable to 'Second idea'"
+    )
+    assert manager.get_work_logs(item.id)[0].deliverable_snapshot == "Second idea"
+
+
+def test_editing_the_deliverable_restarts_the_clock_afterwards(root, manager, quiet):
+    """The cancel half was covered; the restart — the risky half — was not.
+
+    Deleting the whole `finally` body left the file green, so a timer left
+    permanently dead (no tick scheduled, state still "running", status still
+    reading "Working...") was undetectable.
+    """
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    try:
+        timer.start_timer()
+        FakeDeliverableDialog.next_result = "Second idea"
+
+        timer.edit_deliverable()
+
+        assert timer.timer_state == "running"
+        assert timer.update_timer_id is not None, (
+            "the clock was cancelled for the dialog and never restarted — the "
+            "timer looks like it is running and is not"
+        )
+        timer._cancel_pending_timer()
+    finally:
+        timer.destroy()
+
+
+def test_editing_before_the_timer_starts_does_not_offer_to_start_it(root, manager, quiet):
+    """Edit is reachable before Start, and it does not start anything."""
+    item, _board = _linked(manager, deliverable="First idea")
+    timer = _timer(root, manager, item)
+    try:
+        assert timer.timer_state == "stopped", "precondition: not started"
+        FakeDeliverableDialog.next_result = "Second idea"
+
+        timer.edit_deliverable()
+
+        assert FakeDeliverableDialog.calls[-1]["confirm_text"] == "Save", (
+            "the Edit dialog offered to 'Start' a session it does not start"
+        )
+        assert timer.timer_state == "stopped", "editing started the timer"
+    finally:
+        timer.destroy()
+
+
+def test_cancel_after_a_failed_done_does_not_count_a_completion(root, manager, quiet):
+    """The sibling of the Save & Close case, which was the only one covered.
+
+    Deleting _discard_pending_completion from cancel_action left the file green,
+    so Cancel was one line from silently regressing to the defect just fixed.
+    """
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    try:
+        timer.fire_celebration = lambda kind: None
+        timer._show_error_dialog = lambda message: None
+        timer.start_timer()
+        timer.work_seconds_elapsed = 25 * 60
+
+        real = manager.create_work_log
+        calls = []
+
+        def flaky(log):
+            calls.append(log)
+            if len(calls) == 1:
+                raise RuntimeError("database is locked")
+            return real(log)
+
+        manager.create_work_log = flaky
+        timer.done_action()
+        assert timer._done_pressed is True, "precondition: the Done is still pending"
+
+        timer.stop_timer()
+        timer.cancel_action()
+
+        assert manager.get_action_item(item.id).status == "open"
+        assert manager.get_project_board(board.id).savor_count == 0, (
+            "Cancel counted a completion for an item it left open"
+        )
+        assert manager.get_work_logs(item.id)[0].deliverable_completed is False
+    finally:
+        timer.destroy()
+
+
+def test_clearing_the_notes_box_clears_it_on_every_ending(root, manager, quiet):
+    """Four endings, one answer to what an empty notes box means.
+
+    Cancel and Save & Close cleared the description; Done and Complete & Carry
+    Forward kept it, because those two guarded on `if timer_notes:`. Same
+    gesture, opposite outcomes, depending on which button you reached for.
+    """
+    for ending in ("cancel_action", "save_and_close_action", "done_action"):
+        item, _board = _linked(manager)
+        item.description = "something I no longer want"
+        manager.update_action_item(item)
+
+        timer = _timer(root, manager, item)
+        timer.fire_celebration = lambda kind: None
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        timer.work_seconds_elapsed = 25 * 60
+        timer.next_steps_text.delete("1.0", "end")
+
+        getattr(timer, ending)()
+
+        assert manager.get_action_item(item.id).description is None, (
+            f"{ending} kept a description the user had cleared"
+        )
