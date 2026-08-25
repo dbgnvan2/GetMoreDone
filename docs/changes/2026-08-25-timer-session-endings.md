@@ -52,12 +52,49 @@ still open. It is discarded here as `save_and_close_action` discards it.
 - `docs/USER_GUIDE.md`, `docs/action-timer-requirements.md`, `BACKLOG.md`,
   `docs/implementation_plan_2026-08-25_timer_session_endings.md`.
 
+## Review
+
+Two `learning-qa` passes, both against the full range rather than the parts I
+thought needed it.
+
+**First sweep** (17 commits): 11 findings, 3 high.
+
+- **12.4 MB of binaries in history.** A `git add -A` had committed a PDF and a
+  zip that were never part of this work; a later commit removed them from the
+  tree, not from history. Pushing would have made them permanent on a branch
+  shared between two machines. Stripped with `filter-branch` over the unpushed
+  range; the resulting tree is byte-identical to the backup ref.
+- **A guard that reported green over a live defect.** `test_t31` patched
+  `NextStepsDialog` on `timer_window_dialogs`, but the defect resolved the name
+  through `timer_window`'s own globals. I had "mutation-checked" it with a
+  function-local import — a paraphrase, which is the P27 corollary exactly. It
+  was green against a verbatim restoration of the defect.
+- **The P5 sweep stopped at the file boundary.** `tkinter.messagebox` is a modal
+  that grabs, and three of its four sites are the `except` handler of a timer
+  ending — so the symptom this batch exists to remove was still live precisely
+  where something has already gone wrong.
+
+**Re-sweep** (the 4 fix commits): 4 more findings, every one inside code written
+in response to the first sweep. The new AST guard had three blind spots, two
+proved by mutation: it matched only dotted `messagebox.showerror` so a bare name
+slipped past its exact-count assertion, it used `ast.walk` so a deferred call
+inside the `with` counted as guarded, and it never compared the suspended window
+to the `parent=` window.
+
+Stopped there. The re-sweep's worst finding was medium-high, not high, and this
+repo's budget is one further pass only after a high-severity finding — each fix
+pass is new unreviewed surface, and one of the re-sweep's own findings was a
+guard I had added an hour earlier.
+
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest -q`
-- Result: PASS — exit code 0, 1527 passed, 7 skipped.
-- Every new test mutation-checked with the verbatim original: thirteen mutations
-  across the two source files, all red, all restored green.
+- Result: PASS — exit code 0, 1533 passed, 7 skipped.
+- Every new test mutation-checked with the verbatim original: twenty-six
+  mutations across the two source files and conftest, all red, all restored
+  green. Two mutations that stayed *green* were treated as findings against the
+  test, not the code: `test_t31` (fixed) and an idempotency flag guarding a path
+  Tk cannot reach (removed rather than left untestable).
 
 ## Risks / Known gaps
 
@@ -73,8 +110,16 @@ still open. It is discarded here as `save_and_close_action` discards it.
 - **Follow-ups inherit late dates.** An item already past its due date produces a
   follow-up already past its due date. Raised, confirmed as intended, pinned by
   `test_t22_a_past_dated_item_yields_a_past_dated_followup`.
-- Two findings deferred to `BACKLOG.md`: the unguarded second timer window, and
-  `NextStepsDialog` now being dead code.
+- Five findings deferred to `BACKLOG.md`: the unguarded second timer window,
+  `NextStepsDialog` now being dead code, the follow-up never inheriting its
+  project links or weekly lineage, `_cleanup_and_destroy`'s surviving-window
+  detection having no consumer, and a test that fails on an ending path hanging
+  the run on a real modal.
+- **Open, needs a decision:** an item continued on three consecutive days now
+  produces three siblings all titled `"<original> - Followup"`, all with the
+  same inherited dates and the same prompt description, all visible together in
+  Today. Each ingredient was confirmed separately; the combination was not. A
+  date or counter in the suffix would resolve it.
 
 ## Next agent actions
 
