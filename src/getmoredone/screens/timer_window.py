@@ -29,6 +29,27 @@ FOLLOW_UP_PROMPT = "Add your next steps and set the dates and priority"
 # Steps dialog first. It now does exactly this.
 CONTINUE_BUTTON_TEXT = "Complete & Create Follow Up"
 
+# Appended, not prefixed. Every follow-up sharing a leading word would sort them
+# into one block away from the work they continue; on the end, a follow-up stays
+# next to its original in any list ordered by title.
+FOLLOW_UP_SUFFIX = " - Followup"
+
+
+def follow_up_title(title: str) -> str:
+    """The follow-up's title: the original's, marked as a follow-up.
+
+    Tests: tests/test_timer_session_endings.py::test_t71_the_followup_is_marked_in_its_title
+           tests/test_timer_session_endings.py::test_t72_a_followup_of_a_followup_is_not_marked_twice
+
+    A follow-up of a follow-up keeps one suffix. Continue is for work that runs
+    over several days, so the same item can end this way on Monday, Tuesday and
+    Wednesday, and "Draft the report - Followup - Followup - Followup" is what
+    unconditional appending gives by Wednesday.
+    """
+    if title.endswith(FOLLOW_UP_SUFFIX):
+        return title
+    return f"{title}{FOLLOW_UP_SUFFIX}"
+
 
 class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
     """Floating timer window for action items.
@@ -1134,7 +1155,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
             new_item = ActionItem(
                 who=item.who,
-                title=item.title,
+                title=follow_up_title(item.title),
                 # Not item.description: the follow-up is the *next* piece of
                 # work, and copying the finished item's notes into it buries
                 # that under a page the user has to clear first.
@@ -1166,25 +1187,28 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             print(
                 f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
-            # Step 4: Save Current Action Item as completed (with work log).
-            # Routed through save_work_log rather than building a second WorkLog
-            # here. Two writers of the same row had already drifted: this one
-            # dropped deliverable_snapshot, so the identical session ended with
-            # Continue recorded nothing about what it was for while Stop ->
-            # Finished recorded it.
+            # Step 4: Record the session. Routed through save_work_log rather
+            # than building a second WorkLog here. Two writers of the same row
+            # had already drifted: this one dropped deliverable_snapshot, so the
+            # identical session ended with Continue recorded nothing about what
+            # it was for while Stop -> Finished recorded it.
             #
-            # The reward columns are normally empty here, because Continue does
-            # not set _pending_reward. One case fills them and should: Done was
-            # pressed, the save failed, and the user ended the session with
-            # Continue instead of retrying Done. The flags survive a failed save
-            # precisely so that retry records the completion, and ending by
-            # Continue is still that same completed deliverable.
-            self.save_work_log(completion_note)
-            print(f"[DEBUG] Step 4: Work log saved")
+            # The "Complete" in this button's name is the *timer record* — the
+            # session ends and is written down. The Action Item stays open: it
+            # is the same piece of work, now with a follow-up beside it. Only
+            # "Done" completes an Action Item.
+            #
+            # So the pending state from a failed Done is dropped, exactly as
+            # save_and_close_action drops it and for the same reason: carrying
+            # it here would write deliverable_completed=1 and advance the
+            # project counter while the item stayed open, and the board would
+            # claim a completion the item does not record.
+            self._discard_pending_completion()
 
-            db_manager.complete_action_item(item.id)
+            self.save_work_log(completion_note)
+            print(f"[DEBUG] Step 4: Session recorded; the Action Item stays open")
+
             notify_weekly_tactic_changes(db_manager)
-            print(f"[DEBUG] Step 4: Current Action Item saved as completed")
 
             # The Next Steps dialog used to run here, asking for a note and two
             # dates before the follow-up existed. It was the modal the user
