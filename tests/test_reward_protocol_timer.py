@@ -392,7 +392,7 @@ def test_rp43c_stop_and_completion_frame_survive_the_break_change(root, manager,
         # nothing: the window went away and the item left Today.
         assert timer.finished_button.cget("text") == "Save Related - Close Timer"
         assert timer.cancel_button.cget("text") == "Cancel Timer"
-        assert timer.continue_button.cget("text") == "Complete & Open Follow Up"
+        assert timer.continue_button.cget("text") == "Complete & Create Follow Up"
         assert timer.start_button.cget("state") == "normal"
         assert not _is_visible(timer.break_choice_frame)
     finally:
@@ -1093,16 +1093,11 @@ def test_rp45_continue_records_the_deliverable_and_carries_it_forward(root, mana
     item, board = _linked(manager)
     timer = _timer(root, manager, item)
 
-    class NoNextSteps:
-        def __init__(self, parent):
-            self.result = None
-
     timer.start_timer()
     timer._cancel_pending_timer()
     timer.work_seconds_elapsed = 25 * 60
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(tw, "NextStepsDialog", NoNextSteps)
         mp.setattr("src.getmoredone.screens.item_editor.ItemEditorDialog",
                    lambda *a, **k: None)
         timer.continue_action()

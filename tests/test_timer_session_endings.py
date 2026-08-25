@@ -323,3 +323,169 @@ def test_t54_every_grabbing_dialog_suspends_the_parents_topmost():
     assert unhardened == [], (
         f"these hold a grab without dropping the parent's always-on-top: {unhardened}"
     )
+
+
+# --- T2 / T3 / T6 : Complete & Create Follow Up ------------------------------
+
+def _continue_from(root, manager, item, vps_manager=None):
+    """Run the ending, with the two dialogs it still opens driven for us."""
+    timer = TimerWindow(root, manager, item, rng=random.Random(1),
+                        vps_manager=vps_manager)
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+    _dismiss_the_note_dialog(timer)
+    timer.continue_action()
+    return timer
+
+
+def _child_of(manager, item):
+    kids = manager.get_children(item.id)
+    assert len(kids) == 1, f"expected one follow-up, found {len(kids)}"
+    return kids[0]
+
+
+def test_t21_the_followup_keeps_the_items_dates(root, manager, hushed,
+                                                mapped_windows, monkeypatch):
+    """T2.1 — no +1 shift. The follow-up continues the same day's work."""
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager, start_date="2026-08-24", due_date="2026-08-27")
+    _continue_from(root, manager, item)
+
+    child = _child_of(manager, item)
+    assert (child.start_date, child.due_date) == ("2026-08-24", "2026-08-27"), (
+        f"the follow-up was re-dated to {child.start_date}/{child.due_date}"
+    )
+
+
+def test_t22_a_past_dated_item_yields_a_past_dated_followup(
+        root, manager, hushed, mapped_windows, monkeypatch):
+    """T2.2 — inheriting the dates means a late item begets a late follow-up.
+
+    Confirmed as intended when it was raised. Pinned so a later pass does not
+    read it as a bug and quietly re-introduce a shift.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager, start_date="2020-01-06", due_date="2020-01-06")
+    _continue_from(root, manager, item)
+
+    child = _child_of(manager, item)
+    assert (child.start_date, child.due_date) == ("2020-01-06", "2020-01-06")
+
+
+def test_t23_the_followup_description_is_the_prompt(
+        root, manager, hushed, mapped_windows, monkeypatch):
+    """T2.3 — a prompt to fill in, not a copy of the finished item's notes."""
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager, description="everything I already did today")
+    _continue_from(root, manager, item)
+
+    child = _child_of(manager, item)
+    assert child.description == tw.FOLLOW_UP_PROMPT, (
+        f"the follow-up opened saying {child.description!r}"
+    )
+
+
+def test_t31_the_next_steps_dialog_is_gone(root, manager, hushed,
+                                           mapped_windows, monkeypatch):
+    """T3.1 — the ending builds no NextStepsDialog.
+
+    Asserted by intercepting the class, not by reading the source: the import
+    could be removed while a call survived under another name, and a source
+    grep would call that clean.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    from src.getmoredone.screens import timer_window_dialogs as dlg
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    built = []
+    monkeypatch.setattr(dlg, "NextStepsDialog",
+                        lambda *a, **k: built.append(a) or pytest.fail(
+                            "the ending still opens a Next Steps dialog"))
+
+    item = _item(manager)
+    _continue_from(root, manager, item)
+    assert built == []
+
+
+def test_t32_the_followup_editor_opens_with_a_vps_manager(
+        root, manager, hushed, mapped_windows, monkeypatch):
+    """T3.2 — the follow-up is what the flow ends on, and it is not crippled.
+
+    Captures the boundary call's kwargs rather than checking the widget was
+    built: a vps_manager the editor is never handed is the same as none (P25).
+    """
+    from src.getmoredone.screens import item_editor as ie
+
+    opened = {}
+
+    def fake_editor(parent, db, item_id, **kwargs):
+        opened["item_id"] = item_id
+        opened.update(kwargs)
+
+    monkeypatch.setattr(ie, "ItemEditorDialog", fake_editor)
+
+    sentinel = object()
+    item = _item(manager)
+    _continue_from(root, manager, item, vps_manager=sentinel)
+
+    child = _child_of(manager, item)
+    assert opened.get("item_id") == child.id, (
+        "the flow did not end on the follow-up's editor"
+    )
+    assert opened.get("vps_manager") is sentinel, (
+        "the follow-up's editor was opened without a vps_manager"
+    )
+
+
+def test_t33_continue_writes_log_completes_original_creates_child(
+        root, manager, hushed, mapped_windows, monkeypatch):
+    """T3.3 — all three records, from one press."""
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager)
+    _continue_from(root, manager, item)
+
+    logs = manager.get_work_logs(item.id)
+    assert len(logs) == 1, "the session was not recorded"
+    assert logs[0].minutes == 25
+    assert manager.get_action_item(item.id).status == "completed"
+    assert _child_of(manager, item).status == "open"
+
+
+def test_t41_a_silent_ending_says_so(root, manager, hushed, mapped_windows,
+                                     capsys):
+    """T4.1 — an ending that records nothing must not do it quietly.
+
+    This is the diagnostic whose absence made the original report take four
+    attempts to read: a completion and a follow-up existed in the database
+    with no work log, and nothing anywhere said why.
+    """
+    item = _item(manager)
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+    assert timer.start_timestamp is None, "this window never started"
+
+    timer.save_work_log("a note nobody will see")
+
+    assert manager.get_work_logs(item.id) == []
+    assert "no session to log" in capsys.readouterr().out, (
+        "an ending recorded nothing and said nothing about it"
+    )
+    timer.destroy()
+
+
+def test_t61_the_button_says_what_it_does(root, manager, hushed, mapped_windows):
+    """T6.1 — it creates a follow-up; it no longer opens a Next Steps dialog."""
+    item = _item(manager)
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+
+    assert timer.continue_button.cget("text") == "Complete & Create Follow Up"
+    timer.destroy()

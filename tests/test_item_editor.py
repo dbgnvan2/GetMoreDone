@@ -445,12 +445,14 @@ def test_start_timer_opens_timer_after_successful_save(monkeypatch):
 
     item = SimpleNamespace(id="abc", status="open")
     db = object()
+    vps = object()
     def closer():
         return None
     dialog = SimpleNamespace(
         save_item=lambda: True,
         item=item,
         db_manager=db,
+        vps_manager=vps,
         _on_timer_closed=closer,
         _current_timer_field_values=lambda: {
             "description": "", "next_action": "", "planned_minutes": ""},
@@ -463,6 +465,10 @@ def test_start_timer_opens_timer_after_successful_save(monkeypatch):
     assert args[1] is db              # db_manager
     assert args[2] is item           # the item being edited
     assert kwargs.get("on_close") is closer
+    # The timer carries it only so the follow-up's editor can be given one; an
+    # editor reached through the timer used to lose its weekly-tactic controls
+    # because nothing on this path passed it (P25).
+    assert kwargs.get("vps_manager") is vps
     # A snapshot is captured so the on-close reload can avoid clobbering edits.
     assert hasattr(dialog, "_pre_timer_field_values")
 
