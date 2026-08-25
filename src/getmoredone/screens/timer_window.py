@@ -366,7 +366,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.finished_button = ctk.CTkButton(
             self.completion_frame,
-            text="Save & Close",
+            text="Save Related - Close Timer",
             command=self.save_and_close_action,
             **button_style("primary"),
         )
@@ -374,7 +374,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.cancel_button = ctk.CTkButton(
             self.completion_frame,
-            text="Cancel",
+            text="Cancel Timer",
             command=self.cancel_action,
             **button_style("secondary"),
         )
@@ -382,7 +382,7 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
 
         self.continue_button = ctk.CTkButton(
             self.completion_frame,
-            text="Complete & Carry Forward →",
+            text="Complete & Open Follow Up",
             command=self.continue_action,
             **button_style("secondary"),
         )
@@ -987,14 +987,19 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
             self._show_error_dialog(f"Failed to save the session: {e}")
 
     def cancel_action(self):
-        """Go back without recording a session note, keeping the time and notes.
+        """Close the timer and leave the Action Item exactly as it was.
 
-        Purpose: the escape hatch that still tells the truth. Time spent is a
-                 fact whether or not the user wants to write anything about it,
-                 and notes typed into this window are edits to the action item
-                 rather than part of the session record — discarding either
-                 silently would be the window lying about what Cancel did.
-        Tests:   tests/test_reward_protocol_timer.py::test_cancel_still_logs_the_time_and_keeps_the_notes
+        Purpose: Cancel means nothing happened. No session record, no time, no
+                 note, no completion — the Action Item is untouched.
+        Tests:   tests/test_reward_protocol_timer.py::test_cancel_timer_records_absolutely_nothing
+
+        It used to log the elapsed minutes on the reasoning that time spent is a
+        fact. That is true of a session someone meant to have; it is not what
+        the word Cancel offers. Anyone who wants the time keeps it with
+        "Save Related - Close Timer" instead.
+
+        Notes typed into this window are not saved either, for the same reason —
+        the Notes area has its own Save Notes button for that.
         """
         try:
             if not self.winfo_exists():
@@ -1004,16 +1009,23 @@ class TimerWindow(TimerRewardMixin, ctk.CTkToplevel):
                 self.next_action_window.destroy()
                 self.next_action_window = None
 
-            self._save_notes_to_item()
+            # Nothing is written. The pending state is dropped so a later
+            # session cannot inherit this one's completion.
+            #
+            # start_timestamp is deliberately NOT cleared. Clearing it looked
+            # tidy and was unobservable on the success path — the window is
+            # destroyed a moment later — but on the failure path it destroys
+            # work: if the close raises, the window stays, and a user who then
+            # reaches for "Save Related" would silently get no work log at all,
+            # because save_work_log returns early without a start time.
             self._discard_pending_completion()
-            self.save_work_log(None)
 
             self._close_and_return()
         except Exception as e:
-            print(f"[ERROR] Cancel failed: {e}")
+            print(f"[ERROR] Cancel Timer failed: {e}")
             import traceback
             traceback.print_exc()
-            self._show_error_dialog(f"Failed to close the session: {e}")
+            self._show_error_dialog(f"Failed to close the timer: {e}")
 
     def _discard_pending_completion(self):
         """Forget a Done that never landed. This ending is not a completion.

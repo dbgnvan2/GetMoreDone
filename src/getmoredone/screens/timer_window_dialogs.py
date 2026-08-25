@@ -15,6 +15,42 @@ from ..theme import button_style, status_text_color
 if TYPE_CHECKING:
     from ..db_manager import DatabaseManager
 
+def raise_above_parent(dialog) -> None:
+    """Put a modal above the always-on-top timer, once the window really exists.
+
+    Purpose: setting ``-topmost`` inside ``__init__`` does not stick. Measured:
+             the dialog reads 0 immediately after construction and never
+             recovers, while the timer window it opened from reads 1.
+    Tests:   tests/test_reward_protocol_timer.py::test_every_timer_modal_raises_itself_above_the_timer
+
+    The consequence was the whole window appearing dead. The modal opened
+    *behind* the timer while holding ``grab_set()``, so it was invisible and
+    swallowed every click: Stop then any of the session buttons left the timer
+    sitting there, unresponsive, with nothing on screen to explain why.
+
+    Re-asserting on the next idle cycle, when the window exists, holds.
+    Swallows errors: a dialog dismissed before the callback runs must not raise
+    into the event loop.
+    """
+    def raise_it():
+        try:
+            # Never touch a window that is not on screen. Raising a withdrawn
+            # window is meaningless, and doing it anyway is what made a test run
+            # hammer the window server: the suite withdraws every window, so
+            # this fired hundreds of times against windows nobody could see.
+            if dialog.state() == "withdrawn" or not dialog.winfo_ismapped():
+                return
+            dialog.attributes("-topmost", True)
+            dialog.lift()
+        except Exception:
+            pass
+
+    try:
+        dialog.after(10, raise_it)
+    except Exception:
+        pass
+
+
 def _center_on(dialog, parent, width: int, height: int) -> None:
     """Put ``dialog`` over ``parent``, or leave it where Tk put it.
 
@@ -46,6 +82,7 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         # Appear above always-on-top timer window
         self.attributes('-topmost', True)
         self.grab_set()
+        raise_above_parent(self)
 
         # Center on parent if it still exists
         try:
@@ -138,6 +175,7 @@ class NextActionWindow(ctk.CTkToplevel):
 
         # Make window stay on top
         self.attributes('-topmost', True)
+        raise_above_parent(self)
 
         # Make window resizable
         self.minsize(300, 200)
@@ -273,6 +311,7 @@ class NextStepsDialog(ctk.CTkToplevel):
         # Appear above always-on-top timer window
         self.attributes('-topmost', True)
         self.grab_set()
+        raise_above_parent(self)
 
         # Center on parent if it still exists
         try:
@@ -485,6 +524,7 @@ class DeliverableDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.attributes('-topmost', True)
         self.grab_set()
+        raise_above_parent(self)
         _center_on(self, parent, 480, 280)
 
         ctk.CTkLabel(
@@ -576,6 +616,7 @@ class SavorDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.attributes('-topmost', True)
         self.grab_set()
+        raise_above_parent(self)
         _center_on(self, parent, 460, 300)
 
         ctk.CTkLabel(
