@@ -28,6 +28,7 @@ from src.getmoredone.db_manager import DatabaseManager
 from src.getmoredone.models import ActionItem, ProjectBoard
 from src.getmoredone.reward_protocol import WIRING_THRESHOLD
 from src.getmoredone.screens import timer_window as tw
+from src.getmoredone.screens import timer_window_dialogs as dialogs
 from src.getmoredone.screens import timer_window_reward as twr
 from src.getmoredone.screens.timer_window import TimerWindow
 
@@ -389,9 +390,9 @@ def test_rp43c_stop_and_completion_frame_survive_the_break_change(root, manager,
         # Renamed for what they do. "Finished" completed the action item and
         # closed, which from the user's side looked like the button doing
         # nothing: the window went away and the item left Today.
-        assert timer.finished_button.cget("text") == "Save & Close"
-        assert timer.cancel_button.cget("text") == "Cancel"
-        assert timer.continue_button.cget("text") == "Complete & Carry Forward →"
+        assert timer.finished_button.cget("text") == "Save Related - Close Timer"
+        assert timer.cancel_button.cget("text") == "Cancel Timer"
+        assert timer.continue_button.cget("text") == "Complete & Open Follow Up"
         assert timer.start_button.cget("state") == "normal"
         assert not _is_visible(timer.break_choice_frame)
     finally:
@@ -1673,29 +1674,56 @@ def test_save_and_close_records_the_session_without_completing_the_item(root, ma
     assert closed == [True], "the opener was not told to refresh"
 
 
-def test_cancel_still_logs_the_time_and_keeps_the_notes(root, manager, quiet):
-    """Time spent is a fact, and notes typed here are edits to the item.
+def test_cancel_timer_records_absolutely_nothing(root, manager, quiet):
+    """Cancel means nothing happened — no session, no time, no note, no edit.
 
-    Discarding either would make Cancel a button that quietly threw work away.
+    It used to log the elapsed minutes and save the notes box on the reasoning
+    that time spent is a fact. True of a session someone meant to have, but not
+    what the word Cancel offers. "Save Related - Close Timer" is for keeping it.
     """
     item, board = _linked(manager)
+    item.description = "the description as it was"
+    manager.update_action_item(item)
+
     timer = TimerWindow(root, manager, item, rng=random.Random(1))
     timer.start_timer()
     timer._cancel_pending_timer()
     timer.work_seconds_elapsed = 25 * 60
-    timer.next_steps_text.insert("1.0", "half way through the second para")
+    timer.next_steps_text.delete("1.0", "end")
+    timer.next_steps_text.insert("1.0", "notes I typed and then abandoned")
 
     timer.cancel_action()
 
-    logs = manager.get_work_logs(item.id)
-    assert len(logs) == 1, "Cancel threw the session away"
-    assert logs[0].minutes == 25
-    assert logs[0].note is None, "Cancel should not invent a session note"
-    assert manager.get_action_item(item.id).status == "open"
-    assert manager.get_action_item(item.id).description == "half way through the second para", (
-        "Cancel discarded notes the user had typed"
+    assert manager.get_work_logs(item.id) == [], "Cancel Timer recorded a session"
+    fresh = manager.get_action_item(item.id)
+    assert fresh.status == "open"
+    assert fresh.description == "the description as it was", (
+        "Cancel Timer saved notes the user abandoned"
     )
     assert manager.get_project_board(board.id).savor_count == 0
+
+
+def test_cancel_timer_cannot_leak_a_pending_completion(root, manager, quiet):
+    """A Done whose save failed must not survive a Cancel into the next session."""
+    item, board = _linked(manager)
+    timer = _timer(root, manager, item)
+    timer.fire_celebration = lambda kind: None
+    timer._show_error_dialog = lambda message: None
+    timer.start_timer()
+    timer.work_seconds_elapsed = 25 * 60
+
+    manager.create_work_log = lambda log: (_ for _ in ()).throw(
+        RuntimeError("database is locked"))
+    timer.done_action()
+    assert timer._done_pressed is True, "precondition: the Done is still pending"
+
+    timer.stop_timer()
+    timer.cancel_action()
+
+    assert timer._done_pressed is False
+    assert timer._pending_reward is None
+    assert manager.get_project_board(board.id).savor_count == 0
+    assert manager.get_work_logs(item.id) == [], "Cancel Timer wrote a session"
 
 
 def test_only_done_completes_the_action_item(root, manager, quiet):
@@ -1861,7 +1889,11 @@ def test_save_and_close_keeps_the_note_when_the_window_closes_under_it(root, man
 
 
 def test_clearing_the_notes_box_clears_the_description(root, manager, quiet):
-    """The one edit the window refused to save was a deletion."""
+    """The one edit the window refused to save was a deletion.
+
+    Driven through Save Related, not Cancel Timer: Cancel now means nothing
+    happened, so it saves no edit at all — including a deletion.
+    """
     item, _board = _linked(manager)
     item.description = "something I no longer want"
     manager.update_action_item(item)
@@ -1872,7 +1904,7 @@ def test_clearing_the_notes_box_clears_the_description(root, manager, quiet):
     timer.work_seconds_elapsed = 25 * 60
     timer.next_steps_text.delete("1.0", "end")
 
-    timer.cancel_action()
+    timer.save_and_close_action()
 
     assert manager.get_action_item(item.id).description is None, (
         "blanking the notes box left the old description in place"
@@ -1951,45 +1983,6 @@ def test_editing_before_the_timer_starts_does_not_offer_to_start_it(root, manage
         timer.destroy()
 
 
-def test_cancel_after_a_failed_done_does_not_count_a_completion(root, manager, quiet):
-    """The sibling of the Save & Close case, which was the only one covered.
-
-    Deleting _discard_pending_completion from cancel_action left the file green,
-    so Cancel was one line from silently regressing to the defect just fixed.
-    """
-    item, board = _linked(manager)
-    timer = _timer(root, manager, item)
-    try:
-        timer.fire_celebration = lambda kind: None
-        timer._show_error_dialog = lambda message: None
-        timer.start_timer()
-        timer.work_seconds_elapsed = 25 * 60
-
-        real = manager.create_work_log
-        calls = []
-
-        def flaky(log):
-            calls.append(log)
-            if len(calls) == 1:
-                raise RuntimeError("database is locked")
-            return real(log)
-
-        manager.create_work_log = flaky
-        timer.done_action()
-        assert timer._done_pressed is True, "precondition: the Done is still pending"
-
-        timer.stop_timer()
-        timer.cancel_action()
-
-        assert manager.get_action_item(item.id).status == "open"
-        assert manager.get_project_board(board.id).savor_count == 0, (
-            "Cancel counted a completion for an item it left open"
-        )
-        assert manager.get_work_logs(item.id)[0].deliverable_completed is False
-    finally:
-        timer.destroy()
-
-
 def test_clearing_the_notes_box_clears_it_on_every_ending(root, manager, quiet):
     """Four endings, one answer to what an empty notes box means.
 
@@ -1997,7 +1990,7 @@ def test_clearing_the_notes_box_clears_it_on_every_ending(root, manager, quiet):
     Forward kept it, because those two guarded on `if timer_notes:`. Same
     gesture, opposite outcomes, depending on which button you reached for.
     """
-    for ending in ("cancel_action", "save_and_close_action", "done_action"):
+    for ending in ("save_and_close_action", "done_action"):
         item, _board = _linked(manager)
         item.description = "something I no longer want"
         manager.update_action_item(item)
@@ -2014,3 +2007,95 @@ def test_clearing_the_notes_box_clears_it_on_every_ending(root, manager, quiet):
         assert manager.get_action_item(item.id).description is None, (
             f"{ending} kept a description the user had cleared"
         )
+
+
+# --- modals must not open behind the always-on-top timer --------------------
+
+class _StubWindow:
+    """A window-shaped object. No Tk, so this test can never reach a screen."""
+
+    def __init__(self, state="normal"):
+        self._state = state
+        self.calls = []
+
+    def state(self):
+        return self._state
+
+    def winfo_ismapped(self):
+        return self._state != "withdrawn"
+
+    def attributes(self, *args):
+        self.calls.append(("attributes",) + args)
+
+    def lift(self):
+        self.calls.append(("lift",))
+
+    def after(self, _ms, fn):
+        fn()                      # run the scheduled raise immediately
+
+
+def test_raise_above_parent_lifts_a_visible_window():
+    """The fix for modals opening behind the timer.
+
+    Setting -topmost in __init__ does not stick: measured 0 straight after
+    construction while the timer reads 1. The modal then sat behind the timer
+    holding grab_set(), invisible and swallowing every click — which is why
+    Stop followed by any session button left the window looking dead.
+    """
+    window = _StubWindow(state="normal")
+    dialogs.raise_above_parent(window)
+
+    assert ("attributes", "-topmost", True) in window.calls, (
+        "a visible modal did not re-assert itself above the timer"
+    )
+    assert ("lift",) in window.calls
+
+
+def test_raise_above_parent_leaves_a_withdrawn_window_alone():
+    """Never touch a window that is not on screen.
+
+    The test suite withdraws every window, so without this guard the raise
+    fired hundreds of times per run against windows nobody could see, hammering
+    the window server and locking up the machine while the suite ran.
+    """
+    window = _StubWindow(state="withdrawn")
+    dialogs.raise_above_parent(window)
+
+    assert window.calls == [], (
+        f"a withdrawn window was raised anyway: {window.calls}"
+    )
+
+
+def test_every_timer_modal_raises_itself_above_the_timer(root, manager, quiet, monkeypatch):
+    """Every modal the timer opens, not just the one that was reported.
+
+    The timer window is -topmost, so any modal it opens without re-asserting
+    itself lands behind it. Checked as a class rather than one dialog at a time,
+    because that is how the defect got in.
+    """
+    raised = []
+    monkeypatch.setattr(dialogs, "raise_above_parent",
+                        lambda d: raised.append(type(d).__name__))
+
+    item = _item(manager)
+    built = [
+        dialogs.CompletionNoteDialog(root, "Session Note"),
+        dialogs.NextStepsDialog(root),
+        dialogs.DeliverableDialog(root, "A task"),
+        dialogs.SavorDialog(root, "Draft section 2"),
+        dialogs.NextActionWindow(root, manager, item),
+    ]
+    try:
+        assert set(raised) == {
+            "CompletionNoteDialog",
+            "NextStepsDialog",
+            "DeliverableDialog",
+            "SavorDialog",
+            "NextActionWindow",
+        }, f"these modals do not raise themselves above the timer: {raised}"
+    finally:
+        for w in built:
+            try:
+                w.destroy()
+            except Exception:
+                pass
