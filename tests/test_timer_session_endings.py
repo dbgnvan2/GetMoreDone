@@ -175,7 +175,7 @@ def test_t11c_save_related_closes_while_the_timer_is_really_topmost(
     )
 
 
-def test_t14_two_timers_on_one_item_reproduce_the_reported_symptom(
+def test_t14_two_timers_on_one_item_are_not_yet_prevented(
         root, manager, hushed):
     """T1.4 — nothing stops a second timer window opening on the same item.
 
@@ -186,6 +186,10 @@ def test_t14_two_timers_on_one_item_reproduce_the_reported_symptom(
     This reproduces the 2026-08-25 database state exactly: a work log at
     08:02:00 from one window, then a completion and a follow-up at 08:07:03
     from the other with no work log at all.
+
+    NOTE FOR WHOEVER SEES THIS GO RED: that is good news, not a regression.
+    It pins a defect recorded in BACKLOG.md as deliberately unfixed. When the
+    second window is prevented, delete this test rather than repairing it.
     """
     item = _item(manager)
     first = _stopped_timer(root, manager, item)
@@ -330,6 +334,130 @@ def test_t54_every_grabbing_dialog_suspends_the_parents_topmost():
     )
 
 
+def test_t55_every_messagebox_over_the_timer_suspends_its_topmost():
+    """T5.5 — the sibling class the first sweep stopped short of (P5).
+
+    tkinter.messagebox builds its own Toplevel and grabs it, so it belongs to
+    the same class as the four dialogs — but it lives in a different file and
+    the AST guard above, whose docstring says "no sibling modal left
+    unhardened", could not see it. Three of these four sites are the except
+    handler of a timer ending, which is the worst place to put an invisible
+    modal: something has already gone wrong and the user is told nothing.
+
+    Anchored to whole call expressions via the AST, not grepped: the words
+    appear in the comments explaining them.
+    """
+    import ast
+    import pathlib
+
+    from src.getmoredone.screens import timer_window as twin
+    from src.getmoredone.screens import timer_window_dialogs as dlg
+
+    SHOW = ("showerror", "showwarning", "showinfo", "askyesno")
+
+    def _is_show(node):
+        return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in SHOW)
+
+    all_sites, guarded, unparented = set(), set(), set()
+    for mod in (twin, dlg):
+        name = pathlib.Path(mod.__file__).name
+        tree = ast.parse(pathlib.Path(mod.__file__).read_text())
+        for node in ast.walk(tree):
+            if _is_show(node):
+                # Identified by (file, line): one re-parse produces different
+                # node objects, so identity cannot be used across two walks.
+                all_sites.add((name, node.lineno))
+                if not any(k.arg == "parent" for k in node.keywords):
+                    unparented.add((name, node.lineno))
+            if isinstance(node, ast.With):
+                names = {n.func.id for n in ast.walk(node)
+                         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+                if "parent_topmost_suspended" in names:
+                    guarded |= {(name, i.lineno) for i in ast.walk(node) if _is_show(i)}
+
+    assert len(all_sites) == 4, (
+        f"the set of messagebox calls changed: {sorted(all_sites)}. A new one "
+        "must be wrapped in parent_topmost_suspended and counted here."
+    )
+    assert all_sites - guarded == set(), (
+        "these messagebox calls open behind the always-on-top timer holding a "
+        f"grab: {sorted(all_sites - guarded)}"
+    )
+    assert unparented == set(), (
+        f"these messagebox calls pass no parent=, so Tk attaches them to the "
+        f"default root rather than the timer: {sorted(unparented)}"
+    )
+
+
+def test_t56_a_second_modal_does_not_hand_the_flag_back_early():
+    """T5.6 — nesting. The first modal's restore must not outrank the second.
+
+    Without a depth count, modal B opens over an already-suspended parent,
+    reads -topmost as False, decides there is nothing to do and registers no
+    restore. Then A closes and raises the parent back over B, which is still
+    holding grab_set() — the reported bug, rebuilt out of its own fix.
+    """
+    from src.getmoredone.screens.timer_window_dialogs import (
+        _resume_topmost, _suspend_topmost)
+
+    parent = ctk.CTk()
+    parent.withdraw()
+    try:
+        _really_topmost(parent)
+        assert _topmost_now(parent), "precondition"
+
+        assert _suspend_topmost(parent) is True          # modal A
+        assert _suspend_topmost(parent) is True          # modal B, over A
+        assert not _topmost_now(parent)
+
+        _resume_topmost(parent)                          # A closes first
+        assert not _topmost_now(parent), (
+            "the parent was raised back over a modal that is still open"
+        )
+
+        _resume_topmost(parent)                          # B closes
+        assert _topmost_now(parent), "the flag was never given back"
+    finally:
+        parent.destroy()
+
+
+def test_t57_an_unbalanced_resume_does_not_break_the_next_modal():
+    """T5.7 — a stray resume must not drive the count below zero.
+
+    The counter is state on a long-lived window, so an extra resume — a
+    mis-bound <Destroy>, a dialog torn down twice — is reachable. Left
+    unclamped it makes the count negative, and then the NEXT modal sees a
+    non-zero depth, concludes the flag is already suspended, and opens with
+    the parent still on top of it. The damage is not in the stray call; it is
+    in the modal after it, which is what this asserts.
+
+    The first version of this test asserted only that a stray resume did not
+    raise the flag. It could not fail: nothing had been saved, so the write
+    was skipped for a reason unrelated to the guard.
+    """
+    from src.getmoredone.screens.timer_window_dialogs import (
+        _resume_topmost, _suspend_topmost)
+
+    parent = ctk.CTk()
+    parent.withdraw()
+    try:
+        _really_topmost(parent)
+        _suspend_topmost(parent)
+        _resume_topmost(parent)
+        assert _topmost_now(parent), "precondition: back to where we started"
+
+        _resume_topmost(parent)          # the stray one
+
+        assert _suspend_topmost(parent) is True
+        assert not _topmost_now(parent), (
+            "the modal after a stray resume opened with the parent still "
+            "always-on-top — the reported bug, via the counter"
+        )
+    finally:
+        parent.destroy()
+
+
 # --- T2 / T3 / T6 : Complete & Create Follow Up ------------------------------
 
 def _continue_from(root, manager, item, vps_manager=None):
@@ -411,9 +539,20 @@ def test_t31_the_next_steps_dialog_is_gone(root, manager, hushed,
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
 
     built = []
-    monkeypatch.setattr(dlg, "NextStepsDialog",
-                        lambda *a, **k: built.append(a) or pytest.fail(
-                            "the ending still opens a Next Steps dialog"))
+
+    def caught(*a, **k):
+        built.append(a)
+        raise AssertionError("the ending still opens a Next Steps dialog")
+
+    # Both modules. The original defect resolved the name through
+    # timer_window's OWN globals (a module-level import, called bare), so
+    # rebinding it on timer_window_dialogs alone intercepts nothing and the
+    # assertion below is true by construction. This test was green against a
+    # verbatim restoration of the defect until the csdp sweep proved it.
+    # raising=False because timer_window no longer has the attribute at all —
+    # which is the point, and is why it has to be created to be watched.
+    monkeypatch.setattr(tw, "NextStepsDialog", caught, raising=False)
+    monkeypatch.setattr(dlg, "NextStepsDialog", caught)
 
     item = _item(manager)
     _continue_from(root, manager, item)
@@ -589,8 +728,15 @@ def test_t73_a_failed_done_is_not_counted_by_this_ending(root, manager, hushed,
     timer._cancel_pending_timer()
     timer.work_seconds_elapsed = 25 * 60
     timer.stop_timer()
+    # All three, not just the two flags. save_work_log increments the counter
+    # only `if decision is not None and self.session_board_id`, and decision is
+    # self._pending_reward — so without this the savor_count assertion below
+    # passes whether or not the discard happens, which the csdp sweep proved.
+    from src.getmoredone.reward_protocol import RewardDecision
     timer._done_pressed = True          # a Done whose save failed
     timer._savor_shown = True
+    timer._pending_reward = RewardDecision(
+        phase="wiring", show_savor=True, celebration=None)
 
     _dismiss_the_note_dialog(timer)
     timer.continue_action()
