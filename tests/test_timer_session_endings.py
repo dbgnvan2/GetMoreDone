@@ -8,9 +8,17 @@ Purpose: T1 — "Save Related - Close Timer" wrote its work log and left the
 Spec:    docs/implementation_plan_2026-08-25_timer_session_endings.md#acceptance-criteria
 Tests:   this file
 
-These build real, mapped windows: grab_set() raises "window not viewable" on
-the withdrawn windows the rest of the suite uses, so a withdrawn run cannot
-reach the code path under test at all.
+These build real TimerWindows on a real DatabaseManager, withdrawn like every
+other window in the suite. They were written against the ``mapped_windows``
+fixture on the assumption that grab_set() needs a viewable window — it does,
+but conftest silences grab_set() for the whole run, so nothing here ever
+called it. Sixteen tests that skip on the machine people iterate on is a poor
+trade for a precondition that was never required; measured by removing the
+fixture and re-running every mutation.
+
+-topmost is read and written through ``window.tk.call`` rather than
+``window.attributes``, past the patch conftest uses to keep always-on-top
+windows off the user's desktop — otherwise these would be measuring conftest.
 """
 
 from __future__ import annotations
@@ -88,7 +96,7 @@ def _dismiss_the_note_dialog(timer, how="skip"):
 
 
 def test_t11_save_related_closes_the_window_after_a_real_modal(
-        root, manager, hushed, mapped_windows):
+        root, manager, hushed):
     """T1.1 — the window is gone, not merely told to go.
 
     The existing test at tests/test_reward_protocol_timer.py:1649 asserts the
@@ -108,7 +116,7 @@ def test_t11_save_related_closes_the_window_after_a_real_modal(
 
 
 def test_t11b_save_related_closes_when_launched_from_the_action_item_editor(
-        root, manager, hushed, mapped_windows):
+        root, manager, hushed):
     """T1.1 — the same ending, in the configuration the report came from.
 
     The timer is opened by the editor's Timer button, so its parent is the
@@ -151,7 +159,7 @@ def _really_topmost(window):
 
 
 def test_t11c_save_related_closes_while_the_timer_is_really_topmost(
-        root, manager, hushed, mapped_windows):
+        root, manager, hushed):
     """T1.1 — with the always-on-top flag the app actually runs with."""
     item = _item(manager)
     timer = _stopped_timer(root, manager, item)
@@ -168,7 +176,7 @@ def test_t11c_save_related_closes_while_the_timer_is_really_topmost(
 
 
 def test_t14_two_timers_on_one_item_reproduce_the_reported_symptom(
-        root, manager, hushed, mapped_windows):
+        root, manager, hushed):
     """T1.4 — nothing stops a second timer window opening on the same item.
 
     Every entry point constructs a TimerWindow unconditionally, and setup_window
@@ -214,8 +222,7 @@ def _topmost_now(window) -> bool:
     return bool(int(window.tk.call("wm", "attributes", window._w, "-topmost")))
 
 
-def test_t51_a_modal_drops_the_timers_always_on_top(root, manager, hushed,
-                                                    mapped_windows):
+def test_t51_a_modal_drops_the_timers_always_on_top(root, manager, hushed,):
     """T5.1 — while the note dialog is up, the timer is not on top of it."""
     item = _item(manager)
     timer = _stopped_timer(root, manager, item)
@@ -240,8 +247,7 @@ def test_t51_a_modal_drops_the_timers_always_on_top(root, manager, hushed,
     )
 
 
-def test_t52_the_timer_is_topmost_again_afterwards(root, manager, hushed,
-                                                   mapped_windows):
+def test_t52_the_timer_is_topmost_again_afterwards(root, manager, hushed):
     """T5.2 — the flag is borrowed for the modal, not thrown away."""
     from src.getmoredone.screens.timer_window_dialogs import suspend_parent_topmost
 
@@ -260,8 +266,7 @@ def test_t52_the_timer_is_topmost_again_afterwards(root, manager, hushed,
     timer.destroy()
 
 
-def test_t53_a_parent_that_was_not_topmost_is_left_alone(root, manager, hushed,
-                                                         mapped_windows):
+def test_t53_a_parent_that_was_not_topmost_is_left_alone(root, manager, hushed):
     """T5.3 — the helper never *raises* a window, only ever lowers and restores.
 
     It reaches wm attributes through the Tcl interpreter, past the patch
@@ -347,7 +352,7 @@ def _child_of(manager, item):
 
 
 def test_t21_the_followup_keeps_the_items_dates(root, manager, hushed,
-                                                mapped_windows, monkeypatch):
+                                                monkeypatch):
     """T2.1 — no +1 shift. The follow-up continues the same day's work."""
     from src.getmoredone.screens import item_editor as ie
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
@@ -362,7 +367,7 @@ def test_t21_the_followup_keeps_the_items_dates(root, manager, hushed,
 
 
 def test_t22_a_past_dated_item_yields_a_past_dated_followup(
-        root, manager, hushed, mapped_windows, monkeypatch):
+        root, manager, hushed, monkeypatch):
     """T2.2 — inheriting the dates means a late item begets a late follow-up.
 
     Confirmed as intended when it was raised. Pinned so a later pass does not
@@ -379,7 +384,7 @@ def test_t22_a_past_dated_item_yields_a_past_dated_followup(
 
 
 def test_t23_the_followup_description_is_the_prompt(
-        root, manager, hushed, mapped_windows, monkeypatch):
+        root, manager, hushed, monkeypatch):
     """T2.3 — a prompt to fill in, not a copy of the finished item's notes."""
     from src.getmoredone.screens import item_editor as ie
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
@@ -394,7 +399,7 @@ def test_t23_the_followup_description_is_the_prompt(
 
 
 def test_t31_the_next_steps_dialog_is_gone(root, manager, hushed,
-                                           mapped_windows, monkeypatch):
+                                           monkeypatch):
     """T3.1 — the ending builds no NextStepsDialog.
 
     Asserted by intercepting the class, not by reading the source: the import
@@ -416,7 +421,7 @@ def test_t31_the_next_steps_dialog_is_gone(root, manager, hushed,
 
 
 def test_t32_the_followup_editor_opens_with_a_vps_manager(
-        root, manager, hushed, mapped_windows, monkeypatch):
+        root, manager, hushed, monkeypatch):
     """T3.2 — the follow-up is what the flow ends on, and it is not crippled.
 
     Captures the boundary call's kwargs rather than checking the widget was
@@ -446,7 +451,7 @@ def test_t32_the_followup_editor_opens_with_a_vps_manager(
 
 
 def test_t33_continue_writes_log_completes_original_creates_child(
-        root, manager, hushed, mapped_windows, monkeypatch):
+        root, manager, hushed, monkeypatch):
     """T3.3 — all three records, from one press."""
     from src.getmoredone.screens import item_editor as ie
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
@@ -461,7 +466,7 @@ def test_t33_continue_writes_log_completes_original_creates_child(
     assert _child_of(manager, item).status == "open"
 
 
-def test_t41_a_silent_ending_says_so(root, manager, hushed, mapped_windows,
+def test_t41_a_silent_ending_says_so(root, manager, hushed,
                                      capsys):
     """T4.1 — an ending that records nothing must not do it quietly.
 
@@ -482,7 +487,7 @@ def test_t41_a_silent_ending_says_so(root, manager, hushed, mapped_windows,
     timer.destroy()
 
 
-def test_t61_the_button_says_what_it_does(root, manager, hushed, mapped_windows):
+def test_t61_the_button_says_what_it_does(root, manager, hushed):
     """T6.1 — it creates a follow-up; it no longer opens a Next Steps dialog."""
     item = _item(manager)
     timer = TimerWindow(root, manager, item, rng=random.Random(1))
