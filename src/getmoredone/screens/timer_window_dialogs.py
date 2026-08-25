@@ -57,6 +57,70 @@ def raise_above_parent(dialog) -> None:
         pass
 
 
+# ``wm attributes`` reached through the Tcl interpreter rather than through
+# ``window.attributes``. The test suite's conftest patches the Python spelling
+# (both of its names) so a run cannot throw always-on-top windows over the
+# user's desktop; going through tk.call means the code below does the same
+# thing in a test as it does in the app, so the fix can be measured rather than
+# assumed. It is safe past that patch because it never raises a window: it only
+# clears -topmost, or puts back the value it read a moment earlier.
+def _read_topmost(window) -> bool:
+    """Is this window always-on-top right now? False if it cannot be asked."""
+    try:
+        return bool(int(window.tk.call("wm", "attributes", window._w, "-topmost")))
+    except Exception:
+        return False
+
+
+def _write_topmost(window, value: bool) -> None:
+    """Best effort. A window destroyed under us is not an error worth raising."""
+    try:
+        if window.winfo_exists():
+            window.tk.call("wm", "attributes", window._w, "-topmost", 1 if value else 0)
+    except Exception:
+        pass
+
+
+def suspend_parent_topmost(dialog, parent) -> None:
+    """Drop the parent's always-on-top for as long as ``dialog`` is up.
+
+    Purpose: a modal that opens *behind* its parent still holds ``grab_set()``,
+             so it takes every click while showing the user nothing. The window
+             underneath looks dead — which is exactly how it was reported:
+             "the Next Step Note pops and then is hidden. No buttons work on
+             the Timer window."
+    Tests:   tests/test_timer_session_endings.py::test_t51_a_modal_drops_the_timers_always_on_top
+             tests/test_timer_session_endings.py::test_t52_the_timer_is_topmost_again_afterwards
+
+    ``raise_above_parent`` tried to win that fight by re-asserting -topmost on
+    the dialog and lifting it. Two windows both claiming the top is a race, and
+    it lost: the timer sets -topmost at construction and never drops it, so the
+    dialog was arguing with a permanent flag. Dropping the parent's flag ends
+    the argument instead of competing in it. Both are kept — this is the fix,
+    the lift is belt.
+
+    Restores on the dialog's own ``<Destroy>``, so an ending that raises
+    part-way through still gives the timer its flag back.
+    """
+    if parent is None or not _read_topmost(parent):
+        return
+
+    _write_topmost(parent, False)
+
+    def restore(event=None):
+        # <Destroy> fires for every descendant widget as the dialog comes
+        # apart; only the dialog's own is the end of its life.
+        if event is not None and event.widget is not dialog:
+            return
+        _write_topmost(parent, True)
+
+    try:
+        dialog.bind("<Destroy>", restore, add="+")
+    except Exception:
+        # Could not arm the restore, so do not leave the parent demoted.
+        _write_topmost(parent, True)
+
+
 def _center_on(dialog, parent, width: int, height: int) -> None:
     """Put ``dialog`` over ``parent``, or leave it where Tk put it.
 
@@ -87,6 +151,7 @@ class CompletionNoteDialog(ctk.CTkToplevel):
         self.transient(parent)
         # Appear above always-on-top timer window
         self.attributes('-topmost', True)
+        suspend_parent_topmost(self, parent)
         self.grab_set()
         raise_above_parent(self)
 
@@ -316,6 +381,7 @@ class NextStepsDialog(ctk.CTkToplevel):
         self.transient(parent)
         # Appear above always-on-top timer window
         self.attributes('-topmost', True)
+        suspend_parent_topmost(self, parent)
         self.grab_set()
         raise_above_parent(self)
 
@@ -529,6 +595,7 @@ class DeliverableDialog(ctk.CTkToplevel):
         self.geometry("480x280")
         self.transient(parent)
         self.attributes('-topmost', True)
+        suspend_parent_topmost(self, parent)
         self.grab_set()
         raise_above_parent(self)
         _center_on(self, parent, 480, 280)
@@ -621,6 +688,7 @@ class SavorDialog(ctk.CTkToplevel):
         self.geometry("460x300")
         self.transient(parent)
         self.attributes('-topmost', True)
+        suspend_parent_topmost(self, parent)
         self.grab_set()
         raise_above_parent(self)
         _center_on(self, parent, 460, 300)
