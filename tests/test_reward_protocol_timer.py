@@ -1112,9 +1112,12 @@ def test_rp45_continue_records_the_deliverable_and_carries_it_forward(root, mana
     assert log.phase is None
     assert manager.get_project_board(board.id).savor_count == 0
 
-    duplicate = [i for i in manager.get_all_items()
-                 if i.id != item.id and i.title == item.title]
+    # Found by parentage, not by an exact title match: the follow-up is
+    # deliberately titled "<original> - Followup" so it is recognisable as one
+    # in any list, so matching on the original's title finds nothing.
+    duplicate = manager.get_children(item.id)
     assert duplicate, "Continue did not create the follow-on item"
+    assert duplicate[0].title == f"{item.title} - Followup"
     assert duplicate[0].deliverable == DELIVERABLE, (
         "the follow-on item lost the deliverable; Continue means the same work "
         "goes on, so what 'done' looks like has not changed"

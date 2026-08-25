@@ -450,9 +450,14 @@ def test_t32_the_followup_editor_opens_with_a_vps_manager(
     )
 
 
-def test_t33_continue_writes_log_completes_original_creates_child(
+def test_t33_continue_records_the_session_and_leaves_the_item_open(
         root, manager, hushed, monkeypatch):
-    """T3.3 — all three records, from one press."""
+    """T3.3 — the session is what ends. The Action Item is not.
+
+    "Complete" in this button's name is the timer record, not the task. The
+    ending used to call complete_action_item; it does not, and only "Done"
+    closes an Action Item.
+    """
     from src.getmoredone.screens import item_editor as ie
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
 
@@ -462,7 +467,9 @@ def test_t33_continue_writes_log_completes_original_creates_child(
     logs = manager.get_work_logs(item.id)
     assert len(logs) == 1, "the session was not recorded"
     assert logs[0].minutes == 25
-    assert manager.get_action_item(item.id).status == "completed"
+    assert manager.get_action_item(item.id).status == "open", (
+        "the ending closed the Action Item; only Done does that"
+    )
     assert _child_of(manager, item).status == "open"
 
 
@@ -520,3 +527,78 @@ def test_t12_a_failed_destroy_is_reported_not_swallowed(root, manager, hushed,
     assert "safe to ignore" not in out
     monkeypatch.undo()
     timer.destroy()
+
+
+def test_t71_the_followup_is_marked_in_its_title(root, manager, hushed,
+                                                 monkeypatch):
+    """T7.1 — the follow-up is recognisable as one in any list."""
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager)
+    _continue_from(root, manager, item)
+
+    assert _child_of(manager, item).title == "A task - Followup"
+
+
+def test_t72_a_followup_of_a_followup_is_not_marked_twice(root, manager, hushed,
+                                                          monkeypatch):
+    """T7.2 — Continue is for work that runs over days, so it repeats.
+
+    Unconditional appending gives "A task - Followup - Followup - Followup" by
+    the third day.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager)
+    _continue_from(root, manager, item)
+    day_two = _child_of(manager, item)
+
+    _continue_from(root, manager, day_two)
+
+    # The second follow-up is a *sibling* of the first, not its child: an item
+    # that already has a parent gives the new one the same parent.
+    titles = sorted(c.title for c in manager.get_children(item.id))
+    assert titles == ["A task - Followup", "A task - Followup"], (
+        f"the suffix stacked on a follow-up of a follow-up: {titles}"
+    )
+
+
+def test_t73_a_failed_done_is_not_counted_by_this_ending(root, manager, hushed,
+                                                         monkeypatch):
+    """T7.3 — the ending no longer completes the item, so it must not count one.
+
+    Done sets the reward flags and they survive a failed save on purpose, so a
+    retry records the completion. This ending is not that retry any more:
+    carrying them would write deliverable_completed=1 and advance the project
+    counter while the Action Item stayed open, and the board would claim a
+    completion the item does not record.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    from src.getmoredone.models import ProjectBoard
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager)
+    board = ProjectBoard(title="Website Rebuild")
+    manager.create_project_board(board)
+    manager.link_action_item_to_project_board(board.id, item.id)
+
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+    timer._done_pressed = True          # a Done whose save failed
+    timer._savor_shown = True
+
+    _dismiss_the_note_dialog(timer)
+    timer.continue_action()
+
+    log = manager.get_work_logs(item.id)[0]
+    assert log.deliverable_completed is False, (
+        "an ending that leaves the item open recorded a completed deliverable"
+    )
+    assert manager.get_project_board(board.id).savor_count == 0, (
+        "the project counter advanced for a task that is still open"
+    )
