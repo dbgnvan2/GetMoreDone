@@ -53,11 +53,18 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them quietly completed the action item and closed the window, which looked from the
   outside like nothing had happened — the window vanished and the task left Today. A
   session is now a record of work *on* a task, and it ends one of three ways:
-  **Save & Close** (records the session and the time, task stays open), **Cancel**
-  (returns without a note — your time and your typed notes are still kept), and
-  **Complete & Carry Forward →** (completes today's item and opens tomorrow's copy).
-  Two of them close a task — Done, and Complete & Carry Forward — but **only "Done —
-  deliverable complete" counts one towards a project's reward phase.**
+  **Save Related - Close Timer** (saves the session and the time as a related record,
+  task stays open), **Cancel Timer** (nothing is recorded at all — no session, no time,
+  no note, no change to the item), and **Complete & Open Follow Up** (saves the record,
+  completes the item, and opens the follow-up). Two of them close a task — Done, and
+  Complete & Open Follow Up — but **only "Done — deliverable complete" counts one
+  towards a project's reward phase.**
+
+- **Fixed: the session buttons appeared to do nothing.** Pressing Stop and then any of
+  them left the window sitting there. They were working — the dialog they opened was
+  landing *behind* the always-on-top timer while holding the input grab, so it was
+  invisible and swallowed every click. Every dialog the timer opens now raises itself
+  properly.
 
 - **The end of a break no longer ends the session.** It used to stop the timer
   and offer Finished/Continue, which quietly made the timer ringing the thing

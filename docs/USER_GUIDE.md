@@ -552,35 +552,39 @@ Session actions (after **Stop**):
 A timer session is a *record of work on* an action item, not the item's ending. These
 three say what they do:
 
-- **Save & Close** — What: Prompts for a session note, records the session and the time,
-  and returns you to the action item, which stays **open**. Why: The ordinary ending —
-  you did some work, it is written down, the task is not finished.
-- **Cancel** — What: Returns without asking for a note. **Your time is still logged and
-  any notes you typed are still saved** — those are facts about what happened, and a
-  button that threw them away quietly would be lying about the word "Cancel".
-- **Complete & Carry Forward →** — What: Completes this item, creates a copy for the next
-  day, and opens the editor on it. Why: Ending today's block on work that continues
-  tomorrow, without losing the history of what you did today.
+- **Save Related - Close Timer** — What: Prompts for a session note, saves the session
+  as a related record against the action item along with the time spent, and returns you
+  to the action item, which stays **open**. Why: The ordinary ending — you did some work,
+  it is written down, the task is not finished.
+- **Cancel Timer** — What: Closes the timer and returns you to the action item with
+  **nothing recorded**. No session, no time, no note, and no change to the item — not
+  even notes you typed into this window. Why: Cancel means nothing happened. If you want
+  the time kept, use *Save Related - Close Timer* instead.
+- **Complete & Open Follow Up** — What: Saves the session as a related record, marks the
+  action item **complete**, creates the follow-up item and opens it. Why: Ending today's
+  block on work that continues tomorrow, without losing the history of what you did
+  today.
 
 Two of these five buttons close a task, and they are not the same thing:
 
 | Button | Task closed? | Counts towards the reward phase? |
 |---|---|---|
 | **Done — deliverable complete** | yes | **yes** |
-| **Complete & Carry Forward →** | yes, and reopens it as tomorrow's copy | not normally — see below |
-| **Save & Close** | no | no |
-| **Cancel** | no | no |
+| **Complete & Open Follow Up** | yes, and opens the follow-up item | not normally — see below |
+| **Save Related - Close Timer** | no | no |
+| **Cancel Timer** | no — nothing is recorded at all | no |
 | **Stop** | no — it just stops the clock | no |
 
 So **"Done" is the only button that counts a completed deliverable** towards a project's
-phase. *Complete & Carry Forward* does close today's item, because the alternative —
-leaving today's item open beside tomorrow's copy — would give you the same task twice.
+phase. *Complete & Open Follow Up* does close today's item, because the alternative —
+leaving today's item open beside the follow-up — would give you the same task twice.
 
 One exception, by design: if you press **Done** and saving fails (a locked database, say),
 your completion is remembered so it is not lost. Ending that same session with *Complete &
-Carry Forward* then records the completion you already declared, and counts it. *Save &
-Close* and *Cancel* deliberately do not — they say the task is still open, so they discard
-the pending completion rather than banking it for a task they are leaving unfinished.
+Open Follow Up* then records the completion you already declared, and counts it. *Save
+Related* and *Cancel Timer* deliberately do not — they say the task is still open, so they
+discard the pending completion rather than banking it for a task they are leaving
+unfinished.
 
 The old buttons were called *Finished* and *Continue*, and both quietly completed the
 item and closed the window, which looked from the outside like pressing them did nothing
