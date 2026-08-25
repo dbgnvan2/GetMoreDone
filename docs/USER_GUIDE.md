@@ -567,7 +567,7 @@ Two of these five buttons close a task, and they are not the same thing:
 | Button | Task closed? | Counts towards the reward phase? |
 |---|---|---|
 | **Done — deliverable complete** | yes | **yes** |
-| **Complete & Carry Forward →** | yes, and reopens it as tomorrow's copy | no |
+| **Complete & Carry Forward →** | yes, and reopens it as tomorrow's copy | not normally — see below |
 | **Save & Close** | no | no |
 | **Cancel** | no | no |
 | **Stop** | no — it just stops the clock | no |
@@ -575,6 +575,12 @@ Two of these five buttons close a task, and they are not the same thing:
 So **"Done" is the only button that counts a completed deliverable** towards a project's
 phase. *Complete & Carry Forward* does close today's item, because the alternative —
 leaving today's item open beside tomorrow's copy — would give you the same task twice.
+
+One exception, by design: if you press **Done** and saving fails (a locked database, say),
+your completion is remembered so it is not lost. Ending that same session with *Complete &
+Carry Forward* then records the completion you already declared, and counts it. *Save &
+Close* and *Cancel* deliberately do not — they say the task is still open, so they discard
+the pending completion rather than banking it for a task they are leaving unfinished.
 
 The old buttons were called *Finished* and *Continue*, and both quietly completed the
 item and closed the window, which looked from the outside like pressing them did nothing

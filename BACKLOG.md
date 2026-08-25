@@ -78,6 +78,11 @@ in `9f7b5f3`.
   unlike the rest of the file; they lean on the `root` fixture to clean up. One
   also restores a patched method on a plain line rather than in a `finally`, and
   names the good method `broken`.
+- **`self.item` is never reloaded while the timer is open.** If another screen
+  edits the description and the user then changes the timer's notes box, the
+  timer's stale in-memory copy overwrites the external edit on save. Pre-existing
+  for any differing edit; clearing the box is one more trigger now that a
+  deletion is persisted like any other change.
 - **The savor copy lives in Python source** (`timer_window_dialogs.py`), with
   tests pinning the literals. Global rule 9 says content requiring editorial
   judgement belongs in a config file. The same applies to `WIRING_THRESHOLD` and
