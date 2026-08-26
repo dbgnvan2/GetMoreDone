@@ -24,6 +24,32 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### An item on two projects gives its full time to both (2026-08-25)
+
+`project_board_items` is many-to-many, so the Time line on each board counts the
+whole of a shared item's sessions. Project totals therefore do not sum to a
+person's real time. Defensible — each project genuinely absorbed that work — and
+it matches the user-guide wording, but the semantics are pinned nowhere, and this
+same screen's `_refresh_multi_link_notice` treats multi-board items as an anomaly
+to be re-filed. One test asserting the chosen behaviour would stop a later change
+flipping it silently. Found by the csdp sweep (low 3).
+
+### A session under a minute counts as zero time (2026-08-25)
+
+`save_work_log` stores `work_seconds_elapsed // 60`, so two 40-second sessions
+render "2 sessions | 0m". Pre-existing, but the Time line is the first surface to
+present the sum as "total time" and the user guide does not mention it. Either
+store seconds or say so in the guide. Found by the csdp sweep (low 5).
+
+### `format_minutes` clamps a negative total to "0m" (2026-08-25)
+
+Only reachable by direct SQL or an import — the one writer cannot produce a
+negative — but a negative row would silently offset positive sessions in the same
+project before the clamp ever applies. Recorded so it is not mistaken for a live
+defect later, and so the clamp is not read as validation. Found by the csdp sweep
+(low 4).
+
+
 ### The topmost-suspension helper lives in the wrong module (2026-08-25)
 
 `week_collision_notice` now lowers an always-on-top parent before showing a
