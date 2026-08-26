@@ -1171,8 +1171,13 @@ def test_f31_a_timer_that_cannot_be_raised_is_handed_back_not_destroyed(
     monkeypatch.setattr(type(live), "lift",
                         lambda self: (_ for _ in ()).throw(tk.TclError("boom")))
     again = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
-    monkeypatch.undo()
 
+    # No monkeypatch.undo() here. `hushed` takes the same MonkeyPatch instance
+    # this test does, so undoing reverts its four patches too — the ending
+    # below would then run unhushed, and _flash_window calls lift() and
+    # focus_force() on a real window. Proved inert (all 45 pass without it) and
+    # removed rather than left as a line that only stays harmless while nothing
+    # is added after it.
     assert again is live, "a second timer was built on an item that has one"
     assert live.winfo_exists(), "the running timer was destroyed"
     assert live.start_timestamp is started_at, (

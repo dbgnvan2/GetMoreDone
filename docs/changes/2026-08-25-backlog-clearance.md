@@ -50,8 +50,8 @@ the guard that already silenced `grab_set`, `lift`, `focus_force` and
 ## Verification
 
 - Command: `GETMOREDONE_NO_MAPPED_WINDOWS=1 pytest -q`
-- Result: PASS — exit code 0, 1550 passed, 7 skipped.
-- Twenty-two mutations across five source files, all red, all restored.
+- Result: PASS — exit code 0, 1560 passed, 7 skipped.
+- Forty-one mutations across five source files, all red, all restored.
 
 Four mutations that stayed **green** were treated as findings against the test,
 not as a pass:
@@ -70,6 +70,46 @@ not as a pass:
 One mutation **hung** rather than failing: removing the messagebox patch
 entirely stopped a run for ten minutes. That is the defect demonstrating itself.
 
+## Review
+
+Four `learning-qa` passes. Each of the first three found a defect inside the
+previous pass's fixes — the pattern P26 documents, observed three times running.
+
+| Pass | Range | Findings | Worst |
+|---|---|---|---|
+| 1 | the 12-commit batch | 9 | 2 high |
+| 2 | the 3 fix commits | 8 | 1 high |
+| 3 | the 3 fix commits | 5 | 1 high |
+| 4 | the 2 fix commits | 2 | none ≥ medium — **stop** |
+
+The high findings, in order:
+
+- **Two fixes from this batch were defeating each other.** `_cleanup_and_destroy`
+  released the item from the registry four lines *before* attempting `destroy()`,
+  and never put it back when the destroy failed — so B2's guard was void on
+  exactly the path B3 was written for.
+- **`open_for` discarded every argument on reuse**, including the editor's
+  `on_close`. That callback is what reloads the editor's fields, so without it
+  the editor kept stale values and saving from it overwrote what the timer had
+  just written — the clobber `_current_timer_field_values` exists to prevent.
+- **The fix for one clobber installed its mirror image.** Refreshing `self.item`
+  without the notes box left `_save_notes_to_item` comparing a fresh description
+  against a stale textbox, so every ending wrote the old text back over the
+  editor's save. Silent data loss, introduced by this batch, on the flow the fix
+  was written for.
+
+**One six-line branch was wrong three times.** `open_for`'s error path: first it
+fell through and built a duplicate timer at identical coordinates; then it
+destroyed the live window, losing a running session's work log — measured at 17
+minutes elapsed and zero work logs; now it logs and returns the live window. The
+fourth pass's recommendation to stop rests on the branch's *shape* rather than on
+having been reviewed: it makes no call out, constructs nothing, destroys nothing,
+and can only return an object `winfo_exists()` affirmed two lines earlier. There
+is no action left in it that can lose anything.
+
+Findings below medium went to `BACKLOG.md` rather than into the loop — eight of
+them across the four passes.
+
 ## Risks / Known gaps
 
 - **Two follow-ups of one item on the same day still collide.** Accepted: the
@@ -77,8 +117,10 @@ entirely stopped a run for ten minutes. That is the defect demonstrating itself.
   be a discrete chunk of work".
 - **B2 changes a UI contract on four screens.** `ui-regression.md` applies and a
   failure-pattern sweep does not cover it. Not run.
-- **Nothing here has been swept yet.** This batch has had no `learning-qa` pass,
-  warm or cold.
+- **The UI-contract review has still not been run.** Every pass above is the
+  failure-pattern family. B2 changed the opener on four screens and
+  `ui-regression.md` covers that; three of the four sweeps said so explicitly in
+  their NOT COVERED line.
 - Nothing verifies the dialog is *visibly* in front. Still needs a human.
 
 ## Next agent actions

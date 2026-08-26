@@ -24,6 +24,19 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### `adopt_opener` is unguarded directly above the guard that explains why (2026-08-25)
+
+`open_for` wraps its `deiconify`/`lift`/`focus_force` in a try, with a comment
+saying an escape from there reaches a screen that has no handler. One line
+above it, `live.adopt_opener(...)` is unguarded, and it calls
+`db_manager.get_action_item`, which can raise on a DB error — the same P5 shape
+on the adjacent line. Likelihood is low (both openers fetched the item
+successfully moments earlier) and the consequence is a traceback plus an
+unraised timer, not data loss. It cannot leave a half-updated item: the
+`setattr` loop over `dataclasses.fields` has nothing in it that can throw.
+Found by the csdp fourth pass.
+
+
 ### The callback dedupe only catches the immediately-previous opener (2026-08-25)
 
 `adopt_opener` compares `on_close == self.on_close_callback`, which stops one
