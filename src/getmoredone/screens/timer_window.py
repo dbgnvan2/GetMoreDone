@@ -5,6 +5,7 @@ Provides a countdown timer with pause/resume and completion workflows.
 
 import customtkinter as ctk
 import tkinter as tk
+import dataclasses
 import random
 import re
 import weakref
@@ -168,13 +169,23 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                     live.focus_force()
                     return live
                 except Exception as exc:
-                    # Fall through and build a replacement. No pop here: the
-                    # construction below reassigns the entry unconditionally,
-                    # so removing it first changes nothing and no mutation of
-                    # it could fail a test — unreachable code in a fix commit
-                    # is the last place it belongs.
+                    # Close the one that cannot be raised before building its
+                    # replacement. Falling straight through left it on screen,
+                    # and every timer opens at the same saved coordinates — so
+                    # a transient lift() failure produced two stacked windows
+                    # on one item, which is the defect open_for exists to
+                    # prevent, reached through its own error path.
+                    #
+                    # No registry pop: the construction below reassigns the
+                    # entry unconditionally, so removing it first changes
+                    # nothing that any test could observe.
                     print(f"[WARN] could not raise the open timer for "
                           f"{item.id}, replacing it: {exc}")
+                    try:
+                        live._cleanup_and_destroy()
+                    except Exception as cleanup_exc:
+                        print(f"[WARN] and it could not be closed either: "
+                              f"{cleanup_exc}")
         window = cls(parent, db_manager, item, on_close=on_close, rng=rng,
                      vps_manager=vps_manager)
         _LIVE_TIMERS[item.id] = window
@@ -201,12 +212,38 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         """
         fresh = db_manager.get_action_item(item.id)
         if fresh is not None:
-            self.item = fresh
+            was = self.item.description or ""
+
+            # Copied INTO the existing object, not rebound onto self. The
+            # pop-out NextActionWindow is handed self.item by reference and
+            # writes through it, so rebinding left it holding the old object
+            # and saving from it wrote a whole stale row back — title, dates,
+            # deliverable and all (P12: an alias callers were relying on).
+            for field in dataclasses.fields(self.item):
+                setattr(self.item, field.name, getattr(fresh, field.name))
+
+            # And the notes box, which is filled once at __init__ and was left
+            # holding the old text. _save_notes_to_item compares the box
+            # against self.item.description: with both stale they matched and
+            # nothing was written, but refreshing only one side made every
+            # ending write the old text back over what the editor had just
+            # saved. The fix for one clobber installed its mirror image.
+            #
+            # Only when the box still holds what it was given, so a note typed
+            # into the timer and not yet saved is not thrown away — the same
+            # rule the editor uses in _pre_timer_field_values.
+            self._refresh_notes_if_untouched(was)
 
         if vps_manager is not None and self.vps_manager is None:
             self.vps_manager = vps_manager
 
-        if on_close is None or on_close is self.on_close_callback:
+        # Compared with ==, not is. All four openers pass a BOUND METHOD, and
+        # attribute access builds a fresh bound-method object every time, so
+        # `is` never matched even for the identical method on the identical
+        # instance. The dedupe was inert: five presses of Timer on one item ran
+        # that screen's refresh five times on close, and the chain grew for the
+        # length of the session.
+        if on_close is None or on_close == self.on_close_callback:
             return
 
         # Chained, not replaced: the first opener still needs telling. A list
@@ -224,6 +261,25 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                     print(f"[WARN] a timer close callback failed: {exc}")
 
         self.on_close_callback = both
+
+    def _refresh_notes_if_untouched(self, previous: str) -> None:
+        """Re-read the notes box from the item, unless the user has typed in it.
+
+        Tests: tests/test_timer_session_endings.py::test_g11_reusing_a_timer_does_not_revert_the_editors_notes
+               tests/test_timer_session_endings.py::test_g12_a_note_typed_into_the_timer_survives_a_reuse
+        """
+        try:
+            current = self.next_steps_text.get("1.0", "end-1c").strip()
+        except (tk.TclError, AttributeError):
+            return
+        if current != previous.strip():
+            return          # edited here since it was loaded; leave it alone
+        try:
+            self.next_steps_text.delete("1.0", "end")
+            if self.item.description:
+                self.next_steps_text.insert("1.0", self.item.description)
+        except (tk.TclError, AttributeError):
+            pass
 
     def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem,
                  on_close: Optional[Callable] = None,
@@ -1082,8 +1138,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 # which the outer handler would then report as "failed to
                 # complete" for an item that was completed.
                 notify_weekly_tactic_changes(self.db_manager)
-                if self.on_close_callback:
-                    self.on_close_callback()
+                self._tell_the_opener()
                 return
 
             completion_note = dialog.result
@@ -1100,8 +1155,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
             # Close window
             self.save_window_settings()
-            if self.on_close_callback:
-                self.on_close_callback()
+            self._tell_the_opener()
             self._cleanup_and_destroy()
             print(f"[DEBUG] Timer window closed")
         except Exception as e:
@@ -1226,9 +1280,28 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         """Save window settings, tell the opener to refresh, and close."""
         if self.winfo_exists():
             self.save_window_settings()
-        if self.on_close_callback:
-            self.on_close_callback()
+        self._tell_the_opener()
         self._cleanup_and_destroy()
+
+    def _tell_the_opener(self) -> None:
+        """Run the close callback; a failing refresh must not undo the ending.
+
+        Tests: tests/test_timer_session_endings.py::test_g15_a_failing_refresh_does_not_swallow_the_ending
+
+        The adopted path guarded this and the three direct call sites did not,
+        so the same user action had two outcomes depending on whether the timer
+        had ever been re-opened. Unguarded, a list refresh that raises skips
+        _cleanup_and_destroy, leaves the window on screen, and reports "Failed
+        to save the session" for a session save_work_log wrote one line
+        earlier — and pressing the button again hits the already-logged early
+        return, so it looks like nothing was ever saved (P5, P14).
+        """
+        if not self.on_close_callback:
+            return
+        try:
+            self.on_close_callback()
+        except Exception as exc:
+            print(f"[WARN] the opener's refresh failed after the timer closed: {exc}")
 
     def continue_action(self):
         """Record the session, create the follow-up, and open it.
@@ -1332,13 +1405,12 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 planned_minutes=item.planned_minutes,
                 status="open"
             )
-            new_row_id = db_manager.create_action_item(new_item)
-            if not new_row_id:
-                # The sibling path guards this and this one did not, so three
-                # inheritance writes ran against a row that does not exist.
-                raise RuntimeError(
-                    "the follow-up item could not be created; nothing was "
-                    "inherited and the session has not been recorded yet")
+            # create_action_item returns the new id or raises; there is no
+            # falsy success. A guard was added here for symmetry with
+            # create_followup_item's `if new_id:` and removed again once that
+            # sibling was read properly — it is dead there too. The ordering
+            # below is what protects the session record, not a check on this.
+            db_manager.create_action_item(new_item)
             print(
                 f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
@@ -1390,14 +1462,15 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             timer_closed = True
             if window_exists:
                 self.save_window_settings()
-                if on_close_callback:
-                    on_close_callback()
+                self._tell_the_opener()
                 timer_closed = self._cleanup_and_destroy()
                 print(f"[DEBUG] Timer window closed: {timer_closed}")
             else:
-                # Window already destroyed, just call the callback
-                if on_close_callback:
-                    on_close_callback()
+                # Window already destroyed, just call the callback. Through the
+                # same guard: destroying a Tk window does not clear the Python
+                # attributes on it, so self.on_close_callback is still the
+                # local one this used to read directly.
+                self._tell_the_opener()
                 print(
                     f"[DEBUG] Timer window closed (was already destroyed during dialog)")
 
@@ -1522,8 +1595,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
         self.save_window_settings()
 
-        if self.on_close_callback:
-            self.on_close_callback()
+        self._tell_the_opener()
 
         self._cleanup_and_destroy()
 
