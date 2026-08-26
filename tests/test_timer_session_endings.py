@@ -27,6 +27,7 @@ import random
 
 import customtkinter as ctk
 import pytest
+import tkinter as tk
 
 from src.getmoredone.db_manager import DatabaseManager
 from src.getmoredone.models import ActionItem
@@ -1123,8 +1124,14 @@ def test_f22_reusing_a_timer_refreshes_the_item(root, manager, hushed):
     """F2 — the live window held the item as it was when it first opened.
 
     Both openers save before opening the timer, so the row is current and the
-    live window's copy is the stale one. It used to keep the stale one and act
-    on it for the rest of the session.
+    live window's copy is the stale one.
+
+    What this asserts is the data object, and only that. The clock is NOT
+    re-read: time_block_minutes and work_seconds_remaining are set in __init__
+    and a reuse leaves them on the old duration. That gap is real and recorded
+    in BACKLOG.md rather than claimed here — the earlier version of this
+    docstring said the window "acted on" the stale item, which was more than
+    the assertion below shows.
     """
     item = _item(manager)
     live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
@@ -1189,4 +1196,133 @@ def test_f51_a_follow_up_that_cannot_be_created_does_not_lose_the_session(
     assert inherited, "precondition: the inheritance was attempted"
     assert len(manager.get_work_logs(item.id)) == 1, (
         "a failure in the inheritance lost the work log for a finished session"
+    )
+
+
+def test_g11_reusing_a_timer_does_not_revert_the_editors_notes(root, manager,
+                                                               hushed):
+    """Sweep finding 1 — the fix for one clobber installed its mirror image.
+
+    The notes box is filled once at __init__. Refreshing self.item without it
+    left _save_notes_to_item comparing a fresh description against a stale box,
+    so every ending wrote the old text back over what the editor had just
+    saved. With both stale they had matched and nothing was written.
+    """
+    item = _item(manager, description="the original note")
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    stored = manager.get_action_item(item.id)
+    stored.description = "what the editor saved while the timer was open"
+    manager.update_action_item(stored)
+
+    TimerWindow.open_for(root, manager, stored, rng=random.Random(1))
+    live._save_notes_to_item()
+
+    assert manager.get_action_item(item.id).description == (
+        "what the editor saved while the timer was open"), (
+        "the ending wrote the timer's stale notes back over the editor's save"
+    )
+    live.destroy()
+
+
+def test_g12_a_note_typed_into_the_timer_survives_a_reuse(root, manager, hushed):
+    """Sweep finding 1 — and the refresh must not throw away unsaved work.
+
+    Without this, "always refresh the box" passes the test above while
+    discarding whatever the user had typed into the timer and not yet saved.
+    """
+    item = _item(manager, description="the original note")
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    live.next_steps_text.delete("1.0", "end")
+    live.next_steps_text.insert("1.0", "what I typed into the timer")
+
+    stored = manager.get_action_item(item.id)
+    stored.description = "what the editor saved"
+    manager.update_action_item(stored)
+    TimerWindow.open_for(root, manager, stored, rng=random.Random(1))
+
+    assert live.next_steps_text.get("1.0", "end-1c").strip() == (
+        "what I typed into the timer"), (
+        "the reuse discarded a note the user had typed and not yet saved"
+    )
+    live.destroy()
+
+
+def test_g13_the_pop_out_notes_window_keeps_pointing_at_the_same_item(
+        root, manager, hushed):
+    """Sweep finding 4 — NextActionWindow writes through self.item by reference.
+
+    Rebinding self.item on a reuse left the pop-out holding the old object, so
+    saving from it wrote a whole stale row back — title, dates, deliverable,
+    not just the note. The fields are copied into the existing object instead.
+    """
+    item = _item(manager)
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    aliased = live.item                      # what the pop-out would hold
+
+    stored = manager.get_action_item(item.id)
+    stored.title = "renamed in the editor"
+    manager.update_action_item(stored)
+    TimerWindow.open_for(root, manager, stored, rng=random.Random(1))
+
+    assert live.item is aliased, (
+        "self.item was rebound, so anything holding the old object writes a "
+        "stale row through it"
+    )
+    assert aliased.title == "renamed in the editor", (
+        "the alias was preserved but never refreshed"
+    )
+    live.destroy()
+
+
+def test_g14_the_callback_chain_does_not_grow_on_every_reopen(root, manager,
+                                                              hushed):
+    """Sweep finding 2 — `is` never matches a bound method.
+
+    All four openers pass one, and attribute access builds a fresh bound-method
+    object each time, so the dedupe was inert: five presses ran that screen's
+    refresh five times on close.
+    """
+    item = _item(manager)
+    calls = []
+
+    class Screen:
+        def refresh(self):
+            calls.append(1)
+
+    screen = Screen()
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1),
+                                on_close=screen.refresh)
+    for _ in range(4):
+        TimerWindow.open_for(root, manager, item, rng=random.Random(1),
+                             on_close=screen.refresh)
+
+    live._close_and_return()
+
+    assert calls == [1], (
+        f"the opener's refresh ran {len(calls)} times for one close; the "
+        "chain grows on every re-open"
+    )
+
+
+def test_g15_a_failing_refresh_does_not_swallow_the_ending(root, manager,
+                                                           hushed):
+    """Sweep finding 5 — the guard existed on the adopted path only.
+
+    Unguarded, a list refresh that raises skipped _cleanup_and_destroy, left
+    the window on screen, and reported "Failed to save the session" for one
+    that had already been written.
+    """
+    def explode():
+        raise RuntimeError("the list could not be rebuilt")
+
+    item = _item(manager)
+    timer = TimerWindow(root, manager, item, rng=random.Random(1),
+                        on_close=explode)
+
+    timer._close_and_return()
+
+    assert not timer.winfo_exists(), (
+        "a failing opener refresh stopped the timer from closing"
     )
