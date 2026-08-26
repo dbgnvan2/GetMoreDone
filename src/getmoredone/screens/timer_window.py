@@ -57,6 +57,17 @@ FOLLOW_UP_LABEL = "Follow up"
 FOLLOW_UP_SUFFIX_RE = re.compile(r" - " + re.escape(FOLLOW_UP_LABEL) + r" \d{2}-\d{2}$")
 
 
+def day_stamp(made_on: Optional[date] = None) -> str:
+    """MM-DD for a follow-up title or a session note. One format, one place.
+
+    Tests: tests/test_timer_session_endings.py::test_n26_the_stamp_is_one_format_in_one_place
+
+    ``made_on`` exists so a test can state the date rather than freeze the
+    clock; nothing in the application passes it.
+    """
+    return (made_on or date.today()).strftime("%m-%d")
+
+
 def follow_up_title(title: str, made_on: Optional[date] = None) -> str:
     """The original's title, stamped with the day the follow-up was made.
 
@@ -78,9 +89,8 @@ def follow_up_title(title: str, made_on: Optional[date] = None) -> str:
     Known limit: two follow-ups of the same item on the same day still collide.
     Accepted, being outside the expected shape of use.
     """
-    stamp = (made_on or date.today()).strftime("%m-%d")
     base = FOLLOW_UP_SUFFIX_RE.sub("", title)
-    return f"{base} - {FOLLOW_UP_LABEL} {stamp}"
+    return f"{base} - {FOLLOW_UP_LABEL} {day_stamp(made_on)}"
 
 
 # Item id -> the live timer window for it. Weak, so a window that is destroyed
@@ -1297,7 +1307,8 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             self.db_manager.update_action_item(self.item)
             notify_weekly_tactic_changes(self.db_manager, self)
 
-    def _append_session_note(self, note: Optional[str]) -> None:
+    def _append_session_note(self, note: Optional[str],
+                            made_on: Optional[date] = None) -> None:
         """Add a session note to the end of the Action Item's description.
 
         Purpose: the note was written to the work log and nowhere else, and
@@ -1318,20 +1329,47 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         if not note or not note.strip():
             return
 
-        stamp = date.today().strftime("%m-%d")
-        entry = f"{stamp}: {note.strip()}"
+        entry = f"{day_stamp(made_on)}: {note.strip()}"
         existing = (self.item.description or "").rstrip()
         self.item.description = (
             f"{existing}{SESSION_NOTE_SEPARATOR}{entry}" if existing else entry)
 
+        # Three steps, in this order and each guarded separately.
+        #
+        # The write, then its cascade notice. They stay adjacent because
+        # test_wt_m6b5_every_report_producing_surface_reads_it requires every
+        # update_action_item to report what the cascade did within a few lines
+        # — a comment block between them was enough to hide the notice from
+        # that guard, which is how it caught this.
+        #
+        # The notice takes no parent once the window is gone: Tk raises "bad
+        # window path name" on a destroyed one, and one of this method's
+        # callers is the branch that exists BECAUSE the window was destroyed.
+        # Its own try, so a failed notice is never reported as a failed note.
+        #
+        # Then the notes box, which was filled from the pre-append description
+        # and is now stale. Every ending opens with _save_notes_to_item, which
+        # writes the box whenever it differs from the item — so on a window
+        # that survives its ending, the next Save Notes wrote the old text back
+        # and deleted the note (P8).
         try:
             self.db_manager.update_action_item(self.item)
-            notify_weekly_tactic_changes(self.db_manager, self)
         except Exception as exc:
-            # Said out loud rather than swallowed: the note is on the work log
-            # either way, but the user was told it would appear here.
             print(f"[ERROR] the session note could not be added to the item's "
                   f"description: {exc}")
+            return
+        try:
+            notify_weekly_tactic_changes(
+                self.db_manager, self if self.winfo_exists() else None)
+        except Exception as exc:
+            print(f"[WARN] the session note was saved, but the weekly-tactic "
+                  f"notice could not be shown: {exc}")
+
+        try:
+            if self.winfo_exists():
+                self.refresh_notes()
+        except (tk.TclError, AttributeError):
+            pass
 
     def _close_and_return(self):
         """Save window settings, tell the opener to refresh, and close."""
