@@ -157,35 +157,40 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 alive = False
             if alive:
                 live.adopt_opener(db_manager, item, on_close, vps_manager)
-                # Guarded separately from the liveness check, and it drops the
-                # entry on failure. Unguarded, a single TclError from a window
-                # mid-teardown left the entry in place, so *every* later press
-                # on that item took the same failing path — a transient fault
-                # turned into a permanently dead button (P1), and the only
-                # unguarded raise of its kind in the file (P5).
+                # Guarded separately from the liveness check. Unguarded, a
+                # single TclError from a window mid-teardown escaped to the
+                # screen that pressed Timer, which has no handler — and it was
+                # the only unguarded raise of its kind in this file (P5).
+                #
+                # It no longer drops the registry entry: that sentence
+                # described a version of this branch that replaced the window,
+                # and it outlived it by one commit.
                 try:
                     live.deiconify()
                     live.lift()
                     live.focus_force()
                     return live
                 except Exception as exc:
-                    # Close the one that cannot be raised before building its
-                    # replacement. Falling straight through left it on screen,
-                    # and every timer opens at the same saved coordinates — so
-                    # a transient lift() failure produced two stacked windows
-                    # on one item, which is the defect open_for exists to
-                    # prevent, reached through its own error path.
+                    # The window is alive — winfo_exists() said so a moment
+                    # ago — it just did not come to the front. So hand it back
+                    # rather than doing anything about it.
                     #
-                    # No registry pop: the construction below reassigns the
-                    # entry unconditionally, so removing it first changes
-                    # nothing that any test could observe.
+                    # This branch has now been wrong twice. Falling through
+                    # built a second timer at the same coordinates, which is
+                    # the defect open_for exists to prevent. Destroying the
+                    # first one instead lost a running session's work log:
+                    # _cleanup_and_destroy cancels the tick and destroys the
+                    # window without writing anything, so a transient lift()
+                    # failure threw away the elapsed time — trading a
+                    # recoverable cosmetic fault for an unrecoverable one.
+                    #
+                    # Returning it costs the user a press: the timer may stay
+                    # behind another window until they click it. That is the
+                    # smallest wrong thing available here, and it is the only
+                    # one of the three that cannot destroy anything.
                     print(f"[WARN] could not raise the open timer for "
-                          f"{item.id}, replacing it: {exc}")
-                    try:
-                        live._cleanup_and_destroy()
-                    except Exception as cleanup_exc:
-                        print(f"[WARN] and it could not be closed either: "
-                              f"{cleanup_exc}")
+                          f"{item.id}; it is still open: {exc}")
+                    return live
         window = cls(parent, db_manager, item, on_close=on_close, rng=rng,
                      vps_manager=vps_manager)
         _LIVE_TIMERS[item.id] = window
