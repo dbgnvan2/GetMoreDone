@@ -94,9 +94,13 @@ def _stopped_timer(root, manager, item):
     return timer
 
 
-def _dismiss_the_note_dialog(timer, how="skip"):
-    """``how="save_note"`` types ``CompletionNoteDialog.next_typed`` and saves."""
-    """Press Skip/Save on the CompletionNoteDialog once it exists.
+def _dismiss_the_note_dialog(timer, how="skip", text=""):
+    """Press Skip (or type ``text`` and Save) on the note dialog once it exists.
+
+    ``how="save_note"`` types ``text`` into the real dialog and saves it. The
+    text was a class attribute on CompletionNoteDialog, set from the test and
+    never removed, so it leaked to every later test in the session — the
+    cross-test coupling this file's own registry fixture exists to prevent.
 
     Scheduled before the button handler runs, because the handler blocks in
     wait_window until the dialog is gone.
@@ -105,8 +109,7 @@ def _dismiss_the_note_dialog(timer, how="skip"):
         for child in timer.winfo_children():
             if isinstance(child, CompletionNoteDialog):
                 if how == "save_note":
-                    child.textbox.insert(
-                        "1.0", getattr(CompletionNoteDialog, "next_typed", ""))
+                    child.textbox.insert("1.0", text)
                     child.save()
                 else:
                     getattr(child, how)()
@@ -1391,8 +1394,8 @@ def test_n21_a_session_note_is_appended_to_the_description(root, manager,
     timer.work_seconds_elapsed = 25 * 60
     timer.stop_timer()
 
-    _dismiss_the_note_dialog(timer, how="save_note")
-    CompletionNoteDialog.next_typed = "got the opening paragraph down"
+    _dismiss_the_note_dialog(timer, how="save_note",
+                             text="got the opening paragraph down")
     timer.save_and_close_action()
 
     stored = manager.get_action_item(item.id).description
@@ -1415,8 +1418,7 @@ def test_n22_a_second_session_note_does_not_replace_the_first(root, manager,
         timer._cancel_pending_timer()
         timer.work_seconds_elapsed = 25 * 60
         timer.stop_timer()
-        _dismiss_the_note_dialog(timer, how="save_note")
-        CompletionNoteDialog.next_typed = text
+        _dismiss_the_note_dialog(timer, how="save_note", text=text)
         timer.save_and_close_action()
         item = manager.get_action_item(item.id)
 
@@ -1461,11 +1463,149 @@ def test_n24_the_note_goes_on_the_original_not_the_follow_up(root, manager,
     timer.work_seconds_elapsed = 25 * 60
     timer.stop_timer()
 
-    _dismiss_the_note_dialog(timer, how="save_note")
-    CompletionNoteDialog.next_typed = "where I got to today"
+    _dismiss_the_note_dialog(timer, how="save_note",
+                             text="where I got to today")
     timer.continue_action()
 
     assert "where I got to today" in manager.get_action_item(item.id).description
     assert _child_of(manager, item).description == tw.FOLLOW_UP_PROMPT, (
         "the session note landed in the follow-up's prompt"
+    )
+
+
+def test_n25_the_note_renders_exactly_as_the_user_guide_shows_it(root, manager,
+                                                                 hushed):
+    """F3 — the documented format had no test that could fail against it.
+
+    USER_GUIDE prints the blank-line-separated, MM-DD-prefixed block as the
+    contract. Both SESSION_NOTE_SEPARATOR and the stamp could be deleted with
+    every test still green: n22 asserted containment and order only.
+    """
+    from datetime import date as _date
+
+    item = _item(manager, description="what this task is for")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    timer._append_session_note("got the opening paragraph down",
+                               made_on=_date(2026, 8, 25))
+    timer._append_session_note("sent the draft to Legal",
+                               made_on=_date(2026, 8, 26))
+
+    assert manager.get_action_item(item.id).description == (
+        "what this task is for\n"
+        "\n"
+        "08-25: got the opening paragraph down\n"
+        "\n"
+        "08-26: sent the draft to Legal"
+    )
+    timer.destroy()
+
+
+def test_n26_the_stamp_is_one_format_in_one_place():
+    """F3 — the MM-DD stamp was written out twice with no shared helper.
+
+    A follow-up title and a session note carry the same date in the same shape.
+    Two copies is how they drift when one gains a year (P5).
+    """
+    import ast
+    import pathlib
+    from datetime import date as _date
+
+    assert tw.day_stamp(_date(2026, 8, 26)) == "08-26"
+
+    source = pathlib.Path(tw.__file__).read_text()
+    strftimes = [n for n in ast.walk(ast.parse(source))
+                 if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                 and n.func.attr == "strftime"]
+    assert len(strftimes) == 1, (
+        f"the date format is written in {len(strftimes)} places; it belongs in "
+        "day_stamp alone"
+    )
+
+
+def test_n27_done_appends_its_session_note_too(root, manager, hushed,
+                                               monkeypatch):
+    """F2 — the Done ending's append was provably untested.
+
+    Deleting both of its calls left all five original tests green. Done is the
+    ending whose spec (FR-AT-004) this batch implements, and it was the one
+    ending nothing verified.
+    """
+    from src.getmoredone.screens import timer_window_dialogs as dlg
+    monkeypatch.setattr(dlg, "SavorDialog",
+                        lambda parent, snapshot: type("S", (), {"acknowledged": True})())
+
+    item = _item(manager, description="the task")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+
+    _dismiss_the_note_dialog(timer, how="save_note", text="finished the section")
+    timer.finished_action()
+
+    stored = manager.get_action_item(item.id)
+    assert "finished the section" in (stored.description or ""), (
+        "Done recorded its note on the work log and nowhere the user can see it"
+    )
+    assert stored.status == "completed", "Done must still complete the item"
+
+
+def test_n28_an_appended_note_survives_a_window_that_did_not_close(
+        root, manager, hushed, monkeypatch):
+    """F1 — the notes box goes stale the instant a note is appended.
+
+    Every ending opens with _save_notes_to_item, which writes the box whenever
+    it differs from the item's description. On a window that survives its
+    ending — the outer except in all three, or continue_action's
+    timer_closed=False branch — the next Save Notes wrote the pre-append text
+    back and deleted the note, immediately after the app said the description
+    is where to read it.
+    """
+    item = _item(manager, description="the task")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    timer._append_session_note("what I did today")
+    # What a surviving window does next: the user presses Save Notes, or
+    # reaches a second ending, either of which runs this.
+    timer._save_notes_to_item()
+
+    assert "what I did today" in manager.get_action_item(item.id).description, (
+        "the stale notes box overwrote the session note"
+    )
+    timer.destroy()
+
+
+def test_n29_a_destroyed_window_is_not_passed_as_a_tk_parent(root, manager,
+                                                             hushed, monkeypatch):
+    """F4 — one caller of the append is the branch that exists BECAUSE the
+    window was destroyed.
+
+    Five lines below it, the pre-existing code passes no parent for exactly
+    this reason: Tk raises "bad window path name" on a destroyed one, and the
+    outer handler would then report a failure for a note that was saved. The
+    argument is captured at the boundary rather than inferred from behaviour,
+    because the raise only occurs when a collision notice is actually due (P25).
+    """
+    parents = []
+    monkeypatch.setattr(tw, "notify_weekly_tactic_changes",
+                        lambda db, parent=None: parents.append(parent))
+
+    item = _item(manager, description="the task")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    timer._append_session_note("while the window was alive")
+    assert parents == [timer], "a live window should be the notice's parent"
+
+    timer.destroy()
+    timer._append_session_note("after the window was destroyed")
+
+    assert parents[-1] is None, (
+        "a destroyed widget was handed to Tk as a parent, on the very path "
+        "that exists because the window is gone"
+    )
+    assert "after the window was destroyed" in (
+        manager.get_action_item(item.id).description), (
+        "the note did not reach the item once the window was gone"
     )
