@@ -206,6 +206,21 @@ Filters:
 
 #### Project detail panel (right side)
 
+The header above the two lists carries a **Time** line:
+
+```
+Time: 12 sessions | 8h 45m
+```
+
+That is every timer session logged against every action item filed under this
+project — completed items and follow-ups included, since a follow-up inherits its
+project link. It is counted from the session records themselves rather than kept
+as a running total on the project, so it cannot drift out of step with them.
+
+Not to be confused with the reward protocol's own counter, which counts
+*completed deliverables* (Done presses) to decide how often you get a celebration
+and carries no time at all. See "The reward protocol" below.
+
 When you click a project on the board, the right side shows two stacked sections — Project Notes on top, Action Items below — with a shared filter above both.
 
 - **Shared "Show Completed" checkbox** — What: A single toggle above both lists, default OFF. Why: First view shows only open Project Notes and open Action Items; flip it on to reveal completed work in both lists at once.
