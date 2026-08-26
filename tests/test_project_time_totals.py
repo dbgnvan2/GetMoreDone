@@ -16,6 +16,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 import pytest
+from types import SimpleNamespace
 
 from src.getmoredone.db_manager import DatabaseManager
 from src.getmoredone.models import ActionItem, ProjectBoard, WorkLog
@@ -224,42 +225,104 @@ def test_pt33_absent_numbers_render_no_line_rather_than_zero(manager):
     assert project_time_line(bare) == "Time: 1 session | 1h"
 
 
-def test_pt34_the_detail_pane_uses_that_function(manager):
-    """PT3.1 — a line nothing renders is the same as no line (P25).
+def test_pt34_the_detail_pane_really_renders_the_time_line(manager):
+    """PT3.1 — a real screen, not a search for a call node.
 
-    Parsed, not grepped: the call has to be on the renderer's path, and a
-    substring search would match the import or a comment.
+    The first version of this walked the AST of _render_detail for the call
+    name. Both it and its sibling passed with the call wrapped in `if False:` —
+    they proved a Call node existed, not that it was reachable, which is P21's
+    "wired but conditionally dead" and the update already sits inside a
+    conditional (P13).
     """
-    import ast
-    import pathlib
+    import customtkinter as ctk
 
-    from src.getmoredone.screens import project_boards as pb
+    from src.getmoredone.screens.project_boards import ProjectBoardsScreen
 
-    tree = ast.parse(pathlib.Path(pb.__file__).read_text())
-    render = next(n for n in ast.walk(tree)
-                  if isinstance(n, ast.FunctionDef) and n.name == "_render_detail")
-    called = {n.func.id for n in ast.walk(render)
-              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-    assert "project_time_line" in called, (
-        "_render_detail does not build the Time line, so the query's "
-        "session_count and total_minutes reach nothing the user can see"
-    )
+    board = _board(manager)
+    _log(manager, _item_on(manager, board), 60)
+
+    try:
+        root = ctk.CTk()
+    except Exception as exc:                     # no display
+        pytest.skip(f"No GUI display available: {exc}")
+    root.withdraw()
+    try:
+        screen = ProjectBoardsScreen(root, manager, SimpleNamespace(vps_manager=None))
+        screen.selected_board_id = board.id
+        screen.refresh()
+        root.update_idletasks()
+
+        assert "Time: 1 session | 1h" in screen.detail_meta.cget("text"), (
+            f"the pane rendered {screen.detail_meta.cget('text')!r}"
+        )
+    finally:
+        root.destroy()
+
+
+def test_pt35_the_fallback_path_renders_it_too(manager):
+    """PT3.1 — the branch that fetches a board with SELECT *.
+
+    Reachable by unticking a status filter while its board is selected. That
+    row has neither aggregate; before the fix it rendered a fabricated zero,
+    and deleting the fallback's lookup makes the line vanish instead. Both are
+    caught here because this reads what the pane actually put on screen.
+    """
+    import customtkinter as ctk
+
+    from src.getmoredone.models import ProjectBoardStatus
+    from src.getmoredone.screens.project_boards import ProjectBoardsScreen
+
+    board = _board(manager)
+    _log(manager, _item_on(manager, board), 60)
+    manager.set_project_board_status(board.id, ProjectBoardStatus.COMPLETED)
+
+    try:
+        root = ctk.CTk()
+    except Exception as exc:                     # no display
+        pytest.skip(f"No GUI display available: {exc}")
+    root.withdraw()
+    try:
+        screen = ProjectBoardsScreen(root, manager, SimpleNamespace(vps_manager=None))
+        screen.selected_board_id = board.id
+        # The completed board is not in board_rows, so _render_detail takes the
+        # direct-fetch fallback.
+        screen.show_completed_var.set(False)
+        screen.refresh()
+        root.update_idletasks()
+
+        rendered = screen.detail_meta.cget("text")
+        assert "Time: 1 session | 1h" in rendered, (
+            f"the fallback path rendered {rendered!r} — a fabricated zero or "
+            "no line at all"
+        )
+    finally:
+        root.destroy()
 
 
 def test_pt41_the_single_board_totals_agree_with_the_grouped_query(manager):
-    """PT1 — two ways to compute one quantity is how they drift (P5)."""
+    """PT1 — two ways to compute one quantity is how they drift (P5).
+
+    Two boards, because one cannot show a board filter working: dropping the
+    new query's WHERE entirely left every test green when this had a single
+    fixture. pt13 records the same lesson for the grouped query, and this
+    repeated it one method later.
+    """
     board = _board(manager)
     busy = _item_on(manager, board, title="Worked on repeatedly")
     for minutes in (25, 25, 10):
         _log(manager, busy, minutes)
     _log(manager, _item_on(manager, board, title="Second task"), 40)
 
-    grouped = _row_for(manager, board)
-    single = manager.get_project_time_totals(board.id)
+    other = _board(manager, "Something Else")
+    _log(manager, _item_on(manager, other, title="Their task"), 90)
 
-    assert single == {"session_count": grouped["session_count"],
-                      "total_minutes": grouped["total_minutes"]}
-    assert single == {"session_count": 4, "total_minutes": 100}
+    for b, expected in ((board, {"session_count": 4, "total_minutes": 100}),
+                        (other, {"session_count": 1, "total_minutes": 90})):
+        grouped = _row_for(manager, b)
+        single = manager.get_project_time_totals(b.id)
+        assert single == {"session_count": grouped["session_count"],
+                          "total_minutes": grouped["total_minutes"]}, b.title
+        assert single == expected, b.title
 
 
 def test_pt35_the_fallback_path_asks_for_the_totals(manager):
