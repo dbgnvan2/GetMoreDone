@@ -121,7 +121,9 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 
 - **Complete & Create Follow Up** button available when timer is stopped
 - Clicking it:
-  1. Shows "Completion Note" dialog for current work
+  1. Shows the "Session Notes" dialog for current work; what is typed is
+     appended to the ORIGINAL action item's description, dated MM-DD, and also
+     stored on the work log
   2. Saves work log entry for time block — this is the "Complete" in the
      button's name. The current action item is **not** completed; only "Done"
      completes an action item

@@ -556,6 +556,24 @@ three say what they do:
   as a related record against the action item along with the time spent, and returns you
   to the action item, which stays **open**. Why: The ordinary ending — you did some work,
   it is written down, the task is not finished.
+
+**Session Notes.** All three endings that record a session — *Done*, *Save Related* and
+*Complete & Create Follow Up* — ask for a note in a window called **Session Notes**. What
+you type is appended to the **description** of the action item you were working on,
+prefixed with the date:
+
+```
+what this task is for
+
+08-25: got the opening paragraph down
+08-26: sent the draft to Legal
+```
+
+Notes accumulate rather than replacing each other, and Skip adds nothing. The note is also
+stored on the session record itself, but nothing in the app displays those yet — the
+description is where you read them back. On *Complete & Create Follow Up* the note goes on
+the **original** item, not the follow-up, because it describes the session that just
+happened.
 - **Cancel Timer** — What: Closes the timer and returns you to the action item with
   **nothing recorded**. No session, no time, no note, and no change to the item — not
   even notes you typed into this window. Why: Cancel means nothing happened. If you want
