@@ -376,6 +376,15 @@ def test_alpha_still_passes_through_the_attributes_wrapper():
 # without any of that.
 ALLOWED_WINDOW_CLASSES = {"CTk", "CTkToplevel", "Tk", "Toplevel"}
 
+# Covered by a different mechanism, so listed separately rather than folded in.
+# These build no Python window object to patch, register or sweep — conftest
+# replaces the functions themselves, so they record what would have been shown
+# and return without displaying anything. Exact, like the set above: a test
+# calling a messagebox function that is NOT neutralised shows up here and gets
+# a decision, rather than blocking the run.
+ALLOWED_NEUTRALISED_DIALOGS = {"showerror", "askyesno", "askokcancel",
+                               "askquestion"}
+
 
 def _is_alive(window) -> bool:
     """Whether a window still exists, for roots as well as children.
@@ -514,6 +523,15 @@ def test_no_helper_builds_a_window_the_suite_cannot_reach():
     assert ALLOWED_WINDOW_CLASSES <= window_makers, (
         "the allow-list names something the toolkit does not consider a window"
     )
+    assert ALLOWED_NEUTRALISED_DIALOGS <= window_makers, (
+        "the neutralised-dialog list names something that is not one"
+    )
+    import tkinter.messagebox as _messagebox
+    for _name in ALLOWED_NEUTRALISED_DIALOGS:
+        assert getattr(_messagebox, _name).__name__ == "recorder", (
+            f"messagebox.{_name} is not neutralised, so a test calling it "
+            "would block the run waiting for a click"
+        )
 
     # Named with the reason rather than skipped by a pattern, so a file cannot
     # fall out of coverage quietly. test_source_asserts.py contains
@@ -534,9 +552,10 @@ def test_no_helper_builds_a_window_the_suite_cannot_reach():
             if name in window_makers:
                 found.add(name)
 
-    assert found == ALLOWED_WINDOW_CLASSES, (
-        "tests build windows the guard does not patch, register or sweep: "
-        f"{sorted(found - ALLOWED_WINDOW_CLASSES)}"
+    allowed = ALLOWED_WINDOW_CLASSES | ALLOWED_NEUTRALISED_DIALOGS
+    assert found == allowed, (
+        "tests build windows the guard does not patch, register, sweep or "
+        f"neutralise: {sorted(found - allowed)}"
     )
 
 
@@ -570,3 +589,88 @@ def test_a_deiconified_window_is_withdrawn_again():
         )
     finally:
         root.destroy()
+
+
+# --- messagebox: the hole in the same guard ---------------------------------
+
+def test_b51_a_messagebox_records_instead_of_blocking(messageboxes):
+    """B5.1 — the run must never stop waiting for a click.
+
+    ``grab_set``, ``lift``, ``focus_force`` and ``-topmost`` were silenced;
+    ``tkinter.messagebox`` was not, and it is the same class — a call that
+    seizes the run until a human answers it (P5).
+    """
+    import tkinter.messagebox as messagebox
+
+    result = messagebox.showerror("A title", "A message")
+
+    assert ("showerror", "A title", "A message") in messageboxes, (
+        "the messagebox was not recorded, so it was probably shown"
+    )
+    assert result == "ok", "the stub must answer, or callers block on None"
+
+
+def test_b51b_an_unanswered_question_authorises_nothing():
+    """B5.1 — every ask* defaults to the negative answer.
+
+    A test that reaches an unpatched confirmation must not have it agreed to
+    on its behalf; several of them guard deletions.
+    """
+    import tkinter.messagebox as messagebox
+
+    assert messagebox.askyesno("Delete?", "Really?") is False
+    assert messagebox.askokcancel("Delete?", "Really?") is False
+    assert messagebox.askquestion("Delete?", "Really?") == "no"
+
+
+def test_b51c_a_test_may_still_answer_for_itself(monkeypatch, messageboxes):
+    """B5.1 — the session patch must not defeat a local one.
+
+    Fifteen tests patch messagebox themselves, most of them to say yes to a
+    confirmation. They set the same attribute on the same module object, so a
+    local patch has to win and be restored afterwards.
+    """
+    import tkinter.messagebox as messagebox
+
+    monkeypatch.setattr(messagebox, "askyesno", lambda *a, **k: True)
+    assert messagebox.askyesno("Delete?", "Really?") is True
+    monkeypatch.undo()
+    assert messagebox.askyesno("Delete?", "Really?") is False, (
+        "the session default did not come back after a local patch"
+    )
+
+
+def test_b52_a_failing_timer_ending_does_not_hang_the_run(tmp_path, messageboxes):
+    """B5.2 — the case that actually cost two minutes of a review pass.
+
+    Every timer ending wraps its body in ``except Exception`` and calls
+    ``_show_error_dialog``. Before this, a test that raised inside one opened a
+    real modal and the run stopped there. The assertion is simply that this
+    function returns.
+    """
+    import customtkinter as ctk
+
+    from src.getmoredone.db_manager import DatabaseManager
+    from src.getmoredone.models import ActionItem
+    from src.getmoredone.screens.timer_window import TimerWindow
+
+    manager = DatabaseManager(str(tmp_path / "hang.db"))
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        item = ActionItem(who="Self", title="A task", planned_minutes=30,
+                          deliverable="an artifact")
+        manager.create_action_item(item)
+        timer = TimerWindow(root, manager, item)
+
+        # The shape of a real failure inside an ending: something the handler
+        # cannot help with, on the path that reports it.
+        timer._show_error_dialog("Failed to complete action: boom")
+
+        assert any(f == "showerror" for f, _t, _m in messageboxes), (
+            "the ending's error path did not go through messagebox at all"
+        )
+        timer.destroy()
+    finally:
+        root.destroy()
+        manager.close()

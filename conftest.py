@@ -439,6 +439,85 @@ def _close_connections_left_open_by_this_test(_track_open_connections):
 
 
 # Set while a test has explicitly asked for a mapped window (see the
+# ---------------------------------------------------------------------------
+# tkinter.messagebox blocks a run until someone clicks it.
+# ---------------------------------------------------------------------------
+
+# Every messagebox raised during the run, newest last:
+# (function name, title, message).
+_MESSAGEBOXES: list = []
+
+# What each returns when nothing has said otherwise. The ask* answers are all
+# the negative one: an unanswered question during a test must not authorise
+# anything, and no test can currently depend on a different answer because an
+# unpatched ask* would have blocked the run rather than returning at all.
+_MESSAGEBOX_DEFAULTS = {
+    "showerror": "ok", "showwarning": "ok", "showinfo": "ok",
+    "askyesno": False, "askokcancel": False, "askretrycancel": False,
+    "askyesnocancel": False, "askquestion": "no",
+}
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _messageboxes_never_block(request):
+    """Record what would have been shown; never show it.
+
+    Purpose: the timer's endings wrap their body in ``except Exception`` and
+             call ``_show_error_dialog``, so a test that raises inside one
+             opened a real blocking modal and the run stopped until someone
+             clicked it. Measured: a two-minute hang during a review pass, on
+             a machine nobody was watching.
+    Tests:   tests/test_tk_offscreen.py::test_b51_a_messagebox_records_instead_of_blocking
+             tests/test_tk_offscreen.py::test_b52_a_failing_timer_ending_does_not_hang_the_run
+
+    conftest already silences ``grab_set``, ``lift``, ``focus_force`` and
+    ``-topmost`` — this is the same class and was the hole in it (P5): a guard
+    that stops windows being *seen* while leaving one that seizes the run.
+
+    Patched on ``tkinter.messagebox`` itself, which is the single module object
+    every ``screens/*.py`` imports, so one patch covers all 147 call sites. A
+    test that patches it locally still wins: monkeypatch sets the same
+    attribute on the same object and restores it afterwards.
+    """
+    import tkinter.messagebox as messagebox
+
+    originals = {}
+    for name, default in _MESSAGEBOX_DEFAULTS.items():
+        original = getattr(messagebox, name, None)
+        if original is None:
+            continue
+        originals[name] = original
+
+        def recorder(*args, __name=name, __default=default, **kwargs):
+            title = args[0] if args else kwargs.get("title")
+            message = args[1] if len(args) > 1 else kwargs.get("message")
+            _MESSAGEBOXES.append((__name, title, message))
+            return __default
+
+        setattr(messagebox, name, recorder)
+    try:
+        yield
+    finally:
+        # Unobservable from inside the run — this is session teardown and the
+        # process ends with it, so no mutation of these two lines can fail a
+        # test. Kept because the standing rule is to restore every patched
+        # module-level name, and because a nested in-process pytest would
+        # otherwise inherit the patch from a session that had finished.
+        for name, original in originals.items():
+            setattr(messagebox, name, original)
+
+
+@pytest.fixture
+def messageboxes():
+    """The messageboxes this test would have shown, as (func, title, message).
+
+    So a test can assert what the user was told without patching its own stub.
+    """
+    before = len(_MESSAGEBOXES)
+    yield _MESSAGEBOXES
+    del _MESSAGEBOXES[before:]
+
+
 # ``mapped_windows`` fixture). Everything else is withdrawn on creation.
 _WINDOWS_MAY_BE_MAPPED = False
 
