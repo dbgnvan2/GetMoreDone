@@ -24,6 +24,28 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### The topmost-suspension helper lives in the wrong module (2026-08-25)
+
+`week_collision_notice` now lowers an always-on-top parent before showing a
+notice, but it has to import `parent_topmost_suspended` from
+`timer_window_dialogs` *inside the function* — a top-level import would be a
+cycle, since `timer_window_dialogs` imports the notice module. The helper is
+generic and belongs in `utils/`, with `timer_window_dialogs` re-exporting it for
+the AST guards that scan that file by name (`test_t54`, `test_t55`). Deferred
+because moving it at the end of a batch risks those guards for no behavioural
+gain. Found by the csdp re-sweep (M1).
+
+### `test_n26`'s strftime count gives wrong advice when it fires (2026-08-25)
+
+It asserts exactly one `.strftime` call in `timer_window.py`. Correct today and
+mutation-proved, but any future *legitimate* `strftime` in that module goes red
+with "the date format is written in N places; it belongs in day_stamp alone",
+which would be misleading. It is also blind to a duplicate written as an f-string
+format spec (`f"{d:%m-%d}"`). Anchoring on the literal `"%m-%d"` as an AST
+`Constant` would be both stricter and better-worded. Found by the csdp re-sweep
+(L4).
+
+
 ### `_append_session_note`'s empty-string guard is unreachable (2026-08-25)
 
 It reads `if not note or not note.strip(): return`, but `CompletionNoteDialog.save`

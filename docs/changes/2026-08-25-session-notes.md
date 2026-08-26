@@ -38,9 +38,18 @@ happened.
 
 ## Verification
 
-- Command: `taskpolicy -b ./venv/bin/python -m pytest -q`
-- Result: PASS — 1573 passed, 2 skipped (re-run after the sweep fixes).
-- Twelve mutations, all red.
+- Command: `taskpolicy -b ./venv/bin/python -m pytest -q` (GETMOREDONE_NO_MAPPED_WINDOWS
+  unset, so the mapped-window tests run; with it set the counts differ)
+- Result: PASS — exit code 0, 1576 passed, 2 skipped.
+- Twenty-one mutations, all red.
+
+Two `learning-qa` passes. The second found **nothing defective in the fix
+commits** — the first time in this run of batches that a re-sweep has come back
+clean on its predecessor's fixes. Its one medium finding was a pre-existing
+class: every `notify_weekly_tactic_changes` call reaches a `messagebox` parented
+to the always-on-top timer with no suspension — six sites, none covered. That is
+the same defect the whole timer batch started from, so it was fixed at the source
+in `week_collision_notice` rather than at one call site.
 
 ## Review
 
