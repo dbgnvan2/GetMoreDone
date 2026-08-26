@@ -173,6 +173,31 @@ class DBManagerProjectBoardsMixin:
         rows = self.db.conn.execute(query, statuses).fetchall()
         return [dict(row) for row in rows]
 
+    def get_project_time_totals(self, board_id: str) -> Dict[str, int]:
+        """Sessions and minutes for one board. Same numbers as get_project_boards.
+
+        Purpose: PT1 — the detail pane has a fallback path that fetches a board
+                 with ``SELECT *``, which has neither aggregate. Rendering zero
+                 there was a fabricated number on a line that promises a real
+                 one (P6); this lets that path ask instead.
+        Tests:   tests/test_project_time_totals.py::test_pt41_the_single_board_totals_agree_with_the_grouped_query
+
+        Two ways to compute one quantity is how they drift, so the agreement is
+        pinned by a test rather than by both being read carefully (P5).
+        """
+        row = self.db.conn.execute(
+            """
+            SELECT COUNT(*) AS session_count,
+                   COALESCE(SUM(wl.minutes), 0) AS total_minutes
+              FROM work_logs wl
+              JOIN project_board_items pbi ON pbi.item_id = wl.item_id
+             WHERE pbi.project_board_id = ?
+            """,
+            (board_id,),
+        ).fetchone()
+        return {"session_count": row["session_count"],
+                "total_minutes": row["total_minutes"]}
+
     def get_project_board_items(self, board_id: str) -> List[ActionItem]:
         """Return linked action items for one project board."""
         rows = self.db.conn.execute("""

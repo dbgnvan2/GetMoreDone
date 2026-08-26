@@ -738,6 +738,32 @@ class NoteActionChooserDialog(ctk.CTkToplevel):
         self.destroy()
 
 
+def project_time_line(row: dict) -> Optional[str]:
+    """The Project record's Time line, or None when the numbers are not known.
+
+    Purpose: PT3 — session count and total time for the project.
+    Tests:   tests/test_project_time_totals.py::test_pt31_the_time_line_renders_the_boards_own_numbers
+             tests/test_project_time_totals.py::test_pt32_one_session_is_not_pluralised
+             tests/test_project_time_totals.py::test_pt33_absent_numbers_render_no_line_rather_than_zero
+
+    A pure function on the row rather than an f-string inside the renderer,
+    because the tests over it were asserting their own arithmetic: inverting the
+    pluralisation and rendering an entirely different column both left every
+    test green (P27).
+
+    Returns None rather than zero when the row has no aggregates. The detail
+    pane has a fallback that fetches a board with ``SELECT *``, and rendering
+    "0 sessions | 0m" there stated a number the row could not support — every
+    other field on that path degrades to blank, which is an honest "unknown"
+    (P6/P2).
+    """
+    if "session_count" not in row or "total_minutes" not in row:
+        return None
+    sessions = row.get("session_count") or 0
+    return (f"Time: {sessions} session{'' if sessions == 1 else 's'}"
+            f" | {format_minutes(row.get('total_minutes'))}")
+
+
 class ProjectBoardsScreen(ctk.CTkFrame):
     """Single project board containing many project items linked to APEs."""
 
@@ -1312,26 +1338,26 @@ class ProjectBoardsScreen(ctk.CTkFrame):
         if not row:
             # Try to fetch directly if not in filtered list
             row = dict(self.db_manager.db.conn.execute("SELECT * FROM project_boards WHERE id = ?", (board.id,)).fetchone() or {})
+            if row:
+                # SELECT * has neither aggregate, and this path is reachable by
+                # unticking a status filter while its board is selected. Ask for
+                # them rather than showing nothing or, worse, zero.
+                row.update(self.db_manager.get_project_time_totals(board.id))
             if not row:
                 self.detail_title.configure(text=board.title)
                 self.detail_meta.configure(text="")
                 return
 
         self.detail_title.configure(text=row["title"])
-        # PT3 — how much work has gone into this project. Both derived in
-        # get_project_boards from work_logs; the direct-fetch fallback above
-        # selects * from project_boards and has neither, hence the .get()
-        # defaults rather than a subscript.
-        sessions = row.get("session_count") or 0
-        self.detail_meta.configure(
-            text=(
-                f"{row.get('ape_year') or ''} | {row.get('segment_name') or ''} | {row.get('subsegment_name') or ''} | "
-                f"{row.get('category_name') or ''} | Status: {row.get('status')}\n"
-                f"Next Step: {row.get('next_step') or '-'}\n"
-                f"Time: {sessions} session{'' if sessions == 1 else 's'}"
-                f" | {format_minutes(row.get('total_minutes'))}"
-            )
-        )
+        meta_lines = [
+            f"{row.get('ape_year') or ''} | {row.get('segment_name') or ''} | {row.get('subsegment_name') or ''} | "
+            f"{row.get('category_name') or ''} | Status: {row.get('status')}",
+            f"Next Step: {row.get('next_step') or '-'}",
+        ]
+        time_line = project_time_line(row)
+        if time_line:
+            meta_lines.append(time_line)
+        self.detail_meta.configure(text="\n".join(meta_lines))
         category_color = (row.get("category_color_hex") or "").strip() or semantic_colors()["surface_subtle"]
 
         toolbar = ctk.CTkFrame(self.items_frame, fg_color="transparent")
