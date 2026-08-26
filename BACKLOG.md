@@ -24,6 +24,19 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### `project_time_line`'s guard tests presence, not value (2026-08-25)
+
+It checks `"session_count" not in row` and then reads `row.get(...) or 0`, so a
+row where the key is *present but None* renders the exact `Time: 0 sessions | 0m`
+the guard was added to remove. Unreachable today — both producers use `COUNT(*)`
+(never NULL) and `COALESCE(SUM(...), 0)`. Separately, `sqlite3.Row` has no
+key-based `__contains__`: `"session_count" in row` iterates its *values*, so a Row
+returns None even when the columns are there. Both call sites pass a `dict` and
+the type hint says `dict`, so this is latent. One line closes the first half:
+`if row.get("session_count") is None or row.get("total_minutes") is None`. Found
+by the csdp re-sweep (low). Not fixed in-loop, per the below-medium rule.
+
+
 ### An item on two projects gives its full time to both (2026-08-25)
 
 `project_board_items` is many-to-many, so the Time line on each board counts the

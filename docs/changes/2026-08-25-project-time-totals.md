@@ -34,8 +34,8 @@ pick the reward phase, and carries no time at all.
 ## Verification
 
 - Command: `taskpolicy -b ./venv/bin/python -m pytest -q`
-- Result: PASS — exit code 0, 1594 passed, 2 skipped.
-- Thirteen mutations, all red.
+- Result: PASS — exit code 0, 1595 passed, 2 skipped.
+- Seventeen mutations, all red.
 
 ## Review
 
@@ -60,6 +60,16 @@ scalar subqueries, no fan-out); `minutes` is `INTEGER NOT NULL` with exactly one
 writer in the repo; `project_board_items` has a composite primary key so an item
 cannot be double-linked to one board; and the two other readers of
 `get_project_boards` take named keys only.
+
+A re-sweep of those fixes then found two more, both guard strength rather than
+shipped behaviour — the code was correct and the reviewer verified that
+empirically. `pt41` claimed to pin two implementations against each other but had
+a single-board fixture, so deleting the new query's board filter entirely left
+every test green; the same file already records that lesson for the grouped query
+one method earlier. And the two AST guards over `_render_detail` passed with their
+calls wrapped in `if False:` — they proved a call node existed, not that it was
+reachable (P21), on a path that is already conditional (P13). Both are real
+screens now, reading what the pane put on screen.
 
 ## Risks / Known gaps
 
