@@ -325,7 +325,7 @@ def test_t54_every_grabbing_dialog_suspends_the_parents_topmost():
                 grabbing[node.name] = names
 
     assert set(grabbing) == {
-        "CompletionNoteDialog", "NextStepsDialog", "DeliverableDialog", "SavorDialog",
+        "CompletionNoteDialog", "DeliverableDialog", "SavorDialog",
     }, f"the set of modal dialogs changed: {sorted(grabbing)}"
 
     unhardened = [n for n, c in grabbing.items() if "suspend_parent_topmost" not in c]
@@ -572,37 +572,21 @@ def test_t23_the_followup_description_is_the_prompt(
     )
 
 
-def test_t31_the_next_steps_dialog_is_gone(root, manager, hushed,
-                                           monkeypatch):
-    """T3.1 — the ending builds no NextStepsDialog.
+def test_b41_the_dead_dialog_is_gone():
+    """B4 — NextStepsDialog had no caller, so the class itself is deleted.
 
-    Asserted by intercepting the class, not by reading the source: the import
-    could be removed while a call survived under another name, and a source
-    grep would call that clean.
+    This replaces test_t31, which patched the name on both modules to catch the
+    ending building one. That test existed because the class still did; with it
+    gone, its absence is the guarantee and nothing can call it by any spelling.
     """
-    from src.getmoredone.screens import item_editor as ie
+    from src.getmoredone.screens import timer_window as twin
     from src.getmoredone.screens import timer_window_dialogs as dlg
-    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
 
-    built = []
-
-    def caught(*a, **k):
-        built.append(a)
-        raise AssertionError("the ending still opens a Next Steps dialog")
-
-    # Both modules. The original defect resolved the name through
-    # timer_window's OWN globals (a module-level import, called bare), so
-    # rebinding it on timer_window_dialogs alone intercepts nothing and the
-    # assertion below is true by construction. This test was green against a
-    # verbatim restoration of the defect until the csdp sweep proved it.
-    # raising=False because timer_window no longer has the attribute at all —
-    # which is the point, and is why it has to be created to be watched.
-    monkeypatch.setattr(tw, "NextStepsDialog", caught, raising=False)
-    monkeypatch.setattr(dlg, "NextStepsDialog", caught)
-
-    item = _item(manager)
-    _continue_from(root, manager, item)
-    assert built == []
+    assert not hasattr(dlg, "NextStepsDialog"), (
+        "the dead dialog is back; it had no caller and its removal is what "
+        "stops the ending re-acquiring one"
+    )
+    assert not hasattr(twin, "NextStepsDialog")
 
 
 def test_t32_the_followup_editor_opens_with_a_vps_manager(
@@ -714,39 +698,64 @@ def test_t12_a_failed_destroy_is_reported_not_swallowed(root, manager, hushed,
     timer.destroy()
 
 
-def test_t71_the_followup_is_marked_in_its_title(root, manager, hushed,
-                                                 monkeypatch):
-    """T7.1 — the follow-up is recognisable as one in any list."""
+def test_b01_the_followup_title_carries_the_day_it_was_made(root, manager,
+                                                            hushed, monkeypatch):
+    """B0.1 — the created date is the only thing that differs between them."""
+    from datetime import date as _date
+
     from src.getmoredone.screens import item_editor as ie
     monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
 
     item = _item(manager)
     _continue_from(root, manager, item)
 
-    assert _child_of(manager, item).title == "A task - Followup"
+    today = _date.today().strftime("%m-%d")
+    assert _child_of(manager, item).title == f"A task - Follow up {today}"
 
 
-def test_t72_a_followup_of_a_followup_is_not_marked_twice(root, manager, hushed,
-                                                          monkeypatch):
-    """T7.2 — Continue is for work that runs over days, so it repeats.
+def test_b02_the_dated_suffix_does_not_stack():
+    """B0.2 — a follow-up of a follow-up replaces the stamp, never appends.
 
-    Unconditional appending gives "A task - Followup - Followup - Followup" by
-    the third day.
+    Driven directly rather than through two endings: the point is the string
+    rule, and going through the flow twice on one day cannot produce two
+    different dates to tell apart.
     """
-    from src.getmoredone.screens import item_editor as ie
-    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+    from datetime import date as _date
 
-    item = _item(manager)
-    _continue_from(root, manager, item)
-    day_two = _child_of(manager, item)
+    first = tw.follow_up_title("Draft the report", _date(2026, 8, 26))
+    assert first == "Draft the report - Follow up 08-26"
 
-    _continue_from(root, manager, day_two)
+    second = tw.follow_up_title(first, _date(2026, 8, 27))
+    assert second == "Draft the report - Follow up 08-27", (
+        f"the stamp stacked instead of being replaced: {second!r}"
+    )
 
-    # The second follow-up is a *sibling* of the first, not its child: an item
-    # that already has a parent gives the new one the same parent.
-    titles = sorted(c.title for c in manager.get_children(item.id))
-    assert titles == ["A task - Followup", "A task - Followup"], (
-        f"the suffix stacked on a follow-up of a follow-up: {titles}"
+
+def test_b03_a_title_that_merely_mentions_a_follow_up_is_left_alone():
+    """B0.2 — the strip is anchored, so a real task name survives it.
+
+    "Follow up 08-26 with Legal" is a legitimate action item. An unanchored
+    replace would eat the words out of the middle of someone's title.
+    """
+    from datetime import date as _date
+
+    out = tw.follow_up_title("Follow up 08-26 with Legal", _date(2026, 8, 27))
+    assert out == "Follow up 08-26 with Legal - Follow up 08-27", (
+        f"the strip damaged a title that was not a generated one: {out!r}"
+    )
+
+
+def test_b04_consecutive_days_are_distinguishable():
+    """B0.3 — the point of the whole change, stated as the outcome."""
+    from datetime import date as _date
+
+    monday = tw.follow_up_title("A task", _date(2026, 8, 24))
+    tuesday = tw.follow_up_title(monday, _date(2026, 8, 25))
+    wednesday = tw.follow_up_title(tuesday, _date(2026, 8, 26))
+
+    assert len({monday, tuesday, wednesday}) == 3, (
+        f"three days produced fewer than three distinct titles: "
+        f"{[monday, tuesday, wednesday]}"
     )
 
 

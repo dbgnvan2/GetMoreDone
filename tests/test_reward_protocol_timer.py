@@ -1117,7 +1117,10 @@ def test_rp45_continue_records_the_deliverable_and_carries_it_forward(root, mana
     # in any list, so matching on the original's title finds nothing.
     duplicate = manager.get_children(item.id)
     assert duplicate, "Continue did not create the follow-on item"
-    assert duplicate[0].title == f"{item.title} - Followup"
+    # The format is written out here rather than taken from the code under
+    # test: today's date comes from the system, the shape from this line.
+    stamp = datetime.now().strftime("%m-%d")
+    assert duplicate[0].title == f"{item.title} - Follow up {stamp}"
     assert duplicate[0].deliverable == DELIVERABLE, (
         "the follow-on item lost the deliverable; Continue means the same work "
         "goes on, so what 'done' looks like has not changed"
@@ -2090,7 +2093,6 @@ def test_every_timer_modal_raises_itself_above_the_timer(root, manager, quiet, m
     item = _item(manager)
     built = [
         dialogs.CompletionNoteDialog(root, "Session Note"),
-        dialogs.NextStepsDialog(root),
         dialogs.DeliverableDialog(root, "A task"),
         dialogs.SavorDialog(root, "Draft section 2"),
         dialogs.NextActionWindow(root, manager, item),
@@ -2098,7 +2100,6 @@ def test_every_timer_modal_raises_itself_above_the_timer(root, manager, quiet, m
     try:
         assert set(raised) == {
             "CompletionNoteDialog",
-            "NextStepsDialog",
             "DeliverableDialog",
             "SavorDialog",
             "NextActionWindow",
