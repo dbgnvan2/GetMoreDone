@@ -1,78 +1,28 @@
 # daVIPA Backlog
 
-Last Updated: 2026-08-25 (timer session endings + its csdp sweep: four findings deferred below, five fixed in-batch)
+Last Updated: 2026-08-25 (the five deferred from the timer-endings batch are cleared; older sections from 08-24 and earlier remain)
+
+## ✅ Cleared 2026-08-25 — the five deferred from the timer-endings batch
+
+All five fixed and pushed the same day they were recorded. Kept as a list
+rather than deleted, so the entries below can be read as a record of what was
+deferred and for how long, not only of what is outstanding.
+
+- **A test failing on a timer ending path hung the run.** conftest silenced
+  `grab_set`/`lift`/`focus_force`/`-topmost` and left `tkinter.messagebox`,
+  which is the same class. Neutralised for the run; the fifteen tests that
+  patch it themselves still win.
+- **The complete-and-create follow-up landed unfiled from its project.** The two
+  copy paths disagreed about what "made from an item" means; they share
+  `inherit_derived_item_context` now.
+- **`_cleanup_and_destroy` detected a surviving window and told nobody.** It
+  returns the answer, and the ending lowers a stuck timer before raising the
+  follow-up's editor over it.
+- **Nothing guarded a second timer window on one item.** `TimerWindow.open_for`
+  plus a weak registry, wired through all four openers.
+- **`NextStepsDialog` was dead code.** Deleted.
 
 ## Deferred — found by review, deliberately not fixed
-
-### A test that fails on a timer ending path hangs the run (2026-08-25)
-
-`conftest.py` withdraws windows and silences `grab_set`, `lift`, `focus_force`
-and `-topmost`, but it does not neutralise `tkinter.messagebox`. The timer's
-endings all wrap their body in `except Exception` and call `_show_error_dialog`,
-so a test that raises inside an ending opens a real blocking modal and the run
-stops until someone clicks it. Measured during the csdp re-sweep: a mutation run
-hung for two minutes for exactly this reason. It is the P30 shape this repo
-already has recorded — a guard that hides windows rather than releasing the
-machinery that shows them. Not fixed in that batch because patching messagebox
-suite-wide changes the behaviour of every test that reaches one, and that
-deserves its own change with its own sweep rather than being appended to this
-one.
-
-
-### The complete-and-create follow-up is unfiled from its project (2026-08-25)
-
-`continue_action` builds its follow-up with a hand-rolled `ActionItem(...)`
-instead of going through `create_followup_item`, so it never calls
-`inherit_project_links`, never calls `_inherit_weekly_lineage`, and drops
-`next_action`, `week_action_id`, `segment_description_id`, `weekly_tactic_id`,
-`annual_plan_element_id` and `is_habit`. `inherit_project_links`' own docstring
-names this case — "a follow-up (or a **complete-and-create**) of a project task
-used to land with no project at all, because **both copy paths** build the new
-row through a constructor that never mentions `project_board_items`" — and it
-has exactly one caller, inside `create_followup_item`.
-
-The consequence is silent: time that follow-up later and `session_board_id`
-resolves to nothing, so no reward protocol, no savor counter, no phase, with no
-signal. Pre-existing, but the 2026-08-25 batch made the follow-up's editor the
-*endpoint* of the flow, so the user is now dropped straight into the unfiled
-item. Found by the csdp sweep (F4). Not fixed in that batch: it is a db_manager
-change across three inheritance paths, and folding it into an already-large diff
-is the sweeping-fix this repo's rule 10 warns about. Fix is probably to route
-`continue_action` through `create_followup_item` and then override the fields
-that differ, rather than to add three more calls to the inline path.
-
-### `_cleanup_and_destroy` detects a surviving window and tells nobody (2026-08-25)
-
-It now checks `winfo_exists()` after `destroy()` and logs when the window is
-still there — a real improvement over the old "safe to ignore" — but it returns
-nothing, and all four callers proceed identically. In `continue_action` the very
-next step opens the follow-up's editor, which will land *behind* a timer that is
-still on screen and still topmost. `week_collision_notice.py` states the rule
-this breaks: "a return value nobody reads is the same silence as no return value
-at all (P25)." Found by the csdp sweep (F9).
-
-
-### Nothing guards a second timer window on one item (2026-08-25)
-
-All four openers — `item_editor`, `today`, `upcoming`, `all_items` — construct a
-`TimerWindow` unconditionally, and `setup_window` positions every one of them at
-the saved `timer_window_x/y`. Two timers on the same item therefore land exactly
-on top of each other and are indistinguishable, and each can write its own work
-log for the same stretch of clock. Reproduced in
-`tests/test_timer_session_endings.py::test_t14_two_timers_on_one_item_reproduce_the_reported_symptom`,
-which asserts the stacking. Found while chasing the 2026-08-25 timer report and
-initially mistaken for its cause; it is a real defect but was **not** what was
-reported, so it is recorded rather than fixed in that batch. Fix is probably a
-per-item registry plus disabling the opener's Timer button while one is live —
-and that is a UI-contract change across four screens, not a one-liner.
-
-### `NextStepsDialog` is dead code (2026-08-25)
-
-Removed from the Complete & Create Follow Up flow, which was its only caller.
-The class and its own tests remain. Deleting it is a larger diff than that batch
-warranted; `test_t31_the_next_steps_dialog_is_gone` asserts the ending no longer
-builds one, so it cannot come back by accident.
-
 
 ### test_rm3d's importability probe is order-dependent (2026-08-24)
 
