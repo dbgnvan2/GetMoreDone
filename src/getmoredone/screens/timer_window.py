@@ -6,7 +6,8 @@ Provides a countdown timer with pause/resume and completion workflows.
 import customtkinter as ctk
 import tkinter as tk
 import random
-from datetime import datetime
+import re
+from datetime import date, datetime
 from typing import Optional, Callable
 from pathlib import Path
 from ..models import ActionItem, WorkLog
@@ -33,23 +34,37 @@ CONTINUE_BUTTON_TEXT = "Complete & Create Follow Up"
 # Appended, not prefixed. Every follow-up sharing a leading word would sort them
 # into one block away from the work they continue; on the end, a follow-up stays
 # next to its original in any list ordered by title.
-FOLLOW_UP_SUFFIX = " - Followup"
+FOLLOW_UP_LABEL = "Follow up"
+
+# " - Follow up 08-26" at the end of a title, and nowhere else. Anchored so a
+# task legitimately *called* something like "Follow up 08-26 with Legal" keeps
+# its name.
+FOLLOW_UP_SUFFIX_RE = re.compile(r" - " + re.escape(FOLLOW_UP_LABEL) + r" \d{2}-\d{2}$")
 
 
-def follow_up_title(title: str) -> str:
-    """The follow-up's title: the original's, marked as a follow-up.
+def follow_up_title(title: str, made_on: Optional[date] = None) -> str:
+    """The original's title, stamped with the day the follow-up was made.
 
-    Tests: tests/test_timer_session_endings.py::test_t71_the_followup_is_marked_in_its_title
-           tests/test_timer_session_endings.py::test_t72_a_followup_of_a_followup_is_not_marked_twice
+    Purpose: B0 — two follow-ups of one item were indistinguishable. They
+             inherit the same start and due dates by design, so the day they
+             were created is the only thing that differs between them.
+    Tests:   tests/test_timer_session_endings.py::test_b01_the_followup_title_carries_the_day_it_was_made
+             tests/test_timer_session_endings.py::test_b02_the_dated_suffix_does_not_stack
+             tests/test_timer_session_endings.py::test_b03_consecutive_days_are_distinguishable
 
-    A follow-up of a follow-up keeps one suffix. Continue is for work that runs
-    over several days, so the same item can end this way on Monday, Tuesday and
-    Wednesday, and "Draft the report - Followup - Followup - Followup" is what
-    unconditional appending gives by Wednesday.
+    ``made_on`` exists so a test can state the date rather than freeze the
+    clock; nothing in the application passes it.
+
+    An existing stamp is replaced, not appended to. The user does not expect
+    more than two follow-ups off one item — "an Action Item is supposed to be a
+    discrete chunk of work" — so this is insurance, not a main path.
+
+    Known limit: two follow-ups of the same item on the same day still collide.
+    Accepted, being outside the expected shape of use.
     """
-    if title.endswith(FOLLOW_UP_SUFFIX):
-        return title
-    return f"{title}{FOLLOW_UP_SUFFIX}"
+    stamp = (made_on or date.today()).strftime("%m-%d")
+    base = FOLLOW_UP_SUFFIX_RE.sub("", title)
+    return f"{base} - {FOLLOW_UP_LABEL} {stamp}"
 
 
 class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
