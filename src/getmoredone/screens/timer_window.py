@@ -50,7 +50,8 @@ def follow_up_title(title: str, made_on: Optional[date] = None) -> str:
              were created is the only thing that differs between them.
     Tests:   tests/test_timer_session_endings.py::test_b01_the_followup_title_carries_the_day_it_was_made
              tests/test_timer_session_endings.py::test_b02_the_dated_suffix_does_not_stack
-             tests/test_timer_session_endings.py::test_b03_consecutive_days_are_distinguishable
+             tests/test_timer_session_endings.py::test_b03_a_title_that_merely_mentions_a_follow_up_is_left_alone
+             tests/test_timer_session_endings.py::test_b04_consecutive_days_are_distinguishable
 
     ``made_on`` exists so a test can state the date rather than freeze the
     clock; nothing in the application passes it.

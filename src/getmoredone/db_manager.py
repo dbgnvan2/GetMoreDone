@@ -777,7 +777,7 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
                  it continues. Time that follow-up later and the reward
                  protocol resolves no board — no phase, no counter, no signal.
         Tests:   tests/test_timer_session_endings.py::test_b11_the_followup_stays_filed_under_its_project
-                 tests/test_timer_session_endings.py::test_b12_the_followup_keeps_its_weekly_lineage
+                 tests/test_weekly_tactic_completion.py::test_b12_the_timer_ending_also_inherits_the_weekly_lineage
                  tests/test_timer_session_endings.py::test_b13_the_followup_keeps_its_links
                  tests/test_timer_session_endings.py::test_b14_both_followup_paths_inherit_through_the_same_helper
 
