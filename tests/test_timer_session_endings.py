@@ -1150,27 +1150,40 @@ def test_f22_reusing_a_timer_refreshes_the_item(root, manager, hushed):
     live.destroy()
 
 
-def test_f31_a_timer_that_cannot_be_raised_is_replaced_not_kept(
+def test_f31_a_timer_that_cannot_be_raised_is_handed_back_not_destroyed(
         root, manager, hushed, monkeypatch):
-    """F3 — an unguarded raise turned one TclError into a dead button forever.
+    """F3 — a failed raise must not cost the user anything.
 
-    The entry survived the failure, so every later press took the same failing
-    path for the life of the process, with no way back (P1).
+    The unguarded version let one TclError escape to the screen's caller (P1).
+    The first guarded version fell through and built a second window at the
+    same coordinates; the second destroyed the first, which threw away a
+    running session's elapsed time because _cleanup_and_destroy writes
+    nothing. The window is alive — winfo_exists() said so a moment earlier —
+    so it is handed back.
     """
     item = _item(manager)
     live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    live.start_timer()
+    live._cancel_pending_timer()
+    live.work_seconds_elapsed = 17 * 60
+    started_at = live.start_timestamp
+
     monkeypatch.setattr(type(live), "lift",
                         lambda self: (_ for _ in ()).throw(tk.TclError("boom")))
-
-    replacement = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
-
-    assert replacement is not live, (
-        "the timer that could not be raised was handed back again, so the "
-        "button is dead for the rest of the session"
-    )
+    again = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
     monkeypatch.undo()
-    live.destroy()
-    replacement.destroy()
+
+    assert again is live, "a second timer was built on an item that has one"
+    assert live.winfo_exists(), "the running timer was destroyed"
+    assert live.start_timestamp is started_at, (
+        "the session was reset, so its elapsed time is unrecordable"
+    )
+
+    _dismiss_the_note_dialog(live)
+    live.save_and_close_action()
+    assert len(manager.get_work_logs(item.id)) == 1, (
+        "the session that survived a failed raise could not be recorded"
+    )
 
 
 def test_f51_a_follow_up_that_cannot_be_created_does_not_lose_the_session(

@@ -24,6 +24,37 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### The callback dedupe only catches the immediately-previous opener (2026-08-25)
+
+`adopt_opener` compares `on_close == self.on_close_callback`, which stops one
+screen chaining itself repeatedly. Once a *second* opener chains,
+`self.on_close_callback` is the `both` closure and the first opener's bound
+method no longer compares equal to it — so alternating openers grow the chain
+again. Measured: two screens alternating over five presses ran
+`['A','B','A','B','A']` for one close. Duplicated refreshes, no data loss, so
+below medium. Fix shape: keep an ordered list of adopted callbacks and test
+membership with `in`, instead of nesting closures. Found by the csdp third pass.
+
+### The pop-out notes window is not refreshed by a timer reuse (2026-08-25)
+
+`adopt_opener` refreshes the timer's own notes box but not
+`NextActionWindow.notes_text`, which is filled once at construction. With the
+pop-out open across a reuse it shows the pre-edit description, and pressing
+Save there writes that stale text over the editor's save. Narrower than the bug
+it neighbours — the user has to press Save on visibly stale text, and closing
+the pop-out does not auto-save. `refresh_notes()` already exists; calling it
+under the same untouched rule closes it. Found by the csdp third pass.
+
+### `_save_notes_to_item` strips one side of its comparison (2026-08-25)
+
+`notes` is stripped and `self.item.description` is not, so a stored value with
+surrounding whitespace never compares equal and every ending fires a redundant
+`update_action_item` plus `notify_weekly_tactic_changes`. Content-preserving.
+One-line fix: `if notes != (self.item.description or "").strip():`. Pre-existing,
+but the reuse path now re-seeds the box from an unstripped DB value, so it is
+reachable where it was not before. Found by the csdp third pass.
+
+
 ### Reusing a timer does not update its clock (2026-08-25)
 
 `adopt_opener` re-reads the item, but `time_block_minutes`,
