@@ -713,10 +713,19 @@ def test_b03_a_title_that_merely_mentions_a_follow_up_is_left_alone():
     """
     from datetime import date as _date
 
-    out = tw.follow_up_title("Follow up 08-26 with Legal", _date(2026, 8, 27))
-    assert out == "Follow up 08-26 with Legal - Follow up 08-27", (
-        f"the strip damaged a title that was not a generated one: {out!r}"
+    # An INTERIOR " - Follow up MM-DD". The first version of this used
+    # "Follow up 08-26 with Legal", which has no " - " at all — so it was saved
+    # by the prefix, not by the anchor the docstring names, and deleting the
+    # anchor left the test green. Measured by the csdp sweep.
+    out = tw.follow_up_title("Call Bob - Follow up 08-26 about the invoice",
+                             _date(2026, 8, 27))
+    assert out == "Call Bob - Follow up 08-26 about the invoice - Follow up 08-27", (
+        f"the strip ate words out of the middle of a real title: {out!r}"
     )
+
+    # And the prefix-less form, which was the only case before.
+    plain = tw.follow_up_title("Follow up 08-26 with Legal", _date(2026, 8, 27))
+    assert plain == "Follow up 08-26 with Legal - Follow up 08-27"
 
 
 def test_b04_consecutive_days_are_distinguishable():
@@ -1047,4 +1056,137 @@ def test_b25_every_screen_opens_through_the_registry():
     )
     assert through == {"today.py", "upcoming.py", "all_items.py", "item_editor.py"}, (
         f"the set of timer entry points changed: {sorted(through)}"
+    )
+
+
+# --- csdp sweep findings ----------------------------------------------------
+
+def test_f11_a_timer_that_did_not_close_keeps_its_claim_on_the_item(
+        root, manager, hushed, monkeypatch):
+    """F1 — releasing before the destroy undid B2 on B3's own path.
+
+    The entry was dropped four lines before destroy() was even attempted and
+    never put back, so a window still on screen left its item free and the next
+    Timer press built a second one at the same coordinates. Both fixes shipped
+    in one batch and one defeated the other on the single path where both are
+    live.
+    """
+    item = _item(manager)
+    stuck = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    monkeypatch.setattr(TimerWindow, "destroy",
+                        lambda self: (_ for _ in ()).throw(RuntimeError("nope")))
+
+    assert stuck._cleanup_and_destroy() is False
+
+    assert tw._LIVE_TIMERS.get(item.id) is stuck, (
+        "the registry released an item whose timer is still on screen"
+    )
+    monkeypatch.undo()
+
+    again = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    assert again is stuck, (
+        "a second timer was opened on an item that already has one on screen"
+    )
+    stuck.destroy()
+
+
+def test_f21_reusing_a_timer_keeps_the_new_openers_callback(root, manager,
+                                                            hushed):
+    """F2 — open_for returned the live window and dropped everything passed.
+
+    The editor's on_close is what reloads its fields when the timer closes.
+    Dropped, the editor keeps stale values and saving from it overwrites what
+    the timer just wrote — the clobber _current_timer_field_values exists to
+    prevent.
+    """
+    item = _item(manager)
+    first, second = [], []
+
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1),
+                                on_close=lambda: first.append(1))
+    again = TimerWindow.open_for(root, manager, item, rng=random.Random(1),
+                                 on_close=lambda: second.append(1))
+    assert again is live, "precondition: the window was reused"
+
+    # _close_and_return, not _cleanup_and_destroy: the callback is invoked by
+    # the shared ending helper, not by the teardown underneath it.
+    live._close_and_return()
+
+    assert first == [1], "the original opener stopped being told"
+    assert second == [1], (
+        "the second opener's callback was dropped, so whatever it refreshes "
+        "never hears that the timer closed"
+    )
+
+
+def test_f22_reusing_a_timer_refreshes_the_item(root, manager, hushed):
+    """F2 — the live window held the item as it was when it first opened.
+
+    Both openers save before opening the timer, so the row is current and the
+    live window's copy is the stale one. It used to keep the stale one and act
+    on it for the rest of the session.
+    """
+    item = _item(manager)
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    stored = manager.get_action_item(item.id)
+    stored.title = "A task, renamed in the editor"
+    stored.planned_minutes = 90
+    manager.update_action_item(stored)
+
+    again = TimerWindow.open_for(root, manager, stored, rng=random.Random(1))
+
+    assert again.item.title == "A task, renamed in the editor", (
+        "the reused timer is still holding the item as it was when it opened"
+    )
+    assert again.item.planned_minutes == 90
+    live.destroy()
+
+
+def test_f31_a_timer_that_cannot_be_raised_is_replaced_not_kept(
+        root, manager, hushed, monkeypatch):
+    """F3 — an unguarded raise turned one TclError into a dead button forever.
+
+    The entry survived the failure, so every later press took the same failing
+    path for the life of the process, with no way back (P1).
+    """
+    item = _item(manager)
+    live = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    monkeypatch.setattr(type(live), "lift",
+                        lambda self: (_ for _ in ()).throw(tk.TclError("boom")))
+
+    replacement = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    assert replacement is not live, (
+        "the timer that could not be raised was handed back again, so the "
+        "button is dead for the rest of the session"
+    )
+    monkeypatch.undo()
+    live.destroy()
+    replacement.destroy()
+
+
+def test_f51_a_follow_up_that_cannot_be_created_does_not_lose_the_session(
+        root, manager, hushed, monkeypatch):
+    """F5 — the inheritance ran before the work log and after an unchecked insert.
+
+    Three DB writes, one of which re-files a week-attached item, sat ahead of
+    the only record here that cannot be recreated. A raise in any of them lost
+    the log for work the user had just finished.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    inherited = []
+    monkeypatch.setattr(type(manager), "inherit_derived_item_context",
+                        lambda self, s, n: (inherited.append((s, n)),
+                                            (_ for _ in ()).throw(
+                                                RuntimeError("boom")))[0])
+
+    item = _item(manager)
+    _continue_from(root, manager, item)
+
+    assert inherited, "precondition: the inheritance was attempted"
+    assert len(manager.get_work_logs(item.id)) == 1, (
+        "a failure in the inheritance lost the work log for a finished session"
     )
