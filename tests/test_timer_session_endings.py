@@ -95,6 +95,7 @@ def _stopped_timer(root, manager, item):
 
 
 def _dismiss_the_note_dialog(timer, how="skip"):
+    """``how="save_note"`` types ``CompletionNoteDialog.next_typed`` and saves."""
     """Press Skip/Save on the CompletionNoteDialog once it exists.
 
     Scheduled before the button handler runs, because the handler blocks in
@@ -103,7 +104,12 @@ def _dismiss_the_note_dialog(timer, how="skip"):
     def press():
         for child in timer.winfo_children():
             if isinstance(child, CompletionNoteDialog):
-                getattr(child, how)()
+                if how == "save_note":
+                    child.textbox.insert(
+                        "1.0", getattr(CompletionNoteDialog, "next_typed", ""))
+                    child.save()
+                else:
+                    getattr(child, how)()
                 return
         timer.after(20, press)  # not built yet
 
@@ -1343,4 +1349,123 @@ def test_g15_a_failing_refresh_does_not_swallow_the_ending(root, manager,
 
     assert not timer.winfo_exists(), (
         "a failing opener refresh stopped the timer from closing"
+    )
+
+
+# --- session notes: one name, and somewhere the user can read them ----------
+
+def test_n11_every_ending_asks_for_the_same_thing_by_the_same_name():
+    """N1 — two endings said "Completion Note" and one said "Session Note".
+
+    Same dialog, same field, same purpose. Parsed rather than grepped, and an
+    exact count, so a fourth ending cannot quietly introduce a fourth name.
+    """
+    import ast
+    import pathlib
+
+    from src.getmoredone.screens import timer_window as twin
+
+    titles = []
+    for node in ast.walk(ast.parse(pathlib.Path(twin.__file__).read_text())):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "CompletionNoteDialog"):
+            titles.append(ast.unparse(node.args[1]))
+
+    assert titles == ["SESSION_NOTE_TITLE"] * 3, (
+        f"the note dialogs do not all share one name: {titles}"
+    )
+    assert twin.SESSION_NOTE_TITLE == "Session Notes"
+
+
+def test_n21_a_session_note_is_appended_to_the_description(root, manager,
+                                                           hushed):
+    """N2 — the note was written to the work log and nowhere the user can see.
+
+    Nothing in the app reads a work log, so until something does the
+    description is the only place it can be read back.
+    """
+    item = _item(manager, description="what this task is for")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+
+    _dismiss_the_note_dialog(timer, how="save_note")
+    CompletionNoteDialog.next_typed = "got the opening paragraph down"
+    timer.save_and_close_action()
+
+    stored = manager.get_action_item(item.id).description
+    assert stored.startswith("what this task is for"), (
+        f"the append replaced the description instead of adding to it: {stored!r}"
+    )
+    assert "got the opening paragraph down" in stored, (
+        f"the session note is nowhere the user can read it: {stored!r}"
+    )
+
+
+def test_n22_a_second_session_note_does_not_replace_the_first(root, manager,
+                                                              hushed):
+    """N2 — two sessions on one item leave two notes, not one."""
+    item = _item(manager, description="the task")
+
+    for text in ("first session", "second session"):
+        timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        timer.work_seconds_elapsed = 25 * 60
+        timer.stop_timer()
+        _dismiss_the_note_dialog(timer, how="save_note")
+        CompletionNoteDialog.next_typed = text
+        timer.save_and_close_action()
+        item = manager.get_action_item(item.id)
+
+    stored = item.description
+    assert "first session" in stored and "second session" in stored, (
+        f"one session note overwrote the other: {stored!r}"
+    )
+    assert stored.index("first session") < stored.index("second session"), (
+        "the notes are not in the order they were written"
+    )
+
+
+def test_n23_skipping_the_note_changes_nothing(root, manager, hushed):
+    """N2 — Skip means skip; an empty note must not add a dated empty line."""
+    item = _item(manager, description="the task, untouched")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+
+    _dismiss_the_note_dialog(timer)          # Skip
+    timer.save_and_close_action()
+
+    assert manager.get_action_item(item.id).description == "the task, untouched"
+
+
+def test_n24_the_note_goes_on_the_original_not_the_follow_up(root, manager,
+                                                             hushed, monkeypatch):
+    """N2 — the note describes the session that happened.
+
+    That belongs to the work that was done, not to the follow-up that has not
+    started — whose description is a prompt telling the user what to fill in.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager, description="the task")
+    timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+
+    _dismiss_the_note_dialog(timer, how="save_note")
+    CompletionNoteDialog.next_typed = "where I got to today"
+    timer.continue_action()
+
+    assert "where I got to today" in manager.get_action_item(item.id).description
+    assert _child_of(manager, item).description == tw.FOLLOW_UP_PROMPT, (
+        "the session note landed in the follow-up's prompt"
     )
