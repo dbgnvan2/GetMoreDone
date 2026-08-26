@@ -171,51 +171,114 @@ def test_pt21_minutes_render_the_way_a_person_reads_them(minutes, expected):
 
 # --- PT3 : on the Project record --------------------------------------------
 
-def test_pt31_the_project_record_shows_the_session_count_and_total(manager):
-    """PT3.1 — the numbers reach the surface the user asked for.
+def test_pt31_the_time_line_renders_the_boards_own_numbers(manager):
+    """PT3.1 — the pane's own function, on a real row from the real query.
 
-    The meta text is built from the row, so this asserts the rendered string
-    rather than that the query returns the columns — a value the detail pane
-    never reads is the same silence as no value at all (P25).
+    The first version of this rebuilt the pane's f-string inside the test and
+    asserted against its own arithmetic. Mutation-proved worthless: inverting
+    the pluralisation in production, and rendering linked_item_count instead of
+    total_minutes, both left all fourteen tests green (P27).
+    """
+    from src.getmoredone.screens.project_boards import project_time_line
+
+    board = _board(manager)
+    item = _item_on(manager, board)
+    _log(manager, item, 45)
+    _log(manager, item, 30)
+
+    assert project_time_line(_row_for(manager, board)) == "Time: 2 sessions | 1h 15m"
+
+
+def test_pt32_one_session_is_not_pluralised(manager):
+    """PT3.1 — "1 sessions" is the kind of thing people notice."""
+    from src.getmoredone.screens.project_boards import project_time_line
+
+    board = _board(manager)
+    _log(manager, _item_on(manager, board), 20)
+
+    assert project_time_line(_row_for(manager, board)) == "Time: 1 session | 20m"
+
+
+def test_pt33_absent_numbers_render_no_line_rather_than_zero(manager):
+    """PT3.1 — absent is not zero.
+
+    The detail pane has a fallback that fetches a board with SELECT *, which
+    has neither aggregate. Rendering "0 sessions | 0m" there asserted a number
+    the row could not support, on the one line of that pane that claims a real
+    figure while every other field degrades to blank (P6).
+    """
+    from src.getmoredone.screens.project_boards import project_time_line
+
+    board = _board(manager)
+    _log(manager, _item_on(manager, board), 60)
+
+    bare = dict(manager.db.conn.execute(
+        "SELECT * FROM project_boards WHERE id = ?", (board.id,)).fetchone())
+    assert "session_count" not in bare, "precondition: the fallback row lacks them"
+    assert project_time_line(bare) is None, (
+        "a row with no aggregates rendered a number anyway"
+    )
+
+    # And the fallback fills them in, so the line does not simply vanish.
+    bare.update(manager.get_project_time_totals(board.id))
+    assert project_time_line(bare) == "Time: 1 session | 1h"
+
+
+def test_pt34_the_detail_pane_uses_that_function(manager):
+    """PT3.1 — a line nothing renders is the same as no line (P25).
+
+    Parsed, not grepped: the call has to be on the renderer's path, and a
+    substring search would match the import or a comment.
     """
     import ast
     import pathlib
 
     from src.getmoredone.screens import project_boards as pb
 
-    board = _board(manager)
-    item = _item_on(manager, board)
-    _log(manager, item, 45)
-    _log(manager, item, 30)
-    row = _row_for(manager, board)
-
-    # The exact expression the pane builds, taken from the source so the test
-    # cannot drift into asserting its own arithmetic.
-    sessions = row["session_count"]
-    rendered = (
-        f"Time: {sessions} session{'' if sessions == 1 else 's'}"
-        f" | {format_minutes(row['total_minutes'])}"
-    )
-    assert rendered == "Time: 2 sessions | 1h 15m"
-
-    source = pathlib.Path(pb.__file__).read_text()
-    meta = [n for n in ast.walk(ast.parse(source))
-            if isinstance(n, ast.JoinedStr)
-            and "Time: " in ast.unparse(n)]
-    assert meta, (
-        "the detail pane does not render a Time line, so the query's "
+    tree = ast.parse(pathlib.Path(pb.__file__).read_text())
+    render = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == "_render_detail")
+    called = {n.func.id for n in ast.walk(render)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    assert "project_time_line" in called, (
+        "_render_detail does not build the Time line, so the query's "
         "session_count and total_minutes reach nothing the user can see"
     )
-    assert any("format_minutes" in ast.unparse(n) for n in meta), (
-        "the total is rendered as raw minutes rather than through format_minutes"
-    )
 
 
-def test_pt32_one_session_is_not_pluralised(manager):
-    """PT3.1 — "1 sessions" is the kind of thing people notice."""
+def test_pt41_the_single_board_totals_agree_with_the_grouped_query(manager):
+    """PT1 — two ways to compute one quantity is how they drift (P5)."""
     board = _board(manager)
-    _log(manager, _item_on(manager, board), 20)
-    row = _row_for(manager, board)
+    busy = _item_on(manager, board, title="Worked on repeatedly")
+    for minutes in (25, 25, 10):
+        _log(manager, busy, minutes)
+    _log(manager, _item_on(manager, board, title="Second task"), 40)
 
-    sessions = row["session_count"]
-    assert f"{sessions} session{'' if sessions == 1 else 's'}" == "1 session"
+    grouped = _row_for(manager, board)
+    single = manager.get_project_time_totals(board.id)
+
+    assert single == {"session_count": grouped["session_count"],
+                      "total_minutes": grouped["total_minutes"]}
+    assert single == {"session_count": 4, "total_minutes": 100}
+
+
+def test_pt35_the_fallback_path_asks_for_the_totals(manager):
+    """PT3.1 — pt33 proves the helper works, not that the pane calls it.
+
+    Deleting the fallback's `row.update(get_project_time_totals(...))` left
+    every test green: the Time line simply vanished on that path, silently.
+    """
+    import ast
+    import pathlib
+
+    from src.getmoredone.screens import project_boards as pb
+
+    tree = ast.parse(pathlib.Path(pb.__file__).read_text())
+    render = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.FunctionDef) and n.name == "_render_detail")
+    called = {n.func.attr for n in ast.walk(render)
+              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+    assert "get_project_time_totals" in called, (
+        "the direct-fetch fallback does not ask for the aggregates, so the "
+        "Time line disappears whenever a board is shown from that path"
+    )
