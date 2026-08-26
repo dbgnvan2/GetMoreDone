@@ -24,6 +24,49 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### Legacy `" - Followup"` titles stack once under the new stamp (2026-08-25)
+
+Rows already in the user's database carry the old undated `" - Followup"`
+suffix, which `FOLLOW_UP_SUFFIX_RE` does not match. A follow-up of one of those
+becomes `"X - Followup - Follow up 08-25"`. It stacks exactly once and then
+stabilises, because the second stamp *is* matched next time. Cosmetic and
+bounded, but it is the stacking the once-only rule existed to prevent. Fix is
+either a second alternation in the regex or a one-off title migration. Found by
+the csdp sweep of the backlog-clearance batch.
+
+### Three hand-kept lists of messagebox names must agree, and do not (2026-08-25)
+
+`conftest._MESSAGEBOX_DEFAULTS` neutralises 8 functions;
+`test_tk_offscreen.ALLOWED_NEUTRALISED_DIALOGS` names 4; the `window_makers`
+seed set in the same file names 7, omitting `askyesnocancel` which conftest does
+patch. A future test calling `messagebox.showinfo` — patched, recorded, entirely
+safe — turns `test_no_helper_builds_a_window_the_suite_cannot_reach` red with a
+false alarm, on a guard people are meant to trust. It is the "two lists that
+drift" defect B1 was written to remove, reintroduced one file over in the same
+batch (P5). Fix: derive both sets from `_MESSAGEBOX_DEFAULTS`. Found by the csdp
+sweep (F7).
+
+### The `messageboxes` fixture yields the whole session's history (2026-08-25)
+
+`yield _MESSAGEBOXES` hands over every record since session start, and only
+tests that *request* the fixture truncate; `test_b51b` does not, and leaks three
+records that survive to session end. So `any(f == "showerror" ...)` searches
+everything every earlier test recorded. Latent rather than live today — measured
+`showerror=0` at the moment `test_b52` runs, and its mutation still goes red —
+but the first test that records a `showerror` without requesting the fixture
+makes `test_b52` permanently unfalsifiable. Fix: yield a per-test slice. Found by
+the csdp sweep (F8).
+
+### `test_b25`'s docstring claims more than it checks (2026-08-25)
+
+It says "a fifth opener added without going through `open_for` fails here". It
+parses four hardcoded modules, so a fifth screen constructing `TimerWindow(...)`
+is invisible to it. The claim is true by accident today — only those four files
+reference `TimerWindow` in `src/` — which is exactly the condition under which it
+goes stale unnoticed. Fix: glob `src/getmoredone/screens/*.py`, keep the
+exact-set assertion. Found by the csdp sweep (F9).
+
+
 ### test_rm3d's importability probe is order-dependent (2026-08-24)
 
 `test_rm3d_every_test_file_is_importable_on_its_own` strips the repo root from

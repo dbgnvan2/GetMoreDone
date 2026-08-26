@@ -563,10 +563,11 @@ three say what they do:
 - **Complete & Create Follow Up** — What: Completes the *timer session* — saves it as a
   related record against the action item — then creates a follow-up item and opens it for
   you to fill in. The action item itself stays **open**. The follow-up is titled
-  *"<original title> - Followup"*, starts with *"Add your next steps and set the dates and
-  priority"* in its description, and inherits the original item's start and due dates — so
-  an item that was already late produces a follow-up that is already late. Change the
-  dates in the editor it opens. Why: Ending today's block on work that continues, with the
+  *"<original title> - Follow up MM-DD"* — the day it was made, which is what tells two
+  follow-ups of one item apart. It starts with *"Add your next steps and set the dates and
+  priority"* in its description, and inherits the original item's start and due dates, its
+  project, its weekly tactic and its links — so an item that was already late produces a
+  follow-up that is already late. Change the dates in the editor it opens. Why: Ending today's block on work that continues, with the
   next step already written down beside it.
 
 **Only one of these five buttons closes a task.** "Complete" in *Complete & Create Follow

@@ -126,14 +126,17 @@ The Action Timer Module provides a popup countdown timer to guide users through 
      button's name. The current action item is **not** completed; only "Done"
      completes an action item
   3. Creates duplicate action item with:
-     - Title = "<original title> - Followup", added once however many times an
-       item ends this way
+     - Title = "<original title> - Follow up MM-DD", the day the follow-up was
+       made. An existing stamp is replaced rather than appended to, so a
+       follow-up of a follow-up carries one date, not a chain of them
      - Same who, priority factors, category, group
      - Start date = the original item's start date, unchanged
      - Due date = the original item's due date, unchanged
      - Notes/description = "Add your next steps and set the dates and priority"
      - Status = "open"
      - New unique ID
+     - The project link, weekly-tactic lineage and item links of the original,
+       through the same helper create_followup_item uses
   4. Opens the follow-up in the item editor, where those fields are filled in
 - The Completion Note dialog is optional but must be presented
 
