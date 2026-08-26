@@ -761,24 +761,47 @@ class DatabaseManager(DBManagerProjectBoardsMixin):
 
         new_id = self.create_action_item(new_item, apply_defaults=False)
         if new_id:
-            self._inherit_weekly_lineage(item_id, new_id)
-            # PL12 — a follow-up of a project task stays filed under that
-            # project, the way it already keeps its weekly lineage.
-            self.inherit_project_links(item_id, new_id)
-
-        # Copy linked notes and other links
-        if new_id:
-            original_links = self.get_item_links(item_id)
-            for link in original_links:
-                new_link = ItemLink(
-                    item_id=new_id,
-                    url=link.url,
-                    label=link.label,
-                    link_type=link.link_type
-                )
-                self.add_item_link(new_link)
+            self.inherit_derived_item_context(item_id, new_id)
 
         return new_id
+
+    def inherit_derived_item_context(self, source_id: str, new_id: str) -> None:
+        """Carry everything an item made from another one should keep.
+
+        Purpose: B1 — there are two places that build an item out of an
+                 existing one, and they disagreed about what "out of" means.
+                 ``create_followup_item`` inherited the weekly lineage, the
+                 project links and the item links; the timer's
+                 Complete & Create Follow Up built its row inline and inherited
+                 none of them, so its follow-up landed unfiled from the project
+                 it continues. Time that follow-up later and the reward
+                 protocol resolves no board — no phase, no counter, no signal.
+        Tests:   tests/test_timer_session_endings.py::test_b11_the_followup_stays_filed_under_its_project
+                 tests/test_timer_session_endings.py::test_b12_the_followup_keeps_its_weekly_lineage
+                 tests/test_timer_session_endings.py::test_b13_the_followup_keeps_its_links
+                 tests/test_timer_session_endings.py::test_b14_both_followup_paths_inherit_through_the_same_helper
+
+        One piece of code rather than two lists that drift. They already had:
+        ``inherit_project_links``' own docstring names the complete-and-create
+        path as a case it covers, and nothing on that path ever called it.
+
+        Deliberately not a fix by routing the timer through
+        ``create_followup_item``: that always parents the copy to its source,
+        while the timer makes a *sibling* when the source already has a parent.
+        Sharing the inheritance keeps that difference intact.
+        """
+        self._inherit_weekly_lineage(source_id, new_id)
+        # PL12 — a copy of a project task stays filed under that project, the
+        # way it already keeps its weekly lineage.
+        self.inherit_project_links(source_id, new_id)
+
+        for link in self.get_item_links(source_id):
+            self.add_item_link(ItemLink(
+                item_id=new_id,
+                url=link.url,
+                label=link.label,
+                link_type=link.link_type,
+            ))
 
     # ==================== HIERARCHICAL OPERATIONS ====================
 

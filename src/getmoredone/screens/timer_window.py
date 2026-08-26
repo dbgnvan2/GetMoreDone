@@ -1221,6 +1221,12 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 status="open"
             )
             db_manager.create_action_item(new_item)
+            # B1 — the weekly lineage, the project links and the item links.
+            # This path built its row inline and inherited none of them, so the
+            # follow-up landed unfiled from the project it continues and its
+            # reward protocol silently resolved nothing. Shared with
+            # create_followup_item so the two cannot drift again (P5).
+            db_manager.inherit_derived_item_context(item.id, new_item.id)
             print(
                 f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
