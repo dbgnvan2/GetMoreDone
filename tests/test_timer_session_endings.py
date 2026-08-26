@@ -803,3 +803,94 @@ def test_t73_a_failed_done_is_not_counted_by_this_ending(root, manager, hushed,
     assert manager.get_project_board(board.id).savor_count == 0, (
         "the project counter advanced for a task that is still open"
     )
+
+
+# --- B1 : the follow-up keeps the context of the work it continues -----------
+
+def _linked_to_a_board(manager, item):
+    from src.getmoredone.models import ProjectBoard
+    board = ProjectBoard(title="Website Rebuild")
+    manager.create_project_board(board)
+    manager.link_action_item_to_project_board(board.id, item.id)
+    return board
+
+
+def test_b11_the_followup_stays_filed_under_its_project(root, manager, hushed,
+                                                        monkeypatch):
+    """B1.1 — an unfiled follow-up has no reward protocol, and says nothing.
+
+    The ending built its row inline and never called inherit_project_links,
+    whose own docstring names this path. The follow-up's editor is where the
+    flow now ends, so the user is dropped straight into the unfiled item.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager)
+    board = _linked_to_a_board(manager, item)
+    _continue_from(root, manager, item)
+
+    child = _child_of(manager, item)
+    filed = manager.get_project_boards_for_item(child.id)
+    assert [b.id for b in filed] == [board.id], (
+        "the follow-up landed with no project, so timing it later would "
+        "resolve no board: no phase, no counter, no signal"
+    )
+
+
+def test_b13_the_followup_keeps_its_links(root, manager, hushed, monkeypatch):
+    """B1.3 — the reference material comes with the work that continues."""
+    from src.getmoredone.models import ItemLink
+    from src.getmoredone.screens import item_editor as ie
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+
+    item = _item(manager)
+    manager.add_item_link(ItemLink(item_id=item.id, url="https://example.test/spec",
+                                   label="The spec", link_type="url"))
+    _continue_from(root, manager, item)
+
+    child_links = manager.get_item_links(_child_of(manager, item).id)
+    assert [(l.url, l.label) for l in child_links] == [
+        ("https://example.test/spec", "The spec")], (
+        "the follow-up lost the links of the work it continues"
+    )
+
+
+def test_b14_both_followup_paths_inherit_through_the_same_helper():
+    """B1.4 — one piece of code, not two field lists that drift.
+
+    They already had drifted: inherit_project_links names the
+    complete-and-create path in its docstring and nothing on that path called
+    it. Asserted by call site, via the AST, because the failure mode is one
+    path quietly growing its own copy again.
+    """
+    import ast
+    import pathlib
+
+    from src.getmoredone import db_manager as dbm
+    from src.getmoredone.screens import timer_window as twin
+
+    def calls_in(path, funcname=None):
+        tree = ast.parse(pathlib.Path(path).read_text())
+        if funcname:
+            tree = next(n for n in ast.walk(tree)
+                        if isinstance(n, ast.FunctionDef) and n.name == funcname)
+        return {n.func.attr for n in ast.walk(tree)
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
+
+    followup = calls_in(dbm.__file__, "create_followup_item")
+    ending = calls_in(twin.__file__, "continue_action")
+
+    assert "inherit_derived_item_context" in followup, (
+        "create_followup_item stopped using the shared helper"
+    )
+    assert "inherit_derived_item_context" in ending, (
+        "the timer ending stopped using the shared helper"
+    )
+    # Neither may reach past it to the pieces — that is how they drifted before.
+    for name, seen in (("create_followup_item", followup), ("continue_action", ending)):
+        leaked = seen & {"inherit_project_links", "_inherit_weekly_lineage"}
+        assert leaked == set(), (
+            f"{name} calls {sorted(leaked)} directly instead of going through "
+            "the shared helper, which is how the two paths drifted before"
+        )

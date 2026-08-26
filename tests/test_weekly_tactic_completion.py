@@ -232,3 +232,62 @@ def test_wt_m5c1_create_followup_item_also_inherits(tmp_path):
             "the copy's stamp is not its own week")
     finally:
         vps.close()
+
+
+def test_b12_the_timer_ending_also_inherits_the_weekly_lineage(tmp_path, monkeypatch):
+    """B1.2 — the timer's Complete & Create Follow Up keeps its place in the plan.
+
+    The test above covers ``create_followup_item``. This covers the OTHER copy
+    path, which built its row inline and inherited nothing — the two disagreed
+    about what "made from" means, and only one of them was ever tested. They
+    share ``inherit_derived_item_context`` now; this asserts the shared call
+    actually lands on the ending's path, not merely that it exists (P21).
+    """
+    import customtkinter as ctk
+
+    from src.getmoredone.screens import item_editor as ie
+    from src.getmoredone.screens.timer_window import TimerWindow
+    from src.getmoredone.screens.timer_window_dialogs import CompletionNoteDialog
+
+    vps = make_vps(tmp_path)
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        manager = vps.db_manager
+        _ape_id, _tactic, item = _filed_item(vps)
+        stored = manager.get_action_item(item.id)
+        stored.deliverable = "a checkable artifact"
+        manager.update_action_item(stored)
+
+        monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: None)
+        monkeypatch.setattr(TimerWindow, "_start_music", lambda self: False)
+        monkeypatch.setattr(TimerWindow, "_stop_music", lambda self: None)
+        monkeypatch.setattr(TimerWindow, "play_sound",
+                            lambda self, is_break_start: None)
+
+        timer = TimerWindow(root, manager, stored)
+        timer.start_timer()
+        timer._cancel_pending_timer()
+        timer.work_seconds_elapsed = 25 * 60
+        timer.stop_timer()
+
+        def press():
+            for child in timer.winfo_children():
+                if isinstance(child, CompletionNoteDialog):
+                    child.skip()
+                    return
+            timer.after(20, press)
+
+        timer.after(20, press)
+        timer.continue_action()
+
+        follow_up = manager.get_children(item.id)[0]
+        assert follow_up.weekly_tactic_id, (
+            "the timer's follow-up lost its Weekly Tactic, so it dropped out "
+            "of the plan silently"
+        )
+        assert follow_up.annual_plan_element_id
+        assert follow_up.segment_description_id
+    finally:
+        root.destroy()
+        vps.close()
