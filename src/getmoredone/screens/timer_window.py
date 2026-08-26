@@ -7,6 +7,7 @@ import customtkinter as ctk
 import tkinter as tk
 import random
 import re
+import weakref
 from datetime import date, datetime
 from typing import Optional, Callable
 from pathlib import Path
@@ -69,6 +70,12 @@ def follow_up_title(title: str, made_on: Optional[date] = None) -> str:
     return f"{base} - {FOLLOW_UP_LABEL} {stamp}"
 
 
+# Item id -> the live timer window for it. Weak, so a window that is destroyed
+# without going through _cleanup_and_destroy still leaves the item free rather
+# than blocking it for the life of the process.
+_LIVE_TIMERS: "weakref.WeakValueDictionary[str, object]" = weakref.WeakValueDictionary()
+
+
 class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
     """Floating timer window for action items.
 
@@ -114,6 +121,48 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
     # automatically and there is only ever one list to update. STOPPED is first
     # in STATES and a test pins that, since the slice depends on it.
     ACTIVE_STATES = STATES[1:]
+
+    @classmethod
+    def open_for(cls, parent, db_manager: DatabaseManager, item: ActionItem,
+                 on_close: Optional[Callable] = None,
+                 rng: Optional[random.Random] = None,
+                 vps_manager=None) -> "TimerWindow":
+        """The timer for this item — the one already open, or a new one.
+
+        Purpose: B2 — nothing stopped a second timer on the same item, and
+                 setup_window puts every one of them at the same saved
+                 timer_window_x/y, so the second landed exactly on the first
+                 and the two were indistinguishable. Each could then write its
+                 own work log for the same stretch of clock, and pressing an
+                 ending on the top one revealed an identical window underneath:
+                 "no related record and the screen doesn't close".
+        Tests:   tests/test_timer_session_endings.py::test_b21_a_second_timer_returns_the_first
+                 tests/test_timer_session_endings.py::test_b23_closing_a_timer_frees_the_item
+
+        Every opener calls this rather than the constructor. Four entry points
+        exist and a guard on only one of them is not a guard (P25) — the AST
+        check in test_b22 fails if any of them goes back to building directly.
+        """
+        live = _LIVE_TIMERS.get(item.id)
+        if live is not None:
+            # Liveness is asked as its own question, and only that question is
+            # guarded. Wrapping the raise in the same try made the check
+            # unprovable: deleting it left deiconify() to raise on a dead
+            # window into the same handler, so the behaviour was identical and
+            # no test could tell.
+            try:
+                alive = bool(live.winfo_exists())
+            except Exception:
+                alive = False
+            if alive:
+                live.deiconify()
+                live.lift()
+                live.focus_force()
+                return live
+        window = cls(parent, db_manager, item, on_close=on_close, rng=rng,
+                     vps_manager=vps_manager)
+        _LIVE_TIMERS[item.id] = window
+        return window
 
     def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem,
                  on_close: Optional[Callable] = None,
@@ -1427,6 +1476,12 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
         # Cancel any pending timer callbacks
         self._cancel_pending_timer()
+
+        # The item is free again the moment this window is on its way out. The
+        # WeakValueDictionary would get there on its own, but only after a
+        # collection — and "press Timer again straight away" is the common case.
+        if _LIVE_TIMERS.get(self.item.id) is self:
+            del _LIVE_TIMERS[self.item.id]
 
         # Destroy the window
         try:

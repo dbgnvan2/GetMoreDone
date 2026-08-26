@@ -1336,9 +1336,9 @@ class ItemEditorDialog(TrackedAfterMixin, ItemEditorContactsMixin, ItemEditorFor
         self._pre_timer_field_values = self._current_timer_field_values()
 
         from .timer_window import TimerWindow
-        TimerWindow(self, self.db_manager, self.item,
-                    on_close=self._on_timer_closed,
-                    vps_manager=self.vps_manager)
+        TimerWindow.open_for(self, self.db_manager, self.item,
+                             on_close=self._on_timer_closed,
+                             vps_manager=self.vps_manager)
 
     def _current_timer_field_values(self) -> dict:
         """Snapshot of the editor fields the timer can also change.
