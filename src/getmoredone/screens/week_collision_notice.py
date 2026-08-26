@@ -11,8 +11,35 @@ target week is already taken, and record the detail on
 silence as no return value at all (P25) — so this is the reader.
 """
 
+from contextlib import contextmanager
 from tkinter import messagebox
 from typing import Any, Optional
+
+
+@contextmanager
+def _parent_not_on_top(parent: Any):
+    """Lower an always-on-top parent for the life of the notice below it.
+
+    Purpose: every notice here ends in ``messagebox``, and the parent is often
+             the TimerWindow, which sets ``-topmost`` at construction and never
+             drops it. A modal that opens *behind* its parent still holds
+             ``grab_set()``, so it takes every click while showing nothing —
+             the window underneath looks frozen. That is the bug the timer's
+             own dialogs were fixed for; these six call sites were left out
+             (P5: the fix stopped at the file boundary).
+    Tests:   tests/test_weekly_tactic_surfaces.py::test_wt_m6b6_a_notice_lowers_an_always_on_top_parent
+
+    Imported inside the function on purpose: ``timer_window_dialogs`` imports
+    this module, so a top-level import would be a cycle. The helper belongs in
+    a neutral module and moving it is recorded in BACKLOG.md rather than done
+    at the end of a batch.
+    """
+    if parent is None:
+        yield
+        return
+    from .timer_window_dialogs import parent_topmost_suspended
+    with parent_topmost_suspended(parent):
+        yield
 
 
 def describe_week_collision(collision: Optional[dict]) -> Optional[str]:
@@ -81,11 +108,12 @@ def notify_cascade(db_manager: Any, parent: Any = None) -> bool:
     message = describe_cascade(report)
     if not message:
         return False
-    if getattr(report, "failed", False):
-        # A failure under a success title with an info icon reads as good news.
-        messagebox.showwarning("Item not re-filed", message, parent=parent)
-    else:
-        messagebox.showinfo("Plan records created", message, parent=parent)
+    with _parent_not_on_top(parent):
+        if getattr(report, "failed", False):
+            # A failure under a success title with an info icon reads as good news.
+            messagebox.showwarning("Item not re-filed", message, parent=parent)
+        else:
+            messagebox.showinfo("Plan records created", message, parent=parent)
     return True
 
 
@@ -106,5 +134,6 @@ def notify_week_collision(db_manager: Any, parent: Any = None) -> bool:
     message = describe_week_collision(getattr(db_manager, "last_week_collision", None))
     if not message:
         return False
-    messagebox.showwarning("Week Already Taken", message, parent=parent)
+    with _parent_not_on_top(parent):
+        messagebox.showwarning("Week Already Taken", message, parent=parent)
     return True

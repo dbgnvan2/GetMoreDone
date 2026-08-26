@@ -1318,6 +1318,10 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         Tests:   tests/test_timer_session_endings.py::test_n21_a_session_note_is_appended_to_the_description
                  tests/test_timer_session_endings.py::test_n22_a_second_session_note_does_not_replace_the_first
                  tests/test_timer_session_endings.py::test_n23_skipping_the_note_changes_nothing
+                 tests/test_timer_session_endings.py::test_n25_the_note_renders_exactly_as_the_user_guide_shows_it
+                 tests/test_timer_session_endings.py::test_n27_done_appends_its_session_note_too
+                 tests/test_timer_session_endings.py::test_n28_an_appended_note_survives_a_window_that_did_not_close
+                 tests/test_timer_session_endings.py::test_n29_a_destroyed_window_is_not_passed_as_a_tk_parent
 
         Always the *originating* item, including on Complete & Create Follow
         Up: the note describes the session that just happened, which belongs to
