@@ -178,6 +178,25 @@ def suspend_parent_topmost(dialog, parent) -> None:
         _resume_topmost(parent)
 
 
+def raise_over_a_stuck_timer(window, timer) -> None:
+    """Put ``window`` above a timer that failed to close.
+
+    Purpose: B3 — a destroy() that did not take leaves an always-on-top window
+             on screen, and anything opened afterwards lands under it.
+    Tests:   tests/test_timer_session_endings.py::test_b32_the_editor_is_raised_over_a_timer_that_did_not_close
+
+    Lowers the stuck timer rather than raising the new window over it: two
+    windows both claiming the top is the race this whole batch exists to stop
+    competing in.
+    """
+    _write_topmost(timer, False)
+    try:
+        window.lift()
+        window.focus_force()
+    except Exception:
+        pass
+
+
 def _center_on(dialog, parent, width: int, height: int) -> None:
     """Put ``dialog`` over ``parent``, or leave it where Tk put it.
 

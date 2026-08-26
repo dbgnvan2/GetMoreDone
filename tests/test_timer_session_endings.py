@@ -894,3 +894,78 @@ def test_b14_both_followup_paths_inherit_through_the_same_helper():
             f"{name} calls {sorted(leaked)} directly instead of going through "
             "the shared helper, which is how the two paths drifted before"
         )
+
+
+# --- B3 : a window that did not close must change what happens next ---------
+
+def test_b31_cleanup_reports_whether_it_closed(root, manager, hushed, monkeypatch):
+    """B3.1 — the answer is returned, not only logged."""
+    item = _item(manager)
+
+    good = TimerWindow(root, manager, item, rng=random.Random(1))
+    assert good._cleanup_and_destroy() is True
+
+    stuck = TimerWindow(root, manager, item, rng=random.Random(1))
+    monkeypatch.setattr(TimerWindow, "destroy",
+                        lambda self: (_ for _ in ()).throw(RuntimeError("nope")))
+    assert stuck._cleanup_and_destroy() is False, (
+        "a window still on screen was reported as closed"
+    )
+    monkeypatch.undo()
+    stuck.destroy()
+
+
+def test_b32_the_editor_is_raised_over_a_timer_that_did_not_close(
+        root, manager, hushed, monkeypatch):
+    """B3.2 — otherwise the flow ends on an editor nobody can see.
+
+    continue_action exists to land the user on the follow-up. A timer that
+    survived its destroy() is still always-on-top, so without this the editor
+    opens underneath it and the ending looks like it did nothing — which is
+    where this whole batch started.
+    """
+    from src.getmoredone.screens import item_editor as ie
+    from src.getmoredone.screens import timer_window_dialogs as dlg
+
+    rescued = []
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: "the-editor")
+    monkeypatch.setattr(dlg, "raise_over_a_stuck_timer",
+                        lambda window, timer: rescued.append(window))
+    monkeypatch.setattr(tw, "raise_over_a_stuck_timer",
+                        lambda window, timer: rescued.append(window))
+    monkeypatch.setattr(TimerWindow, "_cleanup_and_destroy", lambda self: False)
+
+    item = _item(manager)
+    timer = TimerWindow(root, manager, item, rng=random.Random(1))
+    timer.start_timer()
+    timer._cancel_pending_timer()
+    timer.work_seconds_elapsed = 25 * 60
+    timer.stop_timer()
+    _dismiss_the_note_dialog(timer)
+    timer.continue_action()
+
+    assert rescued == ["the-editor"], (
+        "the follow-up's editor was left under a timer that did not close"
+    )
+    monkeypatch.undo()
+    timer.destroy()
+
+
+def test_b33_a_timer_that_closed_normally_needs_no_rescue(
+        root, manager, hushed, monkeypatch):
+    """B3.2 — and the rescue does not fire on the ordinary path.
+
+    Without this the previous test passes just as well against a version that
+    raises the editor every time, which would lower a timer that is not there.
+    """
+    from src.getmoredone.screens import item_editor as ie
+
+    rescued = []
+    monkeypatch.setattr(ie, "ItemEditorDialog", lambda *a, **k: "the-editor")
+    monkeypatch.setattr(tw, "raise_over_a_stuck_timer",
+                        lambda window, timer: rescued.append(window))
+
+    item = _item(manager)
+    _continue_from(root, manager, item)
+
+    assert rescued == [], "the rescue fired on a timer that closed cleanly"

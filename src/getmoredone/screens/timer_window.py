@@ -19,7 +19,8 @@ from ..utils.audio_playback import play_audio_file_async, play_system_beep
 from ..utils.music_library import select_track
 from ..utils.icon_loader import load_music_note_icon
 from .timer_window_dialogs import (
-    CompletionNoteDialog, NextActionWindow, parent_topmost_suspended)
+    CompletionNoteDialog, NextActionWindow, parent_topmost_suspended,
+    raise_over_a_stuck_timer)
 from ..utils.after_tracker import TrackedAfterMixin
 from .timer_window_reward import TimerRewardMixin
 
@@ -1263,12 +1264,13 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             new_item_id = new_item.id
 
             # Close timer if it still exists
+            timer_closed = True
             if window_exists:
                 self.save_window_settings()
                 if on_close_callback:
                     on_close_callback()
-                self._cleanup_and_destroy()
-                print(f"[DEBUG] Timer window closed")
+                timer_closed = self._cleanup_and_destroy()
+                print(f"[DEBUG] Timer window closed: {timer_closed}")
             else:
                 # Window already destroyed, just call the callback
                 if on_close_callback:
@@ -1283,9 +1285,16 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             # controls. Pre-existing; fixed with this change because the
             # follow-up editor is now the endpoint of the flow rather than an
             # afterthought.
-            ItemEditorDialog(parent, db_manager, new_item_id,
-                             vps_manager=self.vps_manager,
-                             on_close_callback=on_close_callback)
+            editor = ItemEditorDialog(parent, db_manager, new_item_id,
+                                      vps_manager=self.vps_manager,
+                                      on_close_callback=on_close_callback)
+            if not timer_closed:
+                # The timer is still there and still always-on-top, so the
+                # editor this flow exists to land on would open underneath it —
+                # the same "nothing happened" the batch started from. Raising
+                # the editor is the recovery available here; the timer's
+                # survival has already been logged as an error.
+                raise_over_a_stuck_timer(editor, self)
             print(f"[DEBUG] Step 7: Follow-up presented in editor")
         except Exception as e:
             print(f"[ERROR] Continue action failed: {e}")
@@ -1395,8 +1404,19 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
         self._cleanup_and_destroy()
 
-    def _cleanup_and_destroy(self):
-        """Clean up resources and destroy window safely."""
+    def _cleanup_and_destroy(self) -> bool:
+        """Clean up resources and destroy the window. True if it really went.
+
+        Purpose: B3 — it detected a surviving window and told nobody. Every
+                 caller proceeded identically, and continue_action's next step
+                 opens the follow-up's editor, which then lands behind a timer
+                 that is still on screen and still always-on-top.
+        Tests:   tests/test_timer_session_endings.py::test_b31_cleanup_reports_whether_it_closed
+                 tests/test_timer_session_endings.py::test_b32_the_editor_is_raised_over_a_timer_that_did_not_close
+
+        "A return value nobody reads is the same silence as no return value at
+        all" — week_collision_notice.py, and it was true here.
+        """
         # A celebration may still be animating: the completion dialog opens on
         # top of it and this runs moments later. Its scheduled frames have to
         # be cancelled before the window they draw on goes away.
@@ -1427,6 +1447,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         if still_open:
             print("[ERROR] the timer window is still on screen after destroy(); "
                   "it will go on taking clicks and its session cannot be ended")
+        return not still_open
 
     def save_window_settings(self):
         """Save window position and size to settings."""
