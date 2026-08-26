@@ -155,14 +155,75 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             except Exception:
                 alive = False
             if alive:
-                live.deiconify()
-                live.lift()
-                live.focus_force()
-                return live
+                live.adopt_opener(db_manager, item, on_close, vps_manager)
+                # Guarded separately from the liveness check, and it drops the
+                # entry on failure. Unguarded, a single TclError from a window
+                # mid-teardown left the entry in place, so *every* later press
+                # on that item took the same failing path — a transient fault
+                # turned into a permanently dead button (P1), and the only
+                # unguarded raise of its kind in the file (P5).
+                try:
+                    live.deiconify()
+                    live.lift()
+                    live.focus_force()
+                    return live
+                except Exception as exc:
+                    # Fall through and build a replacement. No pop here: the
+                    # construction below reassigns the entry unconditionally,
+                    # so removing it first changes nothing and no mutation of
+                    # it could fail a test — unreachable code in a fix commit
+                    # is the last place it belongs.
+                    print(f"[WARN] could not raise the open timer for "
+                          f"{item.id}, replacing it: {exc}")
         window = cls(parent, db_manager, item, on_close=on_close, rng=rng,
                      vps_manager=vps_manager)
         _LIVE_TIMERS[item.id] = window
         return window
+
+    def adopt_opener(self, db_manager: DatabaseManager, item: ActionItem,
+                     on_close: Optional[Callable], vps_manager) -> None:
+        """Take on what a second opener passed, instead of discarding it.
+
+        Purpose: ``open_for`` returned the live window and dropped every
+                 argument the second caller gave it. The Action Item editor
+                 passes ``on_close=self._on_timer_closed``, which is what
+                 reloads its fields when the timer closes — dropped, the editor
+                 kept stale values and saving from it overwrote what the timer
+                 had just written, which is the clobber
+                 ``_current_timer_field_values`` exists to prevent (P12: a
+                 side effect callers were getting for free, lost silently).
+        Tests:   tests/test_timer_session_endings.py::test_f21_reusing_a_timer_keeps_the_new_openers_callback
+                 tests/test_timer_session_endings.py::test_f22_reusing_a_timer_refreshes_the_item
+
+        The item is re-read rather than replaced with the caller's copy: both
+        openers save before opening the timer, so the row is current and the
+        live window's own copy is the stale one.
+        """
+        fresh = db_manager.get_action_item(item.id)
+        if fresh is not None:
+            self.item = fresh
+
+        if vps_manager is not None and self.vps_manager is None:
+            self.vps_manager = vps_manager
+
+        if on_close is None or on_close is self.on_close_callback:
+            return
+
+        # Chained, not replaced: the first opener still needs telling. A list
+        # screen's refresh and an editor's field reload are both required when
+        # the same timer was opened from both.
+        existing = self.on_close_callback
+
+        def both():
+            for callback in (existing, on_close):
+                if callback is None:
+                    continue
+                try:
+                    callback()
+                except Exception as exc:
+                    print(f"[WARN] a timer close callback failed: {exc}")
+
+        self.on_close_callback = both
 
     def __init__(self, parent, db_manager: DatabaseManager, item: ActionItem,
                  on_close: Optional[Callable] = None,
@@ -1271,13 +1332,13 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 planned_minutes=item.planned_minutes,
                 status="open"
             )
-            db_manager.create_action_item(new_item)
-            # B1 — the weekly lineage, the project links and the item links.
-            # This path built its row inline and inherited none of them, so the
-            # follow-up landed unfiled from the project it continues and its
-            # reward protocol silently resolved nothing. Shared with
-            # create_followup_item so the two cannot drift again (P5).
-            db_manager.inherit_derived_item_context(item.id, new_item.id)
+            new_row_id = db_manager.create_action_item(new_item)
+            if not new_row_id:
+                # The sibling path guards this and this one did not, so three
+                # inheritance writes ran against a row that does not exist.
+                raise RuntimeError(
+                    "the follow-up item could not be created; nothing was "
+                    "inherited and the session has not been recorded yet")
             print(
                 f"[DEBUG] Step 3: New Action Item duplicated with ID: {new_item.id}, parent_id: {new_parent_id}")
 
@@ -1301,6 +1362,19 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
 
             self.save_work_log(completion_note)
             print(f"[DEBUG] Step 4: Session recorded; the Action Item stays open")
+
+            # B1 — the weekly lineage, the project links and the item links.
+            # This path built its row inline and inherited none of them, so the
+            # follow-up landed unfiled from the project it continues and its
+            # reward protocol silently resolved nothing. Shared with
+            # create_followup_item so the two cannot drift again (P5).
+            #
+            # After the work log, not before. These are three DB writes, one of
+            # which re-files a week-attached item; placed ahead of the session
+            # record, a raise in any of them lands in the outer handler and the
+            # user loses the log for work they have just finished, which is the
+            # one thing here that cannot be recreated (P13).
+            db_manager.inherit_derived_item_context(item.id, new_item.id)
 
             notify_weekly_tactic_changes(db_manager)
 
@@ -1477,12 +1551,6 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         # Cancel any pending timer callbacks
         self._cancel_pending_timer()
 
-        # The item is free again the moment this window is on its way out. The
-        # WeakValueDictionary would get there on its own, but only after a
-        # collection — and "press Timer again straight away" is the common case.
-        if _LIVE_TIMERS.get(self.item.id) is self:
-            del _LIVE_TIMERS[self.item.id]
-
         # Destroy the window
         try:
             self.destroy()
@@ -1500,9 +1568,23 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
         except Exception:
             still_open = False  # nothing left to ask is the outcome we wanted
         if still_open:
+            # The item stays claimed. Releasing it here — which this did, four
+            # lines before the destroy was even attempted — freed an item whose
+            # window is still on screen and still taking clicks, so the next
+            # Timer press built a second one at the same coordinates: the exact
+            # defect open_for exists to prevent, on the one path where both
+            # fixes are live at once. State must reconcile against the artifact
+            # (P6), and the artifact here says the window is still there.
             print("[ERROR] the timer window is still on screen after destroy(); "
                   "it will go on taking clicks and its session cannot be ended")
-        return not still_open
+            return False
+
+        # Gone for real, so the item is free. The WeakValueDictionary would get
+        # there on its own, but only after a collection — and "press Timer again
+        # straight away" is the common case.
+        if _LIVE_TIMERS.get(self.item.id) is self:
+            del _LIVE_TIMERS[self.item.id]
+        return True
 
     def save_window_settings(self):
         """Save window position and size to settings."""
