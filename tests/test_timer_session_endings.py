@@ -52,6 +52,20 @@ def manager(tmp_path):
     db.close()
 
 
+@pytest.fixture(autouse=True)
+def _empty_timer_registry():
+    """B2 — the registry is module-level, so it leaks between tests.
+
+    Found the hard way: a mutation that made open_for hand back ANY live timer
+    instead of this item's passed the whole file and failed when its test ran
+    alone. Dead entries left by earlier tests were being reused, so the wrong
+    behaviour looked right (P8 — the second run sees state the first left).
+    """
+    tw._LIVE_TIMERS.clear()
+    yield
+    tw._LIVE_TIMERS.clear()
+
+
 @pytest.fixture
 def hushed(monkeypatch):
     """Silence sound and music only. The dialogs are the thing under test."""
@@ -173,46 +187,6 @@ def test_t11c_save_related_closes_while_the_timer_is_really_topmost(
     assert not timer.winfo_exists(), (
         "Save Related recorded the session and left the window on screen"
     )
-
-
-def test_t14_two_timers_on_one_item_are_not_yet_prevented(
-        root, manager, hushed):
-    """T1.4 — nothing stops a second timer window opening on the same item.
-
-    Every entry point constructs a TimerWindow unconditionally, and setup_window
-    positions all of them at the same saved timer_window_x/y — so a second one
-    lands exactly on top of the first and the two are indistinguishable.
-
-    This reproduces the 2026-08-25 database state exactly: a work log at
-    08:02:00 from one window, then a completion and a follow-up at 08:07:03
-    from the other with no work log at all.
-
-    NOTE FOR WHOEVER SEES THIS GO RED: that is good news, not a regression.
-    It pins a defect recorded in BACKLOG.md as deliberately unfixed. When the
-    second window is prevented, delete this test rather than repairing it.
-    """
-    item = _item(manager)
-    first = _stopped_timer(root, manager, item)
-    second = TimerWindow(root, manager, item, rng=random.Random(1))
-
-    assert first.geometry().split("+")[1:] == second.geometry().split("+")[1:], (
-        "the two windows are not stacked, so this is not the reported shape"
-    )
-
-    _dismiss_the_note_dialog(first)
-    first.save_and_close_action()
-
-    assert len(manager.get_work_logs(item.id)) == 1, "the first window's session"
-    assert not first.winfo_exists(), "the first window did close"
-    assert second.winfo_exists(), (
-        "a second timer is still on screen, which is what 'the screen doesn't "
-        "close' looks like from the user's side"
-    )
-    assert second.start_timestamp is None, (
-        "the surviving window never started, so any ending it reaches records "
-        "nothing and says nothing about it"
-    )
-    second.destroy()
 
 
 # --- T5 : a modal must not open behind the always-on-top timer ---------------
@@ -969,3 +943,108 @@ def test_b33_a_timer_that_closed_normally_needs_no_rescue(
     _continue_from(root, manager, item)
 
     assert rescued == [], "the rescue fired on a timer that closed cleanly"
+
+
+# --- B2 : one timer per item, from every entry point ------------------------
+
+def test_b21_a_second_timer_returns_the_first(root, manager, hushed):
+    """B2.1 — the defect test_t14 used to pin, now prevented.
+
+    Every timer opens at the same saved coordinates, so a second one landed
+    exactly on the first and the two were indistinguishable. Each could write
+    its own work log for the same stretch of clock, and an ending pressed on
+    the top one revealed an identical window underneath — which is what "no
+    related record and the screen doesn't close" looked like.
+    """
+    item = _item(manager)
+    first = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    second = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+
+    assert second is first, "a second timer window was opened on the same item"
+    first.destroy()
+
+
+def test_b22_a_different_item_still_gets_its_own_timer(root, manager, hushed):
+    """B2.1 — the guard is per item, not a global one-timer rule.
+
+    Without this, `return the first window whatever was asked for` passes the
+    test above.
+    """
+    one = _item(manager)
+    two = _item(manager)
+    a = TimerWindow.open_for(root, manager, one, rng=random.Random(1))
+    b = TimerWindow.open_for(root, manager, two, rng=random.Random(1))
+
+    assert a is not b, "two different items were given the same timer window"
+    a.destroy()
+    b.destroy()
+
+
+def test_b23_closing_a_timer_frees_the_item(root, manager, hushed):
+    """B2.3 — otherwise the item can never be timed again this session."""
+    item = _item(manager)
+    first = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    assert tw._LIVE_TIMERS.get(item.id) is first, "precondition: it was claimed"
+
+    first._cleanup_and_destroy()
+
+    # The registry entry itself, not just the observable outcome: the liveness
+    # check downstream would hide a missing release, so a behavioural
+    # assertion here passes whether or not the item was ever freed.
+    assert item.id not in tw._LIVE_TIMERS, (
+        "the item was never released, so the entry lingers until a collection"
+    )
+    second = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    assert second is not first
+    second.destroy()
+
+
+def test_b24_a_destroyed_window_is_not_handed_back(root, manager, hushed):
+    """B2.3 — a window destroyed without going through cleanup, too.
+
+    The registry is weak so it clears eventually, but "eventually" means after
+    a collection, and pressing Timer again straight away is the common case.
+    """
+    item = _item(manager)
+    first = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    first.destroy()          # not _cleanup_and_destroy
+
+    second = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
+    assert second is not first
+    assert second.winfo_exists()
+    second.destroy()
+
+
+def test_b25_every_screen_opens_through_the_registry():
+    """B2.2 — four entry points, and a guard on one of them is not a guard.
+
+    Parsed rather than grepped, and asserted as an exact set: a fifth opener
+    added without going through open_for fails here rather than silently
+    reintroducing the second window (P25, P29).
+    """
+    import ast
+    import pathlib
+
+    from src.getmoredone.screens import all_items, item_editor, today, upcoming
+
+    direct, through = set(), set()
+    for mod in (today, upcoming, all_items, item_editor):
+        name = pathlib.Path(mod.__file__).name
+        for node in ast.walk(ast.parse(pathlib.Path(mod.__file__).read_text())):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            if isinstance(fn, ast.Name) and fn.id == "TimerWindow":
+                direct.add((name, node.lineno))
+            elif (isinstance(fn, ast.Attribute) and fn.attr == "open_for"
+                  and isinstance(fn.value, ast.Name)
+                  and fn.value.id == "TimerWindow"):
+                through.add(name)
+
+    assert direct == set(), (
+        f"these build a TimerWindow directly instead of going through "
+        f"open_for, so they can open a second one on an item: {sorted(direct)}"
+    )
+    assert through == {"today.py", "upcoming.py", "all_items.py", "item_editor.py"}, (
+        f"the set of timer entry points changed: {sorted(through)}"
+    )

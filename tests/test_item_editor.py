@@ -424,7 +424,7 @@ def test_start_timer_aborts_when_save_fails(monkeypatch):
     """If the save-first step fails validation, the timer must not open."""
     import src.getmoredone.screens.timer_window as tw
     opened = []
-    monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
+    monkeypatch.setattr(tw, "TimerWindow", _RecordingTimerWindow(opened))
 
     dialog = SimpleNamespace(
         save_item=lambda: False,
@@ -437,11 +437,26 @@ def test_start_timer_aborts_when_save_fails(monkeypatch):
     assert opened == []
 
 
+class _RecordingTimerWindow:
+    """Stands in for TimerWindow, recording what the editor asks it for.
+
+    The editor goes through ``TimerWindow.open_for`` rather than the
+    constructor (B2 — one timer per item, guarded at every entry point), so a
+    bare lambda no longer stands in for it: a lambda has no ``open_for``.
+    """
+
+    def __init__(self, sink):
+        self._sink = sink
+
+    def open_for(self, *args, **kwargs):
+        self._sink.append((args, kwargs))
+
+
 def test_start_timer_opens_timer_after_successful_save(monkeypatch):
     """A successful save opens the timer on the current (open) item with a callback."""
     import src.getmoredone.screens.timer_window as tw
     opened = []
-    monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
+    monkeypatch.setattr(tw, "TimerWindow", _RecordingTimerWindow(opened))
 
     item = SimpleNamespace(id="abc", status="open")
     db = object()
@@ -477,7 +492,7 @@ def test_start_timer_aborts_on_completed_item(monkeypatch):
     """Even if save succeeds, a completed item must not open a timer."""
     import src.getmoredone.screens.timer_window as tw
     opened = []
-    monkeypatch.setattr(tw, "TimerWindow", lambda *a, **k: opened.append((a, k)))
+    monkeypatch.setattr(tw, "TimerWindow", _RecordingTimerWindow(opened))
     dialog = SimpleNamespace(
         save_item=lambda: True,
         item=SimpleNamespace(id="x", status="completed"),
