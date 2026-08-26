@@ -14,19 +14,25 @@ can say which, if any, to add.
 
 ## B0 — Dated follow-up titles
 
-Requested: `"FollowUp - MMDD"` on the title.
+Confirmed with the user: `"Follow up MM-DD"`, created date, no year, short.
 
-- Suffix becomes `" - FollowUp - MMDD"`, e.g. `"Draft the report - FollowUp - 0826"`.
-- **MMDD is the day the follow-up is created, not the inherited date.** The
-  inherited dates are identical across every follow-up of one item — that is the
+- Title becomes `"Draft the report - Follow up 08-26"`. The `" - "` is a
+  separator for readability; the suffix itself is exactly what was asked for.
+- **MM-DD is the day the follow-up is created, not the inherited date.** Every
+  follow-up of one item inherits the *same* start and due dates — that is the
   whole reason the titles collide — so dating by them would change nothing.
-- A follow-up of a follow-up replaces the previous suffix rather than stacking:
-  `"Draft the report - FollowUp - 0827"`, not `"… - FollowUp - 0826 - FollowUp - 0827"`.
-- `FOLLOW_UP_SUFFIX` and the once-only rule from the last batch are replaced by a
-  regex strip of `" - FollowUp - \d{4}"`.
-- **Known limit:** two follow-ups off the same item on the *same day* still
-  collide. Continuing the same work twice in one day is not what the button is
-  for, and a counter would make the common case uglier. Flagged, not solved.
+  Confirmed: "go ahead and use created date".
+- Dates still inherit unchanged. The user's note — "it will start with the
+  original Start and End date but MOST LIKELY these will be changed" — is why
+  the editor opens on the follow-up, and is also why **B1 matters**: an item
+  they are about to edit anyway is one whose missing project link they would
+  never notice.
+- A follow-up of a follow-up replaces the suffix rather than stacking. The user
+  does not expect more than two ("an Action Item is supposed to be a discrete
+  chunk of work"), so this is cheap insurance rather than a main case.
+- **Known limit, accepted:** two follow-ups off the same item on the *same day*
+  still collide. Out of the expected shape of use, and a counter would make the
+  common case uglier.
 
 ## B1 — The follow-up lands unfiled from its project
 
@@ -96,7 +102,7 @@ suite-wide changes the behaviour of every test that reaches one.
 
 | ID | Criterion | Verified by |
 |---|---|---|
-| B0.1 | Follow-up title is `"<original> - FollowUp - MMDD"` with today's MM/DD | `tests/test_timer_session_endings.py::test_b01_the_followup_title_carries_the_day_it_was_made` |
+| B0.1 | Follow-up title is `"<original> - Follow up MM-DD"` with today's date | `tests/test_timer_session_endings.py::test_b01_the_followup_title_carries_the_day_it_was_made` |
 | B0.2 | A follow-up of a follow-up replaces the suffix, never stacks | `::test_b02_the_dated_suffix_does_not_stack` |
 | B0.3 | Three consecutive days give three distinct titles | `::test_b03_consecutive_days_are_distinguishable` |
 | B1.1 | The follow-up keeps the original's project link | `::test_b11_the_followup_stays_filed_under_its_project` |
