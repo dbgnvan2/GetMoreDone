@@ -34,6 +34,18 @@ FOLLOW_UP_PROMPT = "Add your next steps and set the dates and priority"
 # Steps dialog first. It now does exactly this.
 CONTINUE_BUTTON_TEXT = "Complete & Create Follow Up"
 
+# One name for the note every ending asks for. Two of the three said
+# "Completion Note" and one said "Session Note" for the same dialog collecting
+# the same thing, which read as two different features.
+SESSION_NOTE_TITLE = "Session Notes"
+
+# How a session note joins the Action Item's description. The note is already
+# written to the work log, and nothing in the app displays a work log — so
+# until something does, the description is the only place the user can read
+# back what they wrote. Dated, because these accumulate: several sessions of
+# undifferentiated prose appended to one field is not readable.
+SESSION_NOTE_SEPARATOR = "\n\n"
+
 # Appended, not prefixed. Every follow-up sharing a leading word would sort them
 # into one block away from the work they continue; on the end, a follow-up stays
 # next to its original in any list ordered by title.
@@ -1127,7 +1139,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             self._save_notes_to_item()
 
             # Prompt for completion note
-            dialog = CompletionNoteDialog(self, "Completion Note")
+            dialog = CompletionNoteDialog(self, SESSION_NOTE_TITLE)
             self.wait_window(dialog)
 
             # Check if window still exists after dialog (user might have closed it)
@@ -1136,6 +1148,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                     "[DEBUG] Window was closed while dialog was open, completing action anyway")
                 # Still save the work log and complete the item even if window is gone
                 completion_note = dialog.result
+                self._append_session_note(completion_note)
                 self.save_work_log(completion_note)
                 self.db_manager.complete_action_item(self.item.id)
                 # No parent: this branch exists *because* the window is gone,
@@ -1147,7 +1160,9 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
                 return
 
             completion_note = dialog.result
-            print(f"[DEBUG] Completion note: {completion_note}")
+            print(f"[DEBUG] Session note: {completion_note}")
+
+            self._append_session_note(completion_note)
 
             # Create work log
             self.save_work_log(completion_note)
@@ -1200,7 +1215,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             # the board claimed a completion the item did not record.
             self._discard_pending_completion()
 
-            dialog = CompletionNoteDialog(self, "Session Note")
+            dialog = CompletionNoteDialog(self, SESSION_NOTE_TITLE)
             self.wait_window(dialog)
             # Read unconditionally: dialog.result is a plain attribute and
             # needs no live window. Guarding it on winfo_exists() threw the
@@ -1208,6 +1223,7 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             # them, and wrote the log anyway with nothing to show for it.
             note = dialog.result
 
+            self._append_session_note(note)
             self.save_work_log(note)
 
             self._close_and_return()
@@ -1281,6 +1297,42 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             self.db_manager.update_action_item(self.item)
             notify_weekly_tactic_changes(self.db_manager, self)
 
+    def _append_session_note(self, note: Optional[str]) -> None:
+        """Add a session note to the end of the Action Item's description.
+
+        Purpose: the note was written to the work log and nowhere else, and
+                 nothing in the app reads a work log — so the user had no way
+                 to see what they had typed. The description is where they will
+                 look for it.
+        Tests:   tests/test_timer_session_endings.py::test_n21_a_session_note_is_appended_to_the_description
+                 tests/test_timer_session_endings.py::test_n22_a_second_session_note_does_not_replace_the_first
+                 tests/test_timer_session_endings.py::test_n23_skipping_the_note_changes_nothing
+
+        Always the *originating* item, including on Complete & Create Follow
+        Up: the note describes the session that just happened, which belongs to
+        the work that was done, not to the follow-up that has not started.
+
+        Runs after ``_save_notes_to_item``, so it appends to what the notes box
+        has already written rather than racing it.
+        """
+        if not note or not note.strip():
+            return
+
+        stamp = date.today().strftime("%m-%d")
+        entry = f"{stamp}: {note.strip()}"
+        existing = (self.item.description or "").rstrip()
+        self.item.description = (
+            f"{existing}{SESSION_NOTE_SEPARATOR}{entry}" if existing else entry)
+
+        try:
+            self.db_manager.update_action_item(self.item)
+            notify_weekly_tactic_changes(self.db_manager, self)
+        except Exception as exc:
+            # Said out loud rather than swallowed: the note is on the work log
+            # either way, but the user was told it would appear here.
+            print(f"[ERROR] the session note could not be added to the item's "
+                  f"description: {exc}")
+
     def _close_and_return(self):
         """Save window settings, tell the opener to refresh, and close."""
         if self.winfo_exists():
@@ -1350,11 +1402,17 @@ class TimerWindow(TimerRewardMixin, TrackedAfterMixin, ctk.CTkToplevel):
             # window does not clear the Python attributes on it.
 
             # Prompt for completion note (for work log)
-            completion_dialog = CompletionNoteDialog(self, "Completion Note")
+            completion_dialog = CompletionNoteDialog(self, SESSION_NOTE_TITLE)
             self.wait_window(completion_dialog)
 
             completion_note = completion_dialog.result
-            print(f"[DEBUG] Completion note: {completion_note}")
+            print(f"[DEBUG] Session note: {completion_note}")
+
+            # The originating item, not the follow-up: the note describes the
+            # session that just happened, which belongs to the work that was
+            # done. Before the follow-up is built, so it cannot be carried into
+            # a description that is meant to be a prompt.
+            self._append_session_note(completion_note)
 
             # Check if window still exists after dialog
             window_exists = self.winfo_exists()
