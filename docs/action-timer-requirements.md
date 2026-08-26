@@ -85,7 +85,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 
 ## FR-AT-004: Complete Time Block and Action
 
-**User Story**: As a user I want to complete the time block, add a Completion Note to the Action, and complete the Action.
+**User Story**: As a user I want to complete the time block, add a Session Note to the Action, and complete the Action.
 
 **Description**: Provide "Finished" workflow to complete both time block and action item.
 
@@ -93,9 +93,10 @@ The Action Timer Module provides a popup countdown timer to guide users through 
 
 - **Finished** button available when timer is stopped
 - Clicking Finished:
-  1. Shows "Completion Note" dialog
+  1. Shows the "Session Notes" dialog
   2. Saves work log entry with work time and elapsed time
-  3. Adds completion note to action item
+  3. Appends the note to the action item's description, dated MM-DD, and
+     stores it on the work log — the same as every other ending
   4. Marks action item as completed with completion timestamp
   5. Closes timer window
 - Completion note is optional but dialog must be shown
@@ -140,7 +141,7 @@ The Action Timer Module provides a popup countdown timer to guide users through 
      - The project link, weekly-tactic lineage and item links of the original,
        through the same helper create_followup_item uses
   4. Opens the follow-up in the item editor, where those fields are filled in
-- The Completion Note dialog is optional but must be presented
+- The Session Notes dialog is optional but must be presented
 
 Revised 2026-08-25. The "Next Steps Note" dialog was removed from this flow: it
 asked for a note and two dates before the follow-up existed, duplicating the
@@ -369,7 +370,7 @@ docs/implementation_plan_2026-08-25_timer_session_endings.md.
 
 ```
 Timer Running → Stop → Finished Button →
-  Completion Note Dialog →
+  Session Notes Dialog →
     Save WorkLog (work + elapsed time) →
     Add note to Action Item →
     Mark Action as Completed →
@@ -380,7 +381,7 @@ Timer Running → Stop → Finished Button →
 
 ```
 Timer Running → Stop → Continue Button →
-  Completion Note Dialog →
+  Session Notes Dialog →
   Next Steps Note Dialog (with Date Selection) →
     User selects Start and Due dates →
     Validation: Due >= Start →

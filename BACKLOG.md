@@ -24,6 +24,16 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### `_append_session_note`'s empty-string guard is unreachable (2026-08-25)
+
+It reads `if not note or not note.strip(): return`, but `CompletionNoteDialog.save`
+already normalises an empty box to `None`, so `dialog.result` is never `""`.
+Mutation-proved during the csdp sweep: weakening the guard to `if note is None`
+leaves every test green, and `test_n23` covers only the Skip → `None` path. Its
+docstring claims more than it shows. Either drop the unreachable half or add a
+direct call with `"   "` and pin it. Found by the csdp sweep (F9).
+
+
 ### `adopt_opener` is unguarded directly above the guard that explains why (2026-08-25)
 
 `open_for` wraps its `deiconify`/`lift`/`focus_force` in a try, with a comment
