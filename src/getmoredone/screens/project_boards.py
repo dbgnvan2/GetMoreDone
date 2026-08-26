@@ -19,6 +19,7 @@ from .project_link_notice import (
 )
 from .week_collision_notice import notify_weekly_tactic_changes
 from ..theme import button_style, combo_box_style, semantic_colors, status_text_color
+from ..utils.duration import format_minutes
 
 if TYPE_CHECKING:
     from ..app import GetMoreDoneApp
@@ -1317,11 +1318,18 @@ class ProjectBoardsScreen(ctk.CTkFrame):
                 return
 
         self.detail_title.configure(text=row["title"])
+        # PT3 — how much work has gone into this project. Both derived in
+        # get_project_boards from work_logs; the direct-fetch fallback above
+        # selects * from project_boards and has neither, hence the .get()
+        # defaults rather than a subscript.
+        sessions = row.get("session_count") or 0
         self.detail_meta.configure(
             text=(
                 f"{row.get('ape_year') or ''} | {row.get('segment_name') or ''} | {row.get('subsegment_name') or ''} | "
                 f"{row.get('category_name') or ''} | Status: {row.get('status')}\n"
-                f"Next Step: {row.get('next_step') or '-'}"
+                f"Next Step: {row.get('next_step') or '-'}\n"
+                f"Time: {sessions} session{'' if sessions == 1 else 's'}"
+                f" | {format_minutes(row.get('total_minutes'))}"
             )
         )
         category_color = (row.get("category_color_hex") or "").strip() or semantic_colors()["surface_subtle"]

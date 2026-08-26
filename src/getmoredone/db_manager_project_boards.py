@@ -83,7 +83,17 @@ class DBManagerProjectBoardsMixin:
         show_pending: bool = False,
         show_completed: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Return project boards with joined APE metadata and linked-item counts."""
+        """Project boards with APE metadata, linked-item counts and time totals.
+
+        ``session_count`` and ``total_minutes`` (PT1) are derived here rather
+        than stored on the row: a counter column is a status field that can
+        disagree with the work logs it summarises (P6). ``savor_count`` on the
+        board is a different quantity entirely — completed deliverables, for the
+        reward phase — and carries no time.
+
+        Tests: tests/test_project_time_totals.py::test_pt11_a_board_reports_its_sessions_and_minutes
+               tests/test_project_time_totals.py::test_pt14_the_existing_counts_survive_multiple_sessions_per_item
+        """
         self._normalize_project_board_order()
         
         # Active boards are ALWAYS shown; show_pending / show_completed each
@@ -109,7 +119,27 @@ class DBManagerProjectBoardsMixin:
                 vc.color_hex AS category_color_hex,
                 COUNT(DISTINCT pbi.item_id) AS linked_item_count,
                 SUM(CASE WHEN ai.status = 'open' THEN 1 ELSE 0 END) AS open_item_count,
-                SUM(CASE WHEN ai.status = 'completed' THEN 1 ELSE 0 END) AS completed_item_count
+                SUM(CASE WHEN ai.status = 'completed' THEN 1 ELSE 0 END) AS completed_item_count,
+                -- PT1: how many timer sessions have been logged against this
+                -- project, and how long they came to.
+                --
+                -- Correlated subqueries, deliberately NOT another LEFT JOIN.
+                -- This query is grouped per board and already joins
+                -- project_board_items and action_items; joining work_logs as
+                -- well would produce one row per session per item, and while
+                -- COUNT(DISTINCT pbi.item_id) survives that, the two SUM(CASE
+                -- ...) counts above do not — every open item would be counted
+                -- once per session logged against it. Invisible on any board
+                -- whose items have at most one session each, which is why
+                -- test_pt14 uses an item with three.
+                (SELECT COUNT(*)
+                   FROM work_logs wl
+                   JOIN project_board_items wpbi ON wpbi.item_id = wl.item_id
+                  WHERE wpbi.project_board_id = pb.id) AS session_count,
+                COALESCE((SELECT SUM(wl.minutes)
+                   FROM work_logs wl
+                   JOIN project_board_items wpbi ON wpbi.item_id = wl.item_id
+                  WHERE wpbi.project_board_id = pb.id), 0) AS total_minutes
             FROM project_boards pb
             LEFT JOIN annual_plan_elements ape
               ON ape.id = pb.annual_plan_element_id
