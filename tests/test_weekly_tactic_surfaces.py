@@ -671,3 +671,49 @@ def test_wt_m6b5_a_batch_of_no_ops_reports_nothing(tmp_path):
         assert manager.last_cascade_report.created == []
     finally:
         vps.close()
+
+
+def test_wt_m6b6_a_notice_lowers_an_always_on_top_parent(monkeypatch):
+    """Every notice here ends in a messagebox, often parented to the timer.
+
+    The TimerWindow sets -topmost at construction and never drops it, so a
+    modal opening behind it still holds grab_set(): it takes every click while
+    showing nothing, and the window underneath looks frozen. That is the bug
+    the timer's own dialogs were fixed for, and these six call sites were left
+    out of that sweep (P5).
+
+    conftest silences -topmost for the run, so the flag is set and read through
+    the Tcl interpreter — past the patch in both directions, or this would be
+    measuring conftest rather than the code.
+    """
+    import customtkinter as ctk
+
+    from src.getmoredone.screens import week_collision_notice as notice
+
+    def really_topmost(window):
+        window.tk.call("wm", "attributes", window._w, "-topmost", True)
+
+    def topmost_now(window):
+        return bool(int(window.tk.call("wm", "attributes", window._w, "-topmost")))
+
+    root = ctk.CTk()
+    root.withdraw()
+    try:
+        really_topmost(root)
+        assert topmost_now(root), "precondition: the parent is always-on-top"
+
+        seen = []
+        monkeypatch.setattr(notice.messagebox, "showwarning",
+                            lambda *a, **k: seen.append(topmost_now(root)))
+
+        db = SimpleNamespace(last_week_collision={
+            "title": "A tactic", "week_start": "2026-02-23"})
+        assert notice.notify_week_collision(db, root) is True
+
+        assert seen == [False], (
+            "the notice opened while its parent was still always-on-top, so it "
+            "sits behind the window it belongs to and holds the grab there"
+        )
+        assert topmost_now(root), "the parent never got its always-on-top back"
+    finally:
+        root.destroy()

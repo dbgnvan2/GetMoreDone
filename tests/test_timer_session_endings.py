@@ -1491,14 +1491,16 @@ def test_n25_the_note_renders_exactly_as_the_user_guide_shows_it(root, manager,
     timer._append_session_note("sent the draft to Legal",
                                made_on=_date(2026, 8, 26))
 
-    assert manager.get_action_item(item.id).description == (
-        "what this task is for\n"
-        "\n"
-        "08-25: got the opening paragraph down\n"
-        "\n"
-        "08-26: sent the draft to Legal"
-    )
-    timer.destroy()
+    try:
+        assert manager.get_action_item(item.id).description == (
+            "what this task is for\n"
+            "\n"
+            "08-25: got the opening paragraph down\n"
+            "\n"
+            "08-26: sent the draft to Legal"
+        )
+    finally:
+        timer.destroy()
 
 
 def test_n26_the_stamp_is_one_format_in_one_place():
@@ -1523,18 +1525,17 @@ def test_n26_the_stamp_is_one_format_in_one_place():
     )
 
 
-def test_n27_done_appends_its_session_note_too(root, manager, hushed,
-                                               monkeypatch):
+def test_n27_done_appends_its_session_note_too(root, manager, hushed):
     """F2 — the Done ending's append was provably untested.
 
     Deleting both of its calls left all five original tests green. Done is the
     ending whose spec (FR-AT-004) this batch implements, and it was the one
     ending nothing verified.
     """
-    from src.getmoredone.screens import timer_window_dialogs as dlg
-    monkeypatch.setattr(dlg, "SavorDialog",
-                        lambda parent, snapshot: type("S", (), {"acknowledged": True})())
-
+    # No SavorDialog stub: this item has no project board, so
+    # run_reward_sequence returns before any savor, and finished_action does
+    # not enter it at all. A patch here was inert — proved by deleting it — and
+    # inert scaffolding reads as isolation it does not provide.
     item = _item(manager, description="the task")
     timer = TimerWindow.open_for(root, manager, item, rng=random.Random(1))
     timer.start_timer()
@@ -1553,7 +1554,7 @@ def test_n27_done_appends_its_session_note_too(root, manager, hushed,
 
 
 def test_n28_an_appended_note_survives_a_window_that_did_not_close(
-        root, manager, hushed, monkeypatch):
+        root, manager, hushed):
     """F1 — the notes box goes stale the instant a note is appended.
 
     Every ending opens with _save_notes_to_item, which writes the box whenever
@@ -1571,10 +1572,12 @@ def test_n28_an_appended_note_survives_a_window_that_did_not_close(
     # reaches a second ending, either of which runs this.
     timer._save_notes_to_item()
 
-    assert "what I did today" in manager.get_action_item(item.id).description, (
-        "the stale notes box overwrote the session note"
-    )
-    timer.destroy()
+    try:
+        assert "what I did today" in manager.get_action_item(item.id).description, (
+            "the stale notes box overwrote the session note"
+        )
+    finally:
+        timer.destroy()
 
 
 def test_n29_a_destroyed_window_is_not_passed_as_a_tk_parent(root, manager,
