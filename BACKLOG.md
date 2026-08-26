@@ -24,6 +24,18 @@ deferred and for how long, not only of what is outstanding.
 
 ## Deferred — found by review, deliberately not fixed
 
+### Reusing a timer does not update its clock (2026-08-25)
+
+`adopt_opener` re-reads the item, but `time_block_minutes`,
+`work_seconds_remaining` and the time-block entry are set in `__init__` and are
+not touched on a reuse. So editing planned minutes from 30 to 90 and pressing
+Timer again gives a window whose data says 90 and whose clock still counts 30.
+Measured during the csdp re-sweep (finding 8). Not fixed in that batch because
+changing the clock underneath a session that may already be running is a
+behavioural decision, not a repair: a reuse mid-session should probably leave
+the clock alone and only adopt the new duration when the timer is stopped.
+
+
 ### Legacy `" - Followup"` titles stack once under the new stamp (2026-08-25)
 
 Rows already in the user's database carry the old undated `" - Followup"`
