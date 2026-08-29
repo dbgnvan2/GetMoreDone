@@ -7,6 +7,8 @@ conventions and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-28
+
 ### Added
 
 - **The timer now rewards finishing a thing, not running out of time.** Give an
@@ -490,6 +492,7 @@ published release.
 - No auto-update. New versions are downloaded manually.
 - No bundled music. Point Settings at a folder of your own.
 
-[Unreleased]: https://github.com/dbgnvan2/daVIPA/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/dbgnvan2/daVIPA/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/dbgnvan2/daVIPA/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/dbgnvan2/daVIPA/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dbgnvan2/daVIPA/releases/tag/v0.2.0
